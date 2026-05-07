@@ -1,0 +1,32 @@
+# Local environment
+.env
+.env.*
+!.env.example
+!services/api/deploy/.env.example
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+pnpm-debug.log*
+tmp/
+temp/
+.cache/
+
+# Dependencies / build outputs
+node_modules/
+.pnpm-store/
+.turbo/
+.vite/
+apps/web/node_modules/.tmp/
+dist/
+build/
+coverage/
+
+# Test result
+playwright-report/
+playwright-live-report/
+test-results/

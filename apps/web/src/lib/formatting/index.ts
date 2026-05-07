@@ -1,0 +1,165 @@
+import { ApiError, type AuditLogFilters, type CreateEventRequest, type EmployeeProfile, type EventSummary, type Role } from "@/lib/api";
+import { localSSOPrincipals } from "@/app/routes";
+
+export function defaultEventForm() {
+  return {
+    title: "台北家庭電影夜",
+    description: "Phase 1 先搶先得、候補與驗票示範。",
+    location: "Taipei HQ Auditorium",
+    starts_at: localInputDate(72),
+    registration_start: localInputDate(-1),
+    registration_close: localInputDate(48),
+    capacity: "1",
+    status: "published",
+    department: "Engineering",
+    site: "Taipei",
+    min_grade: "5",
+    employment_status: "active"
+  };
+}
+
+export function defaultEditEventForm() {
+  return {
+    title: "",
+    description: "",
+    location: "",
+    starts_at: localInputDate(72),
+    registration_start: localInputDate(-1),
+    registration_close: localInputDate(48),
+    capacity: "1",
+    category: "",
+    tags: "",
+    entry_method: "qr",
+    visibility: "eligible"
+  };
+}
+
+export function editFormFromEvent(event: EventSummary) {
+  return {
+    title: event.title || "",
+    description: event.description || "",
+    location: event.location || "",
+    starts_at: dateToLocalInput(event.starts_at),
+    registration_start: dateToLocalInput(event.registration_start),
+    registration_close: dateToLocalInput(event.registration_close),
+    capacity: String(event.capacity || 1),
+    category: event.category || "",
+    tags: (event.tags || []).join(", "),
+    entry_method: event.entry_method || "qr",
+    visibility: event.visibility || "eligible"
+  };
+}
+
+export function splitTags(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => {
+      if (!tag) return false;
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+export function employeeMatchesRule(
+  employee: EmployeeProfile,
+  rule: Pick<CreateEventRequest["rule"], "department" | "site" | "min_grade" | "employment_status">
+) {
+  const department = rule.department.trim();
+  const site = rule.site.trim();
+  const employmentStatus = rule.employment_status.trim();
+  return (
+    (!department || department === "*" || employee.department === department) &&
+    (!site || site === "*" || employee.site === site) &&
+    employee.job_grade >= Number(rule.min_grade || 0) &&
+    (!employmentStatus || employmentStatus === "*" || employee.employment_status === employmentStatus)
+  );
+}
+
+export function localInputDate(hours: number) {
+  const date = new Date(Date.now() + hours * 60 * 60 * 1000);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+export function dateToLocalInput(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+export function futureISO(hours: number) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+}
+
+export function toISO(value: string) {
+  return new Date(value).toISOString();
+}
+
+export function normalizeAuditFilters(filters: AuditLogFilters): AuditLogFilters {
+  return {
+    ...filters,
+    from: filters.from ? toISO(filters.from) : undefined,
+    to: filters.to ? toISO(filters.to) : undefined,
+    limit: filters.limit || "50"
+  };
+}
+
+export function formatDate(value?: string) {
+  if (!value) return "未設定";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+export function eventStatusTone(status: string): "ok" | "warn" | "fail" | "info" | "neutral" {
+  if (status === "published") return "ok";
+  if (status === "draft") return "neutral";
+  if (status === "closed") return "warn";
+  if (status === "cancelled") return "fail";
+  return "info";
+}
+
+export function registrationTone(status: string): "ok" | "warn" | "fail" | "info" | "neutral" {
+  if (status === "confirmed") return "ok";
+  if (status === "waitlisted") return "warn";
+  if (status === "rejected" || status === "cancelled") return "fail";
+  return "info";
+}
+
+export function bookingActionLabel(event: EventSummary) {
+  if (event.current_user_status === "confirmed") return "已報名";
+  if (event.current_user_status === "waitlisted") return "候補中";
+  return event.remaining_capacity > 0 ? "報名" : "加入候補";
+}
+
+export function roleLabel(role: Role) {
+  const labels: Record<Role, string> = {
+    employee: "Employee",
+    activity_admin: "Activity Admin",
+    checkin_staff: "Check-in Staff",
+    hr_admin: "HR Admin",
+    system_admin: "System Admin"
+  };
+  return labels[role];
+}
+
+export function principalLabel(principalID: string) {
+  return localSSOPrincipals.find((principal) => principal.id === principalID)?.label || principalID;
+}
+
+export function errorMessage(error: unknown) {
+  if (error instanceof ApiError) return error.response.error || error.message;
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

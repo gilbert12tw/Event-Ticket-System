@@ -1,0 +1,16 @@
+.git
+.gitignore
+.turbo
+services/api/deploy/.env
+backend
+frontend
+tmp
+bin
+*.log
+node_modules
+coverage
+apps/web/node_modules
+apps/web/.turbo
+apps/web/.vite
+apps/web/dist
+apps/web/node_modules/.tmp

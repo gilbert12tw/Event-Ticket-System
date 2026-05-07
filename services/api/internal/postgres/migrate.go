@@ -1,0 +1,303 @@
+package postgres
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var SchemaStatements = []string{
+	`CREATE TABLE IF NOT EXISTS employees (
+		employee_id TEXT PRIMARY KEY,
+		full_name TEXT NOT NULL,
+		department TEXT NOT NULL,
+		site TEXT NOT NULL,
+		job_grade INTEGER NOT NULL,
+		employment_status TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS events (
+		event_id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		location TEXT NOT NULL DEFAULT '',
+		starts_at TIMESTAMPTZ NOT NULL,
+		registration_start TIMESTAMPTZ NOT NULL,
+		registration_close TIMESTAMPTZ NOT NULL,
+		capacity INTEGER NOT NULL CHECK (capacity > 0),
+		status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'closed', 'cancelled', 'archived')),
+		allocation_mode TEXT NOT NULL DEFAULT 'fcfs',
+		category TEXT NOT NULL DEFAULT '',
+		tags TEXT NOT NULL DEFAULT '',
+		entry_method TEXT NOT NULL DEFAULT 'qr',
+		visibility TEXT NOT NULL DEFAULT 'eligible',
+		version INTEGER NOT NULL DEFAULT 1,
+		archived_at TIMESTAMPTZ,
+		created_by TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS event_versions (
+		version_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		version INTEGER NOT NULL,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		location TEXT NOT NULL DEFAULT '',
+		starts_at TIMESTAMPTZ NOT NULL,
+		registration_start TIMESTAMPTZ NOT NULL,
+		registration_close TIMESTAMPTZ NOT NULL,
+		capacity INTEGER NOT NULL CHECK (capacity > 0),
+		status TEXT NOT NULL,
+		allocation_mode TEXT NOT NULL DEFAULT 'fcfs',
+		category TEXT NOT NULL DEFAULT '',
+		tags TEXT NOT NULL DEFAULT '',
+		entry_method TEXT NOT NULL DEFAULT 'qr',
+		visibility TEXT NOT NULL DEFAULT 'eligible',
+		changed_by TEXT NOT NULL,
+		change_reason TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		UNIQUE (event_id, version)
+	)`,
+	`CREATE TABLE IF NOT EXISTS event_assets (
+		asset_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		object_key TEXT NOT NULL,
+		file_name TEXT NOT NULL,
+		content_type TEXT NOT NULL,
+		size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
+		created_by TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS eligibility_rules (
+		rule_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		department TEXT NOT NULL DEFAULT '*',
+		site TEXT NOT NULL DEFAULT '*',
+		min_grade INTEGER NOT NULL DEFAULT 0,
+		employment_status TEXT NOT NULL DEFAULT 'active',
+		version INTEGER NOT NULL DEFAULT 1,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS eligibility_rule_versions (
+		version_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		version INTEGER NOT NULL,
+		expression_json JSONB NOT NULL,
+		match_count INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		UNIQUE (event_id, version)
+	)`,
+	`CREATE TABLE IF NOT EXISTS hr_sync_batches (
+		batch_id TEXT PRIMARY KEY,
+		source TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'failed')),
+		employee_count INTEGER NOT NULL DEFAULT 0,
+		started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		completed_at TIMESTAMPTZ
+	)`,
+	`CREATE TABLE IF NOT EXISTS registrations (
+		registration_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id),
+		status TEXT NOT NULL CHECK (status IN ('confirmed', 'waitlisted', 'cancelled')),
+		idempotency_key TEXT NOT NULL UNIQUE,
+		rejection_reason TEXT NOT NULL DEFAULT '',
+		cancel_idempotency_key TEXT,
+		cancel_reason TEXT NOT NULL DEFAULT '',
+		cancelled_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		UNIQUE (event_id, employee_id)
+	)`,
+	`CREATE TABLE IF NOT EXISTS tickets (
+		ticket_id TEXT PRIMARY KEY,
+		registration_id TEXT NOT NULL UNIQUE REFERENCES registrations(registration_id) ON DELETE CASCADE,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id),
+		status TEXT NOT NULL CHECK (status IN ('active', 'redeemed', 'revoked', 'expired')),
+		sequence_number INTEGER NOT NULL DEFAULT 1,
+		signed_token_hash TEXT NOT NULL UNIQUE,
+		signed_token TEXT NOT NULL DEFAULT '',
+		qr_payload TEXT NOT NULL DEFAULT '',
+		expires_at TIMESTAMPTZ,
+		revoked_reason TEXT NOT NULL DEFAULT '',
+		issued_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS eligibility_impact_reviews (
+		review_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id),
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'resolved')),
+		reason TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		resolved_at TIMESTAMPTZ
+	)`,
+	`CREATE TABLE IF NOT EXISTS checkin_records (
+		checkin_id TEXT PRIMARY KEY,
+		ticket_id TEXT NOT NULL UNIQUE REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+		staff_id TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('accepted', 'conflict')),
+		scanned_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS audit_logs (
+		audit_id TEXT PRIMARY KEY,
+		actor_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		action TEXT NOT NULL,
+		entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL,
+		metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS outbox_events (
+		outbox_id TEXT PRIMARY KEY,
+		aggregate_id TEXT NOT NULL,
+		event_type TEXT NOT NULL,
+		payload JSONB NOT NULL,
+		publish_status TEXT NOT NULL DEFAULT 'pending',
+		attempts INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT NOT NULL DEFAULT '',
+		available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		published_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS notification_preferences (
+		employee_id TEXT PRIMARY KEY REFERENCES employees(employee_id) ON DELETE CASCADE,
+		email_enabled BOOLEAN NOT NULL DEFAULT true,
+		in_app_enabled BOOLEAN NOT NULL DEFAULT true,
+		opted_out_categories TEXT NOT NULL DEFAULT '',
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS notification_deliveries (
+		delivery_id TEXT PRIMARY KEY,
+		outbox_id TEXT REFERENCES outbox_events(outbox_id) ON DELETE SET NULL,
+		employee_id TEXT REFERENCES employees(employee_id) ON DELETE SET NULL,
+		channel TEXT NOT NULL CHECK (channel IN ('email', 'in_app')),
+		status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed', 'suppressed', 'dead_letter')),
+		attempts INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_runs (
+		run_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		seed TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('completed')),
+		winner_count INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		UNIQUE (event_id, seed)
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_results (
+		result_id TEXT PRIMARY KEY,
+		run_id TEXT NOT NULL REFERENCES lottery_runs(run_id) ON DELETE CASCADE,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		registration_id TEXT NOT NULL REFERENCES registrations(registration_id) ON DELETE CASCADE,
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id),
+		result TEXT NOT NULL CHECK (result IN ('winner', 'waitlisted')),
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
+		draw_order INTEGER NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		UNIQUE (run_id, registration_id)
+	)`,
+	`CREATE TABLE IF NOT EXISTS offline_checkin_batches (
+		batch_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		device_id TEXT NOT NULL,
+		staff_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('open', 'synced', 'conflict')),
+		valid_until TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '4 hours'),
+		package_signature TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		synced_at TIMESTAMPTZ
+	)`,
+	`CREATE TABLE IF NOT EXISTS offline_checkin_scans (
+		scan_id TEXT PRIMARY KEY,
+		batch_id TEXT NOT NULL REFERENCES offline_checkin_batches(batch_id) ON DELETE CASCADE,
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+		device_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('accepted', 'duplicate', 'conflict')),
+		token_hash TEXT NOT NULL DEFAULT '',
+		conflict_reason TEXT NOT NULL DEFAULT '',
+		scanned_at TIMESTAMPTZ NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE TABLE IF NOT EXISTS report_exports (
+		export_id TEXT PRIMARY KEY,
+		requested_by TEXT NOT NULL,
+		report_type TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed')),
+		object_key TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		completed_at TIMESTAMPTZ
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)`,
+	`CREATE INDEX IF NOT EXISTS idx_event_versions_event ON event_versions(event_id, version DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_eligibility_rule_versions_event ON eligibility_rule_versions(event_id, version DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_eligibility_impact_reviews_status ON eligibility_impact_reviews(status, created_at DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_registrations_event_status ON registrations(event_id, status)`,
+	`CREATE INDEX IF NOT EXISTS idx_tickets_employee ON tickets(employee_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_logs_filter ON audit_logs(action, entity_type, entity_id, created_at DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(publish_status, available_at)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_deliveries_outbox_channel ON notification_deliveries(outbox_id, channel) WHERE outbox_id IS NOT NULL`,
+	`CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status ON notification_deliveries(status, updated_at DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_lottery_runs_event ON lottery_runs(event_id, created_at DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_lottery_results_run ON lottery_results(run_id, draw_order)`,
+	`ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check`,
+	`ALTER TABLE events ADD CONSTRAINT events_status_check CHECK (status IN ('draft', 'published', 'closed', 'cancelled', 'archived'))`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS tags TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS entry_method TEXT NOT NULL DEFAULT 'qr'`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'eligible'`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancel_idempotency_key TEXT`,
+	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancel_reason TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ`,
+	`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_status_check`,
+	`ALTER TABLE tickets ADD CONSTRAINT tickets_status_check CHECK (status IN ('active', 'redeemed', 'revoked', 'expired'))`,
+	`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sequence_number INTEGER NOT NULL DEFAULT 1`,
+	`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+	`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS revoked_reason TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+	`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ`,
+	`ALTER TABLE offline_checkin_batches ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '4 hours')`,
+	`ALTER TABLE offline_checkin_batches ADD COLUMN IF NOT EXISTS package_signature TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE offline_checkin_scans ALTER COLUMN ticket_id DROP NOT NULL`,
+	`ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS token_hash TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS conflict_reason TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE tickets ALTER COLUMN signed_token SET DEFAULT ''`,
+	`ALTER TABLE tickets ALTER COLUMN qr_payload SET DEFAULT ''`,
+}
+
+func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
+}
+
+func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	for _, statement := range SchemaStatements {
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}

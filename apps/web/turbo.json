@@ -1,0 +1,11 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": [
+        "$TURBO_ROOT$/services/api/internal/httpapi/static/**",
+        "node_modules/.tmp/**"
+      ]
+    }
+  }
+}

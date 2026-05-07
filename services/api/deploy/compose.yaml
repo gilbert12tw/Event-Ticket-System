@@ -1,0 +1,173 @@
+name: ${COMPOSE_PROJECT_NAME:-cets}
+
+x-api-image: &api-image
+  image: ${API_IMAGE_NAME:-cets-api}:${API_IMAGE_TAG:-dev}
+  build:
+    context: ../../..
+    dockerfile: services/api/Dockerfile
+
+services:
+  app:
+    <<: *api-image
+    restart: unless-stopped
+    environment:
+      APP_ADDR: :8080
+      APP_ENV: ${APP_ENV:-local}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-local_dev_auth_session_secret_change_me}
+      AUTH_SESSION_TTL_MINUTES: ${AUTH_SESSION_TTL_MINUTES:-480}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
+      DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_URL: redis://redis:6379/1
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-cets-dev}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin_dev_password}
+      MAILER_HOST: mailhog
+      MAILER_PORT: 1025
+      MAILER_FROM: ${MAILER_FROM:-no-reply@cets.local}
+      MAILER_REDIRECT_TO: ${MAILER_REDIRECT_TO:-}
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
+      WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-25}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/readyz >/dev/null" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    <<: *api-image
+    restart: unless-stopped
+    command: ["worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
+      DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_URL: redis://redis:6379/1
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-cets-dev}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin_dev_password}
+      MAILER_HOST: mailhog
+      MAILER_PORT: 1025
+      MAILER_FROM: ${MAILER_FROM:-no-reply@cets.local}
+      MAILER_REDIRECT_TO: ${MAILER_REDIRECT_TO:-}
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
+      WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-25}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+
+  migrate:
+    <<: *api-image
+    restart: "no"
+    command: ["migrate"]
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16.13-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cets}
+      POSTGRES_USER: ${POSTGRES_USER:-cets}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cets_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7.4.8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_password}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_password}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-cets-dev}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 1; done
+        mc mb --ignore-existing "local/$$OBJECT_STORAGE_BUCKET"
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_UI_PORT:-8025}:8025"
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

@@ -1,0 +1,56 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  Activity,
+  Ban,
+  BarChart3,
+  Bell,
+  CalendarDays,
+  ClipboardList,
+  Copy,
+  Database,
+  FileSearch,
+  LogOut,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  ScanLine,
+  Send,
+  Settings,
+  Ticket as TicketIcon,
+  Trash2,
+  Users,
+  WifiOff,
+  X
+} from "lucide-react";
+import type { IconName } from "@/app/routes";
+
+const iconComponents: Record<IconName, LucideIcon> = {
+  activity: Activity,
+  audit: FileSearch,
+  ban: Ban,
+  bell: Bell,
+  calendar: CalendarDays,
+  chart: BarChart3,
+  clipboard: ClipboardList,
+  copy: Copy,
+  database: Database,
+  logout: LogOut,
+  play: Play,
+  plus: Plus,
+  refresh: RefreshCw,
+  save: Save,
+  scan: ScanLine,
+  send: Send,
+  settings: Settings,
+  ticket: TicketIcon,
+  trash: Trash2,
+  users: Users,
+  wifiOff: WifiOff,
+  x: X
+};
+
+export function Icon({ name }: { name: IconName }) {
+  const Component = iconComponents[name];
+  return <Component aria-hidden="true" className="icon" size={16} strokeWidth={2} absoluteStrokeWidth />;
+}

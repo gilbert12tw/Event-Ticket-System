@@ -1,0 +1,318 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ci.yml"
+      - ".dockerignore"
+      - ".npmrc"
+      - "apps/web/**"
+      - "eslint.config.mjs"
+      - "go.work"
+      - "go.work.sum"
+      - "k6/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "services/api/**"
+      - "turbo.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ci.yml"
+      - ".dockerignore"
+      - ".npmrc"
+      - "apps/web/**"
+      - "eslint.config.mjs"
+      - "go.work"
+      - "go.work.sum"
+      - "k6/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "services/api/**"
+      - "turbo.json"
+  workflow_dispatch:
+    inputs:
+      run_full_ci:
+        description: Run backend, frontend, live, and selected k6 gates
+        required: false
+        type: boolean
+        default: false
+      run_live_playwright:
+        description: Run Compose-backed live Playwright checks
+        required: false
+        type: boolean
+        default: false
+      run_k6_smoke:
+        description: Run the k6 smoke profile
+        required: false
+        type: boolean
+        default: true
+      run_k6_release:
+        description: Run the k6 release profile
+        required: false
+        type: boolean
+        default: false
+      k6_release_duration:
+        description: k6 release profile duration for manual runs
+        required: false
+        type: string
+        default: 10s
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      live: ${{ steps.filter.outputs.live }}
+      quick: ${{ steps.filter.outputs.quick }}
+      full: ${{ steps.filter.outputs.full }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          force_full=false
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            : > /tmp/changed-files
+          else
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              base="${{ github.event.pull_request.base.sha }}"
+              head="${{ github.event.pull_request.head.sha }}"
+            else
+              base="${{ github.event.before }}"
+              head="${{ github.sha }}"
+              if [[ "$base" =~ ^0+$ ]]; then
+                base="$(git rev-list --max-parents=0 "$head")"
+              fi
+            fi
+
+            if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$base" || force_full=true
+            fi
+            if [[ "$force_full" == "false" ]]; then
+              git diff --check "$base" "$head"
+              git diff --name-only "$base" "$head" > /tmp/changed-files
+            else
+              echo "Base commit $base is unavailable; running the full CI gate."
+              : > /tmp/changed-files
+            fi
+            if [[ "$force_full" == "false" && ! -s /tmp/changed-files ]]; then
+              git show --pretty="" --name-only "$head" > /tmp/changed-files
+            fi
+          fi
+          cat /tmp/changed-files
+
+          full=$force_full
+          backend=false
+          frontend=false
+          live=false
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ inputs.run_full_ci }}" == "true" ]]; then
+              full=true
+              backend=true
+              frontend=true
+              live=true
+            elif [[ "${{ inputs.run_live_playwright }}" == "true" || "${{ inputs.run_k6_smoke }}" == "true" || "${{ inputs.run_k6_release }}" == "true" ]]; then
+              live=true
+            fi
+          fi
+          if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$)' /tmp/changed-files; then
+            backend=true
+          fi
+          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$)' /tmp/changed-files; then
+            frontend=true
+          fi
+          if grep -Eq '^(\.github/workflows/ci\.yml$|k6/|services/api/deploy/|services/api/Dockerfile$|apps/web/e2e-live/)' /tmp/changed-files; then
+            live=true
+          fi
+          if [[ "$full" == "true" || "$backend" == "true" ]]; then
+            live=true
+          fi
+          quick=false
+          if [[ "$full" == "false" && "$backend" == "false" && "$frontend" == "false" && "$live" == "false" ]]; then
+            quick=true
+          fi
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "live=$live"
+            echo "quick=$quick"
+            echo "full=$full"
+          } >> "$GITHUB_OUTPUT"
+
+  quick-check:
+    needs: changes
+    if: needs.changes.outputs.quick == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: No code gates required
+        run: echo "Only documentation or agent metadata changed; diff whitespace was checked in changes job."
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.13-alpine
+        env:
+          POSTGRES_DB: cets_test
+          POSTGRES_USER: cets
+          POSTGRES_PASSWORD: cets_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cets -d cets_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://cets:cets_test_password@localhost:5432/cets_test?sslmode=disable
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache: true
+          cache-dependency-path: services/api/go.sum
+      - name: Run Go tests
+        working-directory: services/api
+        run: go test ./... -count=1
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint web
+        run: pnpm --filter cets-web lint
+      - name: Test web
+        run: pnpm --filter cets-web test
+      - name: Build web
+        run: pnpm --filter cets-web build
+      - name: Install Playwright browsers
+        run: pnpm --filter cets-web exec playwright install chromium
+      - name: Run mocked Playwright viewport checks
+        run: pnpm --filter cets-web test:e2e
+
+  live-gates:
+    needs:
+      - changes
+      - backend
+      - frontend
+    if: >-
+      always() &&
+      needs.changes.outputs.live == 'true' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+    runs-on: ubuntu-latest
+    env:
+      K6_IMAGE: grafana/k6:1.7.1-with-browser
+      COMPOSE_PROJECT_NAME: cets-ci
+      POSTGRES_PORT: 15432
+      API_IMAGE_TAG: ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm --filter cets-web exec playwright install chromium
+      - name: Validate Docker Compose config
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
+      - name: Build release image
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml build app
+      - name: Start backing services for live gates
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d postgres redis minio mailhog minio-init
+      - name: Run explicit database migration
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml run --rm migrate
+      - name: Start API services for live gates
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d app worker
+      - name: Wait for API readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/readyz; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+      - name: Run live Playwright workflow checks
+        if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_live_playwright
+        run: PLAYWRIGHT_LIVE_BASE_URL=http://127.0.0.1:8080 pnpm --filter cets-web test:e2e:live
+      - name: Run k6 smoke gate checks
+        if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_k6_smoke
+        run: docker run --rm --network host --cap-add=SYS_ADMIN -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_BROWSER_ENABLED=true -e K6_SMOKE_DURATION=20s "$K6_IMAGE" run /k6/phase1-production-gate.js
+      - name: Run k6 release gate checks
+        if: github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_release)
+        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_RELEASE_DURATION="${{ inputs.k6_release_duration }}" "$K6_IMAGE" run /k6/phase1-release-gate.js
+      - name: Scan live gate logs for sensitive leakage
+        run: |
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color app worker > /tmp/cets-app-worker.log
+          if grep -E -i 'signed[_ -]?token|qr_payload|auth_session|token_signing|object_storage_secret|session=|set-cookie|local_dev_.*secret|[A-Za-z0-9._%+-]+@cets\.local|Ariel Chen|Ben Lin|Cara Wu' /tmp/cets-app-worker.log; then
+            echo "Sensitive app/worker log output detected" >&2
+            exit 1
+          fi
+
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color mailhog > /tmp/cets-mailhog.log
+          if grep -E -i 'e1001@cets\.local|e1002@cets\.local|e2001@cets\.local|Ariel Chen|Ben Lin|Cara Wu' /tmp/cets-mailhog.log; then
+            echo "Employee-specific MailHog recipient or full-name output detected" >&2
+            exit 1
+          fi
+          grep -E -i 'notifications@cets\.local' /tmp/cets-mailhog.log >/dev/null
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          if-no-files-found: ignore
+          path: |
+            apps/web/playwright-report
+            apps/web/playwright-live-report
+            apps/web/test-results
+      - name: Stop API services
+        if: always()
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml down

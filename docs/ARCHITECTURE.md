@@ -1,695 +1,582 @@
-# 🏛️ Architecture Guide — Corporate Event Ticketing System
+# 企業員工活動票務與現場驗票系統架構設計
 
-> 本文件為 CETS 系統的整體架構指南，涵蓋設計原則、技術選型、模組劃分、資料模型、部署策略、可觀測性、與安全性。
-
----
-
-## 目錄
-1. [設計原則](#1-設計原則)
-2. [架構總覽](#2-架構總覽)
-3. [技術選型](#3-技術選型)
-4. [Monorepo 與模組劃分](#4-monorepo-與模組劃分)
-5. [微服務拆分與職責](#5-微服務拆分與職責)
-6. [資料模型與一致性策略](#6-資料模型與一致性策略)
-7. [Hot Event 訂票核心設計](#7-hot-event-訂票核心設計)
-8. [事件驅動 (Event-Driven) 設計](#8-事件驅動-event-driven-設計)
-9. [雲端基礎建設與部署](#9-雲端基礎建設與部署)
-10. [CI/CD 流水線](#10-cicd-流水線)
-11. [可觀測性 (Observability)](#11-可觀測性-observability)
-12. [安全性 (Security)](#12-安全性-security)
-13. [可靠性與災難復原 (Resilience & DR)](#13-可靠性與災難復原-resilience--dr)
-14. [全球化部署 (Multi-Region)](#14-全球化部署-multi-region)
-15. [敏捷開發流程](#15-敏捷開發流程)
-16. [架構決策紀錄 (ADR)](#16-架構決策紀錄-adr)
+> 本文件與 repo root 的 `AGENTS.md` 是目前架構與實作準則來源。Phase 1 採用 Docker Compose + modular monolith 快速交付；Phase 2/3 再依流量與風險逐步拆分服務、導入 Kafka、Kubernetes 與高可用治理。
 
 ---
 
-## 1. 設計原則
+## 1. 文件定位與設計目標
 
-| 原則 | 說明 |
-|------|------|
-| **Cloud Native First** | 所有服務皆為容器化、無狀態、12-factor app；以 K8s 為運算平台 |
-| **API-First** | OpenAPI / gRPC schema 先行，前後端可平行開發 |
-| **Microservices** | 依領域 (DDD) 拆分，每個服務擁有獨立資料庫 (Database-per-service) |
-| **Event-Driven** | 跨服務通訊以事件為主，降低耦合 |
-| **Fail Fast, Recover Faster** | 透過熔斷、超時、重試、idempotency 確保彈性 |
-| **Everything as Code** | 基礎建設、配置、流水線、文件全部納入版本控制 |
-| **Shift-Left Quality** | Lint、型別、測試、Security Scan 全在 PR 階段攔截 |
-| **GitOps** | 部署狀態以 Git 為唯一真實來源 (Single Source of Truth) |
-| **Observable by Default** | 所有服務內建 metrics、logs、traces |
+本系統服務大型企業內部員工、福委 / 活動主辦、驗票員與 HR / 系統管理員。核心目標是讓福委能發布活動、設定資格、處理報名與配票，員工能取得電子票券，現場能快速且不可重複地完成 QR Code 驗票。
 
-> 12-Factor 實作規則、程式碼範例與合規檢查清單詳見 **[AGENTS.md](../AGENTS.md)**。
+本文件刻意避免把 Phase 1 包裝成完整分散式系統。短期展示重點是：
+
+- 用 Docker Compose 建立可重現的 Go app + backing services 本地開發環境。
+- 用 modular monolith 保留清楚 domain boundary，降低早期部署與除錯成本。
+- 目前已用 PostgreSQL transaction、row lock、unique constraint 與 idempotency key 處理防超賣與重複請求；Redis reservation gate 是 Phase 2 前可選的尖峰優化，不是 Phase 1 production blocker。
+- 目前 React SPA production gate 覆蓋 ticket / check-in / offline sync / reporting / audit 核心流程，並由同一 binary 的 worker 消費 PostgreSQL `outbox_events`。
+- 用 12-Factor 原則說明設定、日誌、port binding、backing services 與 dev/prod parity。
 
 ---
 
-## 2. 架構總覽
+## 2. 架構原則
 
-### 2.1 高階架構 (C4 - Context & Container)
-
-```
-                          ┌─────────────────────────────┐
-                          │   外部認證系統 (SSO/OIDC)    │
-                          └──────────────┬──────────────┘
-                                         │ JWT
-              ┌────────────┬─────────────┼─────────────┬────────────┐
-              │            │             │             │            │
-         ┌────▼────┐  ┌────▼────┐   ┌───▼─────┐   ┌───▼────┐   ┌──▼──────┐
-         │ Employee │  │  Admin  │   │   HR    │   │  現場   │   │ Mobile  │
-         │  Web    │  │  Portal │   │Dashboard│   │ 核銷裝置│   │  PWA    │
-         └────┬────┘  └────┬────┘   └────┬────┘   └────┬───┘   └──┬──────┘
-              └────────────┴──────┬──────┴─────────────┴──────────┘
-                                  │ HTTPS
-                          ┌───────▼────────┐
-                          │   CDN / WAF    │
-                          └───────┬────────┘
-                                  │
-                          ┌───────▼────────────────────┐
-                          │ API Gateway (Kong/Nginx)   │
-                          │  - JWT 驗證 / 角色路由      │
-                          │  - Rate Limit / Circuit     │
-                          └─┬─────┬─────┬─────┬─────┬──┘
-                            │     │     │     │     │
-                            │     │     │     │     │
-                       ┌────▼─┐ ┌─▼──┐ ┌▼───┐ ┌▼──┐ ┌▼──────┐
-                       │Event │ │Book│ │Ticket│ │Not│ │Analyt│
-                       │ Svc  │ │Svc │ │ Svc  │ │if │ │ ics   │
-                       └──┬───┘ └─┬──┘ └──┬──┘ └─┬─┘ └──┬───┘
-                          │       │       │      │      │
-                          ▼       ▼       ▼      ▼      ▼
-                       ┌────────────────────────────────────┐
-                       │    Kafka / RabbitMQ (Event Bus)    │
-                       └────────────────────────────────────┘
-                                          │
-                  ┌──────────────┬────────┴────────┬─────────────┐
-              ┌───▼────┐    ┌────▼─────┐     ┌────▼────┐   ┌────▼────┐
-              │Postgres│    │  Redis   │     │   S3    │   │ ELK /   │
-              │  (RDS) │    │(Cache+鎖)│     │ Object  │   │ Loki    │
-              └────────┘    └──────────┘     └─────────┘   └─────────┘
-```
-
-### 2.2 部署視圖
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    Kubernetes Cluster (EKS)                   │
-│                                                               │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │ Ingress Tier     │  │ Service Tier    │  │ Data Tier    │ │
-│  │ (Nginx/Kong)     │→ │ (microservices) │→ │ (StatefulSet)│ │
-│  │ HPA: 2-10 pods   │  │ HPA: 3-30 pods  │  │ + PVC        │ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘ │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │  Service Mesh (Istio - optional)                        │ │
-│  │  - mTLS / Traffic Splitting / Canary                    │ │
-│  └─────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────┘
-```
+| 原則 | Phase 1 落地方式 |
+| --- | --- |
+| Spec-first | 需求、容量估算、分階段演進與風險邊界需在本文件與 `AGENTS.md` 內維護；實作前先讓文件與 acceptance criteria 一致。 |
+| Modular Monolith First | Event、Eligibility、Registration、Ticket、Check-in、Notification、Reporting 是同一應用內的模組，不是獨立部署單位。 |
+| Docker Compose First | `services/api/deploy/compose.yaml` 作為本地開發入口；目前啟動 Go app 與 backing services，worker 邊界保留在同一 codebase。 |
+| 12-Factor | 設定走環境變數、服務以 port binding 對外、日誌寫 stdout、狀態放 backing services。 |
+| Database as Source of Truth | 目前 business flow 以 PostgreSQL transaction / unique constraint 為準；Redis 不得成為 committed booking truth。 |
+| Async Where Safe | 核心 booking / ticket / check-in 先完成 DB transaction；notification、report export 等 side effects 透過 PostgreSQL `outbox_events` 與 same-binary worker 非同步處理。 |
+| Evolution by Bottleneck | Phase 2/3 只有在 Registration、Notification、Reporting、Check-in 出現獨立擴容或故障隔離需求時才拆。 |
 
 ---
 
-## 3. 技術選型
+## 3. Phase Roadmap
 
-### 3.1 前端
+| Phase | 架構選擇 | 容量目標 | 重點 |
+| --- | --- | --- | --- |
+| Phase 1 production | Docker Compose + modular monolith + PostgreSQL；Redis / MinIO / Mailhog 作為 attached backing services；same-binary worker 消費 PostgreSQL outbox | 約 36 App RPS、5 Booking TPS、320 concurrent users | 防超賣、離線驗票邊界、通知重試、報表匯出、Playwright/k6 production gate。 |
+| Phase 2 成長期 | 拆出 Registration、Notification、Reporting 等 hot-path / slow I/O 模組；可引入 Kafka 或 managed queue | 約 270 App RPS、35 Booking TPS、2,400 concurrent users | 尖峰報名削峰、通知重試、CQRS read model、報表與 OLTP 隔離。 |
+| Phase 3 高流量 | 強化 Ticket / Check-in、offline sync、資料分區、跨 AZ HA；評估 Kubernetes 或等價 container platform | 約 1,000 App RPS、120 Booking TPS、10,000 concurrent users | 多入口驗票、高可用、DB failover、分區與營運成熟度。 |
+
+---
+
+## 4. Phase 1 系統總覽
+
+Phase 1 的核心執行單位是一個 Go modular monolith app。應用內部以模組分層，外部依賴由 Docker Compose 啟動並透過環境變數注入。現階段 business flow 已實際連到 PostgreSQL；Redis 已作為 attached backing service 啟動但不參與 committed booking truth；MinIO 透過 S3-compatible adapter 支援 report export；Mailhog 已透過同一 binary 的 worker 消費 PostgreSQL `outbox_events` 進行本地通知投遞。
+
+```mermaid
+flowchart LR
+  subgraph USERS["使用者"]
+    EMP["員工 PWA"]
+    ADMIN["福委後台"]
+    STAFF["驗票 PWA"]
+    HRUSER["HR / 系統管理員"]
+  end
+
+  subgraph COMPOSE["Phase 1 目標開發環境"]
+    APP["CETS App\nmodular monolith"]
+    DB[("PostgreSQL\nsource of truth")]
+    OUTBOX[("outbox_events\nasync boundary")]
+    REDIS[("Redis\nattached; optional reservation cache")]
+    OBJ[("MinIO\nS3-compatible object store")]
+    MAIL["Mailhog\nSMTP mock"]
+    WORKER["CETS Worker\nsame binary"]
+  end
+
+  USERS --> APP
+  APP --> DB
+  DB --> OUTBOX
+  APP -.->|optional reservation/read cache| REDIS
+  WORKER -->|report exports| OBJ
+  OUTBOX --> WORKER
+  WORKER --> MAIL
+  WORKER --> DB
+```
+
+### 4.1 Compose 服務規劃
+
+目前已設定的 Compose 服務是 `app`、`worker`、`postgres`、`redis`、`minio` 與 `mailhog`。Phase 1 使用 PostgreSQL `outbox_events` 作為可靠佇列邊界；worker 與 app 使用同一份映像，只透過啟動 command 區分 process type。
+
+| Compose service | 用途 | 12-Factor 對應 | Current connection status |
+| --- | --- | --- | --- |
+| `app` | Go modular monolith；對外 HTTP API 與 React SPA；以 `APP_PORT` port binding 對外。 | Port binding、stateless process、logs to stdout。 | 已啟動並服務 `/`, `/user/events`, `/admin/demo`, `/healthz`, `/readyz` 與 demo API；舊 demo routes 保留為 SPA aliases。 |
+| `postgres` | 報名、票券、核銷、audit log、outbox 的 source of truth。 | Backing service via `DATABASE_URL`。 | 已由 app 透過 `DATABASE_URL` 連線；`/readyz` 以 PostgreSQL connectivity 判定 readiness。 |
+| `redis` | 後續熱門活動名額 reservation、idempotency key、短 TTL cache。 | Backing service via `REDIS_URL`。 | 已 healthcheck 並作為 Compose dependency；Phase 1 committed booking truth 仍只用 PostgreSQL。 |
+| `minio` | 本地 S3-compatible object storage，儲存 report export artifacts；未來可擴充活動圖片、附件與票券檔案。 | Backing service via `OBJECT_STORAGE_*`。 | 已由 worker 的 object-storage adapter boundary 使用；local adapter 指向 MinIO。 |
+| `mailhog` | 本地 mock notification provider，避免開發時誤發真實 Email。 | Backing service via `MAILER_*`。 | 已由 worker 透過 SMTP adapter 投遞通知；suppression、retry、dead-letter 與 crash recovery 由 worker tests / production gate 覆蓋。 |
+| `worker` | 消費 PostgreSQL outbox，建立站內 / Email delivery 記錄、透過 Mailhog 投遞，並生成 report export artifact。 | Process model、one codebase many process types。 | 已在 Compose 中以同一映像啟動；retry、dead-letter、idempotency、suppression 與 report export failure 由 worker tests 覆蓋。 |
+
+### 4.2 Compose 操作約定
+
+- `services/api/deploy/compose.yaml` 作為本地開發與 mentor demo 的主要入口。
+- `services/api/deploy/.env.example` 作為環境變數模板；`services/api/deploy/.env` 可本地使用但不得放入真實 secrets。
+- app 與 worker 使用同一份映像與同一份設定來源，只是啟動 command 不同。
+- app 提供 `health` / `ready` endpoint；Compose 使用 `healthcheck` 與 `depends_on: service_healthy` 等待 PostgreSQL / Redis ready，但 business readiness 目前只驗證 PostgreSQL。
+- 所有服務日誌輸出到 stdout / stderr，由 `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml logs` 觀察。
+- migration、seed、修復腳本以 one-off admin process 執行，例如未來可用 `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml run --rm app <migration command>`。
+
+### 4.3 Phase 1 Connectivity Acceptance
+
+- `GET /readyz` 回 200 代表 app 已透過 `DATABASE_URL` 連到 PostgreSQL；PostgreSQL 停止時 `/readyz` 必須回 503。
+- `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml ps` 代表 Redis、MinIO、Mailhog 已作為 local backing services 啟動；production gate 還必須通過 app/worker behavior tests。
+- Redis 目前是 attached resource 與 future reservation/read cache；MinIO 與 Mailhog 已分別透過 report export object-store adapter 與 worker SMTP adapter 進入 business flow。
+- worker 已在 Compose 中啟動並消費 `outbox_events`；production 完成門檻是證明 crash recovery、preference suppression、dead-letter 與重試不會產生重複投遞。
+
+---
+
+## 5. Application Architecture
+
+Phase 1 不以部署單位切分，而是以 application module 切分。controller 只處理輸入輸出與授權，application service 協調 use case，domain layer 保存商業規則，repository / adapter 包住外部依賴。
+
+```mermaid
+flowchart TB
+  subgraph UI["Controller / API Layer"]
+    EC["EventController"]
+    RC["RegistrationController"]
+    TC["TicketController"]
+    CC["CheckinController"]
+    AC["AdminController"]
+  end
+
+  subgraph APP["Application Service Layer"]
+    ES["EventManagementService"]
+    RS["RegistrationApplicationService"]
+    TS["TicketApplicationService"]
+    CS["CheckinApplicationService"]
+    NS["NotificationApplicationService"]
+    AS["AuditApplicationService"]
+  end
+
+  subgraph DOMAIN["Domain Layer"]
+    EVT["Event Aggregate"]
+    RULE["EligibilityRule"]
+    ALLOC["AllocationStrategy"]
+    REG["Registration"]
+    TICKET["Ticket"]
+    CHECKIN["CheckinPolicy"]
+    AUDIT["AuditLog"]
+  end
+
+  subgraph INFRA["Repository / Adapter Layer"]
+    ER["EventRepository"]
+    RR["RegistrationRepository"]
+    TR["TicketRepository"]
+    HR["HRClient"]
+    CACHE["InventoryCache"]
+    PUB["MessagePublisher"]
+    QR["QRSigner"]
+    STORE["ObjectStorageClient"]
+  end
+
+  UI --> APP
+  APP --> DOMAIN
+  APP --> INFRA
+```
+
+### 5.1 模組職責
+
+| Module | Responsibility | 對應需求 | 測試重點 |
+| --- | --- | --- | --- |
+| Auth & RBAC | 驗證 SSO token、角色授權、session 管理。 | FR-AUTH | 權限矩陣、token 過期、敏感操作拒絕。 |
+| Event Management | 活動 CRUD、狀態機、版本、附件。 | FR-EVENT | 狀態轉移、版本紀錄、附件限制。 |
+| Eligibility | HR 屬性同步、條件組合、即時資格驗證。 | FR-QUAL | AND / OR / NOT 規則、HR 異動影響、0 人警示。 |
+| Registration & Allocation | 報名、取消、候補、先搶先得、抽籤。 | FR-REG | 防超賣、idempotency、waitlist 遞補、抽籤可重現。 |
+| Ticket | QR Code、票券狀態、離線票券顯示。 | FR-TKT | token 簽章、狀態轉移、多張票。 |
+| Check-in | 線上驗票、離線驗票、多裝置同步。 | FR-CHK | 重複掃描、離線衝突、P99 latency。 |
+| Notification | Email、站內訊息、模板與偏好。 | FR-NOTI | outbox 消費、重試、退訂偏好。 |
+| Reporting | 即時 dashboard、匯出、歷史統計。 | FR-REPORT | read model 正確性、匯出權限、大量資料查詢。 |
+| Audit & Admin | 系統參數、audit log 查詢、內部 API。 | FR-ADMIN | immutable log、查詢 filter、API scope。 |
+
+### 5.2 模組邊界規則
+
+- 模組之間透過 application service 或 domain interface 溝通，不直接操作彼此資料表的細節。
+- 外部系統皆以 adapter 包裝：SSO、HR、Email、object storage、queue、Redis。
+- 新增配票模式透過 `AllocationStrategy` 擴充，不改寫 controller 與 repository。
+- 活動、報名、票券、核銷都使用明確 state machine，避免非法狀態轉移。
+- Phase 1 的模組邊界必須足夠清楚，讓 Phase 2 可以拆出獨立 process / service。
+
+---
+
+## 6. Data Model 與一致性策略
+
+### 6.1 核心資料模型
+
+```mermaid
+erDiagram
+  EMPLOYEE ||--o{ REGISTRATION : submits
+  EMPLOYEE ||--o{ TICKET : owns
+  EMPLOYEE ||--o{ AUDIT_LOG : performs
+  EVENT ||--o{ ELIGIBILITY_RULE : defines
+  EVENT ||--o{ REGISTRATION : receives
+  EVENT ||--o{ TICKET : issues
+  REGISTRATION ||--o| TICKET : creates
+  TICKET ||--o{ CHECKIN_RECORD : records
+  OUTBOX_EVENT ||--o{ NOTIFICATION_JOB : publishes
+
+  EMPLOYEE {
+    string employee_id PK
+    string department
+    string site
+    string job_grade
+    string employment_status
+  }
+  EVENT {
+    string event_id PK
+    string status
+    int capacity
+    string allocation_mode
+    datetime registration_start
+    datetime registration_close
+  }
+  ELIGIBILITY_RULE {
+    string rule_id PK
+    string event_id FK
+    string expression_json
+    int version
+  }
+  REGISTRATION {
+    string registration_id PK
+    string event_id FK
+    string employee_id FK
+    string status
+    string idempotency_key UK
+    datetime created_at
+  }
+  TICKET {
+    string ticket_id PK
+    string event_id FK
+    string employee_id FK
+    string status
+    string signed_token_hash
+  }
+  CHECKIN_RECORD {
+    string checkin_id PK
+    string ticket_id FK
+    string device_id
+    string status
+    datetime scanned_at
+  }
+  OUTBOX_EVENT {
+    string outbox_id PK
+    string aggregate_id
+    string event_type
+    string publish_status
+    datetime created_at
+  }
+```
+
+### 6.2 一致性邊界
+
+| Scenario | Strategy | Tradeoff |
+| --- | --- | --- |
+| 同時搶最後一張票 | 目前以 PostgreSQL transaction、event row lock、unique constraint 與 commit 結果防超賣；Redis Lua reservation 是 Phase 2 前可選尖峰優化。 | 目前交易邏輯較簡單且可驗證；高尖峰前可補 Redis TTL 與 DB 失敗補償。 |
+| 使用者連點或網路重送 | `idempotency_key` + unique constraint + 保存請求結果。 | 需要保存 key 與結果一段時間。 |
+| DB 寫入與非同步任務 | 目前同一 transaction 寫入 business data 與 `outbox_events`；same-binary worker 以 DB lease 消費並重試。 | worker 必須 idempotent，因為事件可能重送或被 crash recovery 重新 claim。 |
+| 活動列表剩餘名額 | 目前直接由 PostgreSQL 統計；Redis / cache short TTL 是後續讀取優化。 | 目前一致性較直接；接入 cache 後可能短暫不精準，送出報名前必須重新檢查。 |
+| HR 資格快取 | 查詢可快取，但報名前 double-check。 | HR 異動與快取可能短暫不一致。 |
+| 一票只能核銷一次 | `checkin_record.ticket_id` unique constraint，first commit wins；offline sync 保留 duplicate/conflict rows。 | 離線驗票需同步後做 conflict review。 |
+| 報表 dashboard | 目前查 PostgreSQL 聚合；report export 透過 worker 產生 object-storage artifact。 | 資料量上升後需隔離 OLTP 與 reporting load。 |
+
+---
+
+## 7. Critical Flow
+
+### 7.1 先搶先得報名流程
+
+```mermaid
+sequenceDiagram
+  actor User as 員工
+  participant UI as PWA
+  participant APP as CETS App
+  participant RULE as Eligibility Module
+  participant DB as PostgreSQL
+  participant OUT as Outbox
+  participant REDIS as Redis (optional reservation cache)
+  participant WORKER as Worker
+
+  User->>UI: 點擊報名
+  UI->>APP: POST booking with idempotency key
+  APP->>APP: 驗證 token、RBAC、rate limit
+  APP->>RULE: 即時檢查資格
+  RULE-->>APP: eligible or rejected
+  alt 不符合資格
+    APP-->>UI: 回傳不符原因
+  else 符合資格
+    APP->>DB: lock event, recheck capacity and idempotency
+    alt 有名額
+      DB-->>APP: create registration, ticket, audit, outbox event
+      DB-->>APP: commit success
+      APP-->>UI: 報名成功，回傳 signed ticket
+    else 無名額
+      APP->>DB: create waitlist registration
+      APP-->>UI: 候補中
+    end
+    opt Optional peak hardening
+      APP-->>REDIS: atomic reserve stock before DB transaction
+      OUT-->>WORKER: send notification / generate files
+    end
+  end
+```
+
+目前同步路徑完成授權、資格檢查、PostgreSQL row lock、capacity check、idempotency、registration、ticket、audit 與 outbox row 寫入。Redis reservation gate 不在 committed booking path；如需更高尖峰承載，可把 Redis Lua reservation 放到 DB transaction 前方，但 DB 仍是最終狀態。worker 已運行於同一 binary，透過 PostgreSQL `outbox_events` 進行通知與報表匯出等 side effects。
+
+### 7.2 抽籤流程
+
+抽籤活動不在報名瞬間爭搶 DB lock。Registration module 收集報名意願；admin allocation 以固定 seed、`event_id`、`registration_id` 排序產生可重現結果，並在同一 transaction 寫入 winners、waitlist、ticket、audit 與 outbox。
+
+| Step | 一致性設計 |
+| --- | --- |
+| 收集報名 | 對 `(event_id, employee_id)` 建 unique constraint，避免同員工重複報名。 |
+| 抽籤輸入 | 只讀取截止時間前、狀態為 `received` 的 registration。 |
+| 隨機性 | seed 由 `event_id`、公開批次 ID 與系統密鑰產生，寫入 audit log。 |
+| 結果寫入 | winners、losers、waitlist 在同一批次交易中更新，並寫入 outbox。 |
+| 通知 | outbox worker 支援重試、dead-letter 與 delivery 去重；通知 provider 可由 Mailhog 換成正式 SMTP。 |
+
+### 7.3 線上與離線驗票流程
+
+```mermaid
+sequenceDiagram
+  actor Staff as 驗票員
+  participant PWA as Check-in PWA
+  participant APP as CETS App
+  participant DB as PostgreSQL
+  participant OUT as Outbox
+  participant CACHE as Token Cache (future optimization)
+
+  Staff->>PWA: 掃描 QR Code
+  alt Online
+    PWA->>APP: redeem signed token
+    APP->>DB: verify signed token hash and lock ticket
+    APP->>DB: insert checkin_record with unique ticket_id
+    alt first successful scan
+      DB-->>APP: commit success
+      APP->>OUT: write checkin event
+      APP-->>PWA: success with visual and sound feedback
+    else duplicate scan
+      DB-->>APP: unique constraint violation
+      APP-->>PWA: failed with first redeemed time
+    end
+    opt Next Phase 1 hardening
+      APP-->>CACHE: short TTL token status lookup and redeemed marker
+    end
+  else Offline
+    PWA->>PWA: validate signed manifest and token locally
+    PWA->>PWA: mark local redeemed record
+    PWA-->>Staff: provisional success
+    PWA->>APP: sync local records after reconnect
+    APP->>DB: insert checkin_record
+    APP-->>PWA: accepted or conflict
+  end
+```
+
+線上模式目前直接以 PostgreSQL ticket lookup、row lock 與 `checkin_record.ticket_id` unique constraint 保證一票只成功核銷一次。Token cache 是未來查詢加速，不得取代 DB unique constraint。離線模式下，PWA 的成功狀態是 provisional，恢復連線後由伺服器判斷 first commit wins；若兩台裝置離線掃到同一張票，後同步者會變成 conflict，系統保留 `device_id`、`scanned_at` 與 `staff_id` 供追查。
+
+---
+
+## 8. Technology Choices
+
+### 8.1 Phase 1 技術選型
+
 | 類別 | 選擇 | 理由 |
-|------|------|------|
-| Framework | **Next.js 14 (App Router)** | SSR / SSG / RSC、SEO 友善、Vercel 部署簡易 |
-| UI 函式庫 | **shadcn/ui + Radix + TailwindCSS** | 可客製、可訪問性 (a11y) 佳 |
-| 狀態管理 | **Zustand + TanStack Query** | 輕量、Server state 與 Client state 分離 |
-| 表單 | **React Hook Form + Zod** | 型別安全、效能佳 |
-| i18n | **next-intl** | 為全球化做準備 |
-| Build | **Turbopack** | 高速建置 |
+| --- | --- | --- |
+| Runtime | Go modular monolith | 單一靜態 binary、內建 HTTP server、清楚 transaction 邊界，適合 Phase 1 production 與後續水平擴充。 |
+| Frontend | Responsive Web + PWA | 不做原生 app；支援離線票券顯示與離線驗票。 |
+| Server-side TypeScript / NestJS | Not adopted in Phase 1 | 目前 production 缺口是 Go/PostgreSQL correctness、worker reliability、12-Factor config 與 gates；新增 NestJS backend 或 BFF 會增加 runtime、auth/session、Docker 與 CI surface，不能降低 Phase 1 風險。 |
+| Database | PostgreSQL | 目前已連接 app，負責交易、unique constraint、row locking、audit log、outbox 與關聯查詢。 |
+| Cache / Reservation | Redis | Compose 已啟動並 healthchecked；名額 reservation、idempotency key、短 TTL token cache 是 optional optimization，PostgreSQL 仍是 final truth。 |
+| Object Storage | MinIO in Compose，未來可換 S3 compatible storage | Report export 已透過 S3-compatible adapter boundary 寫入 object storage；活動圖片、附件、票券 PDF 可沿用同一 adapter。 |
+| Queue | PostgreSQL outbox；未來可換 Redis stream 或 lightweight broker | Same-binary worker 已消費 `outbox_events`；如改外部 queue，必須保留 DB outbox 或等價可靠交付語義。 |
+| Local Dev | Docker Compose | 一鍵啟動 app 與 backing services，降低 mentor demo 與團隊 onboarding 成本。 |
+| Observability | JSON logs + basic metrics + trace_id | Phase 1 先能排查報名、票券、核銷流程；Phase 2/3 再導入完整 stack。 |
 
-### 3.2 後端
-| 類別 | 選擇 | 理由 |
-|------|------|------|
-| 主要語言 | **TypeScript (NestJS)** | 與前端共享型別、生態完整 |
-| 高併發服務 | **Go (Gin/Fiber)** | Booking Service 需高吞吐 |
-| API 通訊 | **gRPC (內部) + REST (外部)** | 型別安全、效能 |
-| ORM | **Prisma (TS) / GORM (Go)** | 類型安全 migration |
-| Schema | **Protobuf + OpenAPI 3.1** | 契約先行 |
+### 8.2 Cloud-agnostic 對應
 
-### 3.3 資料層
-| 類別 | 選擇 | 理由 |
-|------|------|------|
-| 主資料庫 | **PostgreSQL 16** | ACID、JSONB、Row Locking 強 |
-| 快取 / 鎖 | **Redis 7** | 分散式鎖 (Redlock)、快取 |
-| 訊息佇列 | **Kafka** | 高吞吐、訊息保留、事件溯源 |
-| Object Storage | **MinIO** (本地) / **S3** (生產) | 票券 PDF、活動圖片 |
-| Search (選用) | **OpenSearch** | 活動搜尋 |
+Phase 1 文件不把任何雲供應商作為必備前提。Compose 中的 backing services 未來可用等價託管服務替換；目前 app 已透過 `DATABASE_URL` 連到 PostgreSQL，worker 透過 `MAILER_*` 與 `OBJECT_STORAGE_*` 連到 Mailhog / MinIO，Redis 仍作為 optional reservation/read-cache resource。
 
-### 3.4 基礎建設
-| 類別 | 選擇 |
-|------|------|
-| 本地開發 | **Docker Compose** (Postgres / Redis / Kafka / MinIO) |
-| 雲端 (生產) | **AWS** (EKS / RDS / ElastiCache / MSK / S3 / CloudFront) |
-| IaC | **Terraform + Terragrunt** |
-| K8s 部署 | **Helm + Kustomize** |
-| GitOps | **ArgoCD** |
-| Container Registry | **GHCR** (CI / 開發) / **ECR** (生產) |
-| Secrets | **`.env` 檔案** (本地) / **AWS Secrets Manager** (生產) |
-
-### 3.5 可觀測性
-| 類別 | 選擇 |
-|------|------|
-| Metrics | **Prometheus + Grafana** |
-| Logs | **Loki (or ELK)** |
-| Traces | **OpenTelemetry + Tempo / Jaeger** |
-| APM | **Grafana OSS** |
-| Alert | **Alertmanager** |
-
-### 3.6 開發工具
-| 類別 | 選擇 |
-|------|------|
-| Monorepo | **Turborepo + pnpm workspaces** |
-| Linter | **ESLint + Prettier + Biome** |
-| Test | **Vitest + Playwright + k6 + Testcontainers** |
-| Commit Lint | **commitlint + husky** |
-| Docs | **MkDocs / Docusaurus (optional)** |
+| 本地 Compose | 未來託管服務範例 | 替換方式 |
+| --- | --- | --- |
+| PostgreSQL container | Managed PostgreSQL / RDS / Cloud SQL / Azure Database | 改 `DATABASE_URL`。 |
+| Redis container | Managed Redis / ElastiCache / Memorystore | 啟用 reservation/read-cache adapter 時改 `REDIS_URL`。 |
+| MinIO | S3 compatible object storage | 改 `OBJECT_STORAGE_ENDPOINT`、bucket、credential。 |
+| PostgreSQL outbox / future queue | Managed queue、Kafka、RabbitMQ | Phase 1 使用 DB outbox；未來接入 queue 時改 `QUEUE_URL` 與 message adapter。 |
+| Mail mock | SMTP / Email provider | 改 `MAILER_*`。 |
 
 ---
 
-## 4. Monorepo 與模組劃分
+## 9. 12-Factor 對應
 
-### 4.1 為何選擇 Monorepo
-- 共享型別 (Protobuf / TS types) 避免漂移
-- 原子化跨服務變更 (例: API contract 同時更新前後端)
-- 統一的 lint / test / CI 配置
-- 一鍵跑全套整合測試
+本文件直接列出 Phase 1 需要遵守的 12-Factor 摘要，不依賴其他文件。
 
-### 4.2 工具鏈
-- **pnpm workspaces** — 套件管理、節省磁碟
-- **Turborepo** — 增量建置、平行執行、遠端快取
-- **Changesets** — 版本管理與 changelog
-
-### 4.3 目錄職責
-
-| 路徑 | 職責 |
-|------|------|
-| `apps/` | 前端 / End-user 應用 |
-| `services/` | 後端微服務 (各自可獨立部署) |
-| `packages/` | 跨應用共用程式碼 (型別、UI、設定) |
-| `infra/` | IaC (Terraform / Helm / K8s) |
-| `docs/` | 架構文件、ADR、API 規格 |
-| `tools/` | 開發者腳本、CLI |
+| Factor | Phase 1 規範 |
+| --- | --- |
+| Codebase | 一個 repo 管理同一套 app code；同一 codebase 可部署到 local、staging、production。 |
+| Dependencies | 依賴必須宣告在 package manifest / lockfile；容器映像不得依賴開發者本機套件。 |
+| Config | 所有會因環境改變的設定走 env vars；`services/api/deploy/.env.example` 只放範例值，不放 secrets。 |
+| Backing services | 目前 DB 以 `DATABASE_URL` 注入且已連接；worker 使用 `MAILER_*` 與 `OBJECT_STORAGE_*`；Redis / queue URL 是 attached resource 與 future cache/queue contract。 |
+| Build / Release / Run | build 產生映像；release = image + env；run 階段只啟動 process，不重新 build。 |
+| Processes | app 與 worker 都是 stateless process。session、票券、檔案、outbox / queue 狀態都必須放 backing services。 |
+| Port binding | app 以 `APP_PORT` 綁定 HTTP port；前方可由 Compose port mapping 或未來 routing layer 導流。 |
+| Concurrency | app / worker 可透過 process 數量水平擴充；Phase 1 先以 Compose 模擬。 |
+| Disposability | process 要能快速啟動、graceful shutdown，避免中斷 in-flight booking / check-in。 |
+| Dev/prod parity | 本地與未來環境使用相同類型 backing services，不以 SQLite 或 in-memory cache 取代 PostgreSQL / Redis。 |
+| Logs | 應用程式輸出 JSON structured logs 到 stdout / stderr，不自行管理 log file。 |
+| Admin processes | migration、seed、修復資料與抽籤批次用 one-off command，在同一 codebase 與 env 下執行。 |
 
 ---
 
-## 5. 微服務拆分與職責
+## 10. Non-Functional Requirements
 
-採用 **領域驅動設計 (DDD)** 拆分服務，每個服務擁有獨立資料庫。
+### 10.1 Availability and Fault Tolerance
 
-### 5.1 服務矩陣
+| ID | Requirement | 架構含意 |
+| --- | --- | --- |
+| NFR-HA-01 | 一般使用端 uptime SLO ≥ 99.9%。 | Phase 1 以 stateless app 為前提；Phase 3 再以多 instance / 多 AZ 實作。 |
+| NFR-HA-02 | 驗票與核銷端點 uptime SLO ≥ 99.95%。 | Check-in 流程支援離線降級；Phase 3 可獨立擴容。 |
+| NFR-HA-03 | RTO ≤ 30 分鐘，RPO ≤ 5 分鐘。 | DB 備份、PITR、restore procedure 與演練需在 Phase 2/3 補齊。 |
+| NFR-HA-04 | 非核心功能失效不得拖垮報名與驗票。 | 核心 booking / check-in 不依賴 Mailhog / MinIO / worker 成功；通知與報表匯出失敗必須 retry 或 dead-letter。 |
 
-| 服務 | 領域 | 資料 | 對外 API | 訂閱事件 | 發布事件 |
-|------|------|------|----------|----------|----------|
-| **api-gateway** | BFF / 路由 | — | REST | — | — |
-| **event-service** | 活動管理 | events, rules | gRPC, REST | — | `EventCreated`, `EventUpdated` |
-| **booking-service** | 訂票核心 | bookings, locks | gRPC, REST | `EventCreated` | `BookingRequested`, `BookingConfirmed` |
-| **ticket-service** | 票券核銷 | tickets, validations | gRPC, REST | `BookingConfirmed` | `TicketIssued`, `TicketValidated` |
-| **notification-service** | 通知 | (無持久化) | — | `BookingConfirmed`, `TicketIssued` | — |
-| **analytics-service** | 報表 (CQRS read model) | analytics_db | REST | All domain events | — |
+### 10.2 Scalability
 
-### 5.2 服務邊界規則
-- ❌ 服務間 **不可** 直接存取對方資料庫
-- ✅ 同步呼叫用 **gRPC** (內部) 或 **REST** (外部)
-- ✅ 跨服務狀態變更走 **事件總線** (Kafka)
-- ✅ 每個服務自帶 `health`, `ready`, `metrics` endpoint
+| ID | Requirement | 架構含意 |
+| --- | --- | --- |
+| NFR-SCALE-01 | Phase 3 支援 90,000 員工規模，熱門活動約 54,000 人活躍。 | 先保留 stateless process、cache、queue、read model 與資料分區演進路徑。 |
+| NFR-SCALE-02 | Phase 3 設計尖峰約 1,000 App RPS、120 Booking TPS、10,000 concurrent users。 | 熱門讀取未來走 cache；核心訂票目前用 PostgreSQL confirm，Redis reservation 是 optional peak hardening。 |
+| NFR-SCALE-03 | 報名開放瞬間可吸收重試與刷新流量。 | Rate limiting、idempotency key、queue backlog 監控、必要時拆 Registration。 |
+| NFR-SCALE-04 | Reporting 查詢不得影響 OLTP 訂票交易。 | Phase 2 起使用 read replica 或 analytics read model。 |
 
----
+### 10.3 Performance
 
-## 6. 資料模型與一致性策略
-
-### 6.1 核心實體 (簡化 ERD)
-
-```
-┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│   Event     │ 1───* │ EventRule   │       │   Booking   │
-│─────────────│       │─────────────│       │─────────────│
-│ id (UUID)   │       │ id          │       │ id          │
-│ title       │       │ event_id    │       │ event_id    │
-│ description │       │ type        │       │ employee_id │
-│ start_at    │       │ value       │       │ status      │
-│ end_at      │       │ (region/    │       │ (PENDING/   │
-│ capacity    │       │  quota/...)│       │  APPROVED/  │
-│ status      │       └─────────────┘       │  REJECTED)  │
-│ created_by  │                              │ created_at  │
-└──────┬──────┘                              └──────┬──────┘
-       │                                            │
-       │ 1                                        1 │
-       │                                            │
-       └────────────* ┌─────────────┐ *─────────────┘
-                      │   Ticket    │
-                      │─────────────│
-                      │ id          │
-                      │ booking_id  │
-                      │ qr_code     │
-                      │ issued_at   │
-                      │ validated_at│
-                      │ status      │
-                      └─────────────┘
-```
-
-### 6.2 一致性策略
-
-| 場景 | 策略 |
-|------|------|
-| 單一服務內 | **強一致 (ACID)** — Postgres transaction |
-| 跨服務 | **最終一致 (Eventual Consistency)** — 透過 Outbox Pattern + Kafka |
-| 防止超賣 | **悲觀鎖 (`SELECT FOR UPDATE`) + Redis 分散式鎖雙保險** |
-| 重複請求 | **Idempotency Key** (Header + Redis 24h TTL) |
-| Saga | **Choreography-based** (booking → ticket → notification) |
-
-### 6.3 Outbox Pattern
-
-```
-┌─ Tx Begin ─────────────────────────┐
-│  1. UPDATE booking SET status=...   │
-│  2. INSERT INTO outbox (event)      │
-└─ Tx Commit ────────────────────────┘
-                │
-                ▼
-        Outbox Relay (CDC / Debezium)
-                │
-                ▼
-            Kafka Topic
-```
-保證資料庫變更與事件發布的原子性。
+| Operation | P99 Latency Target | 說明 |
+| --- | --- | --- |
+| 活動列表瀏覽 | < 200ms | Cache 活動列表與靜態資源；未來可加 CDN / read replica。 |
+| 資格查詢 | < 300ms | HR 屬性可快取；報名前必須 double-check。 |
+| 報名請求 | < 500ms | 目前同步路徑做授權、資格、PostgreSQL capacity check、idempotency 與 DB transaction；Redis reservation 可作為未來尖峰保護。 |
+| 現場核銷 | < 200ms | 目前線上走 signed token hash + DB unique constraint；token cache 與離線 manifest 是後續 hardening。 |
+| 票券生成 | < 2s | 目前同步產生 signed ticket / QR payload；PDF / 檔案化輸出可交給 worker 與 object storage adapter。 |
 
 ---
 
-## 7. Hot Event 訂票核心設計
+## 11. Capacity Estimate
 
-> 對應 Advanced Requirement 之效能、可靠性、正確性挑戰。
+本系統日常流量偏低，真正瓶頸是熱門活動前 12 分鐘的集中流量。以下估算採用本文件的三階段設計模型。
 
-### 7.1 問題場景
-熱門活動開放搶票時，可能發生：
-- **超賣** — 多執行緒同時扣減庫存
-- **慢查詢** — 大量併發壓垮資料庫
-- **不公平** — 重試風暴導致先到者反而失敗
+| Phase | Hot Active Users | Raw App RPS | Design App RPS | Raw Booking TPS | Design Booking TPS | Concurrent Target |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Phase 1 | 2,000 | `2000*8*0.8/720 = 17.8` | 36 RPS | `2000*1*0.8/720 = 2.2` | 5 TPS | 320 |
+| Phase 2 | 15,000 | `15000*8*0.8/720 = 133.3` | 270 RPS | `15000*1*0.8/720 = 16.7` | 35 TPS | 2,400 |
+| Phase 3 | 54,000 | `54000*8*0.8/720 = 480` | 960-1,000 RPS | `54000*1*0.8/720 = 60` | 120 TPS | 10,000 |
 
-### 7.2 解決方案：分層庫存控制
-
-```
-[使用者] ──► [Rate Limiter (per user)] ──► [Token Bucket]
-                                              │
-                                              ▼
-                              [Redis Pre-check 庫存]
-                              (DECR if > 0, atomic Lua script)
-                                              │
-                                       ✓     OK    ✗ Fail-fast
-                                              ▼
-                              [Kafka: BookingRequested]
-                                              │
-                                              ▼
-                              [Booking Worker (consumer)]
-                                              │
-                                              ▼
-                              ┌───────────────────────────┐
-                              │ Postgres Tx               │
-                              │  SELECT ... FOR UPDATE    │
-                              │  INSERT booking           │
-                              │  UPDATE event capacity    │
-                              │  INSERT outbox            │
-                              └───────────────────────────┘
-                                              │
-                                              ▼
-                              [Kafka: BookingConfirmed]
-```
-
-### 7.3 關鍵技術
-- **Redis Atomic Lua** — 庫存預扣，毫秒級回應
-- **訊息佇列削峰** — Kafka 緩衝瞬間流量
-- **分散式鎖 (Redlock)** — 防止 race condition
-- **DB 樂觀鎖 + version 欄位** — 最終一致性檢查
-- **冪等性 (Idempotency)** — `client_request_id` 唯一索引
-- **Circuit Breaker** — 上游故障時快速失敗
-
-### 7.4 效能目標
-- 單一熱門活動：**5,000 RPS、p99 < 500ms**
-- 超賣發生率：**0%** (透過 DB constraint 兜底)
+| 情境 | Read / Write Ratio | 主要瓶頸 | 架構回應 |
+| --- | --- | --- | --- |
+| 日常瀏覽 | 約 95:5 | 活動列表與圖片載入 | 目前查 PostgreSQL；Cache、object storage media、未來 CDN 是 future evolution。 |
+| 熱門報名前 12 分鐘 | 約 80:20，但 writes 集中在同一活動名額 | 庫存扣減、DB row lock、重試風暴 | 目前 PostgreSQL transaction confirm + idempotency key；Redis reservation、rate limiting 是 optional peak hardening。 |
+| 抽籤執行 | 約 30:70 | 批次排序、結果寫入、通知事件 | deterministic seed allocation 已寫入 tickets/audit/outbox；worker 負責通知 side effects。 |
+| 現場驗票 | 約 40:60 | 單票 exactly-once 核銷、多裝置同步 | 目前 DB unique constraint 與 offline sync conflict rows；short TTL token cache 是 future optimization。 |
+| 報表分析 | 約 99:1 | 大範圍掃描與聚合 | Phase 2 起使用 read model 或 analytics store。 |
 
 ---
 
-## 8. 事件驅動 (Event-Driven) 設計
+## 12. Testing Strategy
 
-### 8.1 事件目錄
+| 類別 | 測試項目 | 對應風險 |
+| --- | --- | --- |
+| Unit Test | Eligibility rule parser、AllocationStrategy、Ticket state machine、CheckinPolicy。 | 規則錯誤、非法狀態轉移。 |
+| Integration Test | Registration + PostgreSQL transaction + outbox row、worker retry/idempotency、offline sync、report export。 | 超賣、dual-write、重複通知。 |
+| E2E Test | 員工瀏覽活動、報名、取得票券；福委建立活動與資格；驗票員核銷；HR 查報表。 | Demo flow 不完整、角色流程斷裂。 |
+| Load Test | Phase 1 36 RPS / 5 TPS；Phase 2 270 RPS / 35 TPS；Phase 3 1,000 RPS / 120 TPS。 | 熱門活動 latency、lock wait、queue lag。 |
+| Failure Test | 目前驗證 DB unavailable / `/readyz` 503；後續接入 Redis / notification / read model 後，再測 Redis unavailable、notification provider down、read model lag。 | 確認 graceful degradation 與 recovery。 |
+| Security Test | RBAC matrix、JWT expiry、CSRF、SQL injection、PII masking、QR token tampering。 | 權限錯誤、資料外洩、票券偽造。 |
+| Offline Test | 無網路票券顯示、離線驗票、多裝置衝突同步。 | 現場入場失敗與重複核銷。 |
+| Observability Drill | 觸發 P99 超標、queue lag、error rate alert。 | 告警是否對應使用者影響，而非只看 CPU。 |
 
-```yaml
-domain.event.v1:
-  - EventCreated
-  - EventUpdated
-  - EventCancelled
-  - BookingRequested
-  - BookingConfirmed
-  - BookingRejected
-  - TicketIssued
-  - TicketValidated
-  - TicketExpired
-```
+### 12.1 Production Gate Test Harness
 
-### 8.2 主題設計
-- **Topic 命名**：`<domain>.<entity>.<event>` (e.g. `booking.booking.confirmed`)
-- **Partitioning**：以 `event_id` 為 key 確保同一活動事件順序
-- **Schema Registry**：Avro / Protobuf，向前/向後相容
-- **DLQ (Dead Letter Queue)**：處理失敗訊息隔離
-
-### 8.3 訂票流程 Sequence
-
-```
-員工         API GW       Booking      Redis      Kafka       Ticket      Notif
- │             │             │           │          │           │           │
- │  POST /book │             │           │          │           │           │
- ├────────────►│             │           │          │           │           │
- │             ├────────────►│           │          │           │           │
- │             │             ├──pre-chk──►          │           │           │
- │             │             │◄──ok──────│          │           │           │
- │             │             ├──publish─────────────►           │           │
- │             │             │           │          │           │           │
- │             │◄── 202 ─────│           │          │           │           │
- │◄─ accepted ─│             │           │          │           │           │
- │             │             │           │          ├──consume─►│           │
- │             │             │           │          │           ├─issue tkt │
- │             │             │           │          │◄─publish──│           │
- │             │             │           │          │           │           │
- │             │             │           │          ├──consume──────────────►
- │             │             │           │          │           │           │
- │◄────────────  Email / IM 通知 ────────────────────────────────────────────│
-```
+- Playwright 角色門檻：`apps/web/e2e` 覆蓋核心路由（員工、活動主辦、驗票、HR/系統管理）並在 Chromium 下以 375 / 768 / 1024 / 1440 viewport 執行水平溢出檢查。
+- k6 門檻：`k6/phase1-production-gate.js` 對 health/ready、login、event browse/detail、book/cancel、ticket detail、check-in、offline sync、reports/export、audit 與 critical browser paths 進行 smoke + perf 驗證。
+- CI 必做步驟：安裝 Chromium 瀏覽器、執行 `pnpm --filter cets-web test:e2e`，以及啟動 API 後以 `grafana/k6` 執行 production gate 腳本。
 
 ---
 
-## 9. 雲端基礎建設與部署
+## 13. Observability and Operations
 
-> **本章節描述生產環境架構。** 本地開發請使用 `infra/docker/docker-compose.dev.yml` 啟動所有依賴服務，無需任何雲端資源。
+### 13.1 Phase 1 可觀測性
 
-### 9.1 雲資源 (Terraform 管理)
+| 類別 | 指標 / 紀錄 |
+| --- | --- |
+| Logs | JSON structured logs，包含 `trace_id`、masked `user_id`、`event_id`、`action`、`status`，不記錄完整 PII。 |
+| Metrics | 目前需觀察 RPS、latency、error rate、DB lock wait、剩餘票數、核銷成功率；queue lag、cache hit rate 在 adapter / worker 接入後補上。 |
+| Traces | 目前先用 logs 串接報名、票券、核銷 flow；抽籤、通知、離線同步、worker flow 接入後再補完整 trace。 |
+| Alerts | 目前至少覆蓋 error rate、P99 超標、DB lock wait、票數為 0 仍有成功扣票事件；queue lag 在 worker 接入後補上。 |
 
-```
-┌────────────────────────────────────────────────┐
-│                  AWS Account                    │
-│                                                 │
-│  ┌─ VPC (10.0.0.0/16) ────────────────────┐   │
-│  │   ┌─ Public Subnet (3 AZ) ─┐            │   │
-│  │   │  ALB / NAT             │            │   │
-│  │   └────────────────────────┘            │   │
-│  │   ┌─ Private Subnet (3 AZ) ┐            │   │
-│  │   │  EKS Nodes / Lambda    │            │   │
-│  │   └────────────────────────┘            │   │
-│  │   ┌─ Data Subnet (3 AZ) ───┐            │   │
-│  │   │  RDS / ElastiCache /MSK│            │   │
-│  │   └────────────────────────┘            │   │
-│  └──────────────────────────────────────────┘   │
-│                                                  │
-│  CloudFront ─► S3 (static) / ALB (api)          │
-│  Route53 ─► DNS                                 │
-│  WAF ─► Shield (DDoS)                           │
-└─────────────────────────────────────────────────┘
-```
+### 13.2 Failure Handling
 
-### 9.2 K8s 工作負載
-- **Namespace 隔離**：`dev`, `staging`, `prod`
-- **HPA (Horizontal Pod Autoscaler)**：依 CPU + 自訂指標 (RPS) 擴縮
-- **PDB (Pod Disruption Budget)**：保證最低可用副本數
-- **NetworkPolicy**：服務間最小權限通訊
-- **Resource Limits**：所有 pod 必須宣告 requests/limits
-
-### 9.3 環境策略
-
-| 環境 | 用途 | 部署方式 | 資料 |
-|------|------|----------|------|
-| **dev** | 開發測試 | 自動 (push to feature) | Mock |
-| **staging** | 預生產 | 自動 (merge to main) | 匿名化 prod 資料 |
-| **prod** | 正式 | 手動 approval | 真實 |
+| Failure Mode | 影響 | Handling |
+| --- | --- | --- |
+| app process 掛掉 | 少量請求失敗或重試 | app stateless；可重啟 process；idempotency key 防止重複扣票。 |
+| Notification provider 變慢 | 通知延遲 | Worker retry、attempt cap、dead-letter；核心 booking / check-in 已在 DB transaction 完成。 |
+| Redis reservation 成功但 DB 寫入失敗 | 名額暫時被扣住 | Redis reservation 未接入 committed booking path；若未來接入，需用 reservation TTL + compensation worker 回補 Redis，DB 是最終狀態。 |
+| DB primary 不可寫 | 核心交易不可寫 | 查詢可進入 read-only degradation；恢復依 RTO ≤ 30 分鐘設計。 |
+| 現場網路中斷 | 驗票無法線上確認 | Check-in PWA 使用預下載 signed manifest 離線核銷，恢復後同步衝突。 |
+| Queue backlog 過高 | 通知、票券生成、報表延遲 | 目前以 PostgreSQL outbox + same-binary worker 處理；需告警並增加 worker process，核心報名流程仍可完成。 |
 
 ---
 
-## 10. CI/CD 流水線
+## 14. Security and Privacy
 
-### 10.1 CI (PR Pipeline)
+| 領域 | 控制 |
+| --- | --- |
+| Identity | 使用企業 SSO，支援 OIDC / SAML；系統不儲存員工密碼。 |
+| Authorization | RBAC 至少包含員工、活動主辦、驗票員、系統管理員 / HR。 |
+| Sensitive Actions | 活動異動、資格異動、撤銷票券、報表匯出寫入 immutable audit log。 |
+| PII | Logs mask 員工識別資料；報表匯出需權限控管與 audit log。 |
+| QR Code | 使用 signed token 或短期 token；伺服器以 token hash 驗證與核銷。 |
+| API Protection | Rate limiting、CSRF 防護、輸入驗證、idempotency key。 |
+| Secrets | 本地只用 `.env` 測試值；正式 secrets 由部署環境注入，不寫入 repo。 |
 
-```yaml
-on: pull_request
-jobs:
-  - lint            # ESLint + Prettier
-  - typecheck       # tsc --noEmit
-  - unit-test       # Vitest (with coverage gate ≥ 80%)
-  - integration     # Testcontainers (real Postgres/Redis)
-  - sast            # Semgrep / CodeQL
-  - sca             # Snyk (dependency)
-  - secret-scan     # Gitleaks
-  - build-image     # Docker build + Trivy scan
-  - contract-test   # Pact verification
-```
-
-> **PR Gate**：所有 job 通過 + 1 reviewer approval + commit 簽署 (DCO/GPG)
-
-### 10.2 CD (Merge Pipeline — GitOps)
-
-```
-main branch ─┐
-             ├─► Build & tag image (semver)
-             ├─► Push to GHCR
-             ├─► Update Helm values in `infra/` repo
-             ├─► ArgoCD detects diff ─► sync to cluster
-             └─► Smoke test (synthetic monitoring)
-                       │
-                       ▼
-             [Staging E2E] ─► [Manual Approval] ─► [Prod Canary 10% → 50% → 100%]
-```
-
-### 10.3 部署策略
-- **Canary Release** — Argo Rollouts，依 metrics 自動推進
-- **Feature Flags** — Unleash (OSS)，與部署解耦
-- **Blue-Green** — 重大變更使用
-- **回滾** — `helm rollback` 或 ArgoCD UI 一鍵
+Phase 1 uses `/api/v1/auth/login` as a local SSO simulation that issues a server-signed `HttpOnly` `cets_session` cookie. Legacy role headers remain only for `APP_ENV=local` / `demo` / `test` compatibility; production rejects header-only auth and must use non-demo token and auth session secrets with secure cookies.
 
 ---
 
-## 11. 可觀測性 (Observability)
+## 15. Phase 2/3 Evolution
 
-### 11.1 三大支柱
+### 15.1 Phase 2: Split Hot Paths
 
-| 支柱 | 工具 | 範例 |
-|------|------|------|
-| **Metrics** | Prometheus | RPS, p50/p95/p99 延遲, 錯誤率, 庫存量 |
-| **Logs** | Loki | 結構化 JSON, trace_id 關聯 |
-| **Traces** | Tempo + OpenTelemetry | 跨服務呼叫鏈、慢查詢 |
+當 Phase 1 modular monolith 已完成核心流程，且壓測或實際使用顯示瓶頸集中在特定模組時，再拆出獨立部署單位。
 
-### 11.2 RED Method (服務健康)
-- **R**ate — 每秒請求數
-- **E**rror — 錯誤率
-- **D**uration — 延遲分佈
+| 拆分候選 | 拆分原因 | Tradeoff |
+| --- | --- | --- |
+| Registration Service | 報名與配票是尖峰寫入熱點，需要獨立 scale-out，降低 DB hot-row lock contention。 | 需要更嚴格的 tracing、outbox、補償與服務間契約。 |
+| Notification Service | Email / 站內通知依賴外部 I/O，若同步處理會拖慢報名。 | 通知變成 eventual consistency，需要 retry 與 dead-letter。 |
+| Reporting Service | 報表聚合會掃描大量資料，可能影響 OLTP。 | 需要 read model / analytics store，資料可能延遲。 |
 
-### 11.3 USE Method (資源)
-- **U**tilization, **S**aturation, **E**rrors — CPU / Memory / Disk / Network
+Phase 2 可以評估 Kafka 或 managed queue，但目標是處理吞吐、重試、事件保留與消費者隔離，不是為了技術展示而導入。
 
-### 11.4 SLO 與告警
+### 15.2 Phase 3: HA, Offline Check-in and Container Platform
 
-| 服務 | SLI | SLO | 錯誤預算 |
-|------|-----|-----|---------|
-| api-gateway | 成功率 | 99.9% | 0.1% / 30d |
-| booking-service | p95 延遲 | < 300ms | — |
-| ticket-service | 核銷成功率 | 99.95% | 0.05% / 30d |
-
-### 11.5 Dashboards
-- **Service Dashboard** — 每服務一個 (RED + 業務指標)
-- **Business Dashboard** — 訂票數、轉換率、活動熱度
-- **Infra Dashboard** — K8s 節點、Pod 狀態、資料庫連線
+| 能力 | 設計 |
+| --- | --- |
+| 多入口驗票 | Check-in 可獨立擴容，`ticket_id` unique constraint，Redis short TTL cache 加速重複掃描判斷。 |
+| 離線驗票 | 驗票 PWA 下載 signed ticket manifest，離線先本機核銷，恢復連線後同步 Check-inRecord。 |
+| 資料分區 | 大表依 `event_id` 或年度分區；audit log / check-in log 依 retention policy 冷熱分層。 |
+| 高可用 | 服務跨 AZ，DB primary + standby / read replica，queue 與 Redis 採 managed HA。 |
+| Container platform | 當服務數與部署頻率上升，再評估 Kubernetes 或等價平台，導入 HPA、rolling deployment、health probe。 |
+| Release strategy | DB migration backward compatible、feature flag、blue-green / rolling deployment、rollback procedure。 |
 
 ---
 
-## 12. 安全性 (Security)
+## 16. Agile and Delivery Plan
 
-### 12.1 縱深防禦
-
-| 層 | 控制 |
-|---|------|
-| **Edge** | CloudFront + WAF + Shield (DDoS) |
-| **Network** | VPC、Private Subnet、Security Group、NetworkPolicy |
-| **Identity** | OIDC SSO、JWT (短效 + refresh)、MFA for admin |
-| **Authz** | RBAC (Employee / Admin / HR)、ABAC (region-based 規則) |
-| **Data** | At-rest encryption (KMS)、In-transit (TLS 1.3) |
-| **Secret** | AWS Secrets Manager + External Secrets Operator，**禁止 hardcode** |
-| **Code** | SAST (Semgrep)、DAST (ZAP)、SCA (Snyk)、Container scan (Trivy) |
-| **Runtime** | Falco / GuardDuty (異常行為偵測) |
-| **Audit** | 所有寫操作記錄 audit log，保留 1 年 |
-
-### 12.2 OWASP Top 10 對應
-- ✅ Broken Access Control — 中央 Policy Decision Point
-- ✅ Cryptographic Failures — TLS、KMS
-- ✅ Injection — Prepared Statements、輸入驗證 (Zod)
-- ✅ Insecure Design — Threat Modeling 每個 Cycle
-- ✅ Security Misconfig — IaC scan (Checkov)、CIS Benchmark
-- ✅ Vulnerable Components — Renovate / Dependabot 自動 PR
-- ✅ Auth Failures — 短效 token、refresh rotation
-- ✅ Software & Data Integrity — Image signing (Cosign)、SBOM
-- ✅ Logging & Monitoring Failures — 中央化 logging + alerting
-- ✅ SSRF — 出站防火牆 + 白名單
-
-### 12.3 隱私
-- **PII 資料**：員工編號、Email 加密存放
-- **GDPR-ready**：資料刪除 API、保留期限
-- **Audit Trail**：所有 PII 存取記錄
+| 項目 | Phase 1 作法 |
+| --- | --- |
+| Iteration | 以 1-2 週 cycle 切功能；每個 issue 對應可展示流程或可驗證風險。 |
+| Definition of Ready | 需求有 persona、輸入輸出、狀態、權限、失敗情境與 acceptance criteria。 |
+| Definition of Done | spec matrix、implementation、service/integration tests、frontend lint/test/build/e2e、k6、Docker/Compose gate、reviewer pass 全部通過。 |
+| Branching | 短期 feature branch，快速 merge 回 main；未完成功能以 feature flag 隔離。 |
+| Review | PR 以風險導向審查：防超賣、權限、資料一致性、PII、離線驗票與可觀測性。 |
 
 ---
 
-## 13. 可靠性與災難復原 (Resilience & DR)
+## 17. Mentor Demo Checklist
 
-### 13.1 彈性模式
-- **Circuit Breaker** (Resilience4j / Polly)
-- **Retry with Exponential Backoff**
-- **Timeout** (每個外部呼叫必設)
-- **Bulkhead** (資源隔離)
-- **Graceful Shutdown** (`preStop` hook)
-
-### 13.2 備援
-- **DB**：RDS Multi-AZ + 自動快照 (PITR 7 天)
-- **Cache**：Redis Cluster + Replica
-- **MQ**：Kafka 3-broker, RF=3
-- **App**：每個服務最少 3 副本 (跨 AZ)
-
-### 13.3 DR 演練
-- **RTO**：1 小時 (跨 region failover)
-- **RPO**：5 分鐘 (logical replication)
-- **Game Day**：每季一次 chaos engineering (Litmus / Chaos Mesh)
+| 問題 | 文件回答位置 |
+| --- | --- |
+| 目前系統架構是什麼？ | §4 Phase 1 系統總覽、§5 Application Architecture。 |
+| 如何體現 12-Factor？ | §9 12-Factor 對應。 |
+| 為何先用 Docker Compose？ | §4.1 Compose 服務規劃、§4.2 Compose 操作約定。 |
+| 為何不是一開始就拆服務？ | §3 Phase Roadmap、§15 Phase 2/3 Evolution。 |
+| 如何防超賣？ | §6.2 一致性邊界、§7.1 報名流程。 |
+| 如何處理現場驗票與離線？ | §7.3 線上與離線驗票流程。 |
+| 測試策略是什麼？ | §12 Testing Strategy。 |
+| 部署與維運風險？ | §10 NFR、§13 Observability and Operations。 |
 
 ---
 
-## 14. 全球化部署 (Multi-Region)
+## 18. Remaining Assumptions
 
-> 對應評分項：「如何做到全球化部署？」
-
-### 14.1 部署模型：Active-Active
-
-```
-        ┌──────────────── Route53 (Geo Routing) ────────────────┐
-        │                                                         │
-   ┌────▼─────┐                                            ┌─────▼────┐
-   │  US-East │                                            │  AP-NE-1 │
-   │  Cluster │  ◄────── Cross-Region Replication ──────► │  Cluster │
-   └──────────┘                                            └──────────┘
-        │                                                         │
-   ┌────▼─────┐                                            ┌─────▼────┐
-   │ Postgres │  ──── Logical Replication (Debezium) ───►│ Postgres │
-   └──────────┘                                            └──────────┘
-```
-
-### 14.2 策略
-- **CDN Edge Caching** — CloudFront 全球節點
-- **Geo-DNS** — 員工就近連線
-- **資料分區 (Sharding by Region)** — 大型部署
-- **冪等寫入 + CRDTs** — 跨 region 衝突解決
-- **時區處理** — 一律存 UTC，前端轉換
-
----
-
-## 15. 敏捷開發流程
-
-### 15.1 Linear 工作流程
-
-使用 **Linear** 作為唯一工作追蹤工具，Cycle 長度 2 週。
-
-| 概念 | Linear 對應 |
-|------|-------------|
-| 里程碑 | Project / Milestone |
-| 迭代 | Cycle (2 週) |
-| 功能需求 | Issue |
-| 子任務 | Sub-issue |
-| Issue ID | `CETS-NNN`（自動生成） |
-
-**Issue 狀態流**：Backlog → Todo → In Progress → In Review → Done
-
-### 15.2 工作管理
-- **Tool**：Linear
-- **層次**：Project → Cycle → Issue → Sub-issue
-- **DoR (Definition of Ready)**：AC 清楚、設計完成、相依釐清
-- **DoD (Definition of Done)**：通過測試、Code Review、文件更新、部署到 staging
-
-### 15.3 Spec 與驗收標準
-
-Spec Template、Given/When/Then 格式、Edge Case 表、NFR 表、API Contract 格式，以及 12-Factor 合規檢查清單，統一定義於 **[AGENTS.md](../AGENTS.md)**。
-
-### 15.4 分支策略：**Trunk-Based Development**
-- `main` 永遠可部署
-- 短期 feature branch (< 2 天)，命名格式：`feature/cets-NNN-short-description`
-- Feature Flag 控制未完成功能
-- **不使用 GitFlow** (對 CI/CD 不友善)
-
-### 15.5 程式碼品質
-- **PR < 400 行** (易於審查)
-- **PR 標題帶 Linear Issue ID**：`feat(booking): add lock [CETS-42]`
-- **Code Review SLA**：4 小時內首次回應
-- **Pair / Mob Programming** — 複雜功能採用
-- **重構**：每 Cycle 預留 20% 容量
-
----
-
-## 16. 架構決策紀錄 (ADR)
-
-所有重大決策以 ADR 形式存放在 `docs/adr/`。
-
-### 模板
-
-```markdown
-# ADR-NNNN: <決策標題>
-
-- **狀態**：Proposed / Accepted / Deprecated / Superseded
-- **日期**：YYYY-MM-DD
-- **決策者**：<人員>
-
-## Context
-<為何需要做這個決定？>
-
-## Decision
-<決定了什麼？>
-
-## Consequences
-<好處 / 壞處 / Trade-offs>
-
-## Alternatives Considered
-<其他方案與否決理由>
-```
-
-### 已建立 ADR (範例)
-- `ADR-0001` — 採用 Monorepo (Turborepo)
-- `ADR-0002` — 主資料庫使用 PostgreSQL
-- `ADR-0003` — Booking Service 使用 Go 而非 Node.js
-- `ADR-0004` — 使用 Kafka 作為事件總線
-- `ADR-0005` — 採用 ArgoCD 進行 GitOps 部署
-
----
-
-## 附錄 A — 評分標準對應
-
-| 評分項 (%) | 對應章節 |
-|-----------|---------|
-| 30% 需求轉換與實作 | §5 服務拆分、§15.3 User Story |
-| 10% 程式碼品質 | §10.1 PR Gate、§12 安全性、§15.5 |
-| 25% 架構與可擴展性 | §2 架構總覽、§7 Hot Event、§9 K8s、§14 Multi-Region |
-
-| 25% 系統測試與驗證 | §10.1 Test Pyramid、§13.3 Chaos、附錄 B |
-| 10% 運維與可靠性 | §11 Observability、§13 Resilience |
-
-## 附錄 B — 測試金字塔
-
-```
-                  ┌─────────┐
-                  │   E2E   │  ← 少量、慢、貴 (Playwright)
-                  └─────────┘
-                ┌─────────────┐
-                │ Integration │  ← Testcontainers
-                └─────────────┘
-            ┌───────────────────┐
-            │      Unit         │  ← 大量、快、便宜 (Vitest)
-            └───────────────────┘
-        ┌───────────────────────────┐
-        │ Static Analysis (lint/tsc)│
-        └───────────────────────────┘
-```
-
-額外:
-- **Contract Test** (Pact) — 服務間契約
-- **Load Test** (k6) — 訂票尖峰
-- **Chaos Test** (Chaos Mesh) — 故障注入
-- **Security Test** (ZAP) — 滲透
+1. 本文件與 `AGENTS.md` 維持為需求摘要、容量估算、架構決策與 phase 邊界的維護來源。
+2. Phase 1 以 Docker Compose 服務描述開發環境；目前實際本地服務設定包含 Go app 與 backing services，並由 `services/api/deploy/compose.yaml` 與 `services/api/deploy/.env.example` 維護。
+3. HR 系統是否支援 near-real-time event 尚未確認；Phase 1 先以每日批次同步加手動重跑處理。
+4. 離線驗票的 signed manifest 需設定有效期限與裝置綁定，避免驗票員裝置遺失造成資料外洩。
+5. 實際 RPS / TPS 需由 load test 驗證；本文件的數字是設計目標，不是已量測結果。
