@@ -2,7 +2,7 @@
 
 ## Summary
 
-Build a Go modular monolith that can run locally against PostgreSQL and demonstrate the Phase 1 corporate event ticketing flow: admins create events and eligibility rules, employees browse and book eligible events or join a waitlist, the system issues signed electronic tickets with QR-code display data, check-in staff redeem tickets once, and HR admins inspect participation reports and immutable audit logs.
+Build a Go modular monolith that can run locally against PostgreSQL and demonstrate the Phase 1 corporate event ticketing flow: admins create limited or unlimited events and eligibility rules, employees authenticated by an external provider browse and book eligible events, the system records family counts only for unlimited events, issues non-transferable signed electronic tickets, lets check-in staff redeem tickets once with holder verification, and lets HR admins inspect participation reports and immutable audit logs.
 
 ## Small Task Breakdown
 
@@ -14,13 +14,14 @@ Build a Go modular monolith that can run locally against PostgreSQL and demonstr
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Given an activity admin, When they create a published event with capacity and eligibility rules, Then the event is persisted in PostgreSQL and an audit log entry is recorded.
-- [ ] AC-2: Given an employee whose HR attributes match the event rules, When they browse events, Then they see the event as eligible with remaining capacity.
-- [ ] AC-3: Given an eligible employee and available capacity, When they book with an idempotency key, Then a confirmed registration and signed ticket are created in PostgreSQL, the response is retry-safe, and the event is not oversold.
-- [ ] AC-4: Given an eligible employee and no remaining capacity, When they book, Then a waitlist registration is created without issuing a ticket.
+- [ ] AC-1: Given an activity admin, When they create a published event with `capacity_type`, city/site, capacity, family rule, and eligibility rules, Then the event is persisted in PostgreSQL and an audit log entry is recorded.
+- [ ] AC-2: Given an employee whose provider/HR claims match the event rules, When they browse events, Then they see eligibility, limited/unlimited status, family availability, remaining capacity when applicable, and any cross-city warning.
+- [ ] AC-3: Given an eligible employee and available limited capacity, When they book with an idempotency key, Then a confirmed registration and signed non-transferable ticket are created in PostgreSQL, the response is retry-safe, the employee receives at most one ticket for the event, and the event is not oversold.
+- [ ] AC-4: Given an eligible employee and no remaining limited capacity, When they book, Then a waitlist registration is created without issuing a ticket.
+- [ ] AC-4a: Given an eligible employee booking an unlimited event, When they submit `family_count`, Then a confirmed registration is created without inventory decrement or waitlist, and no transferable companion ticket is created.
 - [ ] AC-5: Given an ineligible employee, When they book, Then the request is rejected with a reason and no registration or ticket is created.
-- [ ] AC-6: Given a confirmed ticket, When check-in staff redeem the signed token online, Then exactly one successful check-in record is created and duplicate scans return the first redemption details.
-- [ ] AC-7: Given an HR/system admin, When they inspect reports and audit logs, Then participation counts, ticket counts, check-in counts, and sensitive actions are visible.
+- [ ] AC-6: Given a confirmed ticket, When check-in staff redeem the signed token online, Then exactly one successful check-in record is created, duplicate scans return the first redemption details, and the response shows holder name/department/city and family count for on-site verification.
+- [ ] AC-7: Given an HR/system admin, When they inspect reports and audit logs, Then participation counts, family totals, city distribution, ticket counts, check-in counts, no-show/cancellation events, and sensitive actions are visible without exposing unnecessary PII.
 - [ ] AC-8: Given the app starts locally, When `/healthz` and `/readyz` are called, Then health returns app status and readiness verifies PostgreSQL connectivity.
 - [ ] AC-9: Given the React browser UI is opened, When the Demo Runbook is used, Then the UI completes event creation, eligibility display, booking, ticket display, check-in, reporting, and audit inspection without manual database edits.
 
@@ -29,14 +30,19 @@ Build a Go modular monolith that can run locally against PostgreSQL and demonstr
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
 | E-1 | Empty or malformed JSON request | Return `400` with a JSON error response and do not mutate state. |
-| E-2 | Missing, expired, or unauthorized session | Return `401` or `403` and record no sensitive data. |
+| E-2 | Missing, expired, unmapped, or incomplete external provider claims | Return `401` or `403`, degrade only where explicitly allowed, and record no sensitive data. |
 | E-3 | Duplicate booking request with same idempotency key | Return the original registration/ticket result without duplicate records. |
 | E-4 | Same employee retries with a different idempotency key | Return the existing registration result without duplicate confirmed bookings. |
-| E-5 | Capacity is exhausted | Create a waitlist registration and no ticket. |
+| E-5 | Limited capacity is exhausted | Create a waitlist registration and no ticket. |
 | E-6 | Concurrent bookings compete for the last seat | PostgreSQL transaction/locking and constraints prevent oversell. |
 | E-7 | Tampered ticket token | Reject check-in with `400` and record no successful check-in. |
 | E-8 | Duplicate ticket scan | Return `409` with first redemption details. |
 | E-9 | PostgreSQL unavailable | `/readyz` fails and mutating endpoints return `503` or `500` without local fallback state. |
+| E-10 | Unlimited event booking includes family members | Persist `family_count`, do not decrement inventory, do not create waitlist, and do not issue companion tickets. |
+| E-11 | Employee city differs from event city | Return a non-blocking warning on detail/eligibility/booking confirmation while allowing eligible booking. |
+| E-12 | Employee cancels after the registration window | Reject employee self-cancellation with `409`; admin exception requires reason and audit log. |
+| E-13 | Employee reaches no-show cooldown threshold | Block limited-event booking during cooldown and allow unlimited-event booking unless a later policy says otherwise. |
+| E-14 | Ticket holder mismatch or transfer attempt | Reject or flag check-in, show holder information, and record staff/device/reason audit data. |
 
 ## Non-Functional Requirements
 
@@ -47,7 +53,7 @@ Build a Go modular monolith that can run locally against PostgreSQL and demonstr
 | Failure Handling | Database failure does not fall back to in-memory state. | Readiness and API errors expose failure safely. |
 | Idempotency | Booking is retry-safe. | Unique keys for booking idempotency and event/employee booking. |
 | Consistency | PostgreSQL is the source of truth. | Capacity checked in a transaction with row locks/constraints. |
-| Security | Local SSO uses a server-signed `HttpOnly` session cookie; legacy role headers are local/test compatibility only. | Unauthorized sensitive actions rejected. |
+| Security | Product APIs validate external provider tokens and required claims; local/demo auth is non-production compatibility only. | Unauthorized sensitive actions rejected; product OpenAPI excludes login/logout. |
 | Disposability | App starts quickly and handles SIGTERM. | Graceful shutdown path implemented. |
 
 ## Minimal API Contract
@@ -64,13 +70,13 @@ Error responses use:
 { "success": false, "data": null, "error": "message" }
 ```
 
-Local SSO auth endpoints:
+Provider-claims auth boundary:
 
 ```text
-POST /api/v1/auth/login
 GET /api/v1/auth/me
-POST /api/v1/auth/logout
 ```
+
+Product OpenAPI does not expose `/api/v1/auth/login` or `/api/v1/auth/logout`. Local/demo compatibility may exist only in development documentation and must not be treated as product scope.
 
 Endpoints:
 
@@ -78,10 +84,12 @@ Endpoints:
 GET /healthz
 GET /readyz
 POST /api/v1/admin/events
-GET /api/v1/events?employee_id=<id>
-GET /api/v1/events/{event_id}/eligibility?employee_id=<id>
+GET /api/v1/events
+GET /api/v1/events/{event_id}
+GET /api/v1/events/{event_id}/eligibility
 POST /api/v1/events/{event_id}/bookings
-GET /api/v1/employees/{employee_id}/tickets
+GET /api/v1/me/tickets
+POST /api/v1/me/registrations/{registration_id}/cancel
 POST /api/v1/checkins
 GET /api/v1/admin/reports
 GET /api/v1/admin/audit-logs
@@ -149,7 +157,8 @@ This MVP spec is a demo baseline, not the Phase 1 production completion contract
 
 - Do not split the Phase 1 app into microservices.
 - Do not require Kafka, Kubernetes, cross-region HA, service mesh, or managed cloud services.
-- Do not implement real enterprise SSO, offline check-in sync, Redis reservation, object storage adapters, or mail delivery adapters in this MVP hardening pass.
+- Do not implement a product login/logout flow, password lifecycle, refresh token rotation, offline check-in sync, Redis reservation, object storage adapters, or mail delivery adapters in this MVP hardening pass.
+- Do not deliver activity asset upload/serving, report Excel/PDF export, ticket PDF generation, cross-AZ HA, RTO/RPO, or managed-cloud failover in Phase 1 unless a new spec explicitly adds them.
 - Redis, MinIO, and Mailhog remain Compose-attached backing services until their adapters are implemented in a later small task.
 
 ## Browser Demo Verification Record

@@ -3,14 +3,380 @@ info:
   title: Corporate Event Ticketing System API
   version: 0.1.0
   description: >
-    Canonical API contract anchor for new or changed HTTP APIs. Existing
-    endpoints may be backfilled incrementally, but every touched endpoint must
-    be documented here before merge.
+    Canonical product API contract for Phase 1. Product authentication is
+    provider-claims based: the API validates an external provider token and
+    derives employee identity, role, department, site, and city from claims.
+    Product OpenAPI intentionally excludes local login/logout endpoints.
 servers:
   - url: /api/v1
     description: Version 1 API root
-paths: {}
+security:
+  - ProviderBearerAuth: []
+tags:
+  - name: Auth
+  - name: Events
+  - name: Bookings
+  - name: Tickets
+  - name: Check-in
+  - name: Admin
+paths:
+  /auth/me:
+    get:
+      tags:
+        - Auth
+      operationId: getAuthMe
+      summary: Read the current provider-claims identity.
+      description: >
+        Returns the employee claims and mapped application roles derived from
+        the external provider token. This endpoint never accepts caller-supplied
+        employee identity.
+      responses:
+        "200":
+          description: Current identity and mapped roles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthMeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /events:
+    get:
+      tags:
+        - Events
+      operationId: listEvents
+      summary: List events visible to the current employee.
+      description: >
+        Employee identity is derived from provider claims. The response includes
+        eligibility summary, limited/unlimited status, family availability, and
+        cross-city warnings where applicable.
+      parameters:
+        - name: capacity_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CapacityType"
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/EventStatus"
+      responses:
+        "200":
+          description: Events visible to the current employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /events/{event_id}:
+    get:
+      tags:
+        - Events
+      operationId: getEvent
+      summary: Read event detail for the current employee.
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Event detail with booking policy and warnings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /events/{event_id}/eligibility:
+    get:
+      tags:
+        - Events
+      operationId: getEventEligibility
+      summary: Check current employee eligibility for an event.
+      description: >
+        Checks provider/HR claims, event rules, capacity type, booking window,
+        city/site warning policy, and no-show cooldown. Cross-city warnings are
+        advisory and must not block otherwise eligible employees.
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Eligibility decision and non-blocking warnings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EligibilityResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /events/{event_id}/bookings:
+    post:
+      tags:
+        - Bookings
+      operationId: createBooking
+      summary: Book the current employee for an event.
+      description: >
+        Creates a booking for the current employee derived from provider claims.
+        Limited events allow at most one ticket per employee, reject family
+        members, and must not oversell. Unlimited events do not decrement
+        inventory, do not create waitlist entries, and persist family_count on
+        the employee's main registration.
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingRequest"
+      responses:
+        "201":
+          description: Booking confirmed or waitlisted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /me/tickets:
+    get:
+      tags:
+        - Tickets
+      operationId: listMyTickets
+      summary: List tickets for the current employee.
+      description: >
+        Returns non-transferable tickets bound to the employee identity derived
+        from provider claims. Unlimited events show family_count on the employee
+        main ticket and do not expose companion tickets.
+      responses:
+        "200":
+          description: Current employee tickets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /me/registrations/{registration_id}/cancel:
+    post:
+      tags:
+        - Bookings
+      operationId: cancelMyRegistration
+      summary: Cancel the current employee's registration.
+      description: >
+        Employee self-cancellation is allowed only during the registration
+        window. After cutoff, only an admin exception endpoint may cancel and
+        must record reason and audit log.
+      parameters:
+        - $ref: "#/components/parameters/RegistrationId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelRegistrationRequest"
+      responses:
+        "200":
+          description: Registration cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelRegistrationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /checkins:
+    post:
+      tags:
+        - Check-in
+      operationId: createCheckIn
+      summary: Redeem or reject a ticket at check-in.
+      description: >
+        Redeems one employee-bound ticket token at most once. The response
+        includes holder display fields for on-site verification. Duplicate,
+        tampered, expired, holder-mismatch, and transfer attempts fail or are
+        flagged with auditable reason fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCheckInRequest"
+      responses:
+        "200":
+          description: Check-in accepted, duplicated, rejected, or conflicted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckInResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /admin/events:
+    post:
+      tags:
+        - Admin
+      operationId: createAdminEvent
+      summary: Create an event.
+      description: >
+        Activity admins create limited or unlimited events. Limited events must
+        provide capacity and cannot allow family members. Unlimited events use
+        nullable capacity and may allow family_count on booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventRequest"
+      responses:
+        "201":
+          description: Event created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /admin/reports:
+    get:
+      tags:
+        - Admin
+      operationId: getAdminReports
+      summary: Read aggregate HR/admin reports.
+      description: >
+        Returns aggregate participation only, including family totals and city
+        distribution. Phase 1 exports are CSV-only; Excel and PDF are non-goals
+        unless a later spec adds them.
+      responses:
+        "200":
+          description: Aggregate report summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/audit-logs:
+    get:
+      tags:
+        - Admin
+      operationId: listAuditLogs
+      summary: List audit log entries.
+      parameters:
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entity_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Redacted audit log entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
 components:
+  securitySchemes:
+    ProviderBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Provider token
+      description: External identity provider token with required employee claims.
+  parameters:
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RegistrationId:
+      name: registration_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
     ApiSuccessEnvelope:
       type: object
@@ -45,6 +411,651 @@ components:
       oneOf:
         - $ref: "#/components/schemas/ApiSuccessEnvelope"
         - $ref: "#/components/schemas/ApiErrorEnvelope"
+
+    AuthMeResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/EmployeeClaims"
+    EventListResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - events
+              properties:
+                events:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/EventSummary"
+    EventDetailResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/EventDetail"
+    EligibilityResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/EligibilityDecision"
+    BookingResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/BookingResult"
+    TicketListResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - tickets
+              properties:
+                tickets:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Ticket"
+    CancelRegistrationResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/CancelledRegistration"
+    CheckInResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/CheckInResult"
+    ReportSummaryResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ReportSummary"
+    AuditLogListResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - entries
+              properties:
+                entries:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AuditLogEntry"
+                next_cursor:
+                  type:
+                    - string
+                    - "null"
+
+    EmployeeClaims:
+      type: object
+      required:
+        - employee_id
+        - display_name
+        - role_claims
+        - mapped_roles
+        - department
+        - site
+        - city
+        - claims_status
+      properties:
+        employee_id:
+          type: string
+        display_name:
+          type: string
+        job_title:
+          type:
+            - string
+            - "null"
+        role_claims:
+          type: array
+          items:
+            type: string
+        mapped_roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppRole"
+        department:
+          type: string
+        site:
+          type: string
+        city:
+          type: string
+        claims_status:
+          type: string
+          enum:
+            - complete
+            - degraded_read_only
+            - rejected
+
+    AppRole:
+      type: string
+      enum:
+        - employee
+        - activity_admin
+        - checkin_staff
+        - hr_reporting
+        - system_admin
+    CapacityType:
+      type: string
+      enum:
+        - limited
+        - unlimited
+    EventStatus:
+      type: string
+      enum:
+        - draft
+        - pending_review
+        - open
+        - registration_closed
+        - in_progress
+        - ended
+        - archived
+        - cancelled
+    BookingStatus:
+      type: string
+      enum:
+        - confirmed
+        - waitlisted
+        - rejected
+        - cancelled
+        - checked_in
+        - no_show
+    TicketStatus:
+      type: string
+      enum:
+        - unused
+        - checked_in
+        - cancelled
+        - expired
+        - revoked
+
+    EventSummary:
+      type: object
+      required:
+        - event_id
+        - title
+        - starts_at
+        - registration_closes_at
+        - event_city
+        - event_site
+        - capacity_type
+        - capacity
+        - remaining_capacity
+        - allows_family
+        - status
+        - eligibility
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        registration_closes_at:
+          type: string
+          format: date-time
+        event_city:
+          type: string
+        event_site:
+          type: string
+        capacity_type:
+          $ref: "#/components/schemas/CapacityType"
+        capacity:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: Required for limited events; null for unlimited events.
+        remaining_capacity:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Present for limited events; null for unlimited events.
+        allows_family:
+          type: boolean
+          description: Must be false for limited events.
+        status:
+          $ref: "#/components/schemas/EventStatus"
+        eligibility:
+          $ref: "#/components/schemas/EligibilityDecision"
+    EventDetail:
+      allOf:
+        - $ref: "#/components/schemas/EventSummary"
+        - type: object
+          required:
+            - description
+            - registration_opens_at
+            - ticket_transfer_policy
+          properties:
+            description:
+              type: string
+            registration_opens_at:
+              type: string
+              format: date-time
+            ticket_transfer_policy:
+              type: string
+              const: non_transferable
+            tags:
+              type: array
+              items:
+                type: string
+
+    CreateEventRequest:
+      type: object
+      required:
+        - title
+        - description
+        - starts_at
+        - registration_opens_at
+        - registration_closes_at
+        - event_city
+        - event_site
+        - capacity_type
+        - allows_family
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        registration_opens_at:
+          type: string
+          format: date-time
+        registration_closes_at:
+          type: string
+          format: date-time
+        event_city:
+          type: string
+        event_site:
+          type: string
+        capacity_type:
+          $ref: "#/components/schemas/CapacityType"
+        capacity:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: Required when capacity_type is limited; null when unlimited.
+        allows_family:
+          type: boolean
+          description: Must be false when capacity_type is limited.
+        tags:
+          type: array
+          items:
+            type: string
+
+    EligibilityDecision:
+      type: object
+      required:
+        - event_id
+        - eligible
+        - can_book
+        - reasons
+        - warnings
+        - no_show_cooldown
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        eligible:
+          type: boolean
+        can_book:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+        no_show_cooldown:
+          $ref: "#/components/schemas/NoShowCooldown"
+    Warning:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - cross_city
+            - registration_closing_soon
+            - non_transferable_ticket
+        message:
+          type: string
+        employee_city:
+          type:
+            - string
+            - "null"
+        event_city:
+          type:
+            - string
+            - "null"
+    NoShowCooldown:
+      type: object
+      required:
+        - active
+      properties:
+        active:
+          type: boolean
+        applies_to:
+          type:
+            - string
+            - "null"
+          enum:
+            - limited
+            - null
+        until:
+          type:
+            - string
+            - "null"
+          format: date-time
+        reason:
+          type:
+            - string
+            - "null"
+
+    CreateBookingRequest:
+      type: object
+      required:
+        - idempotency_key
+      additionalProperties: false
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 128
+        family_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Allowed only for unlimited events.
+    BookingResult:
+      type: object
+      required:
+        - registration_id
+        - event_id
+        - status
+        - capacity_type
+        - family_count
+        - warnings
+      properties:
+        registration_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        capacity_type:
+          $ref: "#/components/schemas/CapacityType"
+        ticket_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        family_count:
+          type: integer
+          minimum: 0
+        cancellation_deadline:
+          type:
+            - string
+            - "null"
+          format: date-time
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+
+    CancelRegistrationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        cancel_reason:
+          type: string
+          maxLength: 500
+    CancelledRegistration:
+      type: object
+      required:
+        - registration_id
+        - status
+        - cancelled_at
+      properties:
+        registration_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: cancelled
+        cancelled_at:
+          type: string
+          format: date-time
+        cancel_reason:
+          type:
+            - string
+            - "null"
+
+    Ticket:
+      type: object
+      required:
+        - ticket_id
+        - event_id
+        - event_title
+        - status
+        - holder
+        - family_count
+        - non_transferable
+        - qr_token
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        event_title:
+          type: string
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        holder:
+          $ref: "#/components/schemas/TicketHolder"
+        family_count:
+          type: integer
+          minimum: 0
+        non_transferable:
+          type: boolean
+          const: true
+        qr_token:
+          type: string
+          description: Signed display token; it does not transfer ticket ownership.
+        first_checkin_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+    TicketHolder:
+      type: object
+      required:
+        - display_name
+        - department
+        - city
+      properties:
+        display_name:
+          type: string
+        department:
+          type: string
+        city:
+          type: string
+
+    CreateCheckInRequest:
+      type: object
+      required:
+        - ticket_token
+        - event_id
+        - device_id
+      additionalProperties: false
+      properties:
+        ticket_token:
+          type: string
+        event_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+        scanned_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        holder_mismatch_reason:
+          type:
+            - string
+            - "null"
+          description: Staff-supplied reason when rejecting suspected transfer or proxy use.
+    CheckInResult:
+      type: object
+      required:
+        - status
+        - reason_code
+        - holder
+        - family_count
+      properties:
+        status:
+          type: string
+          enum:
+            - accepted
+            - duplicate
+            - rejected
+            - conflict
+        reason_code:
+          type: string
+          enum:
+            - accepted
+            - duplicate_scan
+            - tampered_token
+            - expired_ticket
+            - revoked_ticket
+            - event_mismatch
+            - holder_mismatch
+            - transfer_attempt
+            - offline_conflict
+        checkin_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        first_checkin_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        holder:
+          $ref: "#/components/schemas/TicketHolder"
+        family_count:
+          type: integer
+          minimum: 0
+        rejection_message:
+          type:
+            - string
+            - "null"
+
+    ReportSummary:
+      type: object
+      required:
+        - event_count
+        - employee_count
+        - family_count
+        - total_attendee_count
+        - city_distribution
+      properties:
+        event_count:
+          type: integer
+          minimum: 0
+        employee_count:
+          type: integer
+          minimum: 0
+        family_count:
+          type: integer
+          minimum: 0
+        total_attendee_count:
+          type: integer
+          minimum: 0
+        city_distribution:
+          type: array
+          items:
+            type: object
+            required:
+              - city
+              - count
+            properties:
+              city:
+                type: string
+              count:
+                type: integer
+                minimum: 0
+    AuditLogEntry:
+      type: object
+      required:
+        - audit_id
+        - action
+        - entity_type
+        - entity_id
+        - actor_role
+        - created_at
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        actor_role:
+          $ref: "#/components/schemas/AppRole"
+        created_at:
+          type: string
+          format: date-time
+        redacted_metadata:
+          type: object
+          additionalProperties: true
   responses:
     BadRequest:
       description: Request validation failed.
@@ -53,13 +1064,13 @@ components:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
     Unauthorized:
-      description: Authentication is missing or invalid.
+      description: Authentication is missing or provider token is invalid.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
     Forbidden:
-      description: Authenticated actor is not allowed to perform this action.
+      description: Required claims are missing or mapped role is not allowed.
       content:
         application/json:
           schema:
@@ -71,7 +1082,7 @@ components:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
     Conflict:
-      description: Request conflicts with current state or idempotency rules.
+      description: Request conflicts with state, capacity, cancellation, idempotency, or ticket ownership rules.
       content:
         application/json:
           schema:

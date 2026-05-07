@@ -33,7 +33,16 @@
 | 雲端平台 | 採 cloud-agnostic 設計，可對應 AWS、GCP、Azure 或私有雲等價能力。 |
 | 資料庫預設 | 以 relational database 作為 source of truth，因票券、報名、資格與 audit log 需要明確交易邊界。 |
 | 活動型態 | 活動票券通常免費或內部福利點數扣抵；本版本不納入外部付款流程。活動分為有限票數與無票數限制兩類，兩者的家屬、取消與防超賣規則不同。 |
-| Phase 邊界 | Phase 1 重視快速交付與可維護；Phase 2 針對熱門活動拆分高壓模組；Phase 3 強化多入口驗票、資料分區與跨區容災。 |
+| Phase 邊界 | Phase 1 重視快速交付與可維護，採 Go modular monolith 與外部 provider claims 邊界；Phase 2 針對熱門活動拆分高壓模組；Phase 3 強化多入口驗票、資料分區與跨區容災。 |
+
+### 1.4 Phase 1 Contract Clarifications
+
+`docs/specs/phase1-mvp.md`、`docs/specs/phase1-production-upper-bound.md` 與 `docs/openapi.yaml` 是 Phase 1 執行契約。為避免把長期目標誤認為 Phase 1 必做項，Phase 1 採以下邊界：
+
+- 產品不提供本地登入、登出、密碼、session 或 refresh token rotation；本系統只驗證外部 provider token 並消費 employee claims。Local/demo auth 僅可作為非正式環境相容工具，不可出現在產品 OpenAPI contract。
+- `FR-EVENT-04` 的活動圖片 / 附件上傳、掃毒與 serving 是後續規格項；Phase 1 可保留文字、地點與連結資訊，但不交付檔案上傳流程。
+- `FR-REPORT-02` 的 Excel / PDF 匯出是後續規格項；Phase 1 僅交付 HR 授權的 aggregate CSV 匯出與報表欄位白名單。
+- `NFR-HA-01` 至 `NFR-HA-04` 是 production / later-phase 目標；Phase 1 不承諾跨 AZ、RTO / RPO 或 managed-cloud HA，只需保留 12-Factor、健康檢查、stateless process、Docker Compose parity 與未來部署演進空間。
 
 ## 2. Functional Requirements
 
