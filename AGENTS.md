@@ -20,6 +20,7 @@ Before changing code, read the rule files relevant to the task:
 - `docs/agent-rules/correctness.md` for ticketing correctness, idempotency, and audit rules.
 - `docs/agent-rules/development-workflow.md` for small tasks, tests, and commit rules.
 - `docs/agent-rules/local-environment.md` for Docker Compose, backing services, and verification.
+- `docs/agent-rules/team-collaboration.md` for API contracts, Linear workflow, ownership, PR review, migration coordination, and test conventions.
 
 ## Phase 1 Focus
 

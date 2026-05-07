@@ -1,0 +1,84 @@
+openapi: 3.1.0
+info:
+  title: Corporate Event Ticketing System API
+  version: 0.1.0
+  description: >
+    Canonical API contract anchor for new or changed HTTP APIs. Existing
+    endpoints may be backfilled incrementally, but every touched endpoint must
+    be documented here before merge.
+servers:
+  - url: /api/v1
+    description: Version 1 API root
+paths: {}
+components:
+  schemas:
+    ApiSuccessEnvelope:
+      type: object
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          description: Endpoint-specific response payload.
+        error:
+          type: "null"
+    ApiErrorEnvelope:
+      type: object
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        data:
+          type: "null"
+        error:
+          type: string
+          minLength: 1
+    ApiEnvelope:
+      oneOf:
+        - $ref: "#/components/schemas/ApiSuccessEnvelope"
+        - $ref: "#/components/schemas/ApiErrorEnvelope"
+  responses:
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Forbidden:
+      description: Authenticated actor is not allowed to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    NotFound:
+      description: Resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Conflict:
+      description: Request conflicts with current state or idempotency rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    InternalServerError:
+      description: Unexpected server failure.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
