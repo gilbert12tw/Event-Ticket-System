@@ -86,6 +86,55 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	}
 }
 
+func TestComposeDevOverlayDeclaresFrontendHotReloadContract(t *testing.T) {
+	compose, err := os.ReadFile("compose.dev.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	envExample, err := os.ReadFile(".env.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	viteConfig, err := os.ReadFile("../../../apps/web/vite.config.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := string(compose) + "\n" + string(envExample) + "\n" + string(viteConfig)
+
+	required := []string{
+		"web-dev:",
+		"image: node:24.14.1-alpine3.22",
+		"working_dir: /src",
+		"WEB_DEV_PORT: ${WEB_DEV_PORT:-5173}",
+		"CETS_DEV_API_TARGET: ${CETS_DEV_API_TARGET:-http://app:8080}",
+		"CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}",
+		"corepack enable",
+		"pnpm config set store-dir /pnpm/store",
+		"pnpm install --frozen-lockfile --filter cets-web",
+		"pnpm --filter cets-web dev --host 0.0.0.0 --port",
+		`"${WEB_DEV_PORT:-5173}:${WEB_DEV_PORT:-5173}"`,
+		"../../..:/src",
+		"web_dev_root_node_modules:/src/node_modules",
+		"web_dev_app_node_modules:/src/apps/web/node_modules",
+		"web_dev_pnpm_store:/pnpm/store",
+		"condition: service_healthy",
+		"WEB_DEV_PORT=5173",
+		"CETS_DEV_API_TARGET=http://app:8080",
+		"CHOKIDAR_USEPOLLING=true",
+		`process.env.WEB_DEV_PORT ?? "5173"`,
+		`process.env.CETS_DEV_API_TARGET ?? "http://localhost:8080"`,
+		"strictPort: true",
+		"clientPort: webDevPort",
+		"usePolling: true",
+	}
+
+	for _, fragment := range required {
+		if !strings.Contains(combined, fragment) {
+			t.Fatalf("frontend hot reload contract is missing %q", fragment)
+		}
+	}
+}
+
 func TestDockerfileBuildsSingleRuntimeBinary(t *testing.T) {
 	dockerfile, err := os.ReadFile("../Dockerfile")
 	if err != nil {

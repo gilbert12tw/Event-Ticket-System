@@ -11,6 +11,7 @@ Use this for local development. It keeps the Go app on `8080` for the Vite proxy
 | Service | Default URL / Port | Purpose |
 | --- | --- | --- |
 | CETS App | `http://localhost:8080` | React SPA and HTTP API. |
+| Vite Web Dev | `http://localhost:5173` | Dev-only React SPA with HMR from `compose.dev.yaml`. |
 | PostgreSQL | `localhost:15432` | Source of truth for app data. |
 | Redis | `localhost:16379` | Cache, idempotency, and queue backing service. |
 | MinIO API | `http://localhost:19000` | S3-compatible object storage. |
@@ -29,9 +30,14 @@ export MINIO_API_PORT=19000
 export MINIO_CONSOLE_PORT=19001
 export MAILHOG_SMTP_PORT=11025
 export MAILHOG_UI_PORT=18025
+export WEB_DEV_PORT=5173
 
 dc() {
   docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml "$@"
+}
+
+dcdev() {
+  docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.dev.yaml "$@"
 }
 ```
 
@@ -75,20 +81,40 @@ dc down -v
 
 The browser UI is a Vite + React + TypeScript SPA under `apps/web/`. Production assets are generated into `services/api/internal/httpapi/static` and embedded by the Go app.
 
+For containerized frontend hot reload, use the dev overlay. It bind-mounts the repository into a `web-dev` container, keeps Node dependencies in Docker named volumes, and proxies `/api`, `/healthz`, and `/readyz` to the Go app inside Compose.
+
+```bash
+dc build app
+dcdev up -d postgres redis minio mailhog minio-init
+dcdev run --rm migrate
+dcdev up -d app worker web-dev
+```
+
+Open `http://localhost:5173`. Frontend source changes hot reload through the bind mount; frontend-only UI changes do not require `dc build app`.
+
+After the first start, the usual frontend loop is:
+
+```bash
+dcdev up -d app worker web-dev
+dcdev logs -f web-dev
+```
+
+Rebuild the `app` image when Go code, migrations, the production static bundle, Dockerfile, or image dependency manifests change.
+
+If you prefer running Vite on the host instead of Docker:
+
 ```bash
 corepack enable
 pnpm install
 dc up -d app worker
-pnpm --filter cets-web dev
+CETS_DEV_API_TARGET=http://localhost:${APP_PORT:-8080} pnpm --filter cets-web dev
 ```
-
-Run First Start once before this. Open `http://localhost:5173`. During Vite development, `/api`, `/healthz`, and `/readyz` proxy to the Go app on `localhost:8080`.
 
 Primary browser routes are `/user/events`, `/user/tickets`, `/admin/events`, `/admin/checkin`, `/admin/reports`, `/admin/audit`, and `/admin/demo`. Legacy demo routes such as `/employee/events`, `/employee/tickets`, `/checkin`, `/hr/reports`, and `/demo` remain SPA aliases.
 
 ### Configuration
 
-Ports and credentials are local defaults only. If `8080` is also busy, change `APP_PORT` and use the Docker-served UI on that port. Vite hot reload currently expects the Go app on `localhost:8080`.
+Ports and credentials are local defaults only. If `8080` is also busy, change `APP_PORT` and use the Docker-served UI on that port. Containerized Vite proxies to the internal Compose app service at `http://app:8080`, so it does not depend on the host `APP_PORT`. Host-run Vite defaults to `http://localhost:8080`; set `CETS_DEV_API_TARGET=http://localhost:<APP_PORT>` when using a different host app port. If `5173` is busy, set `WEB_DEV_PORT`.
 
 For local CLI/tests against the Compose database, use:
 

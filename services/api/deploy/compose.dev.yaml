@@ -1,0 +1,31 @@
+services:
+  web-dev:
+    image: node:24.14.1-alpine3.22
+    working_dir: /src
+    environment:
+      WEB_DEV_PORT: ${WEB_DEV_PORT:-5173}
+      CETS_DEV_API_TARGET: ${CETS_DEV_API_TARGET:-http://app:8080}
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+    command:
+      - sh
+      - -lc
+      - |
+        corepack enable
+        pnpm config set store-dir /pnpm/store
+        pnpm install --frozen-lockfile --filter cets-web
+        pnpm --filter cets-web dev --host 0.0.0.0 --port "$${WEB_DEV_PORT:-5173}"
+    ports:
+      - "${WEB_DEV_PORT:-5173}:${WEB_DEV_PORT:-5173}"
+    volumes:
+      - ../../..:/src
+      - web_dev_root_node_modules:/src/node_modules
+      - web_dev_app_node_modules:/src/apps/web/node_modules
+      - web_dev_pnpm_store:/pnpm/store
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  web_dev_root_node_modules:
+  web_dev_app_node_modules:
+  web_dev_pnpm_store:
