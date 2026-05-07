@@ -6,6 +6,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const schemaMigrationLockID int64 = 811_204_202_601
+
 var SchemaStatements = []string{
 	`CREATE TABLE IF NOT EXISTS employees (
 		employee_id TEXT PRIMARY KEY,
@@ -294,10 +296,19 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaMigrationLockID); err != nil {
+		return err
+	}
 	for _, statement := range SchemaStatements {
-		if _, err := pool.Exec(ctx, statement); err != nil {
+		if _, err := tx.Exec(ctx, statement); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }

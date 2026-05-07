@@ -121,10 +121,11 @@ func TestComposeDevOverlayDeclaresFrontendHotReloadContract(t *testing.T) {
 		"WEB_DEV_PORT=5173",
 		"CETS_DEV_API_TARGET=http://app:8080",
 		"CHOKIDAR_USEPOLLING=true",
-		`process.env.WEB_DEV_PORT ?? "5173"`,
+		"const configuredWebDevPort = process.env.WEB_DEV_PORT",
+		`configuredWebDevPort ?? "5173"`,
 		`process.env.CETS_DEV_API_TARGET ?? "http://localhost:8080"`,
 		"strictPort: true",
-		"clientPort: webDevPort",
+		"hmr: configuredWebDevPort ? { clientPort: webDevPort } : undefined",
 		"usePolling: true",
 	}
 

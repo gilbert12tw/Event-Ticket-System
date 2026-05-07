@@ -3,7 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 
-const webDevPort = Number(process.env.WEB_DEV_PORT ?? "5173");
+const configuredWebDevPort = process.env.WEB_DEV_PORT;
+const webDevPort = Number(configuredWebDevPort ?? "5173");
 const apiTarget = process.env.CETS_DEV_API_TARGET ?? "http://localhost:8080";
 const watchOptions = process.env.CHOKIDAR_USEPOLLING === "true" ? { usePolling: true, interval: 100 } : undefined;
 
@@ -22,9 +23,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: webDevPort,
     strictPort: true,
-    hmr: {
-      clientPort: webDevPort
-    },
+    hmr: configuredWebDevPort ? { clientPort: webDevPort } : undefined,
     watch: watchOptions,
     proxy: {
       "/api": {

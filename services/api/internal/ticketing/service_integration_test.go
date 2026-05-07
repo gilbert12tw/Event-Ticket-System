@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/traceid"
 )
@@ -358,20 +361,63 @@ func newIntegrationServiceWithLogger(t *testing.T, logger *slog.Logger) (*Servic
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := postgres.Connect(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool, cleanup := newTicketingTestPool(t, ctx, databaseURL)
 	if err := postgres.Migrate(ctx, pool); err != nil {
+		cleanup()
 		t.Fatal(err)
 	}
 	suffix := time.Now().UnixNano()
 	if _, err := pool.Exec(ctx, fmt.Sprintf("TRUNCATE outbox_events, audit_logs, checkin_records, tickets, registrations, eligibility_rules, events, employees RESTART IDENTITY CASCADE")); err != nil {
+		cleanup()
 		t.Fatal(err)
 	}
 
 	service := NewService(pool, NewSigner(fmt.Sprintf("secret-%d", suffix)), logger)
-	return service, pool.Close
+	return service, cleanup
+}
+
+func newTicketingTestPool(t *testing.T, ctx context.Context, databaseURL string) (*pgxpool.Pool, func()) {
+	t.Helper()
+
+	adminPool, err := postgres.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	schema := fmt.Sprintf("ticketing_test_%d", time.Now().UnixNano())
+	quotedSchema := pgx.Identifier{schema}.Sanitize()
+	if _, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", quotedSchema)); err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+	if cfg.ConnConfig.RuntimeParams == nil {
+		cfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		adminPool.Close()
+		t.Fatal(err)
+	}
+
+	return pool, func() {
+		pool.Close()
+		dropCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = adminPool.Exec(dropCtx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quotedSchema))
+		adminPool.Close()
+	}
 }
 
 func assertRowCount(t *testing.T, service *Service, ctx context.Context, query string, arg interface{}, want int) {

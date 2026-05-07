@@ -2,10 +2,15 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
@@ -58,35 +63,10 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := Connect(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
 
-	_, err = pool.Exec(ctx, `DROP TABLE IF EXISTS
-		report_exports,
-		offline_checkin_scans,
-		offline_checkin_batches,
-		lottery_results,
-		lottery_runs,
-		notification_deliveries,
-		notification_preferences,
-		outbox_events,
-		audit_logs,
-		checkin_records,
-		eligibility_impact_reviews,
-		tickets,
-		registrations,
-		hr_sync_batches,
-		eligibility_rule_versions,
-		eligibility_rules,
-		event_assets,
-		event_versions,
-		events,
-		employees
-		CASCADE`)
-	if err != nil {
+	if err := dropSchema(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 
@@ -115,5 +95,111 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 		if !exists {
 			t.Fatalf("expected table %s to exist after migration", table)
 		}
+	}
+}
+
+func TestMigrateSerializesConcurrentCalls(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	if err := dropSchema(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 4
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- Migrate(ctx, pool)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS
+		report_exports,
+		offline_checkin_scans,
+		offline_checkin_batches,
+		lottery_results,
+		lottery_runs,
+		notification_deliveries,
+		notification_preferences,
+		outbox_events,
+		audit_logs,
+		checkin_records,
+		eligibility_impact_reviews,
+		tickets,
+		registrations,
+		hr_sync_batches,
+		eligibility_rule_versions,
+		eligibility_rules,
+		event_assets,
+		event_versions,
+		events,
+		employees
+		CASCADE`)
+	return err
+}
+
+func newMigrationTestPool(t *testing.T, ctx context.Context, databaseURL string) (*pgxpool.Pool, func()) {
+	t.Helper()
+
+	adminPool, err := Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	schema := fmt.Sprintf("migration_test_%d", time.Now().UnixNano())
+	quotedSchema := pgx.Identifier{schema}.Sanitize()
+	if _, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", quotedSchema)); err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+	if cfg.ConnConfig.RuntimeParams == nil {
+		cfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		adminPool.Close()
+		t.Fatal(err)
+	}
+
+	return pool, func() {
+		pool.Close()
+		dropCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = adminPool.Exec(dropCtx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quotedSchema))
+		adminPool.Close()
 	}
 }
