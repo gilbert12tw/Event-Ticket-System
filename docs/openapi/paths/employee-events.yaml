@@ -1,0 +1,83 @@
+"/events":
+  get:
+    tags:
+      - Events
+    operationId: listEvents
+    x-required-roles:
+      - employee
+    summary: List events visible to the current employee.
+    description: Employee identity is derived from provider claims. The response includes eligibility summary, limited/unlimited status, family availability, and cross-city warnings where applicable.
+    parameters:
+      - name: capacity_type
+        in: query
+        required: false
+        schema:
+          "$ref": "../components/schemas/common.yaml#/CapacityType"
+      - name: city
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          "$ref": "../components/schemas/common.yaml#/EventStatus"
+    responses:
+      "200":
+        description: Events visible to the current employee.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventListResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/events/{event_id}":
+  get:
+    tags:
+      - Events
+    operationId: getEvent
+    x-required-roles:
+      - employee
+    summary: Read event detail for the current employee.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "200":
+        description: Event detail with booking policy and warnings.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventDetailResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+"/events/{event_id}/eligibility":
+  get:
+    tags:
+      - Events
+    operationId: getEventEligibility
+    x-required-roles:
+      - employee
+    summary: Check current employee eligibility for an event.
+    description: Checks provider/HR claims, event rules, capacity type, booking window, city/site warning policy, and no-show cooldown. Cross-city warnings are advisory and must not block otherwise eligible employees.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "200":
+        description: Eligibility decision and non-blocking warnings.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/eligibility.yaml#/EligibilityResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"

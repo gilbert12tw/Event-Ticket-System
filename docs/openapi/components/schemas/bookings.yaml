@@ -1,0 +1,245 @@
+BookingResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/BookingResult"
+CancelRegistrationResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/CancelledRegistration"
+RegistrationListResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          type: object
+          required:
+            - registrations
+          properties:
+            registrations:
+              type: array
+              items:
+                "$ref": "#/RegistrationDetail"
+PromoteWaitlistResponseEnvelope:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/PromoteWaitlistResult"
+LotteryRunResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/LotteryRun"
+CreateBookingRequest:
+  type: object
+  required:
+    - idempotency_key
+  additionalProperties: false
+  properties:
+    idempotency_key:
+      type: string
+      minLength: 8
+      maxLength: 128
+    family_count:
+      type: integer
+      minimum: 0
+      default: 0
+      description: Allowed only for unlimited events.
+BookingResult:
+  type: object
+  required:
+    - registration_id
+    - event_id
+    - status
+    - capacity_type
+    - family_count
+    - warnings
+  properties:
+    registration_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    status:
+      "$ref": "./common.yaml#/BookingStatus"
+    capacity_type:
+      "$ref": "./common.yaml#/CapacityType"
+    ticket_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    family_count:
+      type: integer
+      minimum: 0
+    cancellation_deadline:
+      type:
+        - string
+        - "null"
+      format: date-time
+    warnings:
+      type: array
+      items:
+        "$ref": "./common.yaml#/Warning"
+CancelRegistrationRequest:
+  type: object
+  required:
+    - idempotency_key
+  additionalProperties: false
+  properties:
+    idempotency_key:
+      type: string
+      minLength: 8
+      maxLength: 128
+    cancel_reason:
+      type: string
+      maxLength: 500
+AdminCancelRegistrationRequest:
+  type: object
+  required:
+    - idempotency_key
+    - reason
+  additionalProperties: false
+  properties:
+    idempotency_key:
+      type: string
+      minLength: 8
+      maxLength: 128
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+CancelledRegistration:
+  type: object
+  required:
+    - registration_id
+    - status
+    - cancelled_at
+  properties:
+    registration_id:
+      type: string
+      format: uuid
+    status:
+      type: string
+      const: cancelled
+    cancelled_at:
+      type: string
+      format: date-time
+    cancel_reason:
+      type:
+        - string
+        - "null"
+RegistrationDetail:
+  type: object
+  required:
+    - registration_id
+    - event_id
+    - status
+    - family_count
+    - created_at
+  properties:
+    registration_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    employee_ref:
+      type:
+        - string
+        - "null"
+      description: Redacted employee reference for admin governance.
+    employee_display_name:
+      type:
+        - string
+        - "null"
+    status:
+      "$ref": "./common.yaml#/BookingStatus"
+    family_count:
+      type: integer
+      minimum: 0
+    cancellation_deadline:
+      type:
+        - string
+        - "null"
+      format: date-time
+    cancel_reason:
+      type:
+        - string
+        - "null"
+    ticket:
+      oneOf:
+        - "$ref": "./tickets.yaml#/RedactedTicket"
+        - type: "null"
+    created_at:
+      type: string
+      format: date-time
+PromoteWaitlistResult:
+  type: object
+  required:
+    - remaining_capacity
+    - message
+  properties:
+    promoted:
+      oneOf:
+        - "$ref": "#/BookingResult"
+        - type: "null"
+    remaining_capacity:
+      type: integer
+      minimum: 0
+    message:
+      type: string
+LotteryRunRequest:
+  type: object
+  required:
+    - seed
+  additionalProperties: false
+  properties:
+    seed:
+      type: string
+      minLength: 1
+      maxLength: 128
+LotteryRun:
+  type: object
+  required:
+    - run_id
+    - event_id
+    - seed
+    - status
+    - winner_count
+    - created_at
+  properties:
+    run_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    seed:
+      type: string
+    status:
+      type: string
+      enum:
+        - completed
+        - replayed
+        - failed
+    winner_count:
+      type: integer
+      minimum: 0
+    waitlist_count:
+      type: integer
+      minimum: 0
+    created_at:
+      type: string
+      format: date-time

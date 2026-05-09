@@ -1,0 +1,107 @@
+NotificationPreferencesResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/NotificationPreferences"
+NotificationDeliveryListResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          type: object
+          required:
+            - deliveries
+          properties:
+            deliveries:
+              type: array
+              items:
+                "$ref": "#/NotificationDelivery"
+NotificationDeliveryResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/NotificationDelivery"
+NotificationPreferences:
+  type: object
+  required:
+    - email_enabled
+    - in_app_enabled
+    - opted_out_categories
+  properties:
+    email_enabled:
+      type: boolean
+    in_app_enabled:
+      type: boolean
+    opted_out_categories:
+      type: array
+      items:
+        type: string
+    updated_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+UpdateNotificationPreferencesRequest:
+  type: object
+  required:
+    - email_enabled
+    - in_app_enabled
+    - opted_out_categories
+  additionalProperties: false
+  properties:
+    email_enabled:
+      type: boolean
+    in_app_enabled:
+      type: boolean
+    opted_out_categories:
+      type: array
+      items:
+        type: string
+NotificationDelivery:
+  type: object
+  required:
+    - delivery_id
+    - channel
+    - status
+    - attempts
+    - created_at
+    - updated_at
+  properties:
+    delivery_id:
+      type: string
+      format: uuid
+    outbox_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    employee_ref:
+      type:
+        - string
+        - "null"
+      description: Redacted recipient reference.
+    channel:
+      type: string
+      enum:
+        - email
+        - in_app
+    status:
+      "$ref": "./common.yaml#/NotificationDeliveryStatus"
+    attempts:
+      type: integer
+      minimum: 0
+    last_error:
+      type:
+        - string
+        - "null"
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time

@@ -2,1094 +2,285 @@ openapi: 3.1.0
 info:
   title: Corporate Event Ticketing System API
   version: 0.1.0
-  description: >
-    Canonical product API contract for Phase 1. Product authentication is
-    provider-claims based: the API validates an external provider token and
-    derives employee identity, role, department, site, and city from claims.
-    Product OpenAPI intentionally excludes local login/logout endpoints.
+  description: "Canonical product API contract for Phase 1. Product authentication is provider-claims based: the API validates an external provider token and derives employee identity, role, department, site, and city from claims. Product OpenAPI intentionally excludes local login/logout endpoints."
+  license:
+    name: Internal Use Only
+    identifier: LicenseRef-Internal-Use-Only
 servers:
-  - url: /api/v1
+  - url: "/api/v1"
     description: Version 1 API root
 security:
   - ProviderBearerAuth: []
 tags:
   - name: Auth
+    description: Provider-claims identity and role mapping.
   - name: Events
+    description: Employee event discovery and detail APIs.
+  - name: Eligibility
+    description: Eligibility decisions, previews, and impact reviews.
   - name: Bookings
+    description: Employee booking and activity-admin registration governance.
   - name: Tickets
+    description: Employee-bound electronic tickets and admin ticket governance.
   - name: Check-in
+    description: Online and bounded offline check-in flows.
+  - name: Notifications
+    description: Notification preferences and delivery administration.
+  - name: Reports
+    description: HR/admin aggregate reports and CSV exports.
+  - name: Audit
+    description: Redacted sensitive action audit queries.
   - name: Admin
+    description: Activity administration endpoints.
 paths:
-  /auth/me:
-    get:
-      tags:
-        - Auth
-      operationId: getAuthMe
-      summary: Read the current provider-claims identity.
-      description: >
-        Returns the employee claims and mapped application roles derived from
-        the external provider token. This endpoint never accepts caller-supplied
-        employee identity.
-      responses:
-        "200":
-          description: Current identity and mapped roles.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuthMeResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /events:
-    get:
-      tags:
-        - Events
-      operationId: listEvents
-      summary: List events visible to the current employee.
-      description: >
-        Employee identity is derived from provider claims. The response includes
-        eligibility summary, limited/unlimited status, family availability, and
-        cross-city warnings where applicable.
-      parameters:
-        - name: capacity_type
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/CapacityType"
-        - name: city
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: status
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/EventStatus"
-      responses:
-        "200":
-          description: Events visible to the current employee.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventListResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /events/{event_id}:
-    get:
-      tags:
-        - Events
-      operationId: getEvent
-      summary: Read event detail for the current employee.
-      parameters:
-        - $ref: "#/components/parameters/EventId"
-      responses:
-        "200":
-          description: Event detail with booking policy and warnings.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventDetailResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /events/{event_id}/eligibility:
-    get:
-      tags:
-        - Events
-      operationId: getEventEligibility
-      summary: Check current employee eligibility for an event.
-      description: >
-        Checks provider/HR claims, event rules, capacity type, booking window,
-        city/site warning policy, and no-show cooldown. Cross-city warnings are
-        advisory and must not block otherwise eligible employees.
-      parameters:
-        - $ref: "#/components/parameters/EventId"
-      responses:
-        "200":
-          description: Eligibility decision and non-blocking warnings.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EligibilityResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /events/{event_id}/bookings:
-    post:
-      tags:
-        - Bookings
-      operationId: createBooking
-      summary: Book the current employee for an event.
-      description: >
-        Creates a booking for the current employee derived from provider claims.
-        Limited events allow at most one ticket per employee, reject family
-        members, and must not oversell. Unlimited events do not decrement
-        inventory, do not create waitlist entries, and persist family_count on
-        the employee's main registration.
-      parameters:
-        - $ref: "#/components/parameters/EventId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateBookingRequest"
-      responses:
-        "201":
-          description: Booking confirmed or waitlisted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BookingResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /me/tickets:
-    get:
-      tags:
-        - Tickets
-      operationId: listMyTickets
-      summary: List tickets for the current employee.
-      description: >
-        Returns non-transferable tickets bound to the employee identity derived
-        from provider claims. Unlimited events show family_count on the employee
-        main ticket and do not expose companion tickets.
-      responses:
-        "200":
-          description: Current employee tickets.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TicketListResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /me/registrations/{registration_id}/cancel:
-    post:
-      tags:
-        - Bookings
-      operationId: cancelMyRegistration
-      summary: Cancel the current employee's registration.
-      description: >
-        Employee self-cancellation is allowed only during the registration
-        window. After cutoff, only an admin exception endpoint may cancel and
-        must record reason and audit log.
-      parameters:
-        - $ref: "#/components/parameters/RegistrationId"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CancelRegistrationRequest"
-      responses:
-        "200":
-          description: Registration cancelled.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CancelRegistrationResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /checkins:
-    post:
-      tags:
-        - Check-in
-      operationId: createCheckIn
-      summary: Redeem or reject a ticket at check-in.
-      description: >
-        Redeems one employee-bound ticket token at most once. The response
-        includes holder display fields for on-site verification. Duplicate,
-        tampered, expired, holder-mismatch, and transfer attempts fail or are
-        flagged with auditable reason fields.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCheckInRequest"
-      responses:
-        "200":
-          description: Check-in accepted, duplicated, rejected, or conflicted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CheckInResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /admin/events:
-    post:
-      tags:
-        - Admin
-      operationId: createAdminEvent
-      summary: Create an event.
-      description: >
-        Activity admins create limited or unlimited events. Limited events must
-        provide capacity and cannot allow family members. Unlimited events use
-        nullable capacity and may allow family_count on booking.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateEventRequest"
-      responses:
-        "201":
-          description: Event created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventDetailResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /admin/reports:
-    get:
-      tags:
-        - Admin
-      operationId: getAdminReports
-      summary: Read aggregate HR/admin reports.
-      description: >
-        Returns aggregate participation only, including family totals and city
-        distribution. Phase 1 exports are CSV-only; Excel and PDF are non-goals
-        unless a later spec adds them.
-      responses:
-        "200":
-          description: Aggregate report summary.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReportSummaryResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /admin/audit-logs:
-    get:
-      tags:
-        - Admin
-      operationId: listAuditLogs
-      summary: List audit log entries.
-      parameters:
-        - name: action
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: entity_type
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 50
-        - name: cursor
-          in: query
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Redacted audit log entries.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuditLogListResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
+  "/auth/me":
+    "$ref": "./openapi/paths/auth.yaml#/~1auth~1me"
+  "/events":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events"
+  "/events/{event_id}":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}"
+  "/events/{event_id}/eligibility":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}~1eligibility"
+  "/events/{event_id}/bookings":
+    "$ref": "./openapi/paths/bookings.yaml#/~1events~1{event_id}~1bookings"
+  "/me/registrations/{registration_id}/cancel":
+    "$ref": "./openapi/paths/bookings.yaml#/~1me~1registrations~1{registration_id}~1cancel"
+  "/admin/events":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events"
+  "/admin/events/{event_id}":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}"
+  "/admin/events/{event_id}/state":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}~1state"
+  "/admin/events/{event_id}/duplicate":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}~1duplicate"
+  "/admin/events/{event_id}/eligibility/preview":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1events~1{event_id}~1eligibility~1preview"
+  "/admin/events/{event_id}/eligibility":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1events~1{event_id}~1eligibility"
+  "/admin/eligibility-impact-reviews":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1eligibility-impact-reviews"
+  "/admin/eligibility-impact-reviews/{review_id}/resolve":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1eligibility-impact-reviews~1{review_id}~1resolve"
+  "/admin/events/{event_id}/registrations":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1registrations"
+  "/admin/events/{event_id}/registrations/{registration_id}/cancel":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1registrations~1{registration_id}~1cancel"
+  "/admin/events/{event_id}/waitlist/promote":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1waitlist~1promote"
+  "/admin/events/{event_id}/lottery-runs":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1lottery-runs"
+  "/me/tickets":
+    "$ref": "./openapi/paths/tickets.yaml#/~1me~1tickets"
+  "/tickets/{ticket_id}":
+    "$ref": "./openapi/paths/tickets.yaml#/~1tickets~1{ticket_id}"
+  "/admin/tickets/{ticket_id}/revoke":
+    "$ref": "./openapi/paths/tickets.yaml#/~1admin~1tickets~1{ticket_id}~1revoke"
+  "/checkins":
+    "$ref": "./openapi/paths/checkins.yaml#/~1checkins"
+  "/checkins/events/{event_id}/offline-package":
+    "$ref": "./openapi/paths/checkins.yaml#/~1checkins~1events~1{event_id}~1offline-package"
+  "/checkins/offline-sync":
+    "$ref": "./openapi/paths/checkins.yaml#/~1checkins~1offline-sync"
+  "/notifications/preferences":
+    "$ref": "./openapi/paths/notifications.yaml#/~1notifications~1preferences"
+  "/admin/notifications/deliveries":
+    "$ref": "./openapi/paths/notifications.yaml#/~1admin~1notifications~1deliveries"
+  "/admin/notifications/deliveries/{delivery_id}/retry":
+    "$ref": "./openapi/paths/notifications.yaml#/~1admin~1notifications~1deliveries~1{delivery_id}~1retry"
+  "/admin/reports":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports"
+  "/admin/reports/exports":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports"
+  "/admin/reports/exports/{export_id}":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports~1{export_id}"
+  "/admin/audit-logs":
+    "$ref": "./openapi/paths/audit.yaml#/~1admin~1audit-logs"
 components:
   securitySchemes:
     ProviderBearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: Provider token
-      description: External identity provider token with required employee claims.
+      "$ref": "./openapi/components/security-schemes.yaml#/ProviderBearerAuth"
   parameters:
     EventId:
-      name: event_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      "$ref": "./openapi/components/parameters.yaml#/EventId"
     RegistrationId:
-      name: registration_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      "$ref": "./openapi/components/parameters.yaml#/RegistrationId"
+    TicketId:
+      "$ref": "./openapi/components/parameters.yaml#/TicketId"
+    ReviewId:
+      "$ref": "./openapi/components/parameters.yaml#/ReviewId"
+    DeliveryId:
+      "$ref": "./openapi/components/parameters.yaml#/DeliveryId"
+    ExportId:
+      "$ref": "./openapi/components/parameters.yaml#/ExportId"
   schemas:
     ApiSuccessEnvelope:
-      type: object
-      required:
-        - success
-        - data
-        - error
-      properties:
-        success:
-          type: boolean
-          const: true
-        data:
-          description: Endpoint-specific response payload.
-        error:
-          type: "null"
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiSuccessEnvelope"
     ApiErrorEnvelope:
-      type: object
-      required:
-        - success
-        - data
-        - error
-      properties:
-        success:
-          type: boolean
-          const: false
-        data:
-          type: "null"
-        error:
-          type: string
-          minLength: 1
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiErrorEnvelope"
     ApiEnvelope:
-      oneOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - $ref: "#/components/schemas/ApiErrorEnvelope"
-
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiEnvelope"
     AuthMeResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/EmployeeClaims"
+      "$ref": "./openapi/components/schemas/common.yaml#/AuthMeResponse"
     EventListResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: object
-              required:
-                - events
-              properties:
-                events:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/EventSummary"
+      "$ref": "./openapi/components/schemas/events.yaml#/EventListResponse"
     EventDetailResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/EventDetail"
+      "$ref": "./openapi/components/schemas/events.yaml#/EventDetailResponse"
     EligibilityResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/EligibilityDecision"
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityResponse"
     BookingResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/BookingResult"
+      "$ref": "./openapi/components/schemas/bookings.yaml#/BookingResponse"
     TicketListResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: object
-              required:
-                - tickets
-              properties:
-                tickets:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/Ticket"
+      "$ref": "./openapi/components/schemas/tickets.yaml#/TicketListResponse"
     CancelRegistrationResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/CancelledRegistration"
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CancelRegistrationResponse"
     CheckInResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/CheckInResult"
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResponse"
     ReportSummaryResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/ReportSummary"
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportSummaryResponse"
     AuditLogListResponse:
-      allOf:
-        - $ref: "#/components/schemas/ApiSuccessEnvelope"
-        - type: object
-          properties:
-            data:
-              type: object
-              required:
-                - entries
-              properties:
-                entries:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/AuditLogEntry"
-                next_cursor:
-                  type:
-                    - string
-                    - "null"
-
+      "$ref": "./openapi/components/schemas/audit.yaml#/AuditLogListResponse"
+    TicketResponse:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/TicketResponse"
+    RegistrationListResponse:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/RegistrationListResponse"
+    PromoteWaitlistResponseEnvelope:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/PromoteWaitlistResponseEnvelope"
+    LotteryRunResponse:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/LotteryRunResponse"
+    EligibilityPreviewResponseEnvelope:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityPreviewResponseEnvelope"
+    EligibilityImpactReviewListResponse:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityImpactReviewListResponse"
+    EligibilityImpactReviewResponse:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityImpactReviewResponse"
+    OfflineCheckInPackageResponse:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInPackageResponse"
+    OfflineCheckInSyncResponseEnvelope:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInSyncResponseEnvelope"
+    NotificationPreferencesResponse:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationPreferencesResponse"
+    NotificationDeliveryListResponse:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDeliveryListResponse"
+    NotificationDeliveryResponse:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDeliveryResponse"
+    ReportExportResponse:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportExportResponse"
     EmployeeClaims:
-      type: object
-      required:
-        - employee_id
-        - display_name
-        - role_claims
-        - mapped_roles
-        - department
-        - site
-        - city
-        - claims_status
-      properties:
-        employee_id:
-          type: string
-        display_name:
-          type: string
-        job_title:
-          type:
-            - string
-            - "null"
-        role_claims:
-          type: array
-          items:
-            type: string
-        mapped_roles:
-          type: array
-          items:
-            $ref: "#/components/schemas/AppRole"
-        department:
-          type: string
-        site:
-          type: string
-        city:
-          type: string
-        claims_status:
-          type: string
-          enum:
-            - complete
-            - degraded_read_only
-            - rejected
-
+      "$ref": "./openapi/components/schemas/common.yaml#/EmployeeClaims"
     AppRole:
-      type: string
-      enum:
-        - employee
-        - activity_admin
-        - checkin_staff
-        - hr_reporting
-        - system_admin
+      "$ref": "./openapi/components/schemas/common.yaml#/AppRole"
     CapacityType:
-      type: string
-      enum:
-        - limited
-        - unlimited
+      "$ref": "./openapi/components/schemas/common.yaml#/CapacityType"
     EventStatus:
-      type: string
-      enum:
-        - draft
-        - pending_review
-        - open
-        - registration_closed
-        - in_progress
-        - ended
-        - archived
-        - cancelled
+      "$ref": "./openapi/components/schemas/common.yaml#/EventStatus"
     BookingStatus:
-      type: string
-      enum:
-        - confirmed
-        - waitlisted
-        - rejected
-        - cancelled
-        - checked_in
-        - no_show
+      "$ref": "./openapi/components/schemas/common.yaml#/BookingStatus"
     TicketStatus:
-      type: string
-      enum:
-        - unused
-        - checked_in
-        - cancelled
-        - expired
-        - revoked
-
+      "$ref": "./openapi/components/schemas/common.yaml#/TicketStatus"
+    NotificationDeliveryStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/NotificationDeliveryStatus"
+    ReportExportStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/ReportExportStatus"
+    AllocationMode:
+      "$ref": "./openapi/components/schemas/common.yaml#/AllocationMode"
     EventSummary:
-      type: object
-      required:
-        - event_id
-        - title
-        - starts_at
-        - registration_closes_at
-        - event_city
-        - event_site
-        - capacity_type
-        - capacity
-        - remaining_capacity
-        - allows_family
-        - status
-        - eligibility
-      properties:
-        event_id:
-          type: string
-          format: uuid
-        title:
-          type: string
-        starts_at:
-          type: string
-          format: date-time
-        registration_closes_at:
-          type: string
-          format: date-time
-        event_city:
-          type: string
-        event_site:
-          type: string
-        capacity_type:
-          $ref: "#/components/schemas/CapacityType"
-        capacity:
-          type:
-            - integer
-            - "null"
-          minimum: 1
-          description: Required for limited events; null for unlimited events.
-        remaining_capacity:
-          type:
-            - integer
-            - "null"
-          minimum: 0
-          description: Present for limited events; null for unlimited events.
-        allows_family:
-          type: boolean
-          description: Must be false for limited events.
-        status:
-          $ref: "#/components/schemas/EventStatus"
-        eligibility:
-          $ref: "#/components/schemas/EligibilityDecision"
+      "$ref": "./openapi/components/schemas/events.yaml#/EventSummary"
     EventDetail:
-      allOf:
-        - $ref: "#/components/schemas/EventSummary"
-        - type: object
-          required:
-            - description
-            - registration_opens_at
-            - ticket_transfer_policy
-          properties:
-            description:
-              type: string
-            registration_opens_at:
-              type: string
-              format: date-time
-            ticket_transfer_policy:
-              type: string
-              const: non_transferable
-            tags:
-              type: array
-              items:
-                type: string
-
+      "$ref": "./openapi/components/schemas/events.yaml#/EventDetail"
     CreateEventRequest:
-      type: object
-      required:
-        - title
-        - description
-        - starts_at
-        - registration_opens_at
-        - registration_closes_at
-        - event_city
-        - event_site
-        - capacity_type
-        - allows_family
-      properties:
-        title:
-          type: string
-          minLength: 1
-        description:
-          type: string
-        starts_at:
-          type: string
-          format: date-time
-        ends_at:
-          type:
-            - string
-            - "null"
-          format: date-time
-        registration_opens_at:
-          type: string
-          format: date-time
-        registration_closes_at:
-          type: string
-          format: date-time
-        event_city:
-          type: string
-        event_site:
-          type: string
-        capacity_type:
-          $ref: "#/components/schemas/CapacityType"
-        capacity:
-          type:
-            - integer
-            - "null"
-          minimum: 1
-          description: Required when capacity_type is limited; null when unlimited.
-        allows_family:
-          type: boolean
-          description: Must be false when capacity_type is limited.
-        tags:
-          type: array
-          items:
-            type: string
-
+      "$ref": "./openapi/components/schemas/events.yaml#/CreateEventRequest"
+    UpdateEventRequest:
+      "$ref": "./openapi/components/schemas/events.yaml#/UpdateEventRequest"
+    ChangeEventStateRequest:
+      "$ref": "./openapi/components/schemas/events.yaml#/ChangeEventStateRequest"
+    EligibilityRuleInput:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityRuleInput"
+    EligibilityRule:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityRule"
+    EligibilityPreviewRequest:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityPreviewRequest"
+    UpdateEligibilityRequest:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/UpdateEligibilityRequest"
+    EligibilityPreviewResult:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityPreviewResult"
+    EligibilityImpactReview:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityImpactReview"
+    ResolveImpactReviewRequest:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/ResolveImpactReviewRequest"
     EligibilityDecision:
-      type: object
-      required:
-        - event_id
-        - eligible
-        - can_book
-        - reasons
-        - warnings
-        - no_show_cooldown
-      properties:
-        event_id:
-          type: string
-          format: uuid
-        eligible:
-          type: boolean
-        can_book:
-          type: boolean
-        reasons:
-          type: array
-          items:
-            type: string
-        warnings:
-          type: array
-          items:
-            $ref: "#/components/schemas/Warning"
-        no_show_cooldown:
-          $ref: "#/components/schemas/NoShowCooldown"
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityDecision"
     Warning:
-      type: object
-      required:
-        - code
-        - message
-      properties:
-        code:
-          type: string
-          enum:
-            - cross_city
-            - registration_closing_soon
-            - non_transferable_ticket
-        message:
-          type: string
-        employee_city:
-          type:
-            - string
-            - "null"
-        event_city:
-          type:
-            - string
-            - "null"
+      "$ref": "./openapi/components/schemas/common.yaml#/Warning"
     NoShowCooldown:
-      type: object
-      required:
-        - active
-      properties:
-        active:
-          type: boolean
-        applies_to:
-          type:
-            - string
-            - "null"
-          enum:
-            - limited
-            - null
-        until:
-          type:
-            - string
-            - "null"
-          format: date-time
-        reason:
-          type:
-            - string
-            - "null"
-
+      "$ref": "./openapi/components/schemas/common.yaml#/NoShowCooldown"
     CreateBookingRequest:
-      type: object
-      required:
-        - idempotency_key
-      additionalProperties: false
-      properties:
-        idempotency_key:
-          type: string
-          minLength: 8
-          maxLength: 128
-        family_count:
-          type: integer
-          minimum: 0
-          default: 0
-          description: Allowed only for unlimited events.
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CreateBookingRequest"
     BookingResult:
-      type: object
-      required:
-        - registration_id
-        - event_id
-        - status
-        - capacity_type
-        - family_count
-        - warnings
-      properties:
-        registration_id:
-          type: string
-          format: uuid
-        event_id:
-          type: string
-          format: uuid
-        status:
-          $ref: "#/components/schemas/BookingStatus"
-        capacity_type:
-          $ref: "#/components/schemas/CapacityType"
-        ticket_id:
-          type:
-            - string
-            - "null"
-          format: uuid
-        family_count:
-          type: integer
-          minimum: 0
-        cancellation_deadline:
-          type:
-            - string
-            - "null"
-          format: date-time
-        warnings:
-          type: array
-          items:
-            $ref: "#/components/schemas/Warning"
-
+      "$ref": "./openapi/components/schemas/bookings.yaml#/BookingResult"
     CancelRegistrationRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        cancel_reason:
-          type: string
-          maxLength: 500
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CancelRegistrationRequest"
+    AdminCancelRegistrationRequest:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/AdminCancelRegistrationRequest"
     CancelledRegistration:
-      type: object
-      required:
-        - registration_id
-        - status
-        - cancelled_at
-      properties:
-        registration_id:
-          type: string
-          format: uuid
-        status:
-          type: string
-          const: cancelled
-        cancelled_at:
-          type: string
-          format: date-time
-        cancel_reason:
-          type:
-            - string
-            - "null"
-
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CancelledRegistration"
+    RegistrationDetail:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/RegistrationDetail"
+    PromoteWaitlistResult:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/PromoteWaitlistResult"
+    LotteryRunRequest:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/LotteryRunRequest"
+    LotteryRun:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/LotteryRun"
     Ticket:
-      type: object
-      required:
-        - ticket_id
-        - event_id
-        - event_title
-        - status
-        - holder
-        - family_count
-        - non_transferable
-        - qr_token
-      properties:
-        ticket_id:
-          type: string
-          format: uuid
-        event_id:
-          type: string
-          format: uuid
-        event_title:
-          type: string
-        status:
-          $ref: "#/components/schemas/TicketStatus"
-        holder:
-          $ref: "#/components/schemas/TicketHolder"
-        family_count:
-          type: integer
-          minimum: 0
-        non_transferable:
-          type: boolean
-          const: true
-        qr_token:
-          type: string
-          description: Signed display token; it does not transfer ticket ownership.
-        first_checkin_at:
-          type:
-            - string
-            - "null"
-          format: date-time
+      "$ref": "./openapi/components/schemas/tickets.yaml#/Ticket"
+    RevokeTicketRequest:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/RevokeTicketRequest"
     TicketHolder:
-      type: object
-      required:
-        - display_name
-        - department
-        - city
-      properties:
-        display_name:
-          type: string
-        department:
-          type: string
-        city:
-          type: string
-
+      "$ref": "./openapi/components/schemas/tickets.yaml#/TicketHolder"
     CreateCheckInRequest:
-      type: object
-      required:
-        - ticket_token
-        - event_id
-        - device_id
-      additionalProperties: false
-      properties:
-        ticket_token:
-          type: string
-        event_id:
-          type: string
-          format: uuid
-        device_id:
-          type: string
-        scanned_at:
-          type:
-            - string
-            - "null"
-          format: date-time
-        holder_mismatch_reason:
-          type:
-            - string
-            - "null"
-          description: Staff-supplied reason when rejecting suspected transfer or proxy use.
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CreateCheckInRequest"
     CheckInResult:
-      type: object
-      required:
-        - status
-        - reason_code
-        - holder
-        - family_count
-      properties:
-        status:
-          type: string
-          enum:
-            - accepted
-            - duplicate
-            - rejected
-            - conflict
-        reason_code:
-          type: string
-          enum:
-            - accepted
-            - duplicate_scan
-            - tampered_token
-            - expired_ticket
-            - revoked_ticket
-            - event_mismatch
-            - holder_mismatch
-            - transfer_attempt
-            - offline_conflict
-        checkin_id:
-          type:
-            - string
-            - "null"
-          format: uuid
-        first_checkin_at:
-          type:
-            - string
-            - "null"
-          format: date-time
-        holder:
-          $ref: "#/components/schemas/TicketHolder"
-        family_count:
-          type: integer
-          minimum: 0
-        rejection_message:
-          type:
-            - string
-            - "null"
-
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResult"
+    CheckInResolvedResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResolvedResult"
+    CheckInRejectedResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInRejectedResult"
+    OfflineCheckInPackage:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInPackage"
+    OfflineTicket:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineTicket"
+    OfflineCheckInSyncRequest:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInSyncRequest"
+    OfflineCheckInScanInput:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInScanInput"
+    OfflineCheckInSyncResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInSyncResult"
     ReportSummary:
-      type: object
-      required:
-        - event_count
-        - employee_count
-        - family_count
-        - total_attendee_count
-        - city_distribution
-      properties:
-        event_count:
-          type: integer
-          minimum: 0
-        employee_count:
-          type: integer
-          minimum: 0
-        family_count:
-          type: integer
-          minimum: 0
-        total_attendee_count:
-          type: integer
-          minimum: 0
-        city_distribution:
-          type: array
-          items:
-            type: object
-            required:
-              - city
-              - count
-            properties:
-              city:
-                type: string
-              count:
-                type: integer
-                minimum: 0
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportSummary"
+    ReportRow:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportRow"
+    ReportExportRequest:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportExportRequest"
+    ReportExport:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportExport"
+    NotificationPreferences:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationPreferences"
+    UpdateNotificationPreferencesRequest:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/UpdateNotificationPreferencesRequest"
+    NotificationDelivery:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDelivery"
     AuditLogEntry:
-      type: object
-      required:
-        - audit_id
-        - action
-        - entity_type
-        - entity_id
-        - actor_role
-        - created_at
-      properties:
-        audit_id:
-          type: string
-          format: uuid
-        action:
-          type: string
-        entity_type:
-          type: string
-        entity_id:
-          type: string
-        actor_role:
-          $ref: "#/components/schemas/AppRole"
-        created_at:
-          type: string
-          format: date-time
-        redacted_metadata:
-          type: object
-          additionalProperties: true
+      "$ref": "./openapi/components/schemas/audit.yaml#/AuditLogEntry"
   responses:
     BadRequest:
-      description: Request validation failed.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiErrorEnvelope"
+      "$ref": "./openapi/components/responses.yaml#/BadRequest"
     Unauthorized:
-      description: Authentication is missing or provider token is invalid.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiErrorEnvelope"
+      "$ref": "./openapi/components/responses.yaml#/Unauthorized"
     Forbidden:
-      description: Required claims are missing or mapped role is not allowed.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiErrorEnvelope"
+      "$ref": "./openapi/components/responses.yaml#/Forbidden"
     NotFound:
-      description: Resource was not found.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiErrorEnvelope"
+      "$ref": "./openapi/components/responses.yaml#/NotFound"
     Conflict:
-      description: Request conflicts with state, capacity, cancellation, idempotency, or ticket ownership rules.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiErrorEnvelope"
+      "$ref": "./openapi/components/responses.yaml#/Conflict"
     InternalServerError:
-      description: Unexpected server failure.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiErrorEnvelope"
+      "$ref": "./openapi/components/responses.yaml#/InternalServerError"

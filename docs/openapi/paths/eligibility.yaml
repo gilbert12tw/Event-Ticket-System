@@ -1,0 +1,123 @@
+"/admin/events/{event_id}/eligibility/preview":
+  post:
+    tags:
+      - Eligibility
+    operationId: previewAdminEventEligibility
+    x-required-roles:
+      - activity_admin
+    summary: Preview event eligibility rule impact.
+    description: Returns a match count for a proposed eligibility rule before saving it. Zero-match results are allowed for preview but must be explicitly confirmed before save.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/eligibility.yaml#/EligibilityPreviewRequest"
+    responses:
+      "200":
+        description: Eligibility preview result.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/eligibility.yaml#/EligibilityPreviewResponseEnvelope"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+"/admin/events/{event_id}/eligibility":
+  put:
+    tags:
+      - Eligibility
+    operationId: updateAdminEventEligibility
+    x-required-roles:
+      - activity_admin
+    summary: Save an event eligibility rule version.
+    description: Saves a new eligibility rule version and audits the change. A zero-match save must include explicit admin confirmation.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/eligibility.yaml#/UpdateEligibilityRequest"
+    responses:
+      "200":
+        description: Eligibility rule saved.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/eligibility.yaml#/EligibilityPreviewResponseEnvelope"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/eligibility-impact-reviews":
+  get:
+    tags:
+      - Eligibility
+    operationId: listEligibilityImpactReviews
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: List eligibility impact reviews.
+    description: Lists active registration or ticket impacts caused by HR/provider claim changes or eligibility rule changes. HR/system admins may inspect these reviews without receiving unnecessary PII.
+    responses:
+      "200":
+        description: Eligibility impact reviews.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/eligibility.yaml#/EligibilityImpactReviewListResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/eligibility-impact-reviews/{review_id}/resolve":
+  post:
+    tags:
+      - Eligibility
+    operationId: resolveEligibilityImpactReview
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: Resolve an eligibility impact review.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/ReviewId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/eligibility.yaml#/ResolveImpactReviewRequest"
+    responses:
+      "200":
+        description: Eligibility impact review resolved.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/eligibility.yaml#/EligibilityImpactReviewResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

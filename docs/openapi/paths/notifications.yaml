@@ -1,0 +1,100 @@
+"/notifications/preferences":
+  get:
+    tags:
+      - Notifications
+    operationId: getNotificationPreferences
+    x-required-roles:
+      - employee
+    summary: Read current employee notification preferences.
+    responses:
+      "200":
+        description: Notification preferences.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/notifications.yaml#/NotificationPreferencesResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+  put:
+    tags:
+      - Notifications
+    operationId: updateNotificationPreferences
+    x-required-roles:
+      - employee
+    summary: Update current employee notification preferences.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/notifications.yaml#/UpdateNotificationPreferencesRequest"
+    responses:
+      "200":
+        description: Notification preferences updated.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/notifications.yaml#/NotificationPreferencesResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/notifications/deliveries":
+  get:
+    tags:
+      - Notifications
+    operationId: listNotificationDeliveries
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: List notification delivery records.
+    description: Lists delivery attempts, retry state, suppression, and dead-letter status for activity-admin or HR/system-admin review.
+    parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          "$ref": "../components/schemas/common.yaml#/NotificationDeliveryStatus"
+    responses:
+      "200":
+        description: Notification delivery records.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/notifications.yaml#/NotificationDeliveryListResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/notifications/deliveries/{delivery_id}/retry":
+  post:
+    tags:
+      - Notifications
+    operationId: retryNotificationDelivery
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: Retry a notification delivery.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/DeliveryId"
+    responses:
+      "200":
+        description: Notification delivery retry scheduled or completed.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/notifications.yaml#/NotificationDeliveryResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

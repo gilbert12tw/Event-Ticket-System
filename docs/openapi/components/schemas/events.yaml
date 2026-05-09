@@ -1,0 +1,246 @@
+EventListResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          type: object
+          required:
+            - events
+          properties:
+            events:
+              type: array
+              items:
+                "$ref": "#/EventSummary"
+EventDetailResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/EventDetail"
+EventSummary:
+  type: object
+  required:
+    - event_id
+    - title
+    - starts_at
+    - registration_closes_at
+    - event_city
+    - event_site
+    - capacity_type
+    - capacity
+    - remaining_capacity
+    - allows_family
+    - status
+    - eligibility
+  properties:
+    event_id:
+      type: string
+      format: uuid
+    title:
+      type: string
+    starts_at:
+      type: string
+      format: date-time
+    registration_closes_at:
+      type: string
+      format: date-time
+    event_city:
+      type: string
+    event_site:
+      type: string
+    capacity_type:
+      "$ref": "./common.yaml#/CapacityType"
+    capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 1
+      description: Positive for limited events; null for unlimited events.
+    remaining_capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+      description: Remaining inventory for limited events; null for unlimited events.
+    allows_family:
+      type: boolean
+      description: Must be false for limited events; may be true for unlimited events.
+    status:
+      "$ref": "./common.yaml#/EventStatus"
+    eligibility:
+      "$ref": "./eligibility.yaml#/EligibilityDecision"
+    current_booking_status:
+      type:
+        - string
+        - "null"
+      description: Current employee booking status when visible to the caller.
+    category:
+      type:
+        - string
+        - "null"
+    tags:
+      type: array
+      items:
+        type: string
+    entry_method:
+      type:
+        - string
+        - "null"
+    visibility:
+      type:
+        - string
+        - "null"
+EventDetail:
+  allOf:
+    - "$ref": "#/EventSummary"
+    - type: object
+      required:
+        - description
+        - registration_opens_at
+        - ticket_transfer_policy
+      properties:
+        description:
+          type: string
+        registration_opens_at:
+          type: string
+          format: date-time
+        ticket_transfer_policy:
+          type: string
+          const: non_transferable
+        tags:
+          type: array
+          items:
+            type: string
+CreateEventRequest:
+  type: object
+  required:
+    - title
+    - description
+    - starts_at
+    - registration_opens_at
+    - registration_closes_at
+    - event_city
+    - event_site
+    - capacity_type
+    - capacity
+    - allows_family
+    - eligibility_rule
+  additionalProperties: false
+  properties:
+    title:
+      type: string
+      minLength: 1
+    description:
+      type: string
+    starts_at:
+      type: string
+      format: date-time
+    ends_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    registration_opens_at:
+      type: string
+      format: date-time
+    registration_closes_at:
+      type: string
+      format: date-time
+    event_city:
+      type: string
+    event_site:
+      type: string
+    capacity_type:
+      "$ref": "./common.yaml#/CapacityType"
+    capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 1
+      description: Required positive capacity for limited events; null for unlimited events.
+    allows_family:
+      type: boolean
+      description: Must be false for limited events; may be true for unlimited events where bookings persist family_count.
+    allocation_mode:
+      "$ref": "./common.yaml#/AllocationMode"
+      default: first_come_first_served
+      description: Phase 1 supports first-come-first-served booking and deterministic lottery allocation for limited events.
+    eligibility_rule:
+      "$ref": "./eligibility.yaml#/EligibilityRuleInput"
+    category:
+      type: string
+    tags:
+      type: array
+      items:
+        type: string
+    entry_method:
+      type: string
+      default: qr
+    visibility:
+      type: string
+      default: eligible
+UpdateEventRequest:
+  type: object
+  additionalProperties: false
+  properties:
+    title:
+      type: string
+      minLength: 1
+    description:
+      type: string
+    starts_at:
+      type: string
+      format: date-time
+    ends_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    registration_opens_at:
+      type: string
+      format: date-time
+    registration_closes_at:
+      type: string
+      format: date-time
+    event_city:
+      type: string
+    event_site:
+      type: string
+    capacity_type:
+      "$ref": "./common.yaml#/CapacityType"
+    capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 1
+      description: Positive for limited events; null for unlimited events. Reductions below confirmed registrations must be rejected.
+    allows_family:
+      type: boolean
+      description: Must remain false for limited events; may be true for unlimited events.
+    allocation_mode:
+      "$ref": "./common.yaml#/AllocationMode"
+    category:
+      type: string
+    tags:
+      type: array
+      items:
+        type: string
+    entry_method:
+      type: string
+    visibility:
+      type: string
+ChangeEventStateRequest:
+  type: object
+  required:
+    - status
+    - reason
+  additionalProperties: false
+  properties:
+    status:
+      "$ref": "./common.yaml#/EventStatus"
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500

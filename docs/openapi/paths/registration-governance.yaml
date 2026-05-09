@@ -1,0 +1,121 @@
+"/admin/events/{event_id}/registrations":
+  get:
+    tags:
+      - Bookings
+    operationId: listAdminEventRegistrations
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: List registrations for an event.
+    description: Returns redacted registration governance data for activity admins and HR/system reporting review, including status, ticket summary, cancellation reason, and waitlist visibility.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "200":
+        description: Event registrations.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/bookings.yaml#/RegistrationListResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+"/admin/events/{event_id}/registrations/{registration_id}/cancel":
+  post:
+    tags:
+      - Bookings
+    operationId: cancelAdminEventRegistration
+    x-required-roles:
+      - activity_admin
+    summary: Cancel a registration by admin exception.
+    description: Allows an audited admin exception cancellation after cutoff when a reason is supplied. Employee self-cancellation continues to use the claims-derived `/me/registrations/{registration_id}/cancel` endpoint.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+      - "$ref": "../components/parameters.yaml#/RegistrationId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/bookings.yaml#/AdminCancelRegistrationRequest"
+    responses:
+      "200":
+        description: Registration cancelled by admin.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/bookings.yaml#/CancelRegistrationResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}/waitlist/promote":
+  post:
+    tags:
+      - Bookings
+    operationId: promoteAdminEventWaitlist
+    x-required-roles:
+      - activity_admin
+    summary: Promote the earliest eligible waitlisted registration.
+    description: Promotes exactly one earliest eligible waitlisted registration inside the booking consistency boundary, issuing a ticket and recording audit and outbox effects or an auditable no-op/failure.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "200":
+        description: Waitlist promotion result.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/bookings.yaml#/PromoteWaitlistResponseEnvelope"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}/lottery-runs":
+  post:
+    tags:
+      - Bookings
+    operationId: createAdminEventLotteryRun
+    x-required-roles:
+      - activity_admin
+    summary: Run deterministic lottery allocation.
+    description: Runs or returns an existing replay-safe lottery allocation for the supplied event and seed, with winners, waitlist assignments, tickets, audit, and outbox effects.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/bookings.yaml#/LotteryRunRequest"
+    responses:
+      "201":
+        description: Lottery run created or replayed.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/bookings.yaml#/LotteryRunResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

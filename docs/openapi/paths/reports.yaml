@@ -1,0 +1,76 @@
+"/admin/reports":
+  get:
+    tags:
+      - Reports
+    operationId: getAdminReports
+    x-required-roles:
+      - hr_admin
+      - system_admin
+    summary: Read aggregate HR/admin reports.
+    description: Returns aggregate participation only, including family totals and city distribution. Phase 1 exports are CSV-only; Excel and PDF are non-goals unless a later spec adds them.
+    responses:
+      "200":
+        description: Aggregate report summary.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/reports.yaml#/ReportSummaryResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/reports/exports":
+  post:
+    tags:
+      - Reports
+    operationId: createAdminReportExport
+    x-required-roles:
+      - hr_admin
+      - system_admin
+    summary: Create an aggregate CSV report export.
+    description: Creates an HR-authorized aggregate CSV export backed by object storage. Excel/PDF exports, employee rows, signed tokens, QR payloads, provider tokens, session data, and raw audit metadata are not part of Phase 1.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/reports.yaml#/ReportExportRequest"
+    responses:
+      "201":
+        description: Report export created.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/reports.yaml#/ReportExportResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/reports/exports/{export_id}":
+  get:
+    tags:
+      - Reports
+    operationId: getAdminReportExport
+    x-required-roles:
+      - hr_admin
+      - system_admin
+    summary: Read report export status.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/ExportId"
+    responses:
+      "200":
+        description: Report export status.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/reports.yaml#/ReportExportResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"

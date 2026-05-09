@@ -1,0 +1,84 @@
+"/me/tickets":
+  get:
+    tags:
+      - Tickets
+    operationId: listMyTickets
+    x-required-roles:
+      - employee
+    summary: List tickets for the current employee.
+    description: Returns non-transferable tickets bound to the employee identity derived from provider claims. Unlimited events show family_count on the employee main ticket and do not expose companion tickets.
+    responses:
+      "200":
+        description: Current employee tickets.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/tickets.yaml#/TicketListResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/tickets/{ticket_id}":
+  get:
+    tags:
+      - Tickets
+    operationId: getTicket
+    x-required-roles:
+      - employee
+      - activity_admin
+      - checkin_staff
+      - hr_admin
+      - system_admin
+    summary: Read a ticket by id.
+    description: Returns a token-bearing ticket to the owning employee and a token-redacted ticket to admin, HR/system, and check-in staff roles.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/TicketId"
+    responses:
+      "200":
+        description: Ticket detail.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/tickets.yaml#/TicketResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+"/admin/tickets/{ticket_id}/revoke":
+  post:
+    tags:
+      - Tickets
+    operationId: revokeAdminTicket
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: Revoke a ticket.
+    description: Revokes a ticket with an admin-supplied reason and audit trail. Revoked or expired tokens must not redeem successfully.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/TicketId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/tickets.yaml#/RevokeTicketRequest"
+    responses:
+      "200":
+        description: Ticket revoked.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/tickets.yaml#/RedactedTicketResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

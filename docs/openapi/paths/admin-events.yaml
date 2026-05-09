@@ -1,0 +1,171 @@
+"/admin/events":
+  get:
+    tags:
+      - Admin
+    operationId: listAdminEvents
+    x-required-roles:
+      - activity_admin
+      - checkin_staff
+      - hr_admin
+      - system_admin
+    summary: List events for activity administration.
+    description: Returns activity-admin event summaries for governance screens. Employee identity is still derived from provider claims; this endpoint is not a self-service employee data surface.
+    responses:
+      "200":
+        description: Admin-visible events.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventListResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+  post:
+    tags:
+      - Admin
+    operationId: createAdminEvent
+    x-required-roles:
+      - activity_admin
+    summary: Create an event.
+    description: Activity admins create Phase 1 limited or unlimited events. Limited events require positive capacity, reject family-member expansion, and must not oversell; unlimited events use null capacity, may allow family_count on booking, and never create waitlist entries.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/events.yaml#/CreateEventRequest"
+    responses:
+      "201":
+        description: Event created.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventDetailResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}":
+  patch:
+    tags:
+      - Admin
+    operationId: updateAdminEvent
+    x-required-roles:
+      - activity_admin
+    summary: Update an event.
+    description: Updates mutable event fields and records a new event version plus audit metadata. Capacity reductions that would violate confirmed registrations must be rejected with conflict.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/events.yaml#/UpdateEventRequest"
+    responses:
+      "200":
+        description: Event updated.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventDetailResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+  delete:
+    tags:
+      - Admin
+    operationId: archiveAdminEvent
+    x-required-roles:
+      - activity_admin
+    summary: Archive or delete-equivalent an event.
+    description: Performs the Phase 1 delete-equivalent event lifecycle action. The implementation must preserve audit/versioning semantics and must not silently remove records required for reports or audit.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "200":
+        description: Event archived or delete-equivalent action completed.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventDetailResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}/state":
+  post:
+    tags:
+      - Admin
+    operationId: changeAdminEventState
+    x-required-roles:
+      - activity_admin
+    summary: Change event state.
+    description: Applies an explicit event state transition. Illegal transitions must return conflict and leave the event unchanged.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/events.yaml#/ChangeEventStateRequest"
+    responses:
+      "200":
+        description: Event state changed.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventDetailResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}/duplicate":
+  post:
+    tags:
+      - Admin
+    operationId: duplicateAdminEvent
+    x-required-roles:
+      - activity_admin
+    summary: Duplicate an event.
+    description: Creates a new draft-style event from an existing event while preserving auditability and avoiding accidental publication without admin review.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "201":
+        description: Event duplicated.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventDetailResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

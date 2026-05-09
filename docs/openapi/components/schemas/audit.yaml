@@ -1,0 +1,50 @@
+AuditLogListResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          type: object
+          required:
+            - entries
+          properties:
+            entries:
+              type: array
+              items:
+                "$ref": "#/AuditLogEntry"
+            next_cursor:
+              type:
+                - string
+                - "null"
+AuditLogEntry:
+  type: object
+  required:
+    - audit_id
+    - action
+    - entity_type
+    - entity_id
+    - role
+    - created_at
+  properties:
+    audit_id:
+      type: string
+      format: uuid
+    actor_id:
+      type:
+        - string
+        - "null"
+      description: Redacted actor identifier.
+    action:
+      type: string
+    entity_type:
+      type: string
+    entity_id:
+      type: string
+    role:
+      "$ref": "./common.yaml#/AppRole"
+    created_at:
+      type: string
+      format: date-time
+    redacted_metadata:
+      type: object
+      additionalProperties: true
