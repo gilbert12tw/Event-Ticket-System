@@ -1,0 +1,5 @@
+ProviderBearerAuth:
+  type: http
+  scheme: bearer
+  bearerFormat: Provider token
+  description: External identity provider token with required employee claims.

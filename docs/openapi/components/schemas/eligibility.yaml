@@ -1,0 +1,209 @@
+EligibilityResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/EligibilityDecision"
+EligibilityPreviewResponseEnvelope:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/EligibilityPreviewResult"
+EligibilityImpactReviewListResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          type: object
+          required:
+            - reviews
+          properties:
+            reviews:
+              type: array
+              items:
+                "$ref": "#/EligibilityImpactReview"
+EligibilityImpactReviewResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/EligibilityImpactReview"
+EligibilityRuleInput:
+  type: object
+  additionalProperties: false
+  properties:
+    allow_all:
+      type: boolean
+      default: false
+    department:
+      type:
+        - string
+        - "null"
+    site:
+      type:
+        - string
+        - "null"
+    city:
+      type:
+        - string
+        - "null"
+    min_grade:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    employment_status:
+      type:
+        - string
+        - "null"
+    custom_tags:
+      type: array
+      items:
+        type: string
+  description: Phase 1 eligibility rule input. `allow_all=true` represents an all-employee event; otherwise the supplied provider/HR claim predicates are combined by the implementation-defined rule version.
+EligibilityRule:
+  allOf:
+    - "$ref": "#/EligibilityRuleInput"
+    - type: object
+      required:
+        - rule_id
+        - event_id
+        - version
+      properties:
+        rule_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+EligibilityPreviewRequest:
+  type: object
+  required:
+    - rule
+  additionalProperties: false
+  properties:
+    rule:
+      "$ref": "#/EligibilityRuleInput"
+UpdateEligibilityRequest:
+  type: object
+  required:
+    - rule
+    - allow_zero_match
+  additionalProperties: false
+  properties:
+    rule:
+      "$ref": "#/EligibilityRuleInput"
+    allow_zero_match:
+      type: boolean
+      description: Explicit confirmation required to save a zero-match rule.
+EligibilityPreviewResult:
+  type: object
+  required:
+    - event_id
+    - match_count
+    - zero_match
+  properties:
+    event_id:
+      type: string
+      format: uuid
+    match_count:
+      type: integer
+      minimum: 0
+    zero_match:
+      type: boolean
+    rule:
+      "$ref": "#/EligibilityRuleInput"
+EligibilityImpactReview:
+  type: object
+  required:
+    - review_id
+    - event_id
+    - status
+    - reason
+    - created_at
+  properties:
+    review_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    registration_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    ticket_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    employee_ref:
+      type:
+        - string
+        - "null"
+      description: Redacted employee reference suitable for admin review.
+    status:
+      type: string
+      enum:
+        - open
+        - resolved
+        - ignored
+    reason:
+      type: string
+    created_at:
+      type: string
+      format: date-time
+    resolved_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+ResolveImpactReviewRequest:
+  type: object
+  required:
+    - reason
+  additionalProperties: false
+  properties:
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+EligibilityDecision:
+  type: object
+  required:
+    - event_id
+    - eligible
+    - can_book
+    - reasons
+    - warnings
+    - no_show_cooldown
+  properties:
+    event_id:
+      type: string
+      format: uuid
+    eligible:
+      type: boolean
+    can_book:
+      type: boolean
+    reasons:
+      type: array
+      items:
+        type: string
+    warnings:
+      type: array
+      items:
+        "$ref": "./common.yaml#/Warning"
+    no_show_cooldown:
+      "$ref": "./common.yaml#/NoShowCooldown"

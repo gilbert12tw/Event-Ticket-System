@@ -1,0 +1,182 @@
+ApiSuccessEnvelope:
+  type: object
+  required:
+    - success
+    - data
+    - error
+  properties:
+    success:
+      type: boolean
+      const: true
+    data:
+      description: Endpoint-specific response payload.
+    error:
+      type: "null"
+ApiErrorEnvelope:
+  type: object
+  required:
+    - success
+    - data
+    - error
+  properties:
+    success:
+      type: boolean
+      const: false
+    data:
+      type: "null"
+    error:
+      type: string
+      minLength: 1
+ApiEnvelope:
+  oneOf:
+    - "$ref": "#/ApiSuccessEnvelope"
+    - "$ref": "#/ApiErrorEnvelope"
+AuthMeResponse:
+  allOf:
+    - "$ref": "#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/EmployeeClaims"
+EmployeeClaims:
+  type: object
+  required:
+    - employee_id
+    - display_name
+    - role_claims
+    - mapped_roles
+    - department
+    - site
+    - city
+    - claims_status
+  properties:
+    employee_id:
+      type: string
+    display_name:
+      type: string
+    job_title:
+      type:
+        - string
+        - "null"
+    role_claims:
+      type: array
+      items:
+        type: string
+    mapped_roles:
+      type: array
+      items:
+        "$ref": "#/AppRole"
+    department:
+      type: string
+    site:
+      type: string
+    city:
+      type: string
+    claims_status:
+      type: string
+      enum:
+        - complete
+        - degraded_read_only
+        - rejected
+AppRole:
+  type: string
+  enum:
+    - employee
+    - activity_admin
+    - checkin_staff
+    - hr_admin
+    - system_admin
+CapacityType:
+  type: string
+  enum:
+    - limited
+    - unlimited
+EventStatus:
+  type: string
+  enum:
+    - draft
+    - published
+    - closed
+    - cancelled
+    - archived
+BookingStatus:
+  type: string
+  enum:
+    - confirmed
+    - waitlisted
+    - rejected
+    - cancelled
+    - checked_in
+    - no_show
+TicketStatus:
+  type: string
+  enum:
+    - unused
+    - checked_in
+    - cancelled
+    - expired
+    - revoked
+NotificationDeliveryStatus:
+  type: string
+  enum:
+    - pending
+    - sent
+    - failed
+    - suppressed
+    - dead_letter
+ReportExportStatus:
+  type: string
+  enum:
+    - pending
+    - ready
+    - failed
+AllocationMode:
+  type: string
+  enum:
+    - first_come_first_served
+    - lottery
+Warning:
+  type: object
+  required:
+    - code
+    - message
+  properties:
+    code:
+      type: string
+      enum:
+        - cross_city
+        - registration_closing_soon
+        - non_transferable_ticket
+    message:
+      type: string
+    employee_city:
+      type:
+        - string
+        - "null"
+    event_city:
+      type:
+        - string
+        - "null"
+NoShowCooldown:
+  type: object
+  required:
+    - active
+  properties:
+    active:
+      type: boolean
+    applies_to:
+      type:
+        - string
+        - "null"
+      enum:
+        - limited
+        - null
+    until:
+      type:
+        - string
+        - "null"
+      format: date-time
+    reason:
+      type:
+        - string
+        - "null"

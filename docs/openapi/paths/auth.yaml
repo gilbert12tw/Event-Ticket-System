@@ -1,0 +1,24 @@
+"/auth/me":
+  get:
+    tags:
+      - Auth
+    operationId: getAuthMe
+    x-required-roles:
+      - employee
+      - activity_admin
+      - checkin_staff
+      - hr_admin
+      - system_admin
+    summary: Read the current provider-claims identity.
+    description: Returns the employee claims and mapped application roles derived from the external provider token. This endpoint never accepts caller-supplied employee identity.
+    responses:
+      "200":
+        description: Current identity and mapped roles.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/common.yaml#/AuthMeResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"

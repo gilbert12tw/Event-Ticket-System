@@ -1,0 +1,42 @@
+EventId:
+  name: event_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+RegistrationId:
+  name: registration_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+TicketId:
+  name: ticket_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+ReviewId:
+  name: review_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+DeliveryId:
+  name: delivery_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+ExportId:
+  name: export_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid

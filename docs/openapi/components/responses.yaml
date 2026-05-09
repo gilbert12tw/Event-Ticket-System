@@ -1,0 +1,36 @@
+BadRequest:
+  description: Request validation failed.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"
+Unauthorized:
+  description: Authentication is missing or provider token is invalid.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"
+Forbidden:
+  description: Required claims are missing or mapped role is not allowed.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"
+NotFound:
+  description: Resource was not found.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"
+Conflict:
+  description: Request conflicts with state, capacity, cancellation, idempotency, or ticket ownership rules.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"
+InternalServerError:
+  description: Unexpected server failure.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"

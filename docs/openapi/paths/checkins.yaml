@@ -1,0 +1,94 @@
+"/checkins":
+  post:
+    tags:
+      - Check-in
+    operationId: createCheckIn
+    x-required-roles:
+      - checkin_staff
+    summary: Redeem or reject a ticket at check-in.
+    description: Redeems one employee-bound ticket token at most once. The response includes holder display fields for on-site verification. Duplicate, tampered, expired, holder-mismatch, and transfer attempts fail or are flagged with auditable reason fields.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/checkins.yaml#/CreateCheckInRequest"
+    responses:
+      "200":
+        description: Check-in accepted, duplicated, rejected, or conflicted.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/checkins.yaml#/CheckInResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/checkins/events/{event_id}/offline-package":
+  get:
+    tags:
+      - Check-in
+    operationId: getOfflineCheckInPackage
+    x-required-roles:
+      - checkin_staff
+    summary: Download a bounded offline check-in package.
+    description: Returns a single-event, staff-bound, device-bound, signed offline package valid for a limited time. Offline results remain provisional until sync.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+      - name: device_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    responses:
+      "200":
+        description: Offline check-in package.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/checkins.yaml#/OfflineCheckInPackageResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+"/checkins/offline-sync":
+  post:
+    tags:
+      - Check-in
+    operationId: syncOfflineCheckIns
+    x-required-roles:
+      - checkin_staff
+    summary: Sync provisional offline check-in scans.
+    description: Syncs provisional offline scans and returns accepted, duplicate, or conflict per scan while preserving the first committed redemption as final.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/checkins.yaml#/OfflineCheckInSyncRequest"
+    responses:
+      "200":
+        description: Offline check-in sync result.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/checkins.yaml#/OfflineCheckInSyncResponseEnvelope"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

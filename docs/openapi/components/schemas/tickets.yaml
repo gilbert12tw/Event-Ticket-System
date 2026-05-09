@@ -1,0 +1,120 @@
+TicketListResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          type: object
+          required:
+            - tickets
+          properties:
+            tickets:
+              type: array
+              items:
+                "$ref": "#/Ticket"
+TicketResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          oneOf:
+            - "$ref": "#/Ticket"
+            - "$ref": "#/RedactedTicket"
+RedactedTicketResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/RedactedTicket"
+Ticket:
+  allOf:
+    - "$ref": "#/TicketBase"
+    - type: object
+      required:
+        - qr_token
+      properties:
+        qr_token:
+          type: string
+          description: Signed display token for the employee who owns the ticket; it does not transfer ticket ownership.
+RedactedTicket:
+  allOf:
+    - "$ref": "#/TicketBase"
+    - type: object
+      description: Admin/governance ticket view. Ticket tokens are intentionally omitted from this schema.
+TicketBase:
+  type: object
+  required:
+    - ticket_id
+    - event_id
+    - event_title
+    - status
+    - holder
+    - family_count
+    - non_transferable
+    - sequence_number
+  properties:
+    ticket_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    event_title:
+      type: string
+    registration_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    sequence_number:
+      type: integer
+      minimum: 1
+    status:
+      "$ref": "./common.yaml#/TicketStatus"
+    holder:
+      "$ref": "#/TicketHolder"
+    family_count:
+      type: integer
+      minimum: 0
+    non_transferable:
+      type: boolean
+      const: true
+    first_checkin_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    expires_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    revoked_reason:
+      type:
+        - string
+        - "null"
+RevokeTicketRequest:
+  type: object
+  required:
+    - reason
+  additionalProperties: false
+  properties:
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+TicketHolder:
+  type: object
+  required:
+    - display_name
+    - department
+    - city
+  properties:
+    display_name:
+      type: string
+    department:
+      type: string
+    city:
+      type: string

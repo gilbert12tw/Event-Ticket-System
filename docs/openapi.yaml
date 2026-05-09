@@ -1,0 +1,286 @@
+openapi: 3.1.0
+info:
+  title: Corporate Event Ticketing System API
+  version: 0.1.0
+  description: "Canonical product API contract for Phase 1. Product authentication is provider-claims based: the API validates an external provider token and derives employee identity, role, department, site, and city from claims. Product OpenAPI intentionally excludes local login/logout endpoints."
+  license:
+    name: Internal Use Only
+    identifier: LicenseRef-Internal-Use-Only
+servers:
+  - url: "/api/v1"
+    description: Version 1 API root
+security:
+  - ProviderBearerAuth: []
+tags:
+  - name: Auth
+    description: Provider-claims identity and role mapping.
+  - name: Events
+    description: Employee event discovery and detail APIs.
+  - name: Eligibility
+    description: Eligibility decisions, previews, and impact reviews.
+  - name: Bookings
+    description: Employee booking and activity-admin registration governance.
+  - name: Tickets
+    description: Employee-bound electronic tickets and admin ticket governance.
+  - name: Check-in
+    description: Online and bounded offline check-in flows.
+  - name: Notifications
+    description: Notification preferences and delivery administration.
+  - name: Reports
+    description: HR/admin aggregate reports and CSV exports.
+  - name: Audit
+    description: Redacted sensitive action audit queries.
+  - name: Admin
+    description: Activity administration endpoints.
+paths:
+  "/auth/me":
+    "$ref": "./openapi/paths/auth.yaml#/~1auth~1me"
+  "/events":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events"
+  "/events/{event_id}":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}"
+  "/events/{event_id}/eligibility":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}~1eligibility"
+  "/events/{event_id}/bookings":
+    "$ref": "./openapi/paths/bookings.yaml#/~1events~1{event_id}~1bookings"
+  "/me/registrations/{registration_id}/cancel":
+    "$ref": "./openapi/paths/bookings.yaml#/~1me~1registrations~1{registration_id}~1cancel"
+  "/admin/events":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events"
+  "/admin/events/{event_id}":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}"
+  "/admin/events/{event_id}/state":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}~1state"
+  "/admin/events/{event_id}/duplicate":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}~1duplicate"
+  "/admin/events/{event_id}/eligibility/preview":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1events~1{event_id}~1eligibility~1preview"
+  "/admin/events/{event_id}/eligibility":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1events~1{event_id}~1eligibility"
+  "/admin/eligibility-impact-reviews":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1eligibility-impact-reviews"
+  "/admin/eligibility-impact-reviews/{review_id}/resolve":
+    "$ref": "./openapi/paths/eligibility.yaml#/~1admin~1eligibility-impact-reviews~1{review_id}~1resolve"
+  "/admin/events/{event_id}/registrations":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1registrations"
+  "/admin/events/{event_id}/registrations/{registration_id}/cancel":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1registrations~1{registration_id}~1cancel"
+  "/admin/events/{event_id}/waitlist/promote":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1waitlist~1promote"
+  "/admin/events/{event_id}/lottery-runs":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1lottery-runs"
+  "/me/tickets":
+    "$ref": "./openapi/paths/tickets.yaml#/~1me~1tickets"
+  "/tickets/{ticket_id}":
+    "$ref": "./openapi/paths/tickets.yaml#/~1tickets~1{ticket_id}"
+  "/admin/tickets/{ticket_id}/revoke":
+    "$ref": "./openapi/paths/tickets.yaml#/~1admin~1tickets~1{ticket_id}~1revoke"
+  "/checkins":
+    "$ref": "./openapi/paths/checkins.yaml#/~1checkins"
+  "/checkins/events/{event_id}/offline-package":
+    "$ref": "./openapi/paths/checkins.yaml#/~1checkins~1events~1{event_id}~1offline-package"
+  "/checkins/offline-sync":
+    "$ref": "./openapi/paths/checkins.yaml#/~1checkins~1offline-sync"
+  "/notifications/preferences":
+    "$ref": "./openapi/paths/notifications.yaml#/~1notifications~1preferences"
+  "/admin/notifications/deliveries":
+    "$ref": "./openapi/paths/notifications.yaml#/~1admin~1notifications~1deliveries"
+  "/admin/notifications/deliveries/{delivery_id}/retry":
+    "$ref": "./openapi/paths/notifications.yaml#/~1admin~1notifications~1deliveries~1{delivery_id}~1retry"
+  "/admin/reports":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports"
+  "/admin/reports/exports":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports"
+  "/admin/reports/exports/{export_id}":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports~1{export_id}"
+  "/admin/audit-logs":
+    "$ref": "./openapi/paths/audit.yaml#/~1admin~1audit-logs"
+components:
+  securitySchemes:
+    ProviderBearerAuth:
+      "$ref": "./openapi/components/security-schemes.yaml#/ProviderBearerAuth"
+  parameters:
+    EventId:
+      "$ref": "./openapi/components/parameters.yaml#/EventId"
+    RegistrationId:
+      "$ref": "./openapi/components/parameters.yaml#/RegistrationId"
+    TicketId:
+      "$ref": "./openapi/components/parameters.yaml#/TicketId"
+    ReviewId:
+      "$ref": "./openapi/components/parameters.yaml#/ReviewId"
+    DeliveryId:
+      "$ref": "./openapi/components/parameters.yaml#/DeliveryId"
+    ExportId:
+      "$ref": "./openapi/components/parameters.yaml#/ExportId"
+  schemas:
+    ApiSuccessEnvelope:
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiSuccessEnvelope"
+    ApiErrorEnvelope:
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiErrorEnvelope"
+    ApiEnvelope:
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiEnvelope"
+    AuthMeResponse:
+      "$ref": "./openapi/components/schemas/common.yaml#/AuthMeResponse"
+    EventListResponse:
+      "$ref": "./openapi/components/schemas/events.yaml#/EventListResponse"
+    EventDetailResponse:
+      "$ref": "./openapi/components/schemas/events.yaml#/EventDetailResponse"
+    EligibilityResponse:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityResponse"
+    BookingResponse:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/BookingResponse"
+    TicketListResponse:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/TicketListResponse"
+    CancelRegistrationResponse:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CancelRegistrationResponse"
+    CheckInResponse:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResponse"
+    ReportSummaryResponse:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportSummaryResponse"
+    AuditLogListResponse:
+      "$ref": "./openapi/components/schemas/audit.yaml#/AuditLogListResponse"
+    TicketResponse:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/TicketResponse"
+    RegistrationListResponse:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/RegistrationListResponse"
+    PromoteWaitlistResponseEnvelope:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/PromoteWaitlistResponseEnvelope"
+    LotteryRunResponse:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/LotteryRunResponse"
+    EligibilityPreviewResponseEnvelope:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityPreviewResponseEnvelope"
+    EligibilityImpactReviewListResponse:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityImpactReviewListResponse"
+    EligibilityImpactReviewResponse:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityImpactReviewResponse"
+    OfflineCheckInPackageResponse:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInPackageResponse"
+    OfflineCheckInSyncResponseEnvelope:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInSyncResponseEnvelope"
+    NotificationPreferencesResponse:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationPreferencesResponse"
+    NotificationDeliveryListResponse:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDeliveryListResponse"
+    NotificationDeliveryResponse:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDeliveryResponse"
+    ReportExportResponse:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportExportResponse"
+    EmployeeClaims:
+      "$ref": "./openapi/components/schemas/common.yaml#/EmployeeClaims"
+    AppRole:
+      "$ref": "./openapi/components/schemas/common.yaml#/AppRole"
+    CapacityType:
+      "$ref": "./openapi/components/schemas/common.yaml#/CapacityType"
+    EventStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/EventStatus"
+    BookingStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/BookingStatus"
+    TicketStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/TicketStatus"
+    NotificationDeliveryStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/NotificationDeliveryStatus"
+    ReportExportStatus:
+      "$ref": "./openapi/components/schemas/common.yaml#/ReportExportStatus"
+    AllocationMode:
+      "$ref": "./openapi/components/schemas/common.yaml#/AllocationMode"
+    EventSummary:
+      "$ref": "./openapi/components/schemas/events.yaml#/EventSummary"
+    EventDetail:
+      "$ref": "./openapi/components/schemas/events.yaml#/EventDetail"
+    CreateEventRequest:
+      "$ref": "./openapi/components/schemas/events.yaml#/CreateEventRequest"
+    UpdateEventRequest:
+      "$ref": "./openapi/components/schemas/events.yaml#/UpdateEventRequest"
+    ChangeEventStateRequest:
+      "$ref": "./openapi/components/schemas/events.yaml#/ChangeEventStateRequest"
+    EligibilityRuleInput:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityRuleInput"
+    EligibilityRule:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityRule"
+    EligibilityPreviewRequest:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityPreviewRequest"
+    UpdateEligibilityRequest:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/UpdateEligibilityRequest"
+    EligibilityPreviewResult:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityPreviewResult"
+    EligibilityImpactReview:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityImpactReview"
+    ResolveImpactReviewRequest:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/ResolveImpactReviewRequest"
+    EligibilityDecision:
+      "$ref": "./openapi/components/schemas/eligibility.yaml#/EligibilityDecision"
+    Warning:
+      "$ref": "./openapi/components/schemas/common.yaml#/Warning"
+    NoShowCooldown:
+      "$ref": "./openapi/components/schemas/common.yaml#/NoShowCooldown"
+    CreateBookingRequest:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CreateBookingRequest"
+    BookingResult:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/BookingResult"
+    CancelRegistrationRequest:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CancelRegistrationRequest"
+    AdminCancelRegistrationRequest:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/AdminCancelRegistrationRequest"
+    CancelledRegistration:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/CancelledRegistration"
+    RegistrationDetail:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/RegistrationDetail"
+    PromoteWaitlistResult:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/PromoteWaitlistResult"
+    LotteryRunRequest:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/LotteryRunRequest"
+    LotteryRun:
+      "$ref": "./openapi/components/schemas/bookings.yaml#/LotteryRun"
+    Ticket:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/Ticket"
+    RevokeTicketRequest:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/RevokeTicketRequest"
+    TicketHolder:
+      "$ref": "./openapi/components/schemas/tickets.yaml#/TicketHolder"
+    CreateCheckInRequest:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CreateCheckInRequest"
+    CheckInResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResult"
+    CheckInResolvedResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResolvedResult"
+    CheckInRejectedResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInRejectedResult"
+    OfflineCheckInPackage:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInPackage"
+    OfflineTicket:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineTicket"
+    OfflineCheckInSyncRequest:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInSyncRequest"
+    OfflineCheckInScanInput:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInScanInput"
+    OfflineCheckInSyncResult:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/OfflineCheckInSyncResult"
+    ReportSummary:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportSummary"
+    ReportRow:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportRow"
+    ReportExportRequest:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportExportRequest"
+    ReportExport:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportExport"
+    NotificationPreferences:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationPreferences"
+    UpdateNotificationPreferencesRequest:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/UpdateNotificationPreferencesRequest"
+    NotificationDelivery:
+      "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDelivery"
+    AuditLogEntry:
+      "$ref": "./openapi/components/schemas/audit.yaml#/AuditLogEntry"
+  responses:
+    BadRequest:
+      "$ref": "./openapi/components/responses.yaml#/BadRequest"
+    Unauthorized:
+      "$ref": "./openapi/components/responses.yaml#/Unauthorized"
+    Forbidden:
+      "$ref": "./openapi/components/responses.yaml#/Forbidden"
+    NotFound:
+      "$ref": "./openapi/components/responses.yaml#/NotFound"
+    Conflict:
+      "$ref": "./openapi/components/responses.yaml#/Conflict"
+    InternalServerError:
+      "$ref": "./openapi/components/responses.yaml#/InternalServerError"

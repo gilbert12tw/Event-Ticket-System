@@ -1,19 +1,21 @@
-# Feature: Local SSO Login Flow
+# Development-Only: Local Demo Auth Compatibility
 
 ## Summary
 
-Phase 1 replaces browser-trusted demo actor headers with a server-issued local SSO session. The Go app signs a stateless `HttpOnly` cookie, the React SPA reads only `/api/v1/auth/me`, and existing ticketing APIs continue receiving a `ticketing.Actor` from server-side authentication. This is a local SSO simulation for mentor/demo usage, not real enterprise OIDC.
+This document is a development and automated-test compatibility note only. It is not a Phase 1 product authentication requirement, not part of the canonical product OpenAPI contract, and must not be used to justify local login/logout in production UX or product APIs.
+
+Product authentication is provider-claims based: the Go app validates an external provider token, maps required employee claims, and exposes `/api/v1/auth/me` as the canonical identity endpoint. Local demo auth may remain only for non-production demos/tests until COR-19 and COR-20 replace production paths with provider-session behavior.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Given a known local principal, When the SPA posts `principal_id` to `/api/v1/auth/login`, Then the API returns actor/session metadata and sets a `cets_session` cookie with `HttpOnly` and `SameSite=Lax`.
+- [ ] AC-1: Given a known local principal in non-production mode, When a demo/test helper posts `principal_id` to `/api/v1/auth/login`, Then the API returns actor/session metadata and sets a `cets_session` cookie with `HttpOnly` and `SameSite=Lax`.
 - [ ] AC-2: Given an unknown or empty principal, When login is submitted, Then the API returns `401` and does not set a valid session.
 - [ ] AC-3: Given no valid session cookie, When the SPA calls a protected `/api/v1/*` ticketing endpoint, Then the API returns `401`.
 - [ ] AC-4: Given a valid session cookie, When the SPA calls ticketing APIs, Then the server resolves the actor from the cookie and role checks remain enforced by application services.
-- [ ] AC-5: Given a valid session, When `/api/v1/auth/logout` is called, Then the response expires `cets_session` and `/api/v1/auth/me` returns `401`.
+- [ ] AC-5: Given a valid non-production local session, When `/api/v1/auth/logout` is called, Then the response expires `cets_session` and `/api/v1/auth/me` returns `401`.
 - [ ] AC-6: Given `APP_ENV=production`, When a request provides only `X-Actor-ID` / `X-Role`, Then the API rejects it instead of trusting legacy demo headers.
 - [ ] AC-7: Given `APP_ENV=local`, `demo`, or `test`, When existing tests or demo helpers use legacy headers, Then they continue to work for backward compatibility.
-- [ ] AC-8: Given the React SPA is unauthenticated, When it loads any browser route, Then it shows the quiet local SSO login screen instead of privileged workspace data.
+- [ ] AC-8: Given the React SPA runs in local/demo/test mode and is unauthenticated, When it loads any browser route, Then it may show the local demo auth screen instead of privileged workspace data.
 - [ ] AC-9: Given the user changes role in the Demo Runbook, When each runbook step runs, Then the web UI switches local sessions through login calls and completes the existing AC-9 flow.
 
 ## Edge Cases
@@ -34,10 +36,12 @@ Phase 1 replaces browser-trusted demo actor headers with a server-issued local S
 | Timeout | Auth endpoints run inside the existing request timeout middleware. | Same `REQUEST_TIMEOUT_MS`, default 5000ms. |
 | Security | Session cookie is `HttpOnly`, `SameSite=Lax`, signed with HMAC-SHA256, and redacted from API activity. | No raw session token in JS state or logs. |
 | Config | Auth secret, TTL, and secure-cookie behavior come from env vars. | Production rejects demo/default secrets and insecure cookies. |
-| Observability | Login/logout emit structured logs without PII beyond principal and role. | One log event per login/logout. |
+| Observability | Non-production local login/logout emit structured logs without PII beyond principal and role. | One log event per local demo auth action. |
 | Statelessness | Session data is contained in signed claims; no local files or in-memory session maps. | App remains horizontally scalable. |
 
-## Minimal API Contract
+## Development-Only API Contract
+
+These endpoints are excluded from `docs/openapi.yaml` and from Phase 1 product scope.
 
 ```text
 POST /api/v1/auth/login
@@ -82,4 +86,4 @@ Cookie: cets_session=<signed claims>
 - Logs: Auth events use structured logs to stdout and do not log cookie values.
 - Processes: No session map, sticky process, or local state is introduced.
 - Build / Release / Run: Docker image remains immutable; auth behavior varies only by env config.
-- Dev / Prod Parity: Local Compose exercises the same cookie-based auth path with non-secure cookies for localhost.
+- Dev / Prod Parity: Local/demo auth is an explicit compatibility path; production product behavior uses external provider tokens and required employee claims.

@@ -1,0 +1,238 @@
+CheckInResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/CheckInResult"
+OfflineCheckInPackageResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/OfflineCheckInPackage"
+OfflineCheckInSyncResponseEnvelope:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/OfflineCheckInSyncResult"
+CreateCheckInRequest:
+  type: object
+  required:
+    - ticket_token
+    - event_id
+    - device_id
+  additionalProperties: false
+  properties:
+    ticket_token:
+      type: string
+    event_id:
+      type: string
+      format: uuid
+    device_id:
+      type: string
+    scanned_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    holder_mismatch_reason:
+      type:
+        - string
+        - "null"
+      description: Staff-supplied reason when rejecting suspected transfer or proxy use.
+CheckInResult:
+  oneOf:
+    - "$ref": "#/CheckInResolvedResult"
+    - "$ref": "#/CheckInRejectedResult"
+CheckInResolvedResult:
+  type: object
+  required:
+    - status
+    - reason_code
+    - holder
+    - family_count
+  properties:
+    status:
+      type: string
+      enum:
+        - accepted
+        - duplicate
+        - conflict
+    reason_code:
+      type: string
+      enum:
+        - accepted
+        - duplicate_scan
+        - offline_conflict
+    checkin_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    first_checkin_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    holder:
+      "$ref": "./tickets.yaml#/TicketHolder"
+    family_count:
+      type: integer
+      minimum: 0
+    rejection_message:
+      type:
+        - string
+        - "null"
+CheckInRejectedResult:
+  type: object
+  required:
+    - status
+    - reason_code
+  properties:
+    status:
+      type: string
+      const: rejected
+    reason_code:
+      type: string
+      enum:
+        - tampered_token
+        - expired_ticket
+        - revoked_ticket
+        - event_mismatch
+        - holder_mismatch
+        - transfer_attempt
+    checkin_id:
+      type: "null"
+    first_checkin_at:
+      type: "null"
+    holder:
+      oneOf:
+        - "$ref": "./tickets.yaml#/TicketHolder"
+        - type: "null"
+      description: Present only when the rejected token can be safely resolved.
+    family_count:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    rejection_message:
+      type:
+        - string
+        - "null"
+OfflineCheckInPackage:
+  type: object
+  required:
+    - batch_id
+    - event_id
+    - device_id
+    - valid_until
+    - package_signature
+    - ticket_count
+    - tickets
+  properties:
+    batch_id:
+      type: string
+    event_id:
+      type: string
+      format: uuid
+    device_id:
+      type: string
+    valid_until:
+      type: string
+      format: date-time
+      description: Package validity must be bounded; Phase 1 default is 4 hours.
+    package_signature:
+      type: string
+    ticket_count:
+      type: integer
+      minimum: 0
+    tickets:
+      type: array
+      items:
+        "$ref": "#/OfflineTicket"
+OfflineTicket:
+  type: object
+  required:
+    - ticket_id
+    - token_hash
+    - holder
+    - family_count
+  properties:
+    ticket_id:
+      type: string
+      format: uuid
+    token_hash:
+      type: string
+      description: Hash of the signed ticket token; raw provider tokens are never included.
+    holder:
+      "$ref": "./tickets.yaml#/TicketHolder"
+    family_count:
+      type: integer
+      minimum: 0
+OfflineCheckInSyncRequest:
+  type: object
+  required:
+    - batch_id
+    - event_id
+    - device_id
+    - package_signature
+    - scans
+  additionalProperties: false
+  properties:
+    batch_id:
+      type: string
+    event_id:
+      type: string
+      format: uuid
+    device_id:
+      type: string
+    package_signature:
+      type: string
+    scans:
+      type: array
+      items:
+        "$ref": "#/OfflineCheckInScanInput"
+OfflineCheckInScanInput:
+  type: object
+  required:
+    - ticket_token
+    - scanned_at
+  additionalProperties: false
+  properties:
+    ticket_token:
+      type: string
+    scanned_at:
+      type: string
+      format: date-time
+    local_scan_id:
+      type:
+        - string
+        - "null"
+OfflineCheckInSyncResult:
+  type: object
+  required:
+    - batch_id
+    - accepted
+    - duplicate
+    - conflict
+    - results
+  properties:
+    batch_id:
+      type: string
+    accepted:
+      type: integer
+      minimum: 0
+    duplicate:
+      type: integer
+      minimum: 0
+    conflict:
+      type: integer
+      minimum: 0
+    results:
+      type: array
+      items:
+        "$ref": "#/CheckInResult"

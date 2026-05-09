@@ -1,0 +1,169 @@
+ReportSummaryResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/ReportSummary"
+ReportExportResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/ReportExport"
+ReportSummary:
+  type: object
+  required:
+    - event_count
+    - employee_count
+    - family_count
+    - total_attendee_count
+    - city_distribution
+    - rows
+  properties:
+    event_count:
+      type: integer
+      minimum: 0
+    employee_count:
+      type: integer
+      minimum: 0
+    family_count:
+      type: integer
+      minimum: 0
+    total_attendee_count:
+      type: integer
+      minimum: 0
+    city_distribution:
+      type: array
+      items:
+        type: object
+        required:
+          - city
+          - count
+        properties:
+          city:
+            type: string
+          count:
+            type: integer
+            minimum: 0
+    rows:
+      type: array
+      items:
+        "$ref": "#/ReportRow"
+ReportRow:
+  type: object
+  required:
+    - event_id
+    - title
+    - capacity_type
+    - capacity
+    - confirmed_count
+    - waitlist_count
+    - employee_count
+    - family_count
+    - total_attendee_count
+    - ticket_count
+    - checkin_count
+    - remaining_capacity
+    - city_distribution
+    - starts_at
+  properties:
+    event_id:
+      type: string
+      format: uuid
+    title:
+      type: string
+    capacity_type:
+      "$ref": "./common.yaml#/CapacityType"
+    capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 1
+    confirmed_count:
+      type: integer
+      minimum: 0
+    waitlist_count:
+      type: integer
+      minimum: 0
+    employee_count:
+      type: integer
+      minimum: 0
+    family_count:
+      type: integer
+      minimum: 0
+    total_attendee_count:
+      type: integer
+      minimum: 0
+    ticket_count:
+      type: integer
+      minimum: 0
+    checkin_count:
+      type: integer
+      minimum: 0
+    remaining_capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    city_distribution:
+      type: object
+      additionalProperties:
+        type: integer
+        minimum: 0
+    starts_at:
+      type: string
+      format: date-time
+ReportExportRequest:
+  type: object
+  required:
+    - report_type
+  additionalProperties: false
+  properties:
+    report_type:
+      type: string
+      enum:
+        - participation
+    format:
+      type: string
+      const: csv
+      default: csv
+ReportExport:
+  type: object
+  required:
+    - export_id
+    - report_type
+    - format
+    - status
+    - created_at
+  properties:
+    export_id:
+      type: string
+      format: uuid
+    report_type:
+      type: string
+      enum:
+        - participation
+    format:
+      type: string
+      const: csv
+    status:
+      "$ref": "./common.yaml#/ReportExportStatus"
+    object_key:
+      type:
+        - string
+        - "null"
+      description: Object-storage key for the aggregate CSV export when ready.
+    error_message:
+      type:
+        - string
+        - "null"
+    created_at:
+      type: string
+      format: date-time
+    completed_at:
+      type:
+        - string
+        - "null"
+      format: date-time

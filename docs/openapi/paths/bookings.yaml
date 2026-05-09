@@ -1,0 +1,68 @@
+"/events/{event_id}/bookings":
+  post:
+    tags:
+      - Bookings
+    operationId: createBooking
+    x-required-roles:
+      - employee
+    summary: Book the current employee for an event.
+    description: Creates a booking for the current employee derived from provider claims. Limited events allow at most one ticket per employee, reject family members, and must not oversell. Unlimited events do not decrement inventory, do not create waitlist entries, and persist family_count on the employee's main registration.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/bookings.yaml#/CreateBookingRequest"
+    responses:
+      "201":
+        description: Booking confirmed or waitlisted.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/bookings.yaml#/BookingResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
+"/me/registrations/{registration_id}/cancel":
+  post:
+    tags:
+      - Bookings
+    operationId: cancelMyRegistration
+    x-required-roles:
+      - employee
+    summary: Cancel the current employee's registration.
+    description: Employee self-cancellation is allowed only during the registration window. After cutoff, only an admin exception endpoint may cancel and must record reason and audit log.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/RegistrationId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/bookings.yaml#/CancelRegistrationRequest"
+    responses:
+      "200":
+        description: Registration cancelled.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/bookings.yaml#/CancelRegistrationResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"
