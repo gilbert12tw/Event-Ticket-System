@@ -7,6 +7,8 @@ on:
       - ".dockerignore"
       - ".npmrc"
       - "apps/web/**"
+      - "docs/openapi.yaml"
+      - "docs/openapi/**"
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
@@ -14,6 +16,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "scripts/*openapi*"
       - "services/api/**"
       - "turbo.json"
   push:
@@ -24,6 +27,8 @@ on:
       - ".dockerignore"
       - ".npmrc"
       - "apps/web/**"
+      - "docs/openapi.yaml"
+      - "docs/openapi/**"
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
@@ -31,6 +36,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "scripts/*openapi*"
       - "services/api/**"
       - "turbo.json"
   workflow_dispatch:
@@ -70,6 +76,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      openapi: ${{ steps.filter.outputs.openapi }}
       live: ${{ steps.filter.outputs.live }}
       quick: ${{ steps.filter.outputs.quick }}
       full: ${{ steps.filter.outputs.full }}
@@ -119,12 +126,14 @@ jobs:
           full=$force_full
           backend=false
           frontend=false
+          openapi=false
           live=false
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ inputs.run_full_ci }}" == "true" ]]; then
               full=true
               backend=true
               frontend=true
+              openapi=true
               live=true
             elif [[ "${{ inputs.run_live_playwright }}" == "true" || "${{ inputs.run_k6_smoke }}" == "true" || "${{ inputs.run_k6_release }}" == "true" ]]; then
               live=true
@@ -136,6 +145,9 @@ jobs:
           if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$)' /tmp/changed-files; then
             frontend=true
           fi
+          if grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' /tmp/changed-files; then
+            openapi=true
+          fi
           if grep -Eq '^(\.github/workflows/ci\.yml$|k6/|services/api/deploy/|services/api/Dockerfile$|apps/web/e2e-live/)' /tmp/changed-files; then
             live=true
           fi
@@ -143,13 +155,14 @@ jobs:
             live=true
           fi
           quick=false
-          if [[ "$full" == "false" && "$backend" == "false" && "$frontend" == "false" && "$live" == "false" ]]; then
+          if [[ "$full" == "false" && "$backend" == "false" && "$frontend" == "false" && "$openapi" == "false" && "$live" == "false" ]]; then
             quick=true
           fi
 
           {
             echo "backend=$backend"
             echo "frontend=$frontend"
+            echo "openapi=$openapi"
             echo "live=$live"
             echo "quick=$quick"
             echo "full=$full"
@@ -198,6 +211,16 @@ jobs:
         working-directory: services/api
         run: go test ./... -count=1
 
+  openapi:
+    needs: changes
+    if: needs.changes.outputs.openapi == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Verify OpenAPI contract
+        run: ruby scripts/check-openapi-contract.rb
+
   frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.full == 'true'
@@ -231,11 +254,13 @@ jobs:
   live-gates:
     needs:
       - changes
+      - openapi
       - backend
       - frontend
     if: >-
       always() &&
       needs.changes.outputs.live == 'true' &&
+      (needs.openapi.result == 'success' || needs.openapi.result == 'skipped') &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
     runs-on: ubuntu-latest
