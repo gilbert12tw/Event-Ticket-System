@@ -7,6 +7,9 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
+    "openapi:bundle": "ruby scripts/bundle-openapi.rb",
+    "openapi:check": "ruby scripts/check-openapi-contract.rb",
+    "openapi:verify": "pnpm openapi:bundle && pnpm openapi:check",
     "format": "prettier --check \"**/*.{css,js,json,jsonc,md,ts,tsx,yaml,yml}\""
   },
   "devDependencies": {

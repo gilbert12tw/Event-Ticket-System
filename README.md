@@ -4,7 +4,7 @@
 
 ## Local Developer Docker
 
-Use this for local development. It keeps the Go app on `8080` for the Vite proxy, and moves backing services off common host ports such as `5432`.
+Use this for local development. The default local deploy path is the dev overlay (`compose.yaml` + `compose.dev.yaml`) so the React app keeps Vite hot reload. It keeps the Go app on `8080` for the Vite proxy, and moves backing services off common host ports such as `5432`.
 
 ### Services
 
@@ -45,13 +45,13 @@ dcdev() {
 
 ```bash
 dc build app
-dc up -d postgres redis minio mailhog minio-init
-dc run --rm migrate
-dc up -d app worker
+dcdev up -d postgres redis minio mailhog minio-init
+dcdev run --rm migrate
+dcdev up -d app worker web-dev
 curl -fsS http://localhost:8080/readyz
 ```
 
-Open `http://localhost:8080` for the User Workspace, or `http://localhost:8080/admin/demo` to run the full acceptance flow.
+Open `http://localhost:5173` for the hot-reload User Workspace, or `http://localhost:5173/admin/demo` to run the full acceptance flow.
 
 ### Update After Code Changes
 
@@ -81,7 +81,7 @@ dc down -v
 
 The browser UI is a Vite + React + TypeScript SPA under `apps/web/`. Production assets are generated into `services/api/internal/httpapi/static` and embedded by the Go app.
 
-For containerized frontend hot reload, use the dev overlay. It bind-mounts the repository into a `web-dev` container, keeps Node dependencies in Docker named volumes, and proxies `/api`, `/healthz`, and `/readyz` to the Go app inside Compose.
+For containerized frontend hot reload, use the dev overlay as the default local deploy. It bind-mounts the repository into a `web-dev` container, keeps Node dependencies in Docker named volumes, and proxies `/api/v1`, `/healthz`, and `/readyz` to the Go app inside Compose.
 
 ```bash
 dc build app
@@ -111,6 +111,23 @@ CETS_DEV_API_TARGET=http://localhost:${APP_PORT:-8080} pnpm --filter cets-web de
 ```
 
 Primary browser routes are `/user/events`, `/user/tickets`, `/admin/events`, `/admin/checkin`, `/admin/reports`, `/admin/audit`, and `/admin/demo`. Legacy demo routes such as `/employee/events`, `/employee/tickets`, `/checkin`, `/hr/reports`, and `/demo` remain SPA aliases.
+
+### Swagger UI
+
+The canonical OpenAPI source is split under `docs/openapi.yaml` and `docs/openapi/**`. Swagger UI consumes a bundled copy from Vite public assets:
+
+```bash
+pnpm openapi:bundle
+dcdev up -d app worker web-dev
+```
+
+Open `http://localhost:5173/api-docs`. Try it out uses the OpenAPI server URL `/api/v1`, which Vite proxies from `localhost:5173/api/v1/...` to the Go app inside Compose.
+
+To verify the contract source and generated bundle:
+
+```bash
+pnpm openapi:verify
+```
 
 ### Configuration
 
