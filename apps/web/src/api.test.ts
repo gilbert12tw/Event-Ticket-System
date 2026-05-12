@@ -230,7 +230,7 @@ describe("api client", () => {
     const payload = entries[0]?.payload as {
       data: { provider_token: string; nested: { token: string } };
     };
-    expect(payload.data.provider_token).toBe("[redacted ticket token]");
+    expect(payload.data.provider_token).toBe("[redacted provider token]");
     expect(payload.data.nested.token).toBe("[redacted session]");
   });
 

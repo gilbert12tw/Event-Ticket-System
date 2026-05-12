@@ -41,6 +41,17 @@ func TestProviderBearerMeReturnsCompleteClaims(t *testing.T) {
 	)
 }
 
+func TestBearerTokenRejectsNonBearerAuthorizationScheme(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+
+	token, ok := bearerToken(req)
+
+	if ok {
+		t.Fatalf("ok = true, token = %q; want non-bearer authorization to be treated as missing bearer", token)
+	}
+}
+
 func TestProtectedAPIsRequireProviderBearerInProduction(t *testing.T) {
 	service := &fakeTicketingService{}
 	secret := providerTestSecret()

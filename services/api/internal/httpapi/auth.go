@@ -227,7 +227,7 @@ func bearerToken(r *http.Request) (string, bool) {
 	}
 	const prefix = "Bearer "
 	if len(header) < len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
-		return "", true
+		return "", false
 	}
 	return strings.TrimSpace(header[len(prefix):]), true
 }
