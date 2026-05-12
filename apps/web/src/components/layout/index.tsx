@@ -31,8 +31,19 @@ export function WorkspaceSwitch({ active, role }: { active: WorkspaceKey; role: 
   );
 }
 
-export function Header({ route, session, onLogout }: { route: RouteKey; session: AuthSession; onLogout: () => void }) {
+export function Header({
+  route,
+  session,
+  mockProfilesEnabled,
+  onSwitchProfile
+}: {
+  route: RouteKey;
+  session: AuthSession;
+  mockProfilesEnabled?: boolean;
+  onSwitchProfile?: () => void;
+}) {
   const item = routes.find((candidate) => candidate.key === route) || routes[0];
+  const displayName = session.claims.display_name || principalLabel(session.actor.id);
   return (
     <header className={`page-header ${item.workspace}-header`}>
       <div className="page-title-block">
@@ -54,21 +65,23 @@ export function Header({ route, session, onLogout }: { route: RouteKey; session:
       </div>
       <div className="header-actions">
         <div className="session-pill" aria-label="目前登入身份">
-          <strong>{principalLabel(session.actor.id)}</strong>
+          <strong>{displayName}</strong>
           <span>
             {session.actor.id} · {roleLabel(session.actor.role)}
           </span>
         </div>
-        {canAccessRoute("admin-demo", session.actor.role) && (
+        {mockProfilesEnabled && canAccessRoute("admin-demo", session.actor.role) && (
           <button className="button ghost" type="button" onClick={() => navigate("/admin/demo")}>
             <Icon name="play" />
             跑完整 Demo
           </button>
         )}
-        <button className="button secondary" type="button" onClick={onLogout}>
-          <Icon name="logout" />
-          登出
-        </button>
+        {mockProfilesEnabled && onSwitchProfile && (
+          <button className="button secondary" type="button" onClick={onSwitchProfile}>
+            <Icon name="logout" />
+            切換 Profile
+          </button>
+        )}
       </div>
     </header>
   );

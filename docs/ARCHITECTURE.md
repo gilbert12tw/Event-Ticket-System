@@ -515,7 +515,7 @@ Phase 1 文件不把任何雲供應商作為必備前提。Compose 中的 backin
 | API Protection | Rate limiting、CSRF 防護、輸入驗證、idempotency key。 |
 | Secrets | 本地只用 `.env` 測試值；正式 secrets 由部署環境注入，不寫入 repo。 |
 
-Phase 1 uses `/api/v1/auth/login` as a local SSO simulation that issues a server-signed `HttpOnly` `cets_session` cookie. Legacy role headers remain only for `APP_ENV=local` / `demo` / `test` compatibility; production rejects header-only auth and must use non-demo token and auth session secrets with secure cookies.
+Phase 1 product authentication is provider-claims based. Protected APIs and `/api/v1/auth/me` require `Authorization: Bearer <provider-token>` signed with `PROVIDER_TOKEN_SECRET`; the API maps required employee claims to exactly one application role. Local/demo/test uses mock metadata profiles that ask the backend to issue provider-format bearer tokens, so `/api/v1/auth/login`, `/api/v1/auth/logout`, local session cookies, and legacy role headers are not auth paths.
 
 ---
 

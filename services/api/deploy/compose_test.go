@@ -48,9 +48,7 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	required := []string{
 		"DATABASE_URL: postgresql://",
 		"TOKEN_SIGNING_SECRET:",
-		"AUTH_SESSION_SECRET:",
-		"AUTH_SESSION_TTL_MINUTES:",
-		"AUTH_COOKIE_SECURE:",
+		"PROVIDER_TOKEN_SECRET:",
 		"REQUEST_TIMEOUT_MS:",
 		"DATABASE_TIMEOUT_MS:",
 		"SHUTDOWN_TIMEOUT_MS:",

@@ -9,7 +9,7 @@ import (
 func TestLoadDefaultsAndEnv(t *testing.T) {
 	t.Setenv("APP_ADDR", ":9090")
 	t.Setenv("APP_ENV", "test")
-	t.Setenv("AUTH_MODE", "local_sso")
+	t.Setenv("AUTH_MODE", "external_sso")
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/cets")
 	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
 	t.Setenv("QUEUE_URL", "redis://localhost:6379/1")
@@ -22,9 +22,7 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	t.Setenv("MAILER_FROM", "tickets@example.test")
 	t.Setenv("MAILER_REDIRECT_TO", "notifications@example.test")
 	t.Setenv("TOKEN_SIGNING_SECRET", "test-secret")
-	t.Setenv("AUTH_SESSION_SECRET", "auth-test-secret")
-	t.Setenv("AUTH_SESSION_TTL_MINUTES", "30")
-	t.Setenv("AUTH_COOKIE_SECURE", "true")
+	t.Setenv("PROVIDER_TOKEN_SECRET", "provider-test-secret")
 	t.Setenv("AUTO_MIGRATE", "true")
 	t.Setenv("REQUEST_TIMEOUT_MS", "2500")
 	t.Setenv("DATABASE_TIMEOUT_MS", "1500")
@@ -41,7 +39,7 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	if cfg.AppEnv != "test" {
 		t.Fatalf("AppEnv = %q", cfg.AppEnv)
 	}
-	if cfg.AuthMode != "local_sso" {
+	if cfg.AuthMode != "external_sso" {
 		t.Fatalf("AuthMode = %q", cfg.AuthMode)
 	}
 	if cfg.DatabaseURL == "" {
@@ -62,14 +60,8 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	if cfg.TokenSigningSecret != "test-secret" {
 		t.Fatal("TokenSigningSecret was not loaded")
 	}
-	if cfg.AuthSessionSecret != "auth-test-secret" {
-		t.Fatal("AuthSessionSecret was not loaded")
-	}
-	if cfg.AuthSessionTTL != 30*time.Minute {
-		t.Fatalf("AuthSessionTTL = %s", cfg.AuthSessionTTL)
-	}
-	if !cfg.AuthCookieSecure {
-		t.Fatal("AuthCookieSecure = false")
+	if cfg.ProviderTokenSecret != "provider-test-secret" {
+		t.Fatal("ProviderTokenSecret was not loaded")
 	}
 	if !cfg.AutoMigrate {
 		t.Fatal("AutoMigrate = false")
@@ -95,7 +87,6 @@ func TestValidateForServeRequiresDatabaseURL(t *testing.T) {
 		RequestTimeout:  time.Second,
 		DatabaseTimeout: time.Second,
 		ShutdownTimeout: time.Second,
-		AuthSessionTTL:  time.Hour,
 	}
 
 	if err := cfg.ValidateForServe(); err == nil {
@@ -116,8 +107,7 @@ func TestLoadedConfigRejectsMalformedProductionValues(t *testing.T) {
 	t.Setenv("MAILER_HOST", "smtp.example.test")
 	t.Setenv("MAILER_FROM", "tickets@example.test")
 	t.Setenv("TOKEN_SIGNING_SECRET", "0123456789abcdef0123456789abcdef")
-	t.Setenv("AUTH_SESSION_SECRET", "abcdef0123456789abcdef0123456789")
-	t.Setenv("AUTH_COOKIE_SECURE", "not-a-bool")
+	t.Setenv("PROVIDER_TOKEN_SECRET", "provider0123456789abcdef0123456789")
 	t.Setenv("REQUEST_TIMEOUT_MS", "slow")
 	t.Setenv("WORKER_MAX_ATTEMPTS", "0")
 
@@ -125,7 +115,7 @@ func TestLoadedConfigRejectsMalformedProductionValues(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected malformed env validation error")
 	}
-	if !strings.Contains(err.Error(), "AUTH_COOKIE_SECURE") || !strings.Contains(err.Error(), "REQUEST_TIMEOUT_MS") {
+	if !strings.Contains(err.Error(), "REQUEST_TIMEOUT_MS") {
 		t.Fatalf("validation error did not include malformed keys: %v", err)
 	}
 }
@@ -148,15 +138,6 @@ func TestValidateForServeRejectsDemoSecretInProduction(t *testing.T) {
 	}
 }
 
-func TestValidateForServeRejectsInsecureAuthCookieInProduction(t *testing.T) {
-	cfg := productionServeConfig()
-	cfg.AuthCookieSecure = false
-
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production secure cookie error")
-	}
-}
-
 func TestValidateForServeRejectsLocalAuthModeInProduction(t *testing.T) {
 	cfg := productionServeConfig()
 	cfg.AuthMode = "local_sso"
@@ -166,12 +147,12 @@ func TestValidateForServeRejectsLocalAuthModeInProduction(t *testing.T) {
 	}
 }
 
-func TestValidateForServeRejectsWeakProductionSessionSecret(t *testing.T) {
+func TestValidateForServeRequiresProductionProviderTokenSecret(t *testing.T) {
 	cfg := productionServeConfig()
-	cfg.AuthSessionSecret = "too-short"
+	cfg.ProviderTokenSecret = demoProviderSecret
 
 	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production weak session secret error")
+		t.Fatal("expected production provider token secret error")
 	}
 }
 
@@ -250,26 +231,24 @@ func TestRedactedDatabaseURL(t *testing.T) {
 
 func productionServeConfig() Config {
 	return Config{
-		AppAddr:            ":8080",
-		AppEnv:             "production",
-		AuthMode:           "external_sso",
-		DatabaseURL:        "postgres://user:pass@localhost:5432/cets",
-		RedisURL:           "redis://localhost:6379/0",
-		QueueURL:           "redis://localhost:6379/1",
-		ObjectEndpoint:     "https://object-storage.example.test",
-		ObjectBucket:       "cets-prod",
-		ObjectRegion:       "us-east-1",
-		ObjectAccessKey:    "prod-object-access-key",
-		ObjectSecretKey:    "prod-object-secret-key",
-		MailerHost:         "smtp.example.test",
-		MailerPort:         587,
-		MailerFrom:         "tickets@example.test",
-		TokenSigningSecret: "0123456789abcdef0123456789abcdef",
-		AuthSessionSecret:  "abcdef0123456789abcdef0123456789",
-		AuthSessionTTL:     time.Hour,
-		AuthCookieSecure:   true,
-		RequestTimeout:     time.Second,
-		DatabaseTimeout:    time.Second,
-		ShutdownTimeout:    time.Second,
+		AppAddr:             ":8080",
+		AppEnv:              "production",
+		AuthMode:            "external_sso",
+		DatabaseURL:         "postgres://user:pass@localhost:5432/cets",
+		RedisURL:            "redis://localhost:6379/0",
+		QueueURL:            "redis://localhost:6379/1",
+		ObjectEndpoint:      "https://object-storage.example.test",
+		ObjectBucket:        "cets-prod",
+		ObjectRegion:        "us-east-1",
+		ObjectAccessKey:     "prod-object-access-key",
+		ObjectSecretKey:     "prod-object-secret-key",
+		MailerHost:          "smtp.example.test",
+		MailerPort:          587,
+		MailerFrom:          "tickets@example.test",
+		TokenSigningSecret:  "0123456789abcdef0123456789abcdef",
+		ProviderTokenSecret: "provider0123456789abcdef0123456789",
+		RequestTimeout:      time.Second,
+		DatabaseTimeout:     time.Second,
+		ShutdownTimeout:     time.Second,
 	}
 }

@@ -13,7 +13,7 @@ Phase 1 僅交付「可用、可驗證、可維護」的票務核心與現場驗
 
 - Phase 1 不做本地登入/登出、密碼、session 或 refresh token 生命週期管理；僅接受外部 provider token 並使用 claims 作為授權輸入。
 - 活動圖片 / 附件上傳與掃毒、Excel/PDF 匯出、ticket PDF、跨區 HA、RTO/RPO、跨區容災不列入產品交付範圍。
-- `/api/v1/auth/login`、`/api/v1/auth/logout` 不是產品 OpenAPI 要求；local demo 相容行為僅限開發測試用途。
+- `/api/v1/auth/login`、`/api/v1/auth/logout` 不是產品 OpenAPI 要求；local demo 改用 mock provider metadata profiles 產生 bearer token，僅限開發測試用途。
 - HR sync 與營運設定在本階段維持為 same-codebase operator/admin command；產品 OpenAPI 僅暴露 eligibility impact review 查詢與 resolve flow，未新增 HR sync/settings API。
 
 ## 2. 使用者路徑

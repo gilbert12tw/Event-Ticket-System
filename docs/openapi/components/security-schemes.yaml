@@ -1,5 +1,5 @@
 ProviderBearerAuth:
   type: http
   scheme: bearer
-  bearerFormat: Provider token
-  description: External identity provider token with required employee claims.
+  bearerFormat: HMAC provider token
+  description: External provider token containing required employee claims and an HMAC-SHA256 signature verified with runtime provider secret config.

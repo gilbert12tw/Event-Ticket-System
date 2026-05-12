@@ -45,7 +45,7 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'event.created' AND entity_id = $1`, event.EventID, 1)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1 AND version = 1`, event.EventID, 1)
 
-	eligible, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, "E1001")
+	eligible, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

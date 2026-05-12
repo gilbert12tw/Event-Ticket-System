@@ -2,9 +2,9 @@ package httpapi
 
 import "net/http"
 
-func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEnv string, auth *SessionManager) {
+func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEnv string, provider *ProviderVerifier) {
 	protected := func(next http.HandlerFunc) http.HandlerFunc {
-		return requireActor(auth, appEnv, requireService(service, next))
+		return requireActor(provider, requireService(service, next))
 	}
 	mux.HandleFunc("GET /api/v1/admin/events", protected(handleListAdminEvents(service)))
 	mux.HandleFunc("POST /api/v1/admin/events", protected(handleCreateEvent(service)))
@@ -25,7 +25,7 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEn
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/registrations/{registration_id}/cancel", protected(handleCancelRegistration(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/waitlist/promote", protected(handlePromoteWaitlist(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/lottery-runs", protected(handleRunLottery(service)))
-	mux.HandleFunc("GET /api/v1/employees/{employee_id}/tickets", protected(handleListTickets(service)))
+	mux.HandleFunc("GET /api/v1/me/tickets", protected(handleListTickets(service)))
 	mux.HandleFunc("GET /api/v1/tickets/{ticket_id}", protected(handleGetTicket(service)))
 	mux.HandleFunc("POST /api/v1/admin/tickets/{ticket_id}/revoke", protected(handleRevokeTicket(service)))
 	mux.HandleFunc("POST /api/v1/checkins", protected(handleCheckin(service)))
@@ -39,7 +39,11 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEn
 	mux.HandleFunc("POST /api/v1/admin/reports/exports", protected(handleCreateReportExport(service)))
 	mux.HandleFunc("GET /api/v1/admin/reports/exports/{export_id}", protected(handleGetReportExport(service)))
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", protected(handleAuditLogs(service)))
-	mux.HandleFunc("POST /api/v1/admin/seed-demo", requireService(service, handleSeedDemo(service, appEnv, auth)))
+	seedDemo := requireService(service, handleSeedDemo(service, appEnv))
+	if mockProfilesEnabled(appEnv) {
+		seedDemo = requireActor(provider, seedDemo)
+	}
+	mux.HandleFunc("POST /api/v1/admin/seed-demo", seedDemo)
 }
 
 func requireService(service TicketingService, next http.HandlerFunc) http.HandlerFunc {

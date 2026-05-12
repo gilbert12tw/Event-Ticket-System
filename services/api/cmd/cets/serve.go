@@ -43,10 +43,8 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 		Logger:         logger,
 		RequestTimeout: cfg.RequestTimeout,
 		AppEnv:         cfg.AppEnv,
-		AuthSession: httpapi.AuthConfig{
-			Secret:       cfg.AuthSessionSecret,
-			TTL:          cfg.AuthSessionTTL,
-			CookieSecure: cfg.AuthCookieSecure,
+		ProviderAuth: httpapi.ProviderAuthConfig{
+			Secret: cfg.ProviderTokenSecret,
 		},
 	})
 

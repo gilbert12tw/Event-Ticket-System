@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
 	"event-ticket-system/internal/ticketing"
 )
@@ -11,6 +12,10 @@ func handleBook(service TicketingService) http.HandlerFunc {
 		var req ticketing.BookingRequest
 		if err := decodeJSON(r, &req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if strings.TrimSpace(req.EmployeeID) != "" {
+			writeError(w, http.StatusBadRequest, callerEmployeeIDMessage)
 			return
 		}
 		result, err := service.Book(r.Context(), actorFromRequest(r), r.PathValue("event_id"), req)

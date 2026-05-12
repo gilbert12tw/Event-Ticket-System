@@ -10,78 +10,74 @@ import (
 )
 
 const (
-	localTokenSecret       = "local-dev-token-secret"
-	localAuthSessionSecret = "local-dev-auth-session-secret"
-	demoTokenSecret        = "local_dev_ticket_signing_secret_change_me"
-	demoAuthSessionSecret  = "local_dev_auth_session_secret_change_me"
-	authModeLocalSSO       = "local_sso"
-	authModeExternalSSO    = "external_sso"
-	authModeOIDC           = "oidc"
-	authModeSAML           = "saml"
+	localTokenSecret    = "local-dev-token-secret"
+	localProviderSecret = "local-dev-provider-token-secret"
+	demoTokenSecret     = "local_dev_ticket_signing_secret_change_me"
+	demoProviderSecret  = "local_dev_provider_token_secret_change_me"
+	authModeLocalSSO    = "local_sso"
+	authModeExternalSSO = "external_sso"
+	authModeOIDC        = "oidc"
+	authModeSAML        = "saml"
 
 	minProductionSecretLength = 32
 )
 
 type Config struct {
-	AppAddr            string
-	AppEnv             string
-	AuthMode           string
-	DatabaseURL        string
-	RedisURL           string
-	QueueURL           string
-	ObjectEndpoint     string
-	ObjectBucket       string
-	ObjectRegion       string
-	ObjectAccessKey    string
-	ObjectSecretKey    string
-	MailerHost         string
-	MailerPort         int
-	MailerFrom         string
-	MailerRedirectTo   string
-	TokenSigningSecret string
-	AuthSessionSecret  string
-	AuthSessionTTL     time.Duration
-	AuthCookieSecure   bool
-	AutoMigrate        bool
-	RequestTimeout     time.Duration
-	DatabaseTimeout    time.Duration
-	ShutdownTimeout    time.Duration
-	WorkerPollInterval time.Duration
-	WorkerMaxAttempts  int
-	WorkerBatchSize    int
-	loadErrors         []string
+	AppAddr             string
+	AppEnv              string
+	AuthMode            string
+	DatabaseURL         string
+	RedisURL            string
+	QueueURL            string
+	ObjectEndpoint      string
+	ObjectBucket        string
+	ObjectRegion        string
+	ObjectAccessKey     string
+	ObjectSecretKey     string
+	MailerHost          string
+	MailerPort          int
+	MailerFrom          string
+	MailerRedirectTo    string
+	TokenSigningSecret  string
+	ProviderTokenSecret string
+	AutoMigrate         bool
+	RequestTimeout      time.Duration
+	DatabaseTimeout     time.Duration
+	ShutdownTimeout     time.Duration
+	WorkerPollInterval  time.Duration
+	WorkerMaxAttempts   int
+	WorkerBatchSize     int
+	loadErrors          []string
 }
 
 func Load() Config {
 	var loadErrors []string
 	return Config{
-		AppAddr:            getEnv("APP_ADDR", ":8080"),
-		AppEnv:             getEnv("APP_ENV", "local"),
-		AuthMode:           getEnv("AUTH_MODE", authModeLocalSSO),
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		RedisURL:           os.Getenv("REDIS_URL"),
-		QueueURL:           os.Getenv("QUEUE_URL"),
-		ObjectEndpoint:     os.Getenv("OBJECT_STORAGE_ENDPOINT"),
-		ObjectBucket:       os.Getenv("OBJECT_STORAGE_BUCKET"),
-		ObjectRegion:       getEnv("OBJECT_STORAGE_REGION", "us-east-1"),
-		ObjectAccessKey:    os.Getenv("OBJECT_STORAGE_ACCESS_KEY"),
-		ObjectSecretKey:    os.Getenv("OBJECT_STORAGE_SECRET_KEY"),
-		MailerHost:         getEnv("MAILER_HOST", "localhost"),
-		MailerPort:         parsePositiveIntEnv("MAILER_PORT", "1025", &loadErrors),
-		MailerFrom:         getEnv("MAILER_FROM", "no-reply@cets.local"),
-		MailerRedirectTo:   strings.TrimSpace(os.Getenv("MAILER_REDIRECT_TO")),
-		TokenSigningSecret: getEnv("TOKEN_SIGNING_SECRET", localTokenSecret),
-		AuthSessionSecret:  getEnv("AUTH_SESSION_SECRET", localAuthSessionSecret),
-		AuthSessionTTL:     parseDurationMinutesEnv("AUTH_SESSION_TTL_MINUTES", "480", &loadErrors),
-		AuthCookieSecure:   parseBoolEnv("AUTH_COOKIE_SECURE", "false", &loadErrors),
-		AutoMigrate:        parseBoolEnv("AUTO_MIGRATE", "false", &loadErrors),
-		RequestTimeout:     parseDurationMSEnv("REQUEST_TIMEOUT_MS", "5000", &loadErrors),
-		DatabaseTimeout:    parseDurationMSEnv("DATABASE_TIMEOUT_MS", "5000", &loadErrors),
-		ShutdownTimeout:    parseDurationMSEnv("SHUTDOWN_TIMEOUT_MS", "10000", &loadErrors),
-		WorkerPollInterval: parseDurationMSEnv("WORKER_POLL_INTERVAL_MS", "1000", &loadErrors),
-		WorkerMaxAttempts:  parsePositiveIntEnv("WORKER_MAX_ATTEMPTS", "3", &loadErrors),
-		WorkerBatchSize:    parsePositiveIntEnv("WORKER_BATCH_SIZE", "25", &loadErrors),
-		loadErrors:         loadErrors,
+		AppAddr:             getEnv("APP_ADDR", ":8080"),
+		AppEnv:              getEnv("APP_ENV", "local"),
+		AuthMode:            getEnv("AUTH_MODE", authModeExternalSSO),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		RedisURL:            os.Getenv("REDIS_URL"),
+		QueueURL:            os.Getenv("QUEUE_URL"),
+		ObjectEndpoint:      os.Getenv("OBJECT_STORAGE_ENDPOINT"),
+		ObjectBucket:        os.Getenv("OBJECT_STORAGE_BUCKET"),
+		ObjectRegion:        getEnv("OBJECT_STORAGE_REGION", "us-east-1"),
+		ObjectAccessKey:     os.Getenv("OBJECT_STORAGE_ACCESS_KEY"),
+		ObjectSecretKey:     os.Getenv("OBJECT_STORAGE_SECRET_KEY"),
+		MailerHost:          getEnv("MAILER_HOST", "localhost"),
+		MailerPort:          parsePositiveIntEnv("MAILER_PORT", "1025", &loadErrors),
+		MailerFrom:          getEnv("MAILER_FROM", "no-reply@cets.local"),
+		MailerRedirectTo:    strings.TrimSpace(os.Getenv("MAILER_REDIRECT_TO")),
+		TokenSigningSecret:  getEnv("TOKEN_SIGNING_SECRET", localTokenSecret),
+		ProviderTokenSecret: getEnv("PROVIDER_TOKEN_SECRET", localProviderSecret),
+		AutoMigrate:         parseBoolEnv("AUTO_MIGRATE", "false", &loadErrors),
+		RequestTimeout:      parseDurationMSEnv("REQUEST_TIMEOUT_MS", "5000", &loadErrors),
+		DatabaseTimeout:     parseDurationMSEnv("DATABASE_TIMEOUT_MS", "5000", &loadErrors),
+		ShutdownTimeout:     parseDurationMSEnv("SHUTDOWN_TIMEOUT_MS", "10000", &loadErrors),
+		WorkerPollInterval:  parseDurationMSEnv("WORKER_POLL_INTERVAL_MS", "1000", &loadErrors),
+		WorkerMaxAttempts:   parsePositiveIntEnv("WORKER_MAX_ATTEMPTS", "3", &loadErrors),
+		WorkerBatchSize:     parsePositiveIntEnv("WORKER_BATCH_SIZE", "25", &loadErrors),
+		loadErrors:          loadErrors,
 	}
 }
 
@@ -97,9 +93,6 @@ func (c Config) ValidateForServe() error {
 	}
 	if c.ShutdownTimeout <= 0 {
 		return errors.New("SHUTDOWN_TIMEOUT_MS must be positive")
-	}
-	if c.AuthSessionTTL <= 0 {
-		return errors.New("AUTH_SESSION_TTL_MINUTES must be positive")
 	}
 	if c.isProduction() {
 		if err := c.validateProductionAuth(); err != nil {
@@ -182,11 +175,8 @@ func (c Config) validateProductionAuth() error {
 	if err := validateProductionSecret("TOKEN_SIGNING_SECRET", c.TokenSigningSecret, localTokenSecret, demoTokenSecret); err != nil {
 		return err
 	}
-	if err := validateProductionSecret("AUTH_SESSION_SECRET", c.AuthSessionSecret, localAuthSessionSecret, demoAuthSessionSecret); err != nil {
+	if err := validateProductionSecret("PROVIDER_TOKEN_SECRET", c.ProviderTokenSecret, localProviderSecret, demoProviderSecret); err != nil {
 		return err
-	}
-	if !c.AuthCookieSecure {
-		return errors.New("AUTH_COOKIE_SECURE must be true in production")
 	}
 	return nil
 }
@@ -272,16 +262,6 @@ func parsePositiveIntEnv(key string, fallback string, loadErrors *[]string) int 
 		return fallbackValue
 	}
 	return parsed
-}
-
-func parseDurationMinutesEnv(key string, fallback string, loadErrors *[]string) time.Duration {
-	value := getEnv(key, fallback)
-	minutes, err := strconv.Atoi(value)
-	if err != nil || minutes <= 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of minutes, got %q", key, value))
-		return 8 * time.Hour
-	}
-	return time.Duration(minutes) * time.Minute
 }
 
 func RedactedDatabaseURL(databaseURL string) string {

@@ -4,14 +4,14 @@ import type { EventSummary, Ticket } from "@/lib/api";
 import { registrationTone } from "@/lib/formatting";
 import { BoundaryContext, EmptyState, Kpi, ResponsiveTable, StatusBadge } from "@/components/shared";
 
-export function UserNotificationsPage({ employeeID }: { employeeID: string }) {
+export function UserNotificationsPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
 
   useEffect(() => {
-    listEvents(employeeID).then(setEvents).catch(() => setEvents([]));
-    listTickets(employeeID).then(setTickets).catch(() => setTickets([]));
-  }, [employeeID]);
+    listEvents().then(setEvents).catch(() => setEvents([]));
+    listTickets().then(setTickets).catch(() => setTickets([]));
+  }, []);
 
   const notificationRows = [
     ...events

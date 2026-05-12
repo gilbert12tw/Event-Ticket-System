@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { auditLogs, bookEvent, checkIn, createEvent, listEvents, listTickets, login, logout, reports, seedDemo } from "@/lib/api";
+import { auditLogs, bookEvent, checkIn, createEvent, listEvents, listTickets, reports, seedDemo, selectMockProfile } from "@/lib/api";
 import type { AuthSession, ReportRow, Ticket } from "@/lib/api";
 import type { StepState } from "@/app/routes";
 import { errorMessage, formatDate, futureISO } from "@/lib/formatting";
@@ -32,7 +32,7 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
   }
 
   async function runAs(principalID: string) {
-    return login(principalID);
+    return selectMockProfile(principalID);
   }
 
   async function runDemo() {
@@ -74,24 +74,24 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
 
       startStep("browse", "查詢 E1001 活動列表");
       await runAs("E1001");
-      const eventRows = await listEvents("E1001");
+      const eventRows = await listEvents();
       const current = eventRows.find((row) => row.event_id === event.event_id);
       mark("browse", current?.eligible ? "done" : "fail", current?.eligibility_reason || "未找到新活動");
 
       startStep("book", "送出第一筆報名");
       await runAs("E1001");
-      const booking = await bookEvent(event.event_id, "E1001", `book-${unique}-E1001`);
+      const booking = await bookEvent(event.event_id, `book-${unique}-E1001`);
       mark("book", "done", booking.message);
 
       startStep("waitlist", "送出第二筆報名");
       await runAs("E1002");
-      const waitlist = await bookEvent(event.event_id, "E1002", `book-${unique}-E1002`);
+      const waitlist = await bookEvent(event.event_id, `book-${unique}-E1002`);
       mark("waitlist", "done", waitlist.message);
 
       startStep("reject", "確認不合格員工被拒絕");
       await runAs("E2001");
       try {
-        await bookEvent(event.event_id, "E2001", `book-${unique}-E2001`);
+        await bookEvent(event.event_id, `book-${unique}-E2001`);
         mark("reject", "fail", "預期的拒絕沒有發生。");
       } catch (error) {
         mark("reject", "done", errorMessage(error));
@@ -99,7 +99,7 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
 
       startStep("ticket", "載入 E1001 票券");
       await runAs("E1001");
-      const tickets = await listTickets("E1001");
+      const tickets = await listTickets();
       const activeTicket = tickets[0] || booking.ticket;
       if (!activeTicket?.signed_token) throw new Error("ticket was not issued");
       setTicket(activeTicket);
@@ -129,9 +129,8 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
       if (currentStep) mark(currentStep, "fail", errorMessage(error));
     } finally {
       try {
-        onSessionChange(await login(session.actor.id));
+        onSessionChange(await selectMockProfile(session.actor.id));
       } catch {
-        await logout().catch(() => undefined);
         onSessionChange(null);
       }
       setBusy(false);

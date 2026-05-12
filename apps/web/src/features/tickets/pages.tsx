@@ -8,7 +8,7 @@ import { Icon } from "@/components/shared/icon";
 import { checkinHistoryState } from "@/features/checkin/checkin-token";
 import { TicketQrCode } from "./qr";
 
-export function EmployeeTicketsPage({ employeeID }: { employeeID: string }) {
+export function EmployeeTicketsPage({ principalID }: { principalID: string }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedID, setSelectedID] = useState("");
   const [message, setMessage] = useState("");
@@ -18,7 +18,7 @@ export function EmployeeTicketsPage({ employeeID }: { employeeID: string }) {
   async function refresh() {
     setMessage("");
     try {
-      const rows = await listTickets(employeeID);
+      const rows = await listTickets();
       setTickets(rows);
       setSelectedID(rows[0]?.ticket_id || "");
     } catch (error) {
@@ -28,7 +28,7 @@ export function EmployeeTicketsPage({ employeeID }: { employeeID: string }) {
 
   useEffect(() => {
     void refresh();
-  }, [employeeID]);
+  }, [principalID]);
 
   return (
     <section className="content-grid">
@@ -38,7 +38,7 @@ export function EmployeeTicketsPage({ employeeID }: { employeeID: string }) {
           <h2>票券入口</h2>
           <p>員工只看自己的票券狀態與 QR 入場畫面；signed token 不在畫面或 API activity 中裸露。</p>
         </div>
-        <IdentityCard principalID={employeeID} />
+        <IdentityCard principalID={principalID} />
         <div className="context-kpis">
           <Kpi label="票券數" value={tickets.length} />
           <Kpi label="可使用" value={tickets.filter((ticket) => ticket.status === "active").length} />

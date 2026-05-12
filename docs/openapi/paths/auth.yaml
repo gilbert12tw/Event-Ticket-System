@@ -22,3 +22,18 @@
         "$ref": "../components/responses.yaml#/Unauthorized"
       "403":
         "$ref": "../components/responses.yaml#/Forbidden"
+"/auth/bootstrap":
+  get:
+    tags:
+      - Auth
+    operationId: getAuthBootstrap
+    summary: Read anonymous auth bootstrap metadata.
+    description: Returns whether non-production mock provider profiles are enabled for this deployment. Production returns false and still requires provider bearer claims for product APIs.
+    security: []
+    responses:
+      "200":
+        description: Auth bootstrap metadata.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/common.yaml#/AuthBootstrapResponse"

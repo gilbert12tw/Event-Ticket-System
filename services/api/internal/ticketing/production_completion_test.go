@@ -146,6 +146,110 @@ func TestProductionRBACSystemAdminAliasesHRAdmin(t *testing.T) {
 	}
 }
 
+func TestProviderRoleRBACMatrix(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	if err := service.SeedDemoData(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:    "Provider RBAC Matrix",
+		Capacity: 10,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actors := []Actor{
+		{ID: "E1001", Role: RoleEmployee},
+		{ID: "admin-1", Role: RoleActivityAdmin},
+		{ID: "staff-1", Role: RoleCheckinStaff},
+		{ID: "hr-1", Role: RoleHRAdmin},
+		{ID: "system-1", Role: RoleSystemAdmin},
+	}
+	actions := []struct {
+		name       string
+		allowedFor map[string]int
+		run        func(Actor) error
+	}{
+		{
+			name: "book own event",
+			allowedFor: map[string]int{
+				RoleEmployee: 200,
+			},
+			run: func(actor Actor) error {
+				_, err := service.Book(ctx, actor, event.EventID, BookingRequest{IdempotencyKey: "rbac-book-" + actor.Role})
+				return err
+			},
+		},
+		{
+			name: "create event",
+			allowedFor: map[string]int{
+				RoleActivityAdmin: 200,
+			},
+			run: func(actor Actor) error {
+				_, err := service.CreateEvent(ctx, actor, CreateEventRequest{Title: "RBAC Created " + actor.Role, Capacity: 1})
+				return err
+			},
+		},
+		{
+			name: "check in",
+			allowedFor: map[string]int{
+				RoleCheckinStaff: 400,
+			},
+			run: func(actor Actor) error {
+				_, err := service.CheckIn(ctx, actor, CheckinRequest{SignedToken: "invalid.token", DeviceID: "gate-rbac"})
+				return err
+			},
+		},
+		{
+			name: "reports",
+			allowedFor: map[string]int{
+				RoleHRAdmin:     200,
+				RoleSystemAdmin: 200,
+			},
+			run: func(actor Actor) error {
+				_, err := service.Reports(ctx, actor)
+				return err
+			},
+		},
+		{
+			name: "audit logs",
+			allowedFor: map[string]int{
+				RoleHRAdmin:     200,
+				RoleSystemAdmin: 200,
+			},
+			run: func(actor Actor) error {
+				_, err := service.AuditLogs(ctx, actor)
+				return err
+			},
+		},
+	}
+
+	for _, actor := range actors {
+		for _, action := range actions {
+			t.Run(actor.Role+"/"+action.name, func(t *testing.T) {
+				err := action.run(actor)
+				gotStatus := 200
+				if err != nil {
+					gotStatus = ErrorStatus(err)
+				}
+				wantStatus, allowed := action.allowedFor[actor.Role]
+				if !allowed {
+					wantStatus = 403
+				}
+				if gotStatus != wantStatus {
+					t.Fatalf("status = %d, want %d, err = %v", gotStatus, wantStatus, err)
+				}
+			})
+		}
+	}
+}
+
 func TestEligibilityPreviewRequiresExistingEvent(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

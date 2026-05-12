@@ -239,7 +239,7 @@ export const roleRouteAccess: Record<Role, RouteKey[]> = {
   system_admin: ["admin-reports", "admin-hr-settings", "admin-audit", "admin-notifications", "api-docs"]
 };
 
-export const localSSOPrincipals = [
+export const mockProviderProfiles = [
   {
     id: "E1001",
     role: "employee" as Role,

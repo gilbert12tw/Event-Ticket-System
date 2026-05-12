@@ -36,6 +36,7 @@ describe("ApiDocsPage", () => {
           dom_id: "#swagger-ui",
           layout: "StandaloneLayout",
           tryItOutEnabled: true,
+          persistAuthorization: false,
         }),
       ),
     );

@@ -133,8 +133,7 @@ const roleCases = [
     routes: [
       { path: "/admin/events", heading: "活動主辦入口" },
       { path: "/admin/registrations", heading: "報名治理入口" },
-      { path: "/admin/notifications", heading: "Delivery log" },
-      { path: "/admin/demo", heading: "Demo Runbook" }
+      { path: "/admin/notifications", heading: "Delivery log" }
     ]
   },
   {
@@ -174,7 +173,32 @@ function envelope<T>(data: T, status = true, error: string | null = null) {
   };
 }
 
-async function ensureSessionRoutes(page: Page, principalID: keyof typeof sessions) {
+function claimsFromSession(session: Session) {
+  return {
+    employee_id: session.actor.id,
+    display_name: session.actor.id,
+    role_claims: [session.actor.role],
+    mapped_roles: [session.actor.role],
+    department: "Engineering",
+    site: "Taipei",
+    city: "Taipei",
+    claims_status: "complete"
+  };
+}
+
+function mockProfiles() {
+  return Object.values(sessions).map((session) => ({
+    profile_id: session.actor.id,
+    display_name: session.actor.id,
+    role_claims: [session.actor.role],
+    mapped_roles: [session.actor.role],
+    department: session.actor.role === "employee" ? "Engineering" : "Operations",
+    site: "Taipei",
+    city: "Taipei"
+  }));
+}
+
+async function ensureSessionRoutes(page: Page, principalID: keyof typeof sessions, options: { mockProfiles?: boolean } = {}) {
   const session = { ...sessions[principalID] } as Session;
   let currentSession = session;
 
@@ -197,18 +221,39 @@ async function ensureSessionRoutes(page: Page, principalID: keyof typeof session
       body = {};
     }
 
-    if (pathName === "/api/v1/auth/login" && method === "POST") {
-      const requestedID = body.principal_id as keyof typeof sessions;
+    const hasCallerEmployeeID = url.searchParams.has("employee_id") || Object.prototype.hasOwnProperty.call(body, "employee_id");
+    const ownDataRequest =
+      (pathName === "/api/v1/events" && method === "GET") ||
+      (/^\/api\/v1\/events\/[^/]+$/.test(pathName) && method === "GET") ||
+      (/^\/api\/v1\/events\/[^/]+\/eligibility$/.test(pathName) && method === "GET") ||
+      (/^\/api\/v1\/events\/[^/]+\/bookings$/.test(pathName) && method === "POST") ||
+      (pathName === "/api/v1/me/tickets" && method === "GET");
+    if (ownDataRequest && hasCallerEmployeeID) {
+      return route.fulfill({ status: 400, json: envelope(null, false, "employee_id is derived from provider claims") });
+    }
+
+    if (pathName === "/api/v1/auth/mock-provider-token" && method === "POST") {
+      const requestedID = body.profile_id as keyof typeof sessions;
       if (requestedID && sessions[requestedID]) currentSession = { ...sessions[requestedID] } as Session;
-      return route.fulfill({ json: envelope(currentSession) });
+      return route.fulfill({
+        json: envelope({
+          provider_token: `mock-provider-${currentSession.actor.id}`,
+          expires_at: currentSession.expires_at,
+          claims: claimsFromSession(currentSession)
+        })
+      });
     }
 
     if (pathName === "/api/v1/auth/me" && method === "GET") {
-      return route.fulfill({ json: envelope(currentSession) });
+      const authorization = request.headers().authorization || "";
+      if (options.mockProfiles && !authorization.startsWith("Bearer mock-provider-")) {
+        return route.fulfill({ status: 401, json: envelope(null, false, "authentication required") });
+      }
+      return route.fulfill({ json: envelope(claimsFromSession(currentSession)) });
     }
 
-    if (pathName === "/api/v1/auth/logout" && method === "POST") {
-      return route.fulfill({ json: envelope({ status: "logged-out" }) });
+    if (pathName === "/api/v1/auth/bootstrap" && method === "GET") {
+      return route.fulfill({ json: envelope({ mock_profiles_enabled: Boolean(options.mockProfiles), mock_profiles: mockProfiles() }) });
     }
 
     if (pathName === "/healthz" || pathName === "/readyz") {
@@ -281,7 +326,7 @@ async function ensureSessionRoutes(page: Page, principalID: keyof typeof session
       return route.fulfill({ json: envelope({ batch_id: "batch-001", accepted: 0, duplicate: 0, conflict: 0, results: [] }) });
     }
 
-    if (/^\/api\/v1\/employees\/[^/]+\/tickets$/.test(pathName) && method === "GET") {
+    if (pathName === "/api/v1/me/tickets" && method === "GET") {
       return route.fulfill({ json: envelope(sampleTickets) });
     }
 
@@ -350,11 +395,11 @@ async function ensureSessionRoutes(page: Page, principalID: keyof typeof session
   });
 }
 
-async function loginAs(page: Page, principalID: string) {
+async function loginAs(page: Page, principalID: string, options: { mockProfiles?: boolean } = {}) {
   await page.goto("/");
-  const loginButton = page.getByRole("button", { name: new RegExp(principalID) });
-  if (await loginButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await loginButton.click();
+  if (options.mockProfiles) {
+    await page.getByLabel("Mock provider profiles").waitFor({ state: "visible" });
+    await page.getByRole("button", { name: new RegExp(principalID) }).click();
   }
   await expect(page.locator("main")).toBeVisible();
 }
@@ -489,5 +534,14 @@ test("shows explicit unauthorized state for forbidden deep links", async ({ page
   await page.goto("/admin/events", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "權限不足" })).toBeVisible();
   await expect(page.getByText("目前登入角色無法進入")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("keeps the demo runbook available for mock provider profiles", async ({ page }) => {
+  await ensureSessionRoutes(page, "admin-1", { mockProfiles: true });
+  await loginAs(page, "admin-1", { mockProfiles: true });
+  await page.getByRole("button", { name: "跑完整 Demo" }).click();
+  await expect(page.getByRole("heading", { name: "Demo Runbook", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Run full demo|執行中/ })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });

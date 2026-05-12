@@ -63,6 +63,23 @@ paths:
           "$ref": "#/components/responses/Unauthorized"
         '403':
           "$ref": "#/components/responses/Forbidden"
+  "/auth/bootstrap":
+    get:
+      tags:
+      - Auth
+      operationId: getAuthBootstrap
+      summary: Read anonymous auth bootstrap metadata.
+      description: Returns whether non-production mock provider profiles are enabled
+        for this deployment. Production returns false and still requires provider
+        bearer claims for product APIs.
+      security: []
+      responses:
+        '200':
+          description: Auth bootstrap metadata.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AuthBootstrapResponse"
   "/events":
     get:
       tags:
@@ -1108,8 +1125,9 @@ components:
     ProviderBearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: Provider token
-      description: External identity provider token with required employee claims.
+      bearerFormat: HMAC provider token
+      description: External provider token containing required employee claims and
+        an HMAC-SHA256 signature verified with runtime provider secret config.
   parameters:
     EventId:
       name: event_id
@@ -1214,7 +1232,6 @@ components:
           type: string
           enum:
           - complete
-          - degraded_read_only
           - rejected
     AuthMeResponse:
       allOf:
@@ -1238,6 +1255,58 @@ components:
         error:
           type: string
           minLength: 1
+    MockProfile:
+      type: object
+      required:
+      - profile_id
+      - display_name
+      - role_claims
+      - mapped_roles
+      - department
+      - site
+      - city
+      properties:
+        profile_id:
+          type: string
+        display_name:
+          type: string
+        job_title:
+          type:
+          - string
+          - 'null'
+        role_claims:
+          type: array
+          items:
+            type: string
+        mapped_roles:
+          type: array
+          items:
+            "$ref": "#/components/schemas/AppRole"
+        department:
+          type: string
+        site:
+          type: string
+        city:
+          type: string
+    AuthBootstrap:
+      type: object
+      required:
+      - mock_profiles_enabled
+      - mock_profiles
+      properties:
+        mock_profiles_enabled:
+          type: boolean
+        mock_profiles:
+          type: array
+          items:
+            "$ref": "#/components/schemas/MockProfile"
+    AuthBootstrapResponse:
+      allOf:
+      - "$ref": "#/components/schemas/ApiSuccessEnvelope"
+      - type: object
+        properties:
+          data:
+            "$ref": "#/components/schemas/AuthBootstrap"
     CapacityType:
       type: string
       enum:

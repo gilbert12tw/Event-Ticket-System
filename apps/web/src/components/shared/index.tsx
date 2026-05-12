@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { EmployeeProfile } from "@/lib/api";
 import type { IconName } from "@/app/routes";
-import { localSSOPrincipals } from "@/app/routes";
+import { mockProviderProfiles } from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
 import { Alert as UiAlert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,7 @@ export function BoundaryContext({ title, description, icon }: { title: string; d
 }
 
 export function IdentityCard({ principalID }: { principalID: string }) {
-  const principal = localSSOPrincipals.find((candidate) => candidate.id === principalID);
+  const principal = mockProviderProfiles.find((candidate) => candidate.id === principalID);
   return (
     <div className="identity-card" aria-label="目前登入身份">
       <span>{principal?.label || principalID}</span>

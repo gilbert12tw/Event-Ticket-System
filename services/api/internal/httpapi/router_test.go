@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"event-ticket-system/internal/ticketing"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -105,11 +107,11 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	body := bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
-	req.Header.Set("X-Actor-ID", "admin-1")
-	req.Header.Set("X-Role", "activity_admin")
+	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
 	req.Header.Set("X-Trace-ID", "trace-test-123")
 	rec := httptest.NewRecorder()
 
@@ -261,11 +263,14 @@ func TestReactSourceKeepsPhase1UIContracts(t *testing.T) {
 		"/checkin",
 		"/hr/reports",
 		"/demo",
-		"/api/v1/auth/login",
 		"/api/v1/auth/me",
-		"/api/v1/auth/logout",
-		"Local SSO 模擬登入",
-		"選擇一個企業身分",
+		"/api/v1/auth/bootstrap",
+		"/api/v1/auth/mock-provider-token",
+		"Mock Provider Claims",
+		"Mock provider profiles",
+		"選擇一個模擬 provider profile",
+		"Provider Claims Required",
+		"Authorization",
 		"credentials: \"same-origin\"",
 		"User Workspace",
 		"Admin Console",

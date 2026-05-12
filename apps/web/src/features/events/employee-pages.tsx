@@ -7,12 +7,12 @@ import { Alert, EmptyState, EmployeeProfileCard, IdentityCard, Kpi, ProgressMete
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
 
-export function EmployeeEventsPage({ employeeID }: { employeeID: string }) {
+export function EmployeeEventsPage({ principalID }: { principalID: string }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  const employee = employees.find((candidate) => candidate.employee_id === employeeID) || employees[0];
+  const employee = employees.find((candidate) => candidate.employee_id === principalID) || employees[0];
   const eventStats = useMemo(
     () => ({
       eligible: events.filter((event) => event.eligible).length,
@@ -27,7 +27,7 @@ export function EmployeeEventsPage({ employeeID }: { employeeID: string }) {
     setLoading(true);
     setMessage("");
     try {
-      setEvents(await listEvents(employeeID));
+      setEvents(await listEvents());
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -37,12 +37,12 @@ export function EmployeeEventsPage({ employeeID }: { employeeID: string }) {
 
   useEffect(() => {
     void refresh();
-  }, [employeeID]);
+  }, [principalID]);
 
   async function book(eventID: string) {
     setMessage("");
     try {
-      const result = await bookEvent(eventID, employeeID, `book-${eventID}-${employeeID}`);
+      const result = await bookEvent(eventID, `book-${eventID}-${principalID}`);
       setMessage(result.message);
       await refresh();
     } catch (error) {
@@ -58,7 +58,7 @@ export function EmployeeEventsPage({ employeeID }: { employeeID: string }) {
           <h2>員工入口</h2>
           <p>以目前員工 HR 屬性判斷活動資格，報名結果會立即反映 confirmed、waitlisted 或不可報名原因。</p>
         </div>
-        <IdentityCard principalID={employeeID} />
+        <IdentityCard principalID={principalID} />
         <div className="context-kpis">
           <Kpi label="可報名" value={eventStats.eligible} />
           <Kpi label="已確認" value={eventStats.confirmed} />
@@ -153,7 +153,7 @@ export function EmployeeEventsPage({ employeeID }: { employeeID: string }) {
   );
 }
 
-export function EmployeeEventDetailPage({ employeeID }: { employeeID: string }) {
+export function EmployeeEventDetailPage({ principalID }: { principalID: string }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [selectedID, setSelectedID] = useState(() => new URLSearchParams(window.location.search).get("event_id") || "");
   const [detail, setDetail] = useState<EventSummary | null>(null);
@@ -164,11 +164,11 @@ export function EmployeeEventDetailPage({ employeeID }: { employeeID: string }) 
     setBusy(true);
     setMessage("");
     try {
-      const rows = await listEvents(employeeID);
+      const rows = await listEvents();
       setEvents(rows);
       const eventID = nextID || rows[0]?.event_id || "";
       setSelectedID(eventID);
-      setDetail(eventID ? await getEvent(eventID, employeeID) : null);
+      setDetail(eventID ? await getEvent(eventID) : null);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -178,7 +178,7 @@ export function EmployeeEventDetailPage({ employeeID }: { employeeID: string }) 
 
   useEffect(() => {
     void refresh();
-  }, [employeeID]);
+  }, [principalID]);
 
   async function selectEvent(eventID: string) {
     setSelectedID(eventID);
@@ -190,7 +190,7 @@ export function EmployeeEventDetailPage({ employeeID }: { employeeID: string }) 
     if (!detail) return;
     setMessage("");
     try {
-      const result = await bookEvent(detail.event_id, employeeID, `book-${detail.event_id}-${employeeID}`);
+      const result = await bookEvent(detail.event_id, `book-${detail.event_id}-${principalID}`);
       setMessage(result.message);
       await refresh(detail.event_id);
     } catch (error) {
@@ -222,7 +222,7 @@ export function EmployeeEventDetailPage({ employeeID }: { employeeID: string }) 
         <div className="section-heading">
           <div>
             <h2>活動與資格狀態</h2>
-            <p>單筆查詢會帶入目前 employee_id，後端回傳 eligibility_reason 與 current_user_status。</p>
+            <p>單筆查詢以 provider claims 身分重新計算資格與目前報名狀態。</p>
           </div>
           <button className="button secondary" type="button" onClick={() => void refresh()} disabled={busy || !selectedID}>
             <Icon name="refresh" />

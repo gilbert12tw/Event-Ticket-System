@@ -52,7 +52,7 @@ export function ApiDocsPage() {
           docExpansion: "none",
           defaultModelsExpandDepth: 1,
           tryItOutEnabled: true,
-          persistAuthorization: true,
+          persistAuthorization: false,
         });
       })
       .catch((error: unknown) => {

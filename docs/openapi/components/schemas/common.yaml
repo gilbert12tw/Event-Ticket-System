@@ -38,6 +38,58 @@ AuthMeResponse:
       properties:
         data:
           "$ref": "#/EmployeeClaims"
+AuthBootstrapResponse:
+  allOf:
+    - "$ref": "#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/AuthBootstrap"
+AuthBootstrap:
+  type: object
+  required:
+    - mock_profiles_enabled
+    - mock_profiles
+  properties:
+    mock_profiles_enabled:
+      type: boolean
+    mock_profiles:
+      type: array
+      items:
+        "$ref": "#/MockProfile"
+MockProfile:
+  type: object
+  required:
+    - profile_id
+    - display_name
+    - role_claims
+    - mapped_roles
+    - department
+    - site
+    - city
+  properties:
+    profile_id:
+      type: string
+    display_name:
+      type: string
+    job_title:
+      type:
+        - string
+        - "null"
+    role_claims:
+      type: array
+      items:
+        type: string
+    mapped_roles:
+      type: array
+      items:
+        "$ref": "#/AppRole"
+    department:
+      type: string
+    site:
+      type: string
+    city:
+      type: string
 EmployeeClaims:
   type: object
   required:
@@ -76,7 +128,6 @@ EmployeeClaims:
       type: string
       enum:
         - complete
-        - degraded_read_only
         - rejected
 AppRole:
   type: string
