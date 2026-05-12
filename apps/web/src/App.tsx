@@ -15,7 +15,6 @@ import { CheckinPage, OfflineCheckinBoundaryPage } from "@/features/checkin/page
 import { HrReportsPage } from "@/features/reporting/pages";
 import { HrSyncSettingsPage } from "@/features/hr-settings/pages";
 import { AdminAuditPage } from "@/features/audit/pages";
-import { ApiDocsPage } from "@/features/api-docs/pages";
 import { DemoRunbookPage } from "@/features/demo-runbook/pages";
 import { Icon } from "@/components/shared/icon";
 
@@ -122,10 +121,6 @@ function App() {
     clearProviderToken();
     setAuth(null);
     navigate(routePath("user-events"));
-  }
-
-  if (route === "api-docs") {
-    return <ApiDocsPage />;
   }
 
   if (authLoading) {

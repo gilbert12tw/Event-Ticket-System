@@ -26,7 +26,7 @@ export default defineConfig({
     hmr: configuredWebDevPort ? { clientPort: webDevPort } : undefined,
     watch: watchOptions,
     proxy: {
-      "/api/v1": {
+      "/api": {
         target: apiTarget,
         changeOrigin: true
       },

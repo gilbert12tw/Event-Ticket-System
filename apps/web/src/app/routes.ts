@@ -14,7 +14,6 @@ export type RouteKey =
   | "admin-reports"
   | "admin-hr-settings"
   | "admin-audit"
-  | "api-docs"
   | "admin-demo";
 export type StepState = "pending" | "running" | "done" | "fail";
 export type IconName =
@@ -185,16 +184,6 @@ export const routes: NavItem[] = [
     signals: ["敏感操作", "Metadata", "衝突追蹤"]
   },
   {
-    key: "api-docs",
-    workspace: "admin",
-    path: "/api-docs",
-    label: "API Contract",
-    eyebrow: "Admin Console",
-    description: "Swagger UI for the Phase 1 production canonical OpenAPI bundle.",
-    icon: "database",
-    signals: ["OpenAPI", "Swagger UI", "Try it out"]
-  },
-  {
     key: "admin-demo",
     workspace: "admin",
     path: "/admin/demo",
@@ -217,7 +206,6 @@ export const routeAliases: Record<string, RouteKey> = {
   "/hr/reports": "admin-reports",
   "/admin/hr-sync": "admin-hr-settings",
   "/admin/settings": "admin-hr-settings",
-  "/admin/api-docs": "api-docs",
   "/demo": "admin-demo"
 };
 
@@ -233,10 +221,10 @@ export const adminRoutes = routes.filter((route) => route.workspace === "admin")
 
 export const roleRouteAccess: Record<Role, RouteKey[]> = {
   employee: ["user-events", "user-event-detail", "user-tickets", "user-notifications"],
-  activity_admin: ["admin-events", "admin-registrations", "admin-notifications", "api-docs", "admin-demo"],
-  checkin_staff: ["admin-checkin", "admin-offline-checkin", "api-docs"],
-  hr_admin: ["admin-events", "admin-registrations", "admin-notifications", "admin-reports", "admin-hr-settings", "admin-audit", "api-docs", "admin-demo"],
-  system_admin: ["admin-reports", "admin-hr-settings", "admin-audit", "admin-notifications", "api-docs"]
+  activity_admin: ["admin-events", "admin-registrations", "admin-notifications", "admin-demo"],
+  checkin_staff: ["admin-checkin", "admin-offline-checkin"],
+  hr_admin: ["admin-events", "admin-registrations", "admin-notifications", "admin-reports", "admin-hr-settings", "admin-audit", "admin-demo"],
+  system_admin: ["admin-reports", "admin-hr-settings", "admin-audit", "admin-notifications"]
 };
 
 export const mockProviderProfiles = [
