@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listTickets } from "@/lib/api";
-import type { Ticket } from "@/lib/api";
+import type { AuthMeClaims, Ticket } from "@/lib/api";
 import { navigate } from "@/app/routes";
 import { errorMessage, formatDate } from "@/lib/formatting";
 import { Alert, EmptyState, IdentityCard, Kpi, StatusBadge } from "@/components/shared";
@@ -8,11 +8,12 @@ import { Icon } from "@/components/shared/icon";
 import { checkinHistoryState } from "@/features/checkin/checkin-token";
 import { TicketQrCode } from "./qr";
 
-export function EmployeeTicketsPage({ principalID }: { principalID: string }) {
+export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedID, setSelectedID] = useState("");
   const [message, setMessage] = useState("");
 
+  const principalID = claims.employee_id;
   const selectedTicket = tickets.find((ticket) => ticket.ticket_id === selectedID) || tickets[0];
 
   async function refresh() {
@@ -38,7 +39,7 @@ export function EmployeeTicketsPage({ principalID }: { principalID: string }) {
           <h2>票券入口</h2>
           <p>員工只看自己的票券狀態與 QR 入場畫面；signed token 不在畫面或 API activity 中裸露。</p>
         </div>
-        <IdentityCard principalID={principalID} />
+        <IdentityCard claims={claims} />
         <div className="context-kpis">
           <Kpi label="票券數" value={tickets.length} />
           <Kpi label="可使用" value={tickets.filter((ticket) => ticket.status === "active").length} />

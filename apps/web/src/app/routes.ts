@@ -227,58 +227,6 @@ export const roleRouteAccess: Record<Role, RouteKey[]> = {
   system_admin: ["admin-reports", "admin-hr-settings", "admin-audit", "admin-notifications"]
 };
 
-export const mockProviderProfiles = [
-  {
-    id: "E1001",
-    role: "employee" as Role,
-    label: "Ariel Chen",
-    group: "員工入口",
-    description: "Engineering / Taipei / G6"
-  },
-  {
-    id: "E1002",
-    role: "employee" as Role,
-    label: "Ben Lin",
-    group: "員工入口",
-    description: "Engineering / Taipei / G5"
-  },
-  {
-    id: "E2001",
-    role: "employee" as Role,
-    label: "Carla Wu",
-    group: "員工入口",
-    description: "Sales / Taipei / G4"
-  },
-  {
-    id: "admin-1",
-    role: "activity_admin" as Role,
-    label: "Activity Admin",
-    group: "管理入口",
-    description: "建立活動、設定容量與資格"
-  },
-  {
-    id: "staff-1",
-    role: "checkin_staff" as Role,
-    label: "Check-in Staff",
-    group: "管理入口",
-    description: "現場驗票與重複掃描處理"
-  },
-  {
-    id: "hr-1",
-    role: "hr_admin" as Role,
-    label: "HR Admin",
-    group: "管理入口",
-    description: "報表、audit 與參與彙總"
-  },
-  {
-    id: "system-1",
-    role: "system_admin" as Role,
-    label: "System Admin",
-    group: "管理入口",
-    description: "Phase 1 HR reporting and audit alias"
-  }
-];
-
 export const demoSteps = [
   ["seed", "建立 HR 示範員工"],
   ["event", "建立已發布活動"],

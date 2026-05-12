@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ApiLogEntry, AuthSession, Role } from "@/lib/api";
 import type { RouteKey, WorkspaceKey } from "@/app/routes";
 import { adminRoutes, canAccessRoute, defaultAdminRouteForRole, navigate, routePath, routes, userRoutes } from "@/app/routes";
-import { principalLabel, roleLabel } from "@/lib/formatting";
+import { roleLabel } from "@/lib/formatting";
 import { Icon } from "@/components/shared/icon";
 import { SkeletonRows, StatusBadge } from "@/components/shared";
 
@@ -43,7 +43,7 @@ export function Header({
   onSwitchProfile?: () => void;
 }) {
   const item = routes.find((candidate) => candidate.key === route) || routes[0];
-  const displayName = session.claims.display_name || principalLabel(session.actor.id);
+  const displayName = session.claims.display_name || session.actor.id;
   return (
     <header className={`page-header ${item.workspace}-header`}>
       <div className="page-title-block">

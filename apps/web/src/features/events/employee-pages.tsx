@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { bookEvent, employees, getEvent, listEvents } from "@/lib/api";
-import type { EventSummary } from "@/lib/api";
+import { bookEvent, getEvent, listEvents } from "@/lib/api";
+import type { AuthMeClaims, EventSummary } from "@/lib/api";
 import { navigate } from "@/app/routes";
 import { bookingActionLabel, errorMessage, eventStatusTone, formatDate, registrationTone } from "@/lib/formatting";
-import { Alert, EmptyState, EmployeeProfileCard, IdentityCard, Kpi, ProgressMeter, SkeletonRows, StatusBadge } from "@/components/shared";
+import { Alert, EmptyState, IdentityCard, Kpi, ProgressMeter, ProviderClaimsCard, SkeletonRows, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
 
-export function EmployeeEventsPage({ principalID }: { principalID: string }) {
+export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  const employee = employees.find((candidate) => candidate.employee_id === principalID) || employees[0];
+  const principalID = claims.employee_id;
   const eventStats = useMemo(
     () => ({
       eligible: events.filter((event) => event.eligible).length,
@@ -58,7 +58,7 @@ export function EmployeeEventsPage({ principalID }: { principalID: string }) {
           <h2>員工入口</h2>
           <p>以目前員工 HR 屬性判斷活動資格，報名結果會立即反映 confirmed、waitlisted 或不可報名原因。</p>
         </div>
-        <IdentityCard principalID={principalID} />
+        <IdentityCard claims={claims} />
         <div className="context-kpis">
           <Kpi label="可報名" value={eventStats.eligible} />
           <Kpi label="已確認" value={eventStats.confirmed} />
@@ -148,17 +148,18 @@ export function EmployeeEventsPage({ principalID }: { principalID: string }) {
             ))}
         </div>
       </div>
-      <EmployeeProfileCard employee={employee} />
+      <ProviderClaimsCard claims={claims} />
     </section>
   );
 }
 
-export function EmployeeEventDetailPage({ principalID }: { principalID: string }) {
+export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [selectedID, setSelectedID] = useState(() => new URLSearchParams(window.location.search).get("event_id") || "");
   const [detail, setDetail] = useState<EventSummary | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const principalID = claims.employee_id;
 
   async function refresh(nextID = selectedID) {
     setBusy(true);

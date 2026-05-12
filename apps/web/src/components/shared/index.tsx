@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import type { EmployeeProfile } from "@/lib/api";
+import type { AuthMeClaims, EmployeeProfile } from "@/lib/api";
 import type { IconName } from "@/app/routes";
-import { mockProviderProfiles } from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
 import { Alert as UiAlert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -25,14 +24,47 @@ export function BoundaryContext({ title, description, icon }: { title: string; d
   );
 }
 
-export function IdentityCard({ principalID }: { principalID: string }) {
-  const principal = mockProviderProfiles.find((candidate) => candidate.id === principalID);
+export function IdentityCard({ claims }: { claims: AuthMeClaims }) {
+  const role = claims.mapped_roles[0] || "employee";
   return (
     <div className="identity-card" aria-label="目前登入身份">
-      <span>{principal?.label || principalID}</span>
-      <strong>{principalID}</strong>
-      <small>{principal ? roleLabel(principal.role) : "employee"}</small>
+      <span>{claims.display_name || claims.employee_id}</span>
+      <strong>{claims.employee_id}</strong>
+      <small>{roleLabel(role)}</small>
     </div>
+  );
+}
+
+export function ProviderClaimsCard({ claims }: { claims: AuthMeClaims }) {
+  return (
+    <aside className="panel span-4">
+      <h2>Provider Claims</h2>
+      <dl className="meta-list vertical">
+        <div>
+          <dt>員工</dt>
+          <dd>
+            {claims.display_name || claims.employee_id}
+            <span className="table-muted">{claims.employee_id}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>部門</dt>
+          <dd>{claims.department}</dd>
+        </div>
+        <div>
+          <dt>廠區</dt>
+          <dd>{claims.site}</dd>
+        </div>
+        <div>
+          <dt>職稱</dt>
+          <dd>{claims.job_title || "未提供"}</dd>
+        </div>
+        <div>
+          <dt>城市</dt>
+          <dd>{claims.city}</dd>
+        </div>
+      </dl>
+    </aside>
   );
 }
 

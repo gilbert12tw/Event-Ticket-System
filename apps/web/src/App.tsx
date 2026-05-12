@@ -196,9 +196,9 @@ function App() {
           />
         ) : (
           <>
-            {safeRoute === "user-events" && <EmployeeEventsPage principalID={auth.actor.id} />}
-            {safeRoute === "user-event-detail" && <EmployeeEventDetailPage principalID={auth.actor.id} />}
-            {safeRoute === "user-tickets" && <EmployeeTicketsPage principalID={auth.actor.id} />}
+            {safeRoute === "user-events" && <EmployeeEventsPage claims={auth.claims} />}
+            {safeRoute === "user-event-detail" && <EmployeeEventDetailPage claims={auth.claims} />}
+            {safeRoute === "user-tickets" && <EmployeeTicketsPage claims={auth.claims} />}
             {safeRoute === "user-notifications" && <UserNotificationsPage />}
             {safeRoute === "admin-events" && <AdminEventsPage />}
             {safeRoute === "admin-registrations" && <AdminRegistrationsPage />}
