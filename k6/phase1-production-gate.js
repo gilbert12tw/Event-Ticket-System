@@ -7,6 +7,8 @@ import { Trend } from "k6/metrics";
 const baseUrl = __ENV.BASE_URL || "http://127.0.0.1:8080";
 const smokeDuration = __ENV.K6_SMOKE_DURATION || "45s";
 const checkinDuration = new Trend("checkin_duration", true);
+const providerTokens = {};
+let currentPrincipalId = "E1001";
 
 export const options = {
   scenarios: {
@@ -42,7 +44,7 @@ export const options = {
 export function setup() {
   const health = http.get(`${baseUrl}/healthz`);
   const ready = http.get(`${baseUrl}/readyz`);
-  const seeded = rawPost("/api/v1/admin/seed-demo", {}, localActorHeaders("admin-1", "activity_admin"));
+  const seeded = rawPost("/api/v1/admin/seed-demo", {}, authHeaders("admin-1"));
   const ok = check(null, {
     "setup health status is 200": () => health.status === 200,
     "setup ready status is 200": () => ready.status === 200,
@@ -63,13 +65,13 @@ export function httpGate() {
   requireValue(event?.event_id, "event create returned event_id");
 
   login("E1001");
-  const eventList = get("/api/v1/events?employee_id=E1001", "event browse");
+  const eventList = get("/api/v1/events", "event browse");
   requireValue(eventList?.length, "event browse returned events");
-  const eventDetail = get(`/api/v1/events/${event.event_id}?employee_id=E1001`, "event detail");
+  const eventDetail = get(`/api/v1/events/${event.event_id}`, "event detail");
   requireValue(eventDetail?.event_id, "event detail returned event_id");
   const booking = book(event.event_id, "E1001", uniqueKey("book-e1001"));
   requireValue(booking?.registration?.registration_id, "employee booking returned registration_id");
-  const tickets = get(`/api/v1/employees/E1001/tickets`, "employee ticket detail");
+  const tickets = get("/api/v1/me/tickets", "employee ticket detail");
   const token = tickets?.[0]?.signed_token || booking?.ticket?.signed_token || "";
   requireValue(token, "employee receives reusable token only in owner flow");
 
@@ -131,9 +133,10 @@ function checkEndpoint(path, label) {
 }
 
 function login(principalId) {
-  const response = post("/api/v1/auth/login", { principal_id: principalId }, `login ${principalId}`);
-  check(response, { [`${principalId} session issued`]: (res) => Boolean(res?.actor?.id) });
-  return response;
+  currentPrincipalId = principalId;
+  const claims = get("/api/v1/auth/me", `provider claims ${principalId}`);
+  check(claims, { [`${principalId} provider claims loaded`]: (value) => value?.employee_id === principalId });
+  return claims;
 }
 
 function createEvent() {
@@ -155,13 +158,14 @@ function createEvent() {
 
 function book(eventId, employeeId, idempotencyKey) {
   return post(`/api/v1/events/${eventId}/bookings`, {
-    employee_id: employeeId,
     idempotency_key: idempotencyKey
   }, `booking ${employeeId}`);
 }
 
 function get(path, label) {
-  const response = http.get(`${baseUrl}${path}`);
+  const response = http.get(`${baseUrl}${path}`, {
+    headers: authHeaders(currentPrincipalId)
+  });
   check(response, { [`${label} status is 200`]: (res) => res.status === 200 });
   return envelopeData(response, label);
 }
@@ -174,12 +178,25 @@ function post(path, body, label = path) {
 
 function rawPost(path, body, extraHeaders = {}) {
   return http.post(`${baseUrl}${path}`, JSON.stringify(body), {
-    headers: { "Content-Type": "application/json", ...extraHeaders }
+    headers: { "Content-Type": "application/json", ...authHeaders(currentPrincipalId), ...extraHeaders }
   });
 }
 
-function localActorHeaders(actorId, role) {
-  return { "X-Actor-ID": actorId, "X-Role": role };
+function authHeaders(actorId) {
+  return { Authorization: `Bearer ${providerTokenFor(actorId)}` };
+}
+
+function providerTokenFor(actorId) {
+  if (providerTokens[actorId]) return providerTokens[actorId];
+  const response = http.post(`${baseUrl}/api/v1/auth/mock-provider-token`, JSON.stringify({ profile_id: actorId }), {
+    headers: { "Content-Type": "application/json" }
+  });
+  const token = envelopeData(response, `mock provider token ${actorId}`)?.provider_token || "";
+  if (!token) {
+    exec.test.abort(`mock provider token ${actorId} was not issued`);
+  }
+  providerTokens[actorId] = token;
+  return token;
 }
 
 function envelopeData(response, label, fallback = null) {
@@ -221,19 +238,21 @@ function requireValue(value, label) {
 
 async function loginInBrowser(page, principalId) {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.evaluate(async (nextPrincipalId) => {
-    await fetch("/api/v1/auth/login", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ principal_id: nextPrincipalId })
-    });
-  }, principalId);
+  await page.evaluate(() => {
+    const button = Array.from(document.querySelectorAll("button")).find((candidate) => candidate.textContent?.includes("切換 Profile"));
+    button?.click();
+  });
+  await page.waitForLoadState("networkidle");
+  await page.locator(`//button[contains(., "${principalId}")]`).click();
   await page.waitForLoadState("networkidle");
 }
 
 async function expectRoute(page, path, heading) {
-  await page.goto(`${baseUrl}${path}`, { waitUntil: "networkidle" });
+  await page.evaluate((nextPath) => {
+    window.history.pushState({}, "", nextPath);
+    window.dispatchEvent(new Event("popstate"));
+  }, path);
+  await page.waitForLoadState("networkidle");
   const text = await page.locator(`//*[contains(., "${heading}")]`).first().textContent();
   check(text, { [`browser route ${path} visible`]: (value) => Boolean(value && value.includes(heading)) });
   const overflow = await page.evaluate(() => Math.ceil(document.documentElement.scrollWidth - window.innerWidth));
