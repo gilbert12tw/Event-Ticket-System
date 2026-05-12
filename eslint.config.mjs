@@ -13,7 +13,11 @@ export default tseslint.config(
       "**/coverage/**",
       "**/.turbo/**",
       "**/.vite/**",
-      "services/api/internal/httpapi/static/assets/**"
+      "apps/web/public/openapi/**",
+      "apps/web/public/swagger-ui/**",
+      "services/api/internal/httpapi/static/assets/**",
+      "services/api/internal/httpapi/static/openapi/**",
+      "services/api/internal/httpapi/static/swagger-ui/**"
     ]
   },
   js.configs.recommended,
