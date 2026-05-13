@@ -97,7 +97,7 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if req.CapacityType != nil {
 		event.CapacityType = strings.TrimSpace(*req.CapacityType)
 	}
-	if req.capacitySet {
+	if req.capacitySet || req.Capacity != nil {
 		event.Capacity = req.Capacity
 	}
 	if req.AllowsFamily != nil {
