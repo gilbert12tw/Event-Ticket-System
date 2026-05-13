@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { login, logout, me, readiness, setApiObserver } from "@/lib/api";
-import type { ApiLogEntry, AuthSession } from "@/lib/api";
+import { authBootstrap, clearProviderToken, me, readiness, selectMockProfile, setApiObserver } from "@/lib/api";
+import type { ApiLogEntry, AuthSession, MockProfile } from "@/lib/api";
 import { adminRoutes, canAccessRoute, currentRoute, defaultRouteForRole, navigate, routePath, routes, userRoutes } from "@/app/routes";
 import type { RouteKey } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
 import { Alert } from "@/components/shared";
 import { ApiActivity, Header, LoadingScreen, StatusPanel, WorkspaceSwitch } from "@/components/layout";
-import { LoginPage } from "@/features/auth/LoginPage";
+import { MockProfileSelector } from "@/features/auth/MockProfileSelector";
 import { AdminEventsPage, EmployeeEventDetailPage, EmployeeEventsPage } from "@/features/events/pages";
 import { EmployeeTicketsPage } from "@/features/tickets/pages";
 import { AdminRegistrationsPage } from "@/features/registrations/pages";
@@ -23,14 +23,20 @@ function App() {
   const [auth, setAuth] = useState<AuthSession | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMessage, setAuthMessage] = useState("");
+  const [mockProfilesEnabled, setMockProfilesEnabled] = useState(false);
+  const [mockProfiles, setMockProfiles] = useState<MockProfile[]>([]);
   const [apiLog, setApiLog] = useState<ApiLogEntry[]>([]);
   const [health, setHealth] = useState<"checking" | "ok" | "down">("checking");
   const [ready, setReady] = useState<"checking" | "ok" | "down">("checking");
-  const unauthorizedRoute = auth ? !canAccessRoute(route, auth.actor.role) : false;
+  const canUseDemo = Boolean(auth && mockProfilesEnabled);
+  const demoRouteBlocked = auth ? route === "admin-demo" && !canUseDemo : false;
+  const unauthorizedRoute = auth ? !canAccessRoute(route, auth.actor.role) || demoRouteBlocked : false;
   const safeRoute = auth && unauthorizedRoute ? defaultRouteForRole(auth.actor.role) : route;
   const activeRoute = routes.find((candidate) => candidate.key === safeRoute) || routes[0];
   const activeWorkspace = activeRoute.workspace;
-  const navRoutes = (activeWorkspace === "user" ? userRoutes : adminRoutes).filter((item) => auth && canAccessRoute(item.key, auth.actor.role));
+  const navRoutes = (activeWorkspace === "user" ? userRoutes : adminRoutes).filter(
+    (item) => auth && canAccessRoute(item.key, auth.actor.role) && (item.key !== "admin-demo" || canUseDemo)
+  );
 
   useEffect(() => {
     const onRoute = () => setRoute(currentRoute());
@@ -47,19 +53,41 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    me()
-      .then((session) => {
+    async function loadAuth() {
+      try {
+        const session = await me();
         if (!active) return;
         setAuth(session);
+        try {
+          const bootstrap = await authBootstrap();
+          if (!active) return;
+          setMockProfilesEnabled(bootstrap.mock_profiles_enabled);
+          setMockProfiles(bootstrap.mock_profiles);
+        } catch {
+          if (!active) return;
+          setMockProfilesEnabled(false);
+          setMockProfiles([]);
+        }
         setAuthMessage("");
-      })
-      .catch(() => {
+      } catch {
         if (!active) return;
         setAuth(null);
-      })
-      .finally(() => {
+        try {
+          const bootstrap = await authBootstrap();
+          if (!active) return;
+          setMockProfilesEnabled(bootstrap.mock_profiles_enabled);
+          setMockProfiles(bootstrap.mock_profiles);
+        } catch (error) {
+          if (!active) return;
+          setMockProfilesEnabled(false);
+          setMockProfiles([]);
+          setAuthMessage(errorMessage(error));
+        }
+      } finally {
         if (active) setAuthLoading(false);
-      });
+      }
+    }
+    void loadAuth();
     return () => {
       active = false;
     };
@@ -77,10 +105,10 @@ function App() {
     };
   }, []);
 
-  async function handleLogin(principalID: string) {
+  async function handleMockProfile(profileID: string) {
     setAuthMessage("");
     try {
-      const session = await login(principalID);
+      const session = await selectMockProfile(profileID);
       setAuth(session);
       navigate(routePath(defaultRouteForRole(session.actor.role)));
     } catch (error) {
@@ -88,15 +116,11 @@ function App() {
     }
   }
 
-  async function handleLogout() {
+  function handleSwitchProfile() {
     setAuthMessage("");
-    try {
-      await logout();
-    } catch (error) {
-      setAuthMessage(errorMessage(error));
-    } finally {
-      setAuth(null);
-    }
+    clearProviderToken();
+    setAuth(null);
+    navigate(routePath("user-events"));
   }
 
   if (authLoading) {
@@ -104,7 +128,18 @@ function App() {
   }
 
   if (!auth) {
-    return <LoginPage health={health} ready={ready} message={authMessage} onLogin={(principalID) => void handleLogin(principalID)} />;
+    if (mockProfilesEnabled) {
+      return (
+        <MockProfileSelector
+          health={health}
+          ready={ready}
+          message={authMessage}
+          profiles={mockProfiles}
+          onSelect={(profileID) => void handleMockProfile(profileID)}
+        />
+      );
+    }
+    return <AuthRequiredState health={health} ready={ready} message={authMessage} />;
   }
 
   return (
@@ -146,7 +181,12 @@ function App() {
       </aside>
 
       <main className="workspace">
-        <Header route={safeRoute} session={auth} onLogout={() => void handleLogout()} />
+        <Header
+          route={safeRoute}
+          session={auth}
+          mockProfilesEnabled={mockProfilesEnabled}
+          onSwitchProfile={mockProfilesEnabled ? handleSwitchProfile : undefined}
+        />
         {authMessage && <Alert tone="warn">{authMessage}</Alert>}
         {unauthorizedRoute ? (
           <UnauthorizedState
@@ -156,10 +196,10 @@ function App() {
           />
         ) : (
           <>
-            {safeRoute === "user-events" && <EmployeeEventsPage employeeID={auth.actor.id} />}
-            {safeRoute === "user-event-detail" && <EmployeeEventDetailPage employeeID={auth.actor.id} />}
-            {safeRoute === "user-tickets" && <EmployeeTicketsPage employeeID={auth.actor.id} />}
-            {safeRoute === "user-notifications" && <UserNotificationsPage employeeID={auth.actor.id} />}
+            {safeRoute === "user-events" && <EmployeeEventsPage claims={auth.claims} />}
+            {safeRoute === "user-event-detail" && <EmployeeEventDetailPage claims={auth.claims} />}
+            {safeRoute === "user-tickets" && <EmployeeTicketsPage claims={auth.claims} />}
+            {safeRoute === "user-notifications" && <UserNotificationsPage />}
             {safeRoute === "admin-events" && <AdminEventsPage />}
             {safeRoute === "admin-registrations" && <AdminRegistrationsPage />}
             {safeRoute === "admin-notifications" && <NotificationDeliveryPage />}
@@ -168,13 +208,38 @@ function App() {
             {safeRoute === "admin-reports" && <HrReportsPage />}
             {safeRoute === "admin-hr-settings" && <HrSyncSettingsPage />}
             {safeRoute === "admin-audit" && <AdminAuditPage />}
-            {safeRoute === "admin-demo" && <DemoRunbookPage session={auth} onSessionChange={(next) => setAuth(next)} />}
+            {safeRoute === "admin-demo" && canUseDemo && <DemoRunbookPage session={auth} onSessionChange={(next) => setAuth(next)} />}
           </>
         )}
       </main>
 
       <ApiActivity entries={apiLog} onClear={() => setApiLog([])} />
     </div>
+  );
+}
+
+function AuthRequiredState({ health, ready, message }: { health: string; ready: string; message: string }) {
+  return (
+    <main className="login-shell">
+      <section className="login-panel compact-login">
+        <div className="brand-block login-brand">
+          <div className="brand-mark" aria-hidden="true">
+            C
+          </div>
+          <div>
+            <div className="brand-title">企業活動票務</div>
+            <div className="brand-subtitle">Enterprise SSO</div>
+          </div>
+        </div>
+        <div>
+          <div className="eyebrow">Provider Claims Required</div>
+          <h1>需要企業 SSO 身分</h1>
+          <p>請從企業身分提供者進入工作台，系統會使用 provider claims 載入角色與員工屬性。</p>
+        </div>
+        <StatusPanel health={health} ready={ready} />
+        {message && <Alert tone="warn">{message}</Alert>}
+      </section>
+    </main>
   );
 }
 

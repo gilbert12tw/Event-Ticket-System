@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   auditLogs,
+  bookEvent,
   checkEligibility,
   createReportExport,
+  getEvent,
   getReportExport,
   getNotificationPreferences,
   getTicket,
@@ -11,13 +13,16 @@ import {
   listEvents,
   listNotificationDeliveries,
   listTickets,
-  login,
+  me,
+  mockProviderToken,
   offlineCheckinPackage,
   previewEligibility,
   resolveEligibilityImpactReview,
   retryNotificationDelivery,
   runLottery,
   setApiObserver,
+  setProviderToken,
+  setProviderTokenProvider,
   syncOfflineCheckins,
   updateEligibility,
   updateNotificationPreferences,
@@ -47,6 +52,8 @@ describe("api client", () => {
 
   afterEach(() => {
     setApiObserver(null);
+    setProviderToken(null);
+    setProviderTokenProvider(null);
     vi.unstubAllGlobals();
   });
 
@@ -86,11 +93,11 @@ describe("api client", () => {
       })
     );
 
-    const tickets = await listTickets("E1001");
+    const tickets = await listTickets();
 
     expect(tickets).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/employees/E1001/tickets",
+      "/api/v1/me/tickets",
       expect.objectContaining({
         credentials: "same-origin",
         headers: {
@@ -106,13 +113,75 @@ describe("api client", () => {
     expect(payload.data[0].qr_payload).toBe("[redacted ticket token]");
   });
 
+  it("attaches provider bearer tokens from memory", async () => {
+    setProviderToken("provider-secret");
+    mockSuccess([]);
+
+    await listEvents();
+
+    expect(fetchCall(0).init).toMatchObject({
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer provider-secret"
+      }
+    });
+  });
+
+  it("maps provider claims to an authenticated session", async () => {
+    mockSuccess({
+      employee_id: "E1001",
+      display_name: "Ariel Chen",
+      role_claims: ["employee"],
+      mapped_roles: ["employee"],
+      department: "Engineering",
+      site: "Taipei HQ",
+      city: "Taipei",
+      claims_status: "complete"
+    });
+
+    const session = await me();
+
+    expect(session).toMatchObject({
+      actor: { id: "E1001", role: "employee" },
+      source: "provider",
+      claims: { claims_status: "complete" }
+    });
+  });
+
+
   it("treats null list envelope data as an empty array", async () => {
     mockSuccess(null);
 
-    const events = await listEvents("E1001");
+    const events = await listEvents();
 
     expect(events).toEqual([]);
-    expect(fetchCall(0).path).toBe("/api/v1/events?employee_id=E1001");
+    expect(fetchCall(0).path).toBe("/api/v1/events");
+  });
+
+  it("uses canonical own-data endpoints without caller-supplied employee_id", async () => {
+    mockSuccess([]);
+    await listEvents();
+    mockSuccess({ event_id: "evt/1" });
+    await getEvent("evt/1");
+    mockSuccess({ event_id: "evt/1" });
+    await checkEligibility("evt/1");
+    mockSuccess({ event_id: "evt/1" });
+    await bookEvent("evt/1", "book-1");
+    mockSuccess([]);
+    await listTickets();
+
+    expect(fetchCall(0).path).toBe("/api/v1/events");
+    expect(fetchCall(1).path).toBe("/api/v1/events/evt%2F1");
+    expect(fetchCall(2).path).toBe("/api/v1/events/evt%2F1/eligibility");
+    expect(fetchCall(3)).toMatchObject({
+      path: "/api/v1/events/evt%2F1/bookings",
+      body: { idempotency_key: "book-1" }
+    });
+    expect(fetchCall(4).path).toBe("/api/v1/me/tickets");
+    for (let index = 0; index < 5; index += 1) {
+      expect(fetchCall(index).path).not.toContain("employee_id");
+      expect(JSON.stringify(fetchCall(index).body ?? {})).not.toContain("employee_id");
+    }
   });
 
   it("throws ApiError for unsuccessful JSON envelopes", async () => {
@@ -129,7 +198,7 @@ describe("api client", () => {
 
     let caught: unknown;
     try {
-      await login("E1001");
+      await mockProviderToken("E1001");
     } catch (error) {
       caught = error;
     }
@@ -141,17 +210,13 @@ describe("api client", () => {
     });
   });
 
-  it("redacts session-like fields in nested API log payloads", async () => {
+  it("redacts provider token fields in API log payloads", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         success: true,
         data: {
-          actor: {
-            id: "E1001",
-            role: "employee"
-          },
+          provider_token: "provider-token-secret",
           expires_at: "2026-05-06T18:00:00Z",
-          session: "session-secret",
           nested: {
             token: "nested-token-secret"
           }
@@ -160,12 +225,12 @@ describe("api client", () => {
       })
     );
 
-    await login("E1001");
+    await mockProviderToken("E1001");
 
     const payload = entries[0]?.payload as {
-      data: { session: string; nested: { token: string } };
+      data: { provider_token: string; nested: { token: string } };
     };
-    expect(payload.data.session).toBe("[redacted session]");
+    expect(payload.data.provider_token).toBe("[redacted provider token]");
     expect(payload.data.nested.token).toBe("[redacted session]");
   });
 
@@ -186,7 +251,7 @@ describe("api client", () => {
     mockSuccess({ review_id: "rev/1", status: "resolved" });
     await resolveEligibilityImpactReview("rev/1", { reason: "reviewed" });
     mockSuccess({ event_id: "evt/1", eligible: true, reason: "" });
-    await checkEligibility("evt/1", "E1001");
+    await checkEligibility("evt/1");
     mockSuccess({ run_id: "lot_1", status: "completed" });
     await runLottery("evt/1", { seed: "seed-1" });
     mockSuccess({ ticket_id: "tkt/1" });
@@ -213,7 +278,7 @@ describe("api client", () => {
       path: "/api/v1/admin/eligibility-impact-reviews/rev%2F1/resolve",
       body: { reason: "reviewed" }
     });
-    expect(fetchCall(4).path).toBe("/api/v1/events/evt%2F1/eligibility?employee_id=E1001");
+    expect(fetchCall(4).path).toBe("/api/v1/events/evt%2F1/eligibility");
     expect(fetchCall(5)).toMatchObject({
       path: "/api/v1/admin/events/evt%2F1/lottery-runs",
       body: { seed: "seed-1" }

@@ -3,6 +3,7 @@ import { type APIRequestContext, expect, type Page, test } from "@playwright/tes
 type Role = "employee" | "activity_admin" | "checkin_staff" | "hr_admin" | "system_admin";
 type Actor = { id: string; role: Role };
 type Envelope<T> = { success: boolean; data: T; error: string | null };
+type MockProviderToken = { provider_token: string; expires_at: string };
 type EventSummary = { event_id: string; title: string };
 type Ticket = {
   ticket_id: string;
@@ -19,6 +20,7 @@ const employee: Actor = { id: "E1001", role: "employee" };
 const secondEmployee: Actor = { id: "E1002", role: "employee" };
 const staff: Actor = { id: "staff-1", role: "checkin_staff" };
 const hr: Actor = { id: "hr-1", role: "hr_admin" };
+const providerTokens = new Map<string, string>();
 
 test.describe.serial("Phase 1 live production workflow", () => {
   test("exercises Phase 1 through real UI workflows without route mocking", async ({ page, request }) => {
@@ -26,27 +28,27 @@ test.describe.serial("Phase 1 live production workflow", () => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const event = await createLiveEvent(request, suffix);
 
-    await loginThroughUi(page, employee.id, "員工入口");
+    await loginThroughUi(page, request, employee.id, "員工入口");
     await expectEmployeeCanBrowseAndBook(page, event);
     await expectEmployeeDetailRoute(page, event);
     await expectEmployeeTicketAndNotifications(page, event);
     const onlineToken = await signedTokenFor(request, employee, event.event_id);
 
-    await loginThroughUi(page, secondEmployee.id, "員工入口");
+    await loginThroughUi(page, request, secondEmployee.id, "員工入口");
     await expectEmployeeCanBrowseAndBook(page, event);
     const offlineToken = await signedTokenFor(request, secondEmployee, event.event_id);
 
-    await loginThroughUi(page, staff.id, "驗票員入口");
+    await loginThroughUi(page, request, staff.id, "驗票員入口");
     await expectOnlineCheckinAndDuplicate(page, onlineToken);
     await expectOfflineSyncWithNonEmptyScan(page, event, offlineToken);
     await expectForbiddenRoute(page, "/admin/events");
 
-    await loginThroughUi(page, hr.id, "活動主辦入口");
+    await loginThroughUi(page, request, hr.id, "活動主辦入口");
     await expectReportsExportAndAuditFilters(page, event);
     const delivery = await waitForNotificationDelivery(page, request);
     await expectNotificationDeliveryRoute(page, delivery);
 
-    await loginThroughUi(page, "system-1", "HR 報表入口");
+    await loginThroughUi(page, request, "system-1", "HR 報表入口");
     await expectRoute(page, "/admin/audit", "稽核入口");
     await expectForbiddenRoute(page, "/admin/events");
 
@@ -84,15 +86,21 @@ async function createLiveEvent(request: APIRequestContext, suffix: string) {
   });
 }
 
-async function loginThroughUi(page: Page, principalID: string, landingHeading: string) {
+async function loginThroughUi(page: Page, request: APIRequestContext, principalID: string, landingHeading: string) {
+  const providerToken = await providerTokenFor(request, principalID);
+  await page.addInitScript((token) => {
+    (globalThis as typeof globalThis & { __CETS_PROVIDER_TOKEN__?: string }).__CETS_PROVIDER_TOKEN__ = token;
+  }, providerToken);
   await page.goto("/", { waitUntil: "networkidle" });
-  const loginHeading = page.getByRole("heading", { name: "選擇一個企業身分進入工作台" });
-  if (!(await loginHeading.isVisible({ timeout: 1_000 }).catch(() => false))) {
-    await expect(page.getByRole("button", { name: "登出" }).first()).toBeVisible();
-    await page.getByRole("button", { name: "登出" }).first().click();
+  const loginHeading = page.getByRole("heading", { name: "選擇一個模擬 provider profile" });
+  if (await loginHeading.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await page.getByRole("button", { name: new RegExp(principalID) }).click();
+  } else if (!(await page.getByRole("heading", { name: landingHeading }).isVisible({ timeout: 1_000 }).catch(() => false))) {
+    await expect(page.getByRole("button", { name: "切換 Profile" }).first()).toBeVisible();
+    await page.getByRole("button", { name: "切換 Profile" }).first().click();
+    await expect(loginHeading).toBeVisible();
+    await page.getByRole("button", { name: new RegExp(principalID) }).click();
   }
-  await expect(loginHeading).toBeVisible();
-  await page.getByRole("button", { name: new RegExp(principalID) }).click();
   await expect(page.getByRole("heading", { name: landingHeading })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 }
@@ -205,7 +213,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 async function signedTokenFor(request: APIRequestContext, actor: Actor, eventID: string) {
-  const tickets = await api<Ticket[]>(request, actor, "GET", `/api/v1/employees/${actor.id}/tickets`);
+  const tickets = await api<Ticket[]>(request, actor, "GET", "/api/v1/me/tickets");
   const ticket = tickets.find((candidate) => candidate.event_id === eventID);
   expect(ticket?.signed_token, `ticket token for ${actor.id} on ${eventID}`).toBeTruthy();
   return ticket?.signed_token || "";
@@ -230,16 +238,37 @@ async function api<T>(request: APIRequestContext, actor: Actor, method: string, 
   return payload.data;
 }
 
-function rawApi(request: APIRequestContext, actor: Actor, method: string, path: string, body?: unknown) {
+async function rawApi(request: APIRequestContext, actor: Actor, method: string, path: string, body?: unknown) {
+  const providerToken = await providerTokenFor(request, actor.id);
   return request.fetch(path, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "X-Actor-ID": actor.id,
-      "X-Role": actor.role
+      Authorization: `Bearer ${providerToken}`
     },
     data: body
   });
+}
+
+async function providerTokenFor(request: APIRequestContext, profileID: string) {
+  const cached = providerTokens.get(profileID);
+  if (cached) return cached;
+
+  const response = await request.post("/api/v1/auth/mock-provider-token", {
+    headers: {
+      "Content-Type": "application/json"
+    },
+    data: {
+      profile_id: profileID
+    }
+  });
+  const text = await response.text();
+  expect(response.ok(), `POST /api/v1/auth/mock-provider-token failed for ${profileID}: ${text}`).toBe(true);
+  const payload = JSON.parse(text) as Envelope<MockProviderToken>;
+  expect(payload.success, `mock provider token envelope failed for ${profileID}: ${payload.error}`).toBe(true);
+  expect(payload.data.provider_token, `mock provider token missing for ${profileID}`).toBeTruthy();
+  providerTokens.set(profileID, payload.data.provider_token);
+  return payload.data.provider_token;
 }
 
 function futureISO(hours: number) {

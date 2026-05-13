@@ -1,5 +1,4 @@
 import { ApiError, type AuditLogFilters, type CreateEventRequest, type EmployeeProfile, type EventSummary, type Role } from "@/lib/api";
-import { localSSOPrincipals } from "@/app/routes";
 
 export function defaultEventForm() {
   return {
@@ -152,10 +151,6 @@ export function roleLabel(role: Role) {
     system_admin: "System Admin"
   };
   return labels[role];
-}
-
-export function principalLabel(principalID: string) {
-  return localSSOPrincipals.find((principal) => principal.id === principalID)?.label || principalID;
 }
 
 export function errorMessage(error: unknown) {

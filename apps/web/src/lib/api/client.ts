@@ -3,6 +3,8 @@ import type {
   ApiLogEntry,
   AuditLog,
   AuditLogFilters,
+  AuthBootstrap,
+  AuthMeClaims,
   AuthSession,
   BookingResponse,
   CheckinResponse,
@@ -14,6 +16,7 @@ import type {
   EventSummary,
   LotteryRun,
   LotteryRunRequest,
+  MockProviderToken,
   NotificationDelivery,
   NotificationPreferences,
   OfflineCheckinPackage,
@@ -36,11 +39,22 @@ type RequestOptions = Omit<RequestInit, "headers" | "body"> & {
 };
 
 export type ApiObserver = (entry: ApiLogEntry) => void;
+export type ProviderTokenProvider = () => string | null | undefined;
 
 let observer: ApiObserver | null = null;
+let explicitProviderToken: string | null = null;
+let providerTokenProvider: ProviderTokenProvider = defaultProviderTokenProvider;
 
 export function setApiObserver(next: ApiObserver | null) {
   observer = next;
+}
+
+export function setProviderToken(token: string | null) {
+  explicitProviderToken = token;
+}
+
+export function setProviderTokenProvider(next: ProviderTokenProvider | null) {
+  providerTokenProvider = next ?? defaultProviderTokenProvider;
 }
 
 export class ApiError extends Error {
@@ -82,9 +96,23 @@ export const employees = [
 ];
 
 function headersFor(): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json"
   };
+  const providerToken = currentProviderToken();
+  if (providerToken) {
+    headers.Authorization = `Bearer ${providerToken}`;
+  }
+  return headers;
+}
+
+function defaultProviderTokenProvider() {
+  const token = (globalThis as typeof globalThis & { __CETS_PROVIDER_TOKEN__?: string | null }).__CETS_PROVIDER_TOKEN__;
+  return typeof token === "string" ? token : "";
+}
+
+function currentProviderToken() {
+  return (explicitProviderToken ?? providerTokenProvider() ?? "").trim();
 }
 
 async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -137,7 +165,9 @@ function redact(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const output: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(value)) {
-    if (key === "signed_token" || key === "qr_payload") {
+    if (key === "provider_token") {
+      output[key] = typeof raw === "string" && raw.length > 0 ? "[redacted provider token]" : raw;
+    } else if (key === "signed_token" || key === "qr_payload") {
       output[key] = typeof raw === "string" && raw.length > 0 ? "[redacted ticket token]" : raw;
     } else if (key === "cets_session" || key === "session" || key === "token") {
       output[key] = typeof raw === "string" && raw.length > 0 ? "[redacted session]" : raw;
@@ -148,24 +178,43 @@ function redact(value: unknown): unknown {
   return output;
 }
 
-export function login(principalID: string) {
-  return api<AuthSession>("/api/v1/auth/login", {
+export function authSessionFromClaims(claims: AuthMeClaims): AuthSession {
+  return {
+    actor: {
+      id: claims.employee_id,
+      role: claims.mapped_roles[0] || "employee"
+    },
+    expires_at: "",
+    claims,
+    source: "provider"
+  };
+}
+
+export function me(): Promise<AuthSession> {
+  return api<AuthMeClaims>("/api/v1/auth/me").then(authSessionFromClaims);
+}
+
+export function authBootstrap() {
+  return api<AuthBootstrap>("/api/v1/auth/bootstrap");
+}
+
+export function mockProviderToken(profileID: string) {
+  return api<MockProviderToken>("/api/v1/auth/mock-provider-token", {
     method: "POST",
     body: {
-      principal_id: principalID
+      profile_id: profileID
     }
   });
 }
 
-export function me() {
-  return api<AuthSession>("/api/v1/auth/me");
+export async function selectMockProfile(profileID: string): Promise<AuthSession> {
+  const token = await mockProviderToken(profileID);
+  setProviderToken(token.provider_token);
+  return me();
 }
 
-export function logout() {
-  return api<{ status: string }>("/api/v1/auth/logout", {
-    method: "POST",
-    body: {}
-  });
+export function clearProviderToken() {
+  setProviderToken(null);
 }
 
 export function seedDemo() {
@@ -186,20 +235,16 @@ export function listAdminEvents() {
   return apiList<EventSummary>("/api/v1/admin/events");
 }
 
-export function listEvents(employeeID: string) {
-  return apiList<EventSummary>(`/api/v1/events?employee_id=${encodeURIComponent(employeeID)}`);
+export function listEvents() {
+  return apiList<EventSummary>("/api/v1/events");
 }
 
-export function getEvent(eventID: string, employeeID?: string) {
-  const params = new URLSearchParams();
-  if (employeeID) params.set("employee_id", employeeID);
-  const query = params.toString();
-  return api<EventSummary>(`/api/v1/events/${encodeURIComponent(eventID)}${query ? `?${query}` : ""}`);
+export function getEvent(eventID: string) {
+  return api<EventSummary>(`/api/v1/events/${encodeURIComponent(eventID)}`);
 }
 
-export function checkEligibility(eventID: string, employeeID: string) {
-  const params = new URLSearchParams({ employee_id: employeeID });
-  return api<EligibilityCheckResult>(`/api/v1/events/${encodeURIComponent(eventID)}/eligibility?${params.toString()}`);
+export function checkEligibility(eventID: string) {
+  return api<EligibilityCheckResult>(`/api/v1/events/${encodeURIComponent(eventID)}/eligibility`);
 }
 
 export function updateEvent(eventID: string, body: UpdateEventRequest) {
@@ -254,11 +299,10 @@ export function resolveEligibilityImpactReview(reviewID: string, body: ResolveIm
   });
 }
 
-export function bookEvent(eventID: string, employeeID: string, idempotencyKey: string) {
-  return api<BookingResponse>(`/api/v1/events/${eventID}/bookings`, {
+export function bookEvent(eventID: string, idempotencyKey: string) {
+  return api<BookingResponse>(`/api/v1/events/${encodeURIComponent(eventID)}/bookings`, {
     method: "POST",
     body: {
-      employee_id: employeeID,
       idempotency_key: idempotencyKey
     }
   });
@@ -292,8 +336,8 @@ export function runLottery(eventID: string, body: LotteryRunRequest) {
   });
 }
 
-export function listTickets(employeeID: string) {
-  return apiList<Ticket>(`/api/v1/employees/${employeeID}/tickets`);
+export function listTickets() {
+  return apiList<Ticket>("/api/v1/me/tickets");
 }
 
 export function getTicket(ticketID: string) {

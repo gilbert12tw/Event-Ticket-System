@@ -175,7 +175,7 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 	summary.Tags = splitTags(tags)
 	summary.RemainingCapacity = max(summary.Capacity-summary.ConfirmedCount, 0)
 	summary.Eligible = false
-	summary.EligibilityReason = "employee_id query parameter is required"
+	summary.EligibilityReason = "provider claims employee identity is required"
 	if employeeID != "" {
 		employee, err := s.getEmployee(ctx, employeeID)
 		if err != nil {
@@ -200,12 +200,12 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 }
 
 func (s *Service) CheckEligibility(ctx context.Context, actor Actor, eventID string, employeeID string) (map[string]interface{}, error) {
-	if strings.TrimSpace(employeeID) == "" {
-		return nil, badRequest("employee_id is required")
-	}
 	employeeID, err := authorizeEmployeeRead(actor, employeeID)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(employeeID) == "" {
+		return nil, badRequest("employee_id is required")
 	}
 	summary, err := s.GetEventSummary(ctx, eventID, employeeID)
 	if err != nil {

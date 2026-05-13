@@ -1,6 +1,6 @@
 const CHECKIN_HISTORY_TOKEN_KEY = "cetsCheckinToken";
-const DEMO_CHECKIN_TOKEN_KEY = "cets:lastTicketToken";
-const DEMO_CHECKIN_MODE_KEY = "cets:lastTicketToken:demo-mode";
+
+let demoCheckinToken = "";
 
 export type CheckinHistoryState = {
   [CHECKIN_HISTORY_TOKEN_KEY]: string;
@@ -20,22 +20,11 @@ export function readHistoryCheckinToken(state: unknown = window.history.state): 
 }
 
 export function setDemoCheckinToken(token: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  if (!token) {
-    return;
-  }
-  window.localStorage.setItem(DEMO_CHECKIN_TOKEN_KEY, token);
-  window.localStorage.setItem(DEMO_CHECKIN_MODE_KEY, "enabled");
+  demoCheckinToken = token.trim();
 }
 
 export function getDemoCheckinToken() {
-  if (typeof window === "undefined") return "";
-  if (window.localStorage.getItem(DEMO_CHECKIN_MODE_KEY) !== "enabled") {
-    return "";
-  }
-  return window.localStorage.getItem(DEMO_CHECKIN_TOKEN_KEY) || "";
+  return demoCheckinToken;
 }
 
 export function hasDemoCheckinToken() {

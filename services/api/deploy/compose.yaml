@@ -16,9 +16,7 @@ services:
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
-      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-local_dev_auth_session_secret_change_me}
-      AUTH_SESSION_TTL_MINUTES: ${AUTH_SESSION_TTL_MINUTES:-480}
-      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
       DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
       SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}

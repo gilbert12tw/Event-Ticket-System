@@ -2,188 +2,216 @@ package httpapi
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"event-ticket-system/internal/ticketing"
 )
 
-const sessionCookieName = "cets_session"
+const authSourceProvider = "provider"
 
-type AuthConfig struct {
-	Secret       string
-	TTL          time.Duration
-	CookieSecure bool
-	AppEnv       string
-}
-
-type SessionManager struct {
-	secret       []byte
-	ttl          time.Duration
-	cookieSecure bool
-	allowLocal   bool
-	now          func() time.Time
-}
+const mockProviderTokenTTL = 8 * time.Hour
 
 type authContextKey struct{}
 
-type sessionClaims struct {
-	Subject   string `json:"subject"`
-	Role      string `json:"role"`
-	IssuedAt  int64  `json:"issued_at"`
-	ExpiresAt int64  `json:"expires_at"`
+type authIdentity struct {
+	Actor     ticketing.Actor
+	Claims    employeeClaimsPayload
+	ExpiresAt time.Time
+	Source    string
 }
 
-type loginRequest struct {
-	PrincipalID string `json:"principal_id"`
+type authBootstrapResponse struct {
+	MockProfilesEnabled bool                 `json:"mock_profiles_enabled"`
+	MockProfiles        []mockProfilePayload `json:"mock_profiles"`
 }
 
-type authActor struct {
-	ID   string `json:"id"`
-	Role string `json:"role"`
+type mockProfilePayload struct {
+	ProfileID   string   `json:"profile_id"`
+	DisplayName string   `json:"display_name"`
+	JobTitle    *string  `json:"job_title"`
+	RoleClaims  []string `json:"role_claims"`
+	MappedRoles []string `json:"mapped_roles"`
+	Department  string   `json:"department"`
+	Site        string   `json:"site"`
+	City        string   `json:"city"`
 }
 
-type authSessionResponse struct {
-	Actor     authActor `json:"actor"`
-	ExpiresAt time.Time `json:"expires_at"`
+type mockProviderTokenRequest struct {
+	ProfileID string `json:"profile_id"`
 }
 
-var localSSOPrincipals = map[string]ticketing.Actor{
-	"E1001":    {ID: "E1001", Role: ticketing.RoleEmployee},
-	"E1002":    {ID: "E1002", Role: ticketing.RoleEmployee},
-	"E2001":    {ID: "E2001", Role: ticketing.RoleEmployee},
-	"admin-1":  {ID: "admin-1", Role: ticketing.RoleActivityAdmin},
-	"staff-1":  {ID: "staff-1", Role: ticketing.RoleCheckinStaff},
-	"hr-1":     {ID: "hr-1", Role: ticketing.RoleHRAdmin},
-	"system-1": {ID: "system-1", Role: ticketing.RoleSystemAdmin},
+type mockProviderTokenResponse struct {
+	ProviderToken string                `json:"provider_token"`
+	ExpiresAt     time.Time             `json:"expires_at"`
+	Claims        employeeClaimsPayload `json:"claims"`
 }
 
-func NewSessionManager(config AuthConfig) *SessionManager {
-	if strings.TrimSpace(config.Secret) == "" {
-		config.Secret = "local-dev-auth-session-secret"
-	}
-	if config.TTL <= 0 {
-		config.TTL = 8 * time.Hour
-	}
-	appEnv := strings.TrimSpace(config.AppEnv)
-	if appEnv == "" {
-		appEnv = strings.TrimSpace(os.Getenv("APP_ENV"))
-	}
-	return &SessionManager{
-		secret:       []byte(config.Secret),
-		ttl:          config.TTL,
-		cookieSecure: config.CookieSecure,
-		allowLocal:   allowLocalAuth(appEnv),
-		now:          time.Now,
-	}
+var mockProviderProfiles = []providerClaims{
+	{
+		EmployeeID:  "E1001",
+		DisplayName: "Ariel Chen",
+		JobTitle:    stringPointer("Software Engineer"),
+		RoleClaims:  []string{ticketing.RoleEmployee},
+		Department:  "Engineering",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
+	{
+		EmployeeID:  "E1002",
+		DisplayName: "Ben Lin",
+		JobTitle:    stringPointer("Product Designer"),
+		RoleClaims:  []string{ticketing.RoleEmployee},
+		Department:  "Engineering",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
+	{
+		EmployeeID:  "E2001",
+		DisplayName: "Carla Wu",
+		JobTitle:    stringPointer("Account Manager"),
+		RoleClaims:  []string{ticketing.RoleEmployee},
+		Department:  "Sales",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
+	{
+		EmployeeID:  "admin-1",
+		DisplayName: "Admin One",
+		JobTitle:    stringPointer("Activity Owner"),
+		RoleClaims:  []string{ticketing.RoleActivityAdmin},
+		Department:  "Welfare Committee",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
+	{
+		EmployeeID:  "staff-1",
+		DisplayName: "Staff One",
+		JobTitle:    stringPointer("Check-in Staff"),
+		RoleClaims:  []string{ticketing.RoleCheckinStaff},
+		Department:  "Operations",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
+	{
+		EmployeeID:  "hr-1",
+		DisplayName: "HR One",
+		JobTitle:    stringPointer("HR Partner"),
+		RoleClaims:  []string{ticketing.RoleHRAdmin},
+		Department:  "Human Resources",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
+	{
+		EmployeeID:  "system-1",
+		DisplayName: "System One",
+		JobTitle:    stringPointer("System Administrator"),
+		RoleClaims:  []string{ticketing.RoleSystemAdmin},
+		Department:  "IT",
+		Site:        "Taipei HQ",
+		City:        "Taipei",
+	},
 }
 
-func registerAuthRoutes(mux *http.ServeMux, auth *SessionManager, logger *slog.Logger) {
-	mux.HandleFunc("POST /api/v1/auth/login", handleLogin(auth, logger))
-	mux.HandleFunc("GET /api/v1/auth/me", handleMe(auth))
-	mux.HandleFunc("POST /api/v1/auth/logout", handleLogout(auth, logger))
+func registerAuthRoutes(mux *http.ServeMux, provider *ProviderVerifier, appEnv string, logger *slog.Logger) {
+	mux.HandleFunc("GET /api/v1/auth/me", handleMe(provider))
+	mux.HandleFunc("GET /api/v1/auth/bootstrap", handleAuthBootstrap(appEnv))
+	mux.HandleFunc("POST /api/v1/auth/mock-provider-token", handleMockProviderToken(provider, appEnv, logger))
 }
 
-func handleLogin(auth *SessionManager, logger *slog.Logger) http.HandlerFunc {
+func handleMe(provider *ProviderVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !auth.allowLocalLogin() {
+		bearer, ok := bearerToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		identity, status, err := providerIdentity(provider, bearer)
+		if err != nil {
+			writeError(w, status, authErrorMessage(status))
+			return
+		}
+		writeJSON(w, http.StatusOK, authClaimsResponse(identity))
+	}
+}
+
+func handleAuthBootstrap(appEnv string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		response := authBootstrapResponse{MockProfiles: []mockProfilePayload{}}
+		if mockProfilesEnabled(appEnv) {
+			response.MockProfilesEnabled = true
+			response.MockProfiles = mockProfilePayloads()
+		}
+		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func handleMockProviderToken(provider *ProviderVerifier, appEnv string, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !mockProfilesEnabled(appEnv) {
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		var req loginRequest
+		var req mockProviderTokenRequest
 		if err := decodeJSON(r, &req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		actor, ok := localSSOPrincipals[strings.TrimSpace(req.PrincipalID)]
+		claims, ok := mockProviderClaims(strings.TrimSpace(req.ProfileID), provider.now().UTC().Add(mockProviderTokenTTL))
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "invalid local SSO principal")
+			writeError(w, http.StatusUnauthorized, "unknown mock provider profile")
 			return
 		}
-
-		token, expiresAt, err := auth.Sign(actor)
+		token, err := provider.Sign(claims)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to create session")
+			writeError(w, http.StatusServiceUnavailable, "provider verifier is not configured")
 			return
 		}
-		auth.SetCookie(w, token, expiresAt)
+		identity, status, err := providerIdentity(provider, token)
+		if err != nil {
+			writeError(w, status, authErrorMessage(status))
+			return
+		}
 		if logger != nil {
-			logger.Info("local sso login", "actor_ref", redactedActorRef(actor.ID), "actor_role", actor.Role)
+			logger.Info("mock provider profile selected", "actor_ref", redactedActorRef(identity.Actor.ID), "actor_role", identity.Actor.Role)
 		}
-		writeJSON(w, http.StatusOK, authResponse(actor, expiresAt))
+		writeJSON(w, http.StatusOK, mockProviderTokenResponse{
+			ProviderToken: token,
+			ExpiresAt:     identity.ExpiresAt,
+			Claims:        identity.Claims,
+		})
 	}
 }
 
-func handleMe(auth *SessionManager) http.HandlerFunc {
+func requireActor(provider *ProviderVerifier, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, expiresAt, err := auth.ActorFromCookie(r)
+		bearer, ok := bearerToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		identity, status, err := providerIdentity(provider, bearer)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeError(w, status, authErrorMessage(status))
 			return
 		}
-		writeJSON(w, http.StatusOK, authResponse(actor, expiresAt))
-	}
-}
-
-func handleLogout(auth *SessionManager, logger *slog.Logger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if actor, _, err := auth.ActorFromCookie(r); err == nil && logger != nil {
-			logger.Info("local sso logout", "actor_ref", redactedActorRef(actor.ID), "actor_role", actor.Role)
-		}
-		auth.ClearCookie(w)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
-	}
-}
-
-func requireActor(auth *SessionManager, appEnv string, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		actor, _, err := auth.ActorFromCookie(r)
-		if err == nil {
-			next(w, r.WithContext(context.WithValue(r.Context(), authContextKey{}, actor)))
-			return
-		}
-		if hasSessionCookie(r) {
-			writeError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-		if allowLegacyHeaders(appEnv) {
-			legacy := actorFromLegacyHeaders(r)
-			if legacy.ID != "" && legacy.Role != "" {
-				next(w, r.WithContext(context.WithValue(r.Context(), authContextKey{}, legacy)))
-				return
-			}
-		}
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		next(w, r.WithContext(context.WithValue(r.Context(), authContextKey{}, identity)))
 	}
 }
 
 func actorFromRequest(r *http.Request) ticketing.Actor {
-	if actor, ok := r.Context().Value(authContextKey{}).(ticketing.Actor); ok {
-		return actor
+	if identity, ok := r.Context().Value(authContextKey{}).(authIdentity); ok {
+		return identity.Actor
 	}
-	return actorFromLegacyHeaders(r)
+	return ticketing.Actor{}
 }
 
-func actorFromLegacyHeaders(r *http.Request) ticketing.Actor {
-	return ticketing.Actor{
-		ID:   strings.TrimSpace(r.Header.Get("X-Actor-ID")),
-		Role: strings.TrimSpace(r.Header.Get("X-Role")),
-	}
-}
-
-func allowLegacyHeaders(appEnv string) bool {
-	return allowLocalAuth(appEnv)
-}
-
-func allowLocalAuth(appEnv string) bool {
+func mockProfilesEnabled(appEnv string) bool {
 	switch strings.ToLower(strings.TrimSpace(appEnv)) {
 	case "local", "demo", "test":
 		return true
@@ -192,16 +220,67 @@ func allowLocalAuth(appEnv string) bool {
 	}
 }
 
-func hasSessionCookie(r *http.Request) bool {
-	_, err := r.Cookie(sessionCookieName)
-	return err == nil
+func bearerToken(r *http.Request) (string, bool) {
+	header := strings.TrimSpace(r.Header.Get("Authorization"))
+	if header == "" {
+		return "", false
+	}
+	const prefix = "Bearer "
+	if len(header) < len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+		return "", false
+	}
+	return strings.TrimSpace(header[len(prefix):]), true
 }
 
-func authResponse(actor ticketing.Actor, expiresAt time.Time) authSessionResponse {
-	return authSessionResponse{
-		Actor:     authActor{ID: actor.ID, Role: actor.Role},
-		ExpiresAt: expiresAt.UTC(),
+func providerIdentity(provider *ProviderVerifier, token string) (authIdentity, int, error) {
+	var identity authIdentity
+	if provider == nil {
+		return identity, http.StatusUnauthorized, errors.New("provider verifier is not configured")
 	}
+	identity, err := provider.IdentityFromToken(token)
+	if errors.Is(err, errProviderRoleRejected) {
+		return identity, http.StatusForbidden, err
+	}
+	if err != nil {
+		return identity, http.StatusUnauthorized, err
+	}
+	return identity, http.StatusOK, nil
+}
+
+func authErrorMessage(status int) string {
+	if status == http.StatusForbidden {
+		return "role is not allowed"
+	}
+	return "authentication required"
+}
+
+func mockProfilePayloads() []mockProfilePayload {
+	profiles := make([]mockProfilePayload, 0, len(mockProviderProfiles))
+	for _, claims := range mockProviderProfiles {
+		mappedRoles := mappedProviderRoles(claims.RoleClaims)
+		profiles = append(profiles, mockProfilePayload{
+			ProfileID:   claims.EmployeeID,
+			DisplayName: claims.DisplayName,
+			JobTitle:    claims.JobTitle,
+			RoleClaims:  append([]string(nil), claims.RoleClaims...),
+			MappedRoles: append([]string(nil), mappedRoles...),
+			Department:  claims.Department,
+			Site:        claims.Site,
+			City:        claims.City,
+		})
+	}
+	return profiles
+}
+
+func mockProviderClaims(profileID string, expiresAt time.Time) (providerClaims, bool) {
+	for _, claims := range mockProviderProfiles {
+		if claims.EmployeeID == profileID {
+			claims.RoleClaims = append([]string(nil), claims.RoleClaims...)
+			claims.ExpiresAt = expiresAt.UTC().Unix()
+			return claims, true
+		}
+	}
+	return providerClaims{}, false
 }
 
 func redactedActorRef(actorID string) string {
@@ -213,94 +292,6 @@ func redactedActorRef(actorID string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:8])
 }
 
-func (m *SessionManager) allowLocalLogin() bool {
-	return m.allowLocal
-}
-
-func (m *SessionManager) Sign(actor ticketing.Actor) (string, time.Time, error) {
-	now := m.now().UTC()
-	expiresAt := now.Add(m.ttl)
-	claims := sessionClaims{
-		Subject:   actor.ID,
-		Role:      actor.Role,
-		IssuedAt:  now.Unix(),
-		ExpiresAt: expiresAt.Unix(),
-	}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	payloadPart := base64.RawURLEncoding.EncodeToString(payload)
-	return payloadPart + "." + m.signature(payloadPart), expiresAt, nil
-}
-
-func (m *SessionManager) ActorFromCookie(r *http.Request) (ticketing.Actor, time.Time, error) {
-	var actor ticketing.Actor
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return actor, time.Time{}, err
-	}
-	claims, err := m.Verify(cookie.Value)
-	if err != nil {
-		return actor, time.Time{}, err
-	}
-	return ticketing.Actor{ID: claims.Subject, Role: claims.Role}, time.Unix(claims.ExpiresAt, 0).UTC(), nil
-}
-
-func (m *SessionManager) Verify(token string) (sessionClaims, error) {
-	var claims sessionClaims
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return claims, errors.New("invalid session format")
-	}
-	expected := m.signature(parts[0])
-	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
-		return claims, errors.New("invalid session signature")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return claims, err
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return claims, err
-	}
-	if claims.Subject == "" || claims.Role == "" || claims.ExpiresAt <= 0 {
-		return claims, errors.New("session claims are incomplete")
-	}
-	if m.now().UTC().Unix() >= claims.ExpiresAt {
-		return claims, errors.New("session expired")
-	}
-	return claims, nil
-}
-
-func (m *SessionManager) SetCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    token,
-		Path:     "/",
-		Expires:  expiresAt,
-		MaxAge:   int(time.Until(expiresAt).Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   m.cookieSecure,
-	})
-}
-
-func (m *SessionManager) ClearCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		Expires:  time.Unix(0, 0),
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   m.cookieSecure,
-	})
-}
-
-func (m *SessionManager) signature(payloadPart string) string {
-	mac := hmac.New(sha256.New, m.secret)
-	mac.Write([]byte(payloadPart))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+func stringPointer(value string) *string {
+	return &value
 }

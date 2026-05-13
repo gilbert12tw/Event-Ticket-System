@@ -6,20 +6,13 @@ import (
 	"event-ticket-system/internal/ticketing"
 )
 
-func handleSeedDemo(service TicketingService, appEnv string, auth *SessionManager) http.HandlerFunc {
+func handleSeedDemo(service TicketingService, appEnv string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if appEnv != "" && appEnv != "local" && appEnv != "demo" && appEnv != "test" {
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		actor, _, err := auth.ActorFromCookie(r)
-		if err != nil {
-			if hasSessionCookie(r) {
-				writeError(w, http.StatusUnauthorized, "authentication required")
-				return
-			}
-			actor = actorFromLegacyHeaders(r)
-		}
+		actor := actorFromRequest(r)
 		if actor.ID == "" || actor.Role == "" {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return

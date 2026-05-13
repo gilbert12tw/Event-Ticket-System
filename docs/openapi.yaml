@@ -35,6 +35,8 @@ tags:
 paths:
   "/auth/me":
     "$ref": "./openapi/paths/auth.yaml#/~1auth~1me"
+  "/auth/bootstrap":
+    "$ref": "./openapi/paths/auth.yaml#/~1auth~1bootstrap"
   "/events":
     "$ref": "./openapi/paths/employee-events.yaml#/~1events"
   "/events/{event_id}":
@@ -121,6 +123,8 @@ components:
       "$ref": "./openapi/components/schemas/common.yaml#/ApiEnvelope"
     AuthMeResponse:
       "$ref": "./openapi/components/schemas/common.yaml#/AuthMeResponse"
+    AuthBootstrapResponse:
+      "$ref": "./openapi/components/schemas/common.yaml#/AuthBootstrapResponse"
     EventListResponse:
       "$ref": "./openapi/components/schemas/events.yaml#/EventListResponse"
     EventDetailResponse:

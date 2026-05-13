@@ -16,6 +16,7 @@ BANNED_PATHS = [
 
 EXPECTED_OPERATIONS = {
   "/auth/me" => %w[get],
+  "/auth/bootstrap" => %w[get],
   "/admin/events" => %w[get post],
   "/events" => %w[get],
   "/events/{event_id}" => %w[get],
@@ -47,6 +48,10 @@ EXPECTED_OPERATIONS = {
   "/admin/reports/exports/{export_id}" => %w[get],
   "/admin/audit-logs" => %w[get]
 }.freeze
+
+PUBLIC_OPERATIONS = [
+  ["get", "/auth/bootstrap"]
+].freeze
 
 EXPECTED_REQUIRED_ROLES = {
   ["get", "/auth/me"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
@@ -217,22 +222,30 @@ EXPECTED_OPERATIONS.each do |path, methods|
   methods.each do |method|
     operation = item.fetch(method)
     operation_id = "#{method.upcase} #{path}"
+    public_operation = PUBLIC_OPERATIONS.include?([method, path])
     roles = operation["x-required-roles"]
-    fail_contract("Missing x-required-roles for #{operation_id}") unless roles.is_a?(Array) && !roles.empty?
+    if public_operation
+      fail_contract("Public operation #{operation_id} must opt out of root security") unless operation["security"] == []
+      fail_contract("Public operation #{operation_id} must not declare x-required-roles") if roles
+    else
+      fail_contract("Missing x-required-roles for #{operation_id}") unless roles.is_a?(Array) && !roles.empty?
 
-    unknown_roles = roles - allowed_roles
-    fail_contract("Unknown x-required-roles for #{operation_id}: #{unknown_roles.join(", ")}") unless unknown_roles.empty?
+      unknown_roles = roles - allowed_roles
+      fail_contract("Unknown x-required-roles for #{operation_id}: #{unknown_roles.join(", ")}") unless unknown_roles.empty?
 
-    expected_roles = EXPECTED_REQUIRED_ROLES.fetch([method, path])
-    unless roles.sort == expected_roles.sort
-      fail_contract("x-required-roles drift for #{operation_id}: got #{roles.join(", ")}, want #{expected_roles.join(", ")}")
+      expected_roles = EXPECTED_REQUIRED_ROLES.fetch([method, path])
+      unless roles.sort == expected_roles.sort
+        fail_contract("x-required-roles drift for #{operation_id}: got #{roles.join(", ")}, want #{expected_roles.join(", ")}")
+      end
     end
 
     responses = operation.fetch("responses", {})
     fail_contract("Missing 2xx success response for #{operation_id}") unless operation_success_response?(operation)
     fail_contract("Missing JSON success envelope for #{operation_id}") unless operation_json_schema?(operation)
-    fail_contract("Missing 401 auth error response for #{operation_id}") unless responses.key?("401")
-    fail_contract("Missing 403 authorization error response for #{operation_id}") unless responses.key?("403")
+    unless public_operation
+      fail_contract("Missing 401 auth error response for #{operation_id}") unless responses.key?("401")
+      fail_contract("Missing 403 authorization error response for #{operation_id}") unless responses.key?("403")
+    end
   end
 end
 

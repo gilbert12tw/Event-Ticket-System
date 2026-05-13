@@ -76,7 +76,7 @@ Provider-claims auth boundary:
 GET /api/v1/auth/me
 ```
 
-Product OpenAPI does not expose `/api/v1/auth/login` or `/api/v1/auth/logout`. Local/demo compatibility may exist only in development documentation and must not be treated as product scope.
+Product OpenAPI does not expose `/api/v1/auth/login` or `/api/v1/auth/logout`. Local/demo compatibility uses mock provider metadata profiles that issue provider-format bearer tokens and must not be treated as product scope.
 
 Endpoints:
 

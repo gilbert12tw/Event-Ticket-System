@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"net/http"
-	"strings"
 
 	"event-ticket-system/internal/ticketing"
 )
@@ -28,8 +27,10 @@ func handleCreateEvent(service TicketingService) http.HandlerFunc {
 
 func handleGetEvent(service TicketingService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		employeeID := strings.TrimSpace(r.URL.Query().Get("employee_id"))
-		result, err := service.GetEvent(r.Context(), actorFromRequest(r), r.PathValue("event_id"), employeeID)
+		if rejectCallerEmployeeIDQuery(w, r) {
+			return
+		}
+		result, err := service.GetEvent(r.Context(), actorFromRequest(r), r.PathValue("event_id"), "")
 		writeServiceResult(w, http.StatusOK, result, err)
 	}
 }
@@ -74,8 +75,10 @@ func handleArchiveEvent(service TicketingService) http.HandlerFunc {
 
 func handleListEvents(service TicketingService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		employeeID := strings.TrimSpace(r.URL.Query().Get("employee_id"))
-		result, err := service.ListEvents(r.Context(), actorFromRequest(r), employeeID)
+		if rejectCallerEmployeeIDQuery(w, r) {
+			return
+		}
+		result, err := service.ListEvents(r.Context(), actorFromRequest(r), "")
 		writeServiceResult(w, http.StatusOK, result, err)
 	}
 }

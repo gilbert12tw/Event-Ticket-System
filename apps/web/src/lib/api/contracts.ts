@@ -8,6 +8,42 @@ export type Actor = {
 export type AuthSession = {
   actor: Actor;
   expires_at: string;
+  claims: AuthMeClaims;
+  source: "provider";
+};
+
+export type AuthMeClaims = {
+  employee_id: string;
+  display_name: string;
+  job_title?: string | null;
+  role_claims: string[];
+  mapped_roles: Role[];
+  department: string;
+  site: string;
+  city: string;
+  claims_status: "complete" | "rejected";
+};
+
+export type AuthBootstrap = {
+  mock_profiles_enabled: boolean;
+  mock_profiles: MockProfile[];
+};
+
+export type MockProfile = {
+  profile_id: string;
+  display_name: string;
+  job_title?: string | null;
+  role_claims: string[];
+  mapped_roles: Role[];
+  department: string;
+  site: string;
+  city: string;
+};
+
+export type MockProviderToken = {
+  provider_token: string;
+  expires_at: string;
+  claims: AuthMeClaims;
 };
 
 export type EmployeeProfile = {

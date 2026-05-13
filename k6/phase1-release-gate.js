@@ -6,6 +6,7 @@ import { Trend } from "k6/metrics";
 const baseUrl = __ENV.BASE_URL || "http://127.0.0.1:8080";
 const releaseDuration = __ENV.K6_RELEASE_DURATION || "30s";
 const checkinDuration = new Trend("release_checkin_duration", true);
+const providerTokens = {};
 
 export const options = {
   scenarios: {
@@ -55,7 +56,7 @@ export const options = {
 export function setup() {
   const health = http.get(`${baseUrl}/healthz`);
   const ready = http.get(`${baseUrl}/readyz`);
-  const seeded = rawPost("/api/v1/admin/seed-demo", {}, actorHeaders("admin-1", "activity_admin"));
+  const seeded = rawPost("/api/v1/admin/seed-demo", {}, actorHeaders("admin-1"));
   const ok = check(null, {
     "release setup health is 200": () => health.status === 200,
     "release setup ready is 200": () => ready.status === 200,
@@ -70,7 +71,7 @@ export function browseGate() {
   checkEndpoint("/", "html shell");
   checkEndpoint("/healthz", "health");
   checkEndpoint("/readyz", "ready");
-  get("/api/v1/events?employee_id=E1001", "employee browse", "E1001", "employee");
+  get("/api/v1/events", "employee browse", "E1001");
 }
 
 export function bookingGate() {
@@ -96,10 +97,9 @@ export function bookingGate() {
       reason: "k6 release waitlist promotion setup"
     },
     "cancel first booking",
-    "E1001",
-    "employee"
+    "E1001"
   );
-  const tickets = get("/api/v1/employees/E1002/tickets", "promoted ticket lookup", "E1002", "employee");
+  const tickets = get("/api/v1/me/tickets", "promoted ticket lookup", "E1002");
   const promotedTicket = tickets?.find((ticket) => ticket.event_id === event.event_id && ticket.status === "active");
   check(promotedTicket, {
     "cancellation auto-promotes waitlisted employee": (ticket) => Boolean(ticket?.signed_token)
@@ -107,7 +107,7 @@ export function bookingGate() {
   const token = promotedTicket?.signed_token || "";
   requireValue(token, "promoted employee receives ticket token");
 
-  const checkin = rawPost("/api/v1/checkins", { signed_token: token, device_id: "k6-release" }, actorHeaders("staff-1", "checkin_staff"));
+  const checkin = rawPost("/api/v1/checkins", { signed_token: token, device_id: "k6-release" }, actorHeaders("staff-1"));
   check(checkin, { "release check-in accepted": (res) => res.status >= 200 && res.status < 300 });
   checkinDuration.add(checkin.timings.duration);
   envelopeData(checkin, "release check-in");
@@ -115,7 +115,7 @@ export function bookingGate() {
   const duplicate = rawPostExpected(
     "/api/v1/checkins",
     { signed_token: token, device_id: "k6-release" },
-    actorHeaders("staff-1", "checkin_staff"),
+    actorHeaders("staff-1"),
     http.expectedStatuses(409)
   );
   check(duplicate, { "duplicate check-in rejected": (res) => res.status === 409 });
@@ -132,8 +132,7 @@ export function adminGate() {
     `/api/v1/admin/events/${event.event_id}`,
     { capacity: 2 },
     "lottery capacity setup",
-    "admin-1",
-    "activity_admin"
+    "admin-1"
   );
 
   const seed = uniqueKey("lottery-seed");
@@ -141,37 +140,35 @@ export function adminGate() {
     `/api/v1/admin/events/${event.event_id}/lottery-runs`,
     { seed },
     "lottery run",
-    "admin-1",
-    "activity_admin"
+    "admin-1"
   );
   check(lottery, {
     "lottery result persisted": (value) => Boolean(value?.run_id),
     "lottery has deterministic seed": (value) => value?.seed === seed,
     "lottery selected at least one winner": (value) => value?.winner_count > 0
   });
-  const lotteryTickets = get("/api/v1/employees/E1002/tickets", "lottery winner ticket lookup", "E1002", "employee");
+  const lotteryTickets = get("/api/v1/me/tickets", "lottery winner ticket lookup", "E1002");
   const lotteryTicket = lotteryTickets?.find((ticket) => ticket.event_id === event.event_id && ticket.status === "active");
   check(lotteryTicket, {
     "lottery winner receives active ticket": (ticket) => Boolean(ticket?.signed_token)
   });
 
-  get("/api/v1/admin/reports", "reports aggregate", "hr-1", "hr_admin");
+  get("/api/v1/admin/reports", "reports aggregate", "hr-1");
   const reportExport = post(
     "/api/v1/admin/reports/exports",
     { report_type: "participation" },
     "report export request",
-    "hr-1",
-    "hr_admin"
+    "hr-1"
   );
   requireValue(reportExport?.export_id, "report export id");
   waitForReportExport(reportExport.export_id);
 
-  const auditPage = get("/api/v1/admin/audit-logs?limit=5", "audit first page", "hr-1", "hr_admin");
+  const auditPage = get("/api/v1/admin/audit-logs?limit=5", "audit first page", "hr-1");
   requireValue(auditPage?.length, "audit first page records");
   const last = auditPage[auditPage.length - 1];
   const cursor = encodeURIComponent(`${last.created_at}|${last.audit_id}`);
-  get(`/api/v1/admin/audit-logs?limit=5&cursor=${cursor}`, "audit cursor page", "hr-1", "hr_admin");
-  get("/api/v1/admin/notifications/deliveries", "notification deliveries", "admin-1", "activity_admin");
+  get(`/api/v1/admin/audit-logs?limit=5&cursor=${cursor}`, "audit cursor page", "hr-1");
+  get("/api/v1/admin/notifications/deliveries", "notification deliveries", "admin-1");
 }
 
 function checkEndpoint(path, label) {
@@ -200,8 +197,7 @@ function createEvent(prefix, capacity) {
       }
     },
     "event create",
-    "admin-1",
-    "activity_admin"
+    "admin-1"
   );
 }
 
@@ -209,32 +205,30 @@ function book(eventId, employeeId, idempotencyKey) {
   return post(
     `/api/v1/events/${eventId}/bookings`,
     {
-      employee_id: employeeId,
       idempotency_key: idempotencyKey
     },
     "booking",
-    employeeId,
-    "employee"
+    employeeId
   );
 }
 
-function get(path, label, actorId, role) {
+function get(path, label, actorId) {
   const response = http.get(`${baseUrl}${path}`, {
-    headers: actorHeaders(actorId, role)
+    headers: actorHeaders(actorId)
   });
   check(response, { [`${label} status is 200`]: (res) => res.status === 200 });
   return envelopeData(response, label);
 }
 
-function post(path, body, label, actorId, role) {
-  const response = rawPost(path, body, actorHeaders(actorId, role));
+function post(path, body, label, actorId) {
+  const response = rawPost(path, body, actorHeaders(actorId));
   check(response, { [`${label} status is 2xx`]: (res) => res.status >= 200 && res.status < 300 });
   return envelopeData(response, label, response);
 }
 
-function patch(path, body, label, actorId, role) {
+function patch(path, body, label, actorId) {
   const response = http.patch(`${baseUrl}${path}`, JSON.stringify(body), {
-    headers: { "Content-Type": "application/json", ...actorHeaders(actorId, role) }
+    headers: { "Content-Type": "application/json", ...actorHeaders(actorId) }
   });
   check(response, { [`${label} status is 2xx`]: (res) => res.status >= 200 && res.status < 300 });
   return envelopeData(response, label, response);
@@ -253,8 +247,21 @@ function rawPostExpected(path, body, extraHeaders, responseCallback) {
   });
 }
 
-function actorHeaders(actorId, role) {
-  return { "X-Actor-ID": actorId, "X-Role": role };
+function actorHeaders(actorId) {
+  return { Authorization: `Bearer ${providerTokenFor(actorId)}` };
+}
+
+function providerTokenFor(actorId) {
+  if (providerTokens[actorId]) return providerTokens[actorId];
+  const response = http.post(`${baseUrl}/api/v1/auth/mock-provider-token`, JSON.stringify({ profile_id: actorId }), {
+    headers: { "Content-Type": "application/json" }
+  });
+  const token = envelopeData(response, `mock provider token ${actorId}`)?.provider_token || "";
+  if (!token) {
+    exec.test.abort(`mock provider token ${actorId} was not issued`);
+  }
+  providerTokens[actorId] = token;
+  return token;
 }
 
 function envelopeData(response, label, fallback = null) {
@@ -270,7 +277,7 @@ function envelopeData(response, label, fallback = null) {
 
 function waitForReportExport(exportId) {
   for (let attempt = 0; attempt < 30; attempt++) {
-    const reportExport = get(`/api/v1/admin/reports/exports/${exportId}`, "report export status", "hr-1", "hr_admin");
+    const reportExport = get(`/api/v1/admin/reports/exports/${exportId}`, "report export status", "hr-1");
     if (reportExport?.status === "ready") {
       check(reportExport, {
         "report export ready": (value) => value.status === "ready",

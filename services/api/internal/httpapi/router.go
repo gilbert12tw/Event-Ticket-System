@@ -27,7 +27,7 @@ type Dependencies struct {
 	Logger         *slog.Logger
 	RequestTimeout time.Duration
 	AppEnv         string
-	AuthSession    AuthConfig
+	ProviderAuth   ProviderAuthConfig
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -42,10 +42,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /", handleIndex)
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /readyz", handleReady(deps.DB, deps.RequestTimeout))
-	deps.AuthSession.AppEnv = deps.AppEnv
-	auth := NewSessionManager(deps.AuthSession)
-	registerAuthRoutes(mux, auth, deps.Logger)
-	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, auth)
+	provider := NewProviderVerifier(deps.ProviderAuth)
+	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
+	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider)
 
 	return withTraceID(withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
 }

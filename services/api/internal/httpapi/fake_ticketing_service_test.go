@@ -8,11 +8,23 @@ import (
 )
 
 type fakeTicketingService struct {
-	createActor ticketing.Actor
-	createTrace string
-	bookActor   ticketing.Actor
-	checkinErr  error
-	auditQuery  []ticketing.AuditLogQuery
+	createActor           ticketing.Actor
+	createTrace           string
+	listEventsActor       ticketing.Actor
+	listEventsEmployeeID  string
+	getEventEmployeeID    string
+	eligibilityActor      ticketing.Actor
+	eligibilityEmployeeID string
+	bookActor             ticketing.Actor
+	bookCalled            bool
+	bookRequest           ticketing.BookingRequest
+	listTicketsActor      ticketing.Actor
+	listTicketsEmployeeID string
+	checkinActor          ticketing.Actor
+	checkinErr            error
+	reportsActor          ticketing.Actor
+	auditActor            ticketing.Actor
+	auditQuery            []ticketing.AuditLogQuery
 }
 
 func (s *fakeTicketingService) CreateEvent(ctx context.Context, actor ticketing.Actor, _ ticketing.CreateEventRequest) (ticketing.EventSummary, error) {
@@ -25,7 +37,8 @@ func (s *fakeTicketingService) ListAdminEvents(context.Context, ticketing.Actor)
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
 }
 
-func (s *fakeTicketingService) GetEvent(context.Context, ticketing.Actor, string, string) (ticketing.EventSummary, error) {
+func (s *fakeTicketingService) GetEvent(_ context.Context, _ ticketing.Actor, _ string, employeeID string) (ticketing.EventSummary, error) {
+	s.getEventEmployeeID = employeeID
 	return ticketing.EventSummary{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}, nil
 }
 
@@ -45,11 +58,15 @@ func (s *fakeTicketingService) ArchiveEvent(context.Context, ticketing.Actor, st
 	return ticketing.EventSummary{Event: ticketing.Event{EventID: "evt_1", Status: ticketing.EventStatusArchived}}, nil
 }
 
-func (s *fakeTicketingService) ListEvents(context.Context, ticketing.Actor, string) ([]ticketing.EventSummary, error) {
+func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.EventSummary, error) {
+	s.listEventsActor = actor
+	s.listEventsEmployeeID = employeeID
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
 }
 
-func (s *fakeTicketingService) CheckEligibility(context.Context, ticketing.Actor, string, string) (map[string]interface{}, error) {
+func (s *fakeTicketingService) CheckEligibility(_ context.Context, actor ticketing.Actor, _ string, employeeID string) (map[string]interface{}, error) {
+	s.eligibilityActor = actor
+	s.eligibilityEmployeeID = employeeID
 	return map[string]interface{}{"eligible": true}, nil
 }
 
@@ -69,8 +86,10 @@ func (s *fakeTicketingService) ResolveEligibilityImpactReview(context.Context, t
 	return ticketing.EligibilityImpactReview{ReviewID: "rev_1", Status: "resolved"}, nil
 }
 
-func (s *fakeTicketingService) Book(_ context.Context, actor ticketing.Actor, _ string, _ ticketing.BookingRequest) (ticketing.BookingResponse, error) {
+func (s *fakeTicketingService) Book(_ context.Context, actor ticketing.Actor, _ string, req ticketing.BookingRequest) (ticketing.BookingResponse, error) {
 	s.bookActor = actor
+	s.bookCalled = true
+	s.bookRequest = req
 	return ticketing.BookingResponse{Registration: ticketing.Registration{RegistrationID: "reg_1"}}, nil
 }
 
@@ -90,7 +109,9 @@ func (s *fakeTicketingService) RunLottery(context.Context, ticketing.Actor, stri
 	return ticketing.LotteryRun{RunID: "lot_1", Status: "completed"}, nil
 }
 
-func (s *fakeTicketingService) ListTickets(context.Context, ticketing.Actor, string) ([]ticketing.Ticket, error) {
+func (s *fakeTicketingService) ListTickets(_ context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.Ticket, error) {
+	s.listTicketsActor = actor
+	s.listTicketsEmployeeID = employeeID
 	return []ticketing.Ticket{{TicketID: "tkt_1"}}, nil
 }
 
@@ -102,7 +123,8 @@ func (s *fakeTicketingService) RevokeTicket(context.Context, ticketing.Actor, st
 	return ticketing.Ticket{TicketID: "tkt_1", Status: ticketing.TicketRevoked}, nil
 }
 
-func (s *fakeTicketingService) CheckIn(context.Context, ticketing.Actor, ticketing.CheckinRequest) (ticketing.CheckinResponse, error) {
+func (s *fakeTicketingService) CheckIn(_ context.Context, actor ticketing.Actor, _ ticketing.CheckinRequest) (ticketing.CheckinResponse, error) {
+	s.checkinActor = actor
 	return ticketing.CheckinResponse{CheckinID: "chk_1", Duplicate: s.checkinErr != nil}, s.checkinErr
 }
 
@@ -130,7 +152,8 @@ func (s *fakeTicketingService) RetryNotificationDelivery(context.Context, ticket
 	return ticketing.NotificationDelivery{DeliveryID: "del_1", Status: "pending"}, nil
 }
 
-func (s *fakeTicketingService) Reports(context.Context, ticketing.Actor) ([]ticketing.ReportRow, error) {
+func (s *fakeTicketingService) Reports(_ context.Context, actor ticketing.Actor) ([]ticketing.ReportRow, error) {
+	s.reportsActor = actor
 	return []ticketing.ReportRow{{EventID: "evt_1"}}, nil
 }
 
@@ -142,7 +165,8 @@ func (s *fakeTicketingService) GetReportExport(context.Context, ticketing.Actor,
 	return ticketing.ReportExport{ExportID: "exp_1", Status: "ready", ObjectKey: "exports/exp_1.csv"}, nil
 }
 
-func (s *fakeTicketingService) AuditLogs(_ context.Context, _ ticketing.Actor, query ...ticketing.AuditLogQuery) ([]ticketing.AuditLog, error) {
+func (s *fakeTicketingService) AuditLogs(_ context.Context, actor ticketing.Actor, query ...ticketing.AuditLogQuery) ([]ticketing.AuditLog, error) {
+	s.auditActor = actor
 	s.auditQuery = query
 	return []ticketing.AuditLog{{AuditID: "aud_1"}}, nil
 }

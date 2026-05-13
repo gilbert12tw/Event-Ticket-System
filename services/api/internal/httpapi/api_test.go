@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -21,11 +22,11 @@ func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	body := bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
-	req.Header.Set("X-Actor-ID", "admin-1")
-	req.Header.Set("X-Role", ticketing.RoleActivityAdmin)
+	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -46,10 +47,10 @@ func TestBookHandlerRejectsMalformedJSON(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events/evt_1/bookings", bytes.NewBufferString(`{`))
-	req.Header.Set("X-Actor-ID", "E1001")
-	req.Header.Set("X-Role", ticketing.RoleEmployee)
+	authorizeRequest(t, req, ticketing.RoleEmployee)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -76,10 +77,10 @@ func TestCheckinHandlerReturnsDuplicateDetailsOnConflict(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkins", bytes.NewBufferString(`{"signed_token":"token","device_id":"gate-1"}`))
-	req.Header.Set("X-Actor-ID", "staff-1")
-	req.Header.Set("X-Role", ticketing.RoleCheckinStaff)
+	authorizeRequest(t, req, ticketing.RoleCheckinStaff)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -98,6 +99,7 @@ func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	requests := []struct {
 		method string
@@ -106,7 +108,7 @@ func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 		status int
 	}{
 		{http.MethodGet, "/api/v1/admin/events", "", http.StatusOK},
-		{http.MethodGet, "/api/v1/events/evt_1?employee_id=E1001", "", http.StatusOK},
+		{http.MethodGet, "/api/v1/events/evt_1", "", http.StatusOK},
 		{http.MethodPatch, "/api/v1/admin/events/evt_1", `{"title":"Updated"}`, http.StatusOK},
 		{http.MethodPost, "/api/v1/admin/events/evt_1/state", `{"status":"closed","reason":"done"}`, http.StatusOK},
 		{http.MethodPost, "/api/v1/admin/events/evt_1/duplicate", `{}`, http.StatusCreated},
@@ -114,8 +116,7 @@ func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 	}
 	for _, tt := range requests {
 		req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
-		req.Header.Set("X-Actor-ID", "admin-1")
-		req.Header.Set("X-Role", ticketing.RoleActivityAdmin)
+		authorizeRequest(t, req, ticketing.RoleActivityAdmin)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -134,6 +135,7 @@ func TestRegistrationAndTicketGovernanceHandlersExposeProductionRoutes(t *testin
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	requests := []struct {
 		method string
@@ -148,8 +150,7 @@ func TestRegistrationAndTicketGovernanceHandlersExposeProductionRoutes(t *testin
 	}
 	for _, tt := range requests {
 		req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
-		req.Header.Set("X-Actor-ID", "admin-1")
-		req.Header.Set("X-Role", ticketing.RoleActivityAdmin)
+		authorizeRequest(t, req, ticketing.RoleActivityAdmin)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -168,6 +169,7 @@ func TestProductionBoundaryHandlersExposeSpecRoutes(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	requests := []struct {
 		method string
@@ -181,6 +183,7 @@ func TestProductionBoundaryHandlersExposeSpecRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/admin/eligibility-impact-reviews", "", ticketing.RoleHRAdmin, http.StatusOK},
 		{http.MethodPost, "/api/v1/admin/eligibility-impact-reviews/rev_1/resolve", `{"reason":"reviewed"}`, ticketing.RoleHRAdmin, http.StatusOK},
 		{http.MethodPost, "/api/v1/admin/events/evt_1/lottery-runs", `{"seed":"seed-1"}`, ticketing.RoleActivityAdmin, http.StatusCreated},
+		{http.MethodGet, "/api/v1/me/tickets", "", ticketing.RoleEmployee, http.StatusOK},
 		{http.MethodGet, "/api/v1/tickets/tkt_1", "", ticketing.RoleEmployee, http.StatusOK},
 		{http.MethodGet, "/api/v1/checkins/events/evt_1/offline-package?device_id=gate-1", "", ticketing.RoleCheckinStaff, http.StatusOK},
 		{http.MethodPost, "/api/v1/checkins/offline-sync", `{"batch_id":"off_1","event_id":"evt_1","device_id":"gate-1","package_signature":"sig_1","scans":[]}`, ticketing.RoleCheckinStaff, http.StatusOK},
@@ -193,8 +196,7 @@ func TestProductionBoundaryHandlersExposeSpecRoutes(t *testing.T) {
 	}
 	for _, tt := range requests {
 		req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
-		req.Header.Set("X-Actor-ID", actorForRole(tt.role))
-		req.Header.Set("X-Role", tt.role)
+		authorizeRequest(t, req, tt.role)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -213,10 +215,10 @@ func TestAuditHandlerParsesServerSideFilterQuery(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs?action=event.updated&entity_type=event&limit=25", nil)
-	req.Header.Set("X-Actor-ID", "hr-1")
-	req.Header.Set("X-Role", ticketing.RoleHRAdmin)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -245,6 +247,11 @@ func actorForRole(role string) string {
 	}
 }
 
+func authorizeRequest(t *testing.T, req *http.Request, role string) {
+	t.Helper()
+	req.Header.Set("Authorization", "Bearer "+signProviderClaims(t, providerTestSecret(), validProviderClaims(role)))
+}
+
 func TestSeedDemoHandlerIsHiddenOutsideLocalEnvironments(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := NewRouter(Dependencies{
@@ -266,19 +273,16 @@ func TestSeedDemoHandlerIsHiddenOutsideLocalEnvironments(t *testing.T) {
 	}
 }
 
-func TestLoginSetsHttpOnlySameSiteCookieAndMeReadsSession(t *testing.T) {
+func TestMockProviderTokenIssuesBearerAndMeReadsClaims(t *testing.T) {
 	var logs bytes.Buffer
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
-		AuthSession: AuthConfig{
-			Secret: "auth-test-secret",
-			TTL:    time.Hour,
-		},
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"E1001"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"E1001"}`))
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -286,43 +290,43 @@ func TestLoginSetsHttpOnlySameSiteCookieAndMeReadsSession(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	cookie := findCookie(rec.Result().Cookies(), sessionCookieName)
-	if cookie == nil {
-		t.Fatal("expected session cookie")
+	var envelope struct {
+		Data mockProviderTokenResponse `json:"data"`
 	}
-	if !cookie.HttpOnly {
-		t.Fatal("session cookie must be HttpOnly")
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
 	}
-	if cookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("same site = %v", cookie.SameSite)
+	if envelope.Data.ProviderToken == "" {
+		t.Fatal("expected provider token")
 	}
-	assertEnvelope(t, rec.Body.String(), `"actor":{"id":"E1001","role":"employee"}`, `"expires_at"`)
+	assertEnvelope(t, rec.Body.String(), `"employee_id":"E1001"`, `"claims_status":"complete"`, `"provider_token"`)
 	if strings.Contains(logs.String(), `"actor_id":"E1001"`) || strings.Contains(logs.String(), `"E1001"`) {
-		t.Fatalf("auth log leaked raw actor id: %s", logs.String())
+		t.Fatalf("mock auth log leaked raw actor id: %s", logs.String())
 	}
 	if !strings.Contains(logs.String(), `"actor_ref"`) {
-		t.Fatalf("auth log missing redacted actor ref: %s", logs.String())
+		t.Fatalf("mock auth log missing redacted actor ref: %s", logs.String())
 	}
 
 	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
-	meReq.AddCookie(cookie)
+	meReq.Header.Set("Authorization", "Bearer "+envelope.Data.ProviderToken)
 	meRec := httptest.NewRecorder()
 	router.ServeHTTP(meRec, meReq)
 
 	if meRec.Code != http.StatusOK {
 		t.Fatalf("me status = %d, body = %s", meRec.Code, meRec.Body.String())
 	}
-	assertEnvelope(t, meRec.Body.String(), `"actor":{"id":"E1001","role":"employee"}`)
+	assertEnvelope(t, meRec.Body.String(), `"employee_id":"E1001"`, `"mapped_roles":["employee"]`, `"claims_status":"complete"`)
 }
 
-func TestLoginRejectsInvalidPrincipal(t *testing.T) {
+func TestMockProviderTokenRejectsUnknownProfile(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"unknown"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"unknown"}`))
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -330,19 +334,18 @@ func TestLoginRejectsInvalidPrincipal(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if findCookie(rec.Result().Cookies(), sessionCookieName) != nil {
-		t.Fatal("invalid login must not set session cookie")
+	if strings.Contains(rec.Body.String(), "provider_token") {
+		t.Fatal("invalid mock profile must not return a provider token")
 	}
 }
 
-func TestMeRequiresValidSessionAndLogoutClearsCookie(t *testing.T) {
-	auth := AuthConfig{Secret: "auth-test-secret", TTL: time.Hour}
+func TestMeRequiresProviderBearerAndLogoutRouteIsRemoved(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
-		AuthSession:    auth,
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	rec := httptest.NewRecorder()
@@ -353,115 +356,45 @@ func TestMeRequiresValidSessionAndLogoutClearsCookie(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"admin-1"}`))
-	loginRec := httptest.NewRecorder()
-	router.ServeHTTP(loginRec, loginReq)
-	cookie := findCookie(loginRec.Result().Cookies(), sessionCookieName)
-	if cookie == nil {
-		t.Fatal("expected login cookie")
-	}
-
 	logoutReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
-	logoutReq.AddCookie(cookie)
 	logoutRec := httptest.NewRecorder()
 	router.ServeHTTP(logoutRec, logoutReq)
 
-	if logoutRec.Code != http.StatusOK {
+	if logoutRec.Code != http.StatusNotFound && logoutRec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("logout status = %d", logoutRec.Code)
 	}
-	cleared := findCookie(logoutRec.Result().Cookies(), sessionCookieName)
-	if cleared == nil || cleared.MaxAge >= 0 {
-		t.Fatalf("expected clearing cookie, got %+v", cleared)
-	}
 }
 
-func TestProtectedAPIsRequireSessionAndResolveCookieActor(t *testing.T) {
-	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		AuthSession: AuthConfig{
-			Secret:       "auth-test-secret",
-			TTL:          time.Hour,
-			CookieSecure: true,
-		},
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`))
-	req.Header.Set("X-Actor-ID", "admin-1")
-	req.Header.Set("X-Role", ticketing.RoleActivityAdmin)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected header-only production request to be rejected, status = %d", rec.Code)
-	}
-
-	auth := NewSessionManager(AuthConfig{
-		Secret:       "auth-test-secret",
-		TTL:          time.Hour,
-		CookieSecure: true,
-		AppEnv:       "production",
-	})
-	token, _, err := auth.Sign(ticketing.Actor{ID: "admin-1", Role: ticketing.RoleActivityAdmin})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	okReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`))
-	okReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
-	okRec := httptest.NewRecorder()
-	router.ServeHTTP(okRec, okReq)
-	if okRec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", okRec.Code, okRec.Body.String())
-	}
-	if service.createActor.ID != "admin-1" || service.createActor.Role != ticketing.RoleActivityAdmin {
-		t.Fatalf("actor = %+v", service.createActor)
-	}
-}
-
-func TestLocalSSOLoginIsRejectedInProduction(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      &fakeTicketingService{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		AuthSession: AuthConfig{
-			Secret:       "auth-test-secret",
-			TTL:          time.Hour,
-			CookieSecure: true,
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"admin-1"}`))
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if findCookie(rec.Result().Cookies(), sessionCookieName) != nil {
-		t.Fatal("production local SSO login must not set a session cookie")
-	}
-}
-
-func TestProtectedAPIRejectsTamperedSession(t *testing.T) {
+func TestLocalSSORoutesAreRemoved(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
 		Ticketing:      &fakeTicketingService{},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
-		AuthSession: AuthConfig{
-			Secret: "auth-test-secret",
-			TTL:    time.Hour,
-		},
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"admin-1"}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestProtectedAPIRejectsTamperedBearerWithoutLegacyFallback(t *testing.T) {
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      &fakeTicketingService{},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tampered.session"})
+	req.Header.Set("Authorization", "Bearer tampered.provider")
 	req.Header.Set("X-Actor-ID", "E1001")
 	req.Header.Set("X-Role", ticketing.RoleEmployee)
 	rec := httptest.NewRecorder()
@@ -472,15 +405,6 @@ func TestProtectedAPIRejectsTamperedSession(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	if strings.Contains(rec.Body.String(), "evt_1") {
-		t.Fatal("tampered session should not fall back to legacy headers")
+		t.Fatal("tampered bearer should not fall back to legacy headers")
 	}
-}
-
-func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
-	for _, cookie := range cookies {
-		if cookie.Name == name {
-			return cookie
-		}
-	}
-	return nil
 }

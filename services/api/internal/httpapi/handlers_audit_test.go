@@ -19,6 +19,7 @@ func TestAuditHandlerRejectsMalformedCursorAndTimeFilters(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
 	})
 	for _, path := range []string{
 		"/api/v1/admin/audit-logs?cursor=not-a-cursor",
@@ -26,8 +27,7 @@ func TestAuditHandlerRejectsMalformedCursorAndTimeFilters(t *testing.T) {
 		"/api/v1/admin/audit-logs?from=not-a-time",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		req.Header.Set("X-Actor-ID", "hr-1")
-		req.Header.Set("X-Role", ticketing.RoleHRAdmin)
+		authorizeRequest(t, req, ticketing.RoleHRAdmin)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
