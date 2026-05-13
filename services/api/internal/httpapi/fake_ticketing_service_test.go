@@ -25,11 +25,14 @@ type fakeTicketingService struct {
 	reportsActor          ticketing.Actor
 	auditActor            ticketing.Actor
 	auditQuery            []ticketing.AuditLogQuery
+	createRequest         ticketing.CreateEventRequest
+	updateRequest         ticketing.UpdateEventRequest
 }
 
-func (s *fakeTicketingService) CreateEvent(ctx context.Context, actor ticketing.Actor, _ ticketing.CreateEventRequest) (ticketing.EventSummary, error) {
+func (s *fakeTicketingService) CreateEvent(ctx context.Context, actor ticketing.Actor, req ticketing.CreateEventRequest) (ticketing.EventSummary, error) {
 	s.createActor = actor
 	s.createTrace = traceid.FromContext(ctx)
+	s.createRequest = req
 	return ticketing.EventSummary{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}, nil
 }
 
@@ -42,7 +45,8 @@ func (s *fakeTicketingService) GetEvent(_ context.Context, _ ticketing.Actor, _ 
 	return ticketing.EventSummary{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}, nil
 }
 
-func (s *fakeTicketingService) UpdateEvent(context.Context, ticketing.Actor, string, ticketing.UpdateEventRequest) (ticketing.EventSummary, error) {
+func (s *fakeTicketingService) UpdateEvent(_ context.Context, _ ticketing.Actor, _ string, req ticketing.UpdateEventRequest) (ticketing.EventSummary, error) {
+	s.updateRequest = req
 	return ticketing.EventSummary{Event: ticketing.Event{EventID: "evt_1", Title: "Updated", Version: 2}}, nil
 }
 

@@ -46,3 +46,7 @@ func notFound(message string) AppError {
 func conflict(message string) AppError {
 	return AppError{Status: 409, Message: message}
 }
+
+func notImplemented(message string) AppError {
+	return AppError{Status: 501, Message: message}
+}

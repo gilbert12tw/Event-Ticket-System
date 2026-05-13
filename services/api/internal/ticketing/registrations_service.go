@@ -67,19 +67,27 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if reg, ticket, found, err := s.findRegistrationByEmployeeTx(ctx, tx, eventID, employeeID); err != nil {
 		return BookingResponse{}, err
 	} else if found {
-		remaining, err := s.remainingCapacityTx(ctx, tx, eventID, event.Capacity)
+		capacity, err := limitedCapacity(event)
+		if err != nil {
+			return BookingResponse{}, err
+		}
+		remaining, err := s.remainingCapacityTx(ctx, tx, eventID, capacity)
 		if err != nil {
 			return BookingResponse{}, err
 		}
 		return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status)}, tx.Commit(ctx)
 	}
 
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return BookingResponse{}, err
+	}
 	confirmedCount, err := s.confirmedCountTx(ctx, tx, eventID)
 	if err != nil {
 		return BookingResponse{}, err
 	}
 	status := RegistrationWaitlisted
-	if confirmedCount < event.Capacity {
+	if confirmedCount < capacity {
 		status = RegistrationConfirmed
 	}
 
@@ -133,7 +141,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return BookingResponse{}, err
 	}
 
-	remaining := max(event.Capacity-confirmedCount-1, 0)
+	remaining := max(capacity-confirmedCount-1, 0)
 	if status == RegistrationWaitlisted {
 		remaining = 0
 	}

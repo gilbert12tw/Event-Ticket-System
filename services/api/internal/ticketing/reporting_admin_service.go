@@ -119,7 +119,11 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 		return LotteryRun{}, err
 	}
 
-	capacity := max(event.Capacity-confirmed, 0)
+	eventCapacity, err := limitedCapacity(event)
+	if err != nil {
+		return LotteryRun{}, err
+	}
+	capacity := max(eventCapacity-confirmed, 0)
 	winnerLimit := len(candidates)
 	if capacity < winnerLimit {
 		winnerLimit = capacity

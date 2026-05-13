@@ -39,6 +39,63 @@ func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
 	}
 }
 
+func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      service,
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	body := bytes.NewBufferString(`{
+		"title":"OpenAPI Event",
+		"description":"Demo",
+		"starts_at":"2026-06-01T10:00:00Z",
+		"registration_opens_at":"2026-05-01T10:00:00Z",
+		"registration_closes_at":"2026-05-20T10:00:00Z",
+		"event_city":"Taipei",
+		"event_site":"HQ",
+		"capacity_type":"unlimited",
+		"capacity":null,
+		"allows_family":true,
+		"eligibility_rule":{"department":"Engineering"}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
+	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if service.createRequest.CapacityType != ticketing.CapacityTypeUnlimited || service.createRequest.Capacity != 0 || !service.createRequest.AllowsFamily {
+		t.Fatalf("create request capacity fields = %+v", service.createRequest)
+	}
+	if service.createRequest.EventCity != "Taipei" || service.createRequest.EventSite != "HQ" || service.createRequest.Rule.Department != "Engineering" {
+		t.Fatalf("create request OpenAPI fields = %+v", service.createRequest)
+	}
+
+	patch := bytes.NewBufferString(`{"registration_opens_at":"2026-05-02T10:00:00Z","registration_closes_at":"2026-05-21T10:00:00Z","capacity_type":"limited","capacity":25,"allows_family":false}`)
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/events/evt_1", patch)
+	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
+	rec = httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if service.updateRequest.CapacityType == nil || *service.updateRequest.CapacityType != ticketing.CapacityTypeLimited {
+		t.Fatalf("update capacity type = %+v", service.updateRequest.CapacityType)
+	}
+	if service.updateRequest.Capacity == nil || *service.updateRequest.Capacity != 25 || service.updateRequest.RegistrationStart == nil || service.updateRequest.RegistrationClose == nil {
+		t.Fatalf("update OpenAPI fields = %+v", service.updateRequest)
+	}
+}
+
 func TestBookHandlerRejectsMalformedJSON(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := NewRouter(Dependencies{

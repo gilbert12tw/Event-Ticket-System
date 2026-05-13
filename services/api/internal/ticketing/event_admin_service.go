@@ -69,6 +69,18 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	}
 	if req.Location != nil {
 		event.Location = *req.Location
+		if req.EventCity == nil && strings.TrimSpace(event.EventCity) == "" {
+			event.EventCity = event.Location
+		}
+		if req.EventSite == nil && strings.TrimSpace(event.EventSite) == "" {
+			event.EventSite = event.Location
+		}
+	}
+	if req.EventCity != nil {
+		event.EventCity = eventCityOrFallback(*req.EventCity, event.Location)
+	}
+	if req.EventSite != nil {
+		event.EventSite = eventSiteOrFallback(*req.EventSite, event.Location)
 	}
 	if req.StartsAt != nil {
 		event.StartsAt = *req.StartsAt
@@ -82,18 +94,29 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if !event.RegistrationStart.Before(event.RegistrationClose) {
 		return EventSummary{}, badRequest("registration_start must be before registration_close")
 	}
-	if req.Capacity != nil {
-		if *req.Capacity <= 0 {
-			return EventSummary{}, badRequest("capacity must be positive")
-		}
+	if req.CapacityType != nil {
+		event.CapacityType = strings.TrimSpace(*req.CapacityType)
+	}
+	if req.capacitySet {
+		event.Capacity = req.Capacity
+	}
+	if req.AllowsFamily != nil {
+		event.AllowsFamily = *req.AllowsFamily
+	}
+	if event.CapacityType == CapacityTypeUnlimited {
+		event.Capacity = nil
+	}
+	if err := validateEventCapacity(event); err != nil {
+		return EventSummary{}, err
+	}
+	if event.CapacityType == CapacityTypeLimited {
 		confirmed, err := s.confirmedCountTx(ctx, tx, eventID)
 		if err != nil {
 			return EventSummary{}, err
 		}
-		if *req.Capacity < confirmed {
+		if *event.Capacity < confirmed {
 			return EventSummary{}, conflict("capacity cannot be lower than confirmed registrations")
 		}
-		event.Capacity = *req.Capacity
 	}
 	if req.Category != nil {
 		event.Category = strings.TrimSpace(*req.Category)
@@ -116,11 +139,13 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	event.Version++
 
 	_, err = tx.Exec(ctx, `UPDATE events SET title = $1, description = $2, location = $3, starts_at = $4,
-			registration_start = $5, registration_close = $6, capacity = $7, category = $8, tags = $9,
-			entry_method = $10, visibility = $11, version = $12, updated_at = now()
-		WHERE event_id = $13`,
-		event.Title, event.Description, event.Location, event.StartsAt, event.RegistrationStart, event.RegistrationClose, event.Capacity,
-		event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility, event.Version, eventID)
+			registration_start = $5, registration_close = $6, capacity_type = $7, capacity = $8, allows_family = $9,
+			event_city = $10, event_site = $11, category = $12, tags = $13, entry_method = $14, visibility = $15,
+			version = $16, updated_at = now()
+		WHERE event_id = $17`,
+		event.Title, event.Description, event.Location, event.StartsAt, event.RegistrationStart, event.RegistrationClose, event.CapacityType,
+		event.Capacity, event.AllowsFamily, event.EventCity, event.EventSite, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility,
+		event.Version, eventID)
 	if err != nil {
 		return EventSummary{}, err
 	}
@@ -131,7 +156,7 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if err != nil {
 		return EventSummary{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "event.updated", "event", eventID, map[string]interface{}{"version": event.Version}); err != nil {
+	if err := insertAudit(ctx, tx, auditID, actor, "event.updated", "event", eventID, map[string]interface{}{"version": event.Version, "capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily}); err != nil {
 		return EventSummary{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -200,10 +225,14 @@ func (s *Service) DuplicateEvent(ctx context.Context, actor Actor, eventID strin
 		Title:             "Copy of " + source.Title,
 		Description:       source.Description,
 		Location:          source.Location,
+		EventCity:         source.EventCity,
+		EventSite:         source.EventSite,
 		StartsAt:          source.StartsAt,
 		RegistrationStart: source.RegistrationStart,
 		RegistrationClose: source.RegistrationClose,
-		Capacity:          source.Capacity,
+		CapacityType:      source.CapacityType,
+		Capacity:          capacityValue(source.Capacity),
+		AllowsFamily:      source.AllowsFamily,
 		Status:            EventStatusDraft,
 		Category:          source.Category,
 		Tags:              source.Tags,
