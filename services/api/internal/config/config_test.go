@@ -30,6 +30,9 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	t.Setenv("WORKER_POLL_INTERVAL_MS", "1250")
 	t.Setenv("WORKER_MAX_ATTEMPTS", "5")
 	t.Setenv("WORKER_BATCH_SIZE", "17")
+	t.Setenv("NO_SHOW_THRESHOLD", "2")
+	t.Setenv("NO_SHOW_COOLDOWN_DAYS", "45")
+	t.Setenv("NO_SHOW_GRACE_HOURS", "12")
 
 	cfg := Load()
 
@@ -77,6 +80,9 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	}
 	if cfg.WorkerPollInterval != 1250*time.Millisecond || cfg.WorkerMaxAttempts != 5 || cfg.WorkerBatchSize != 17 {
 		t.Fatalf("worker config = %s/%d/%d", cfg.WorkerPollInterval, cfg.WorkerMaxAttempts, cfg.WorkerBatchSize)
+	}
+	if cfg.NoShowThreshold != 2 || cfg.NoShowCooldownDays != 45 || cfg.NoShowGraceHours != 12 {
+		t.Fatalf("no-show config = %d/%d/%d", cfg.NoShowThreshold, cfg.NoShowCooldownDays, cfg.NoShowGraceHours)
 	}
 }
 

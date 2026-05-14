@@ -47,6 +47,9 @@ type Config struct {
 	WorkerPollInterval  time.Duration
 	WorkerMaxAttempts   int
 	WorkerBatchSize     int
+	NoShowThreshold     int
+	NoShowCooldownDays  int
+	NoShowGraceHours    int
 	loadErrors          []string
 }
 
@@ -77,6 +80,9 @@ func Load() Config {
 		WorkerPollInterval:  parseDurationMSEnv("WORKER_POLL_INTERVAL_MS", "1000", &loadErrors),
 		WorkerMaxAttempts:   parsePositiveIntEnv("WORKER_MAX_ATTEMPTS", "3", &loadErrors),
 		WorkerBatchSize:     parsePositiveIntEnv("WORKER_BATCH_SIZE", "25", &loadErrors),
+		NoShowThreshold:     parsePositiveIntEnv("NO_SHOW_THRESHOLD", "1", &loadErrors),
+		NoShowCooldownDays:  parsePositiveIntEnv("NO_SHOW_COOLDOWN_DAYS", "90", &loadErrors),
+		NoShowGraceHours:    parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
 		loadErrors:          loadErrors,
 	}
 }

@@ -105,6 +105,10 @@ func (s *fakeTicketingService) CancelRegistration(context.Context, ticketing.Act
 	return ticketing.BookingResponse{Registration: ticketing.Registration{RegistrationID: "reg_1", Status: ticketing.RegistrationCancelled}}, nil
 }
 
+func (s *fakeTicketingService) CancelMyRegistration(context.Context, ticketing.Actor, string, ticketing.CancelRegistrationRequest) (ticketing.BookingResponse, error) {
+	return ticketing.BookingResponse{Registration: ticketing.Registration{RegistrationID: "reg_1", Status: ticketing.RegistrationCancelled}}, nil
+}
+
 func (s *fakeTicketingService) PromoteWaitlist(context.Context, ticketing.Actor, string) (ticketing.PromoteWaitlistResponse, error) {
 	return ticketing.PromoteWaitlistResponse{Message: "promoted"}, nil
 }

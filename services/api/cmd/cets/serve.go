@@ -13,7 +13,6 @@ import (
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/httpapi"
 	"event-ticket-system/internal/postgres"
-	"event-ticket-system/internal/ticketing"
 )
 
 func serve(cfg config.Config, logger *slog.Logger) error {
@@ -39,7 +38,7 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		DB:             pool,
-		Ticketing:      ticketing.NewService(pool, ticketing.NewSigner(cfg.TokenSigningSecret), logger),
+		Ticketing:      newTicketingService(pool, cfg, logger),
 		Logger:         logger,
 		RequestTimeout: cfg.RequestTimeout,
 		AppEnv:         cfg.AppEnv,

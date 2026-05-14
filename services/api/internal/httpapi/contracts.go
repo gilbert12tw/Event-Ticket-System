@@ -41,6 +41,7 @@ type RegistrationService interface {
 	Book(ctx context.Context, actor ticketing.Actor, eventID string, req ticketing.BookingRequest) (ticketing.BookingResponse, error)
 	ListRegistrations(ctx context.Context, actor ticketing.Actor, eventID string) ([]ticketing.RegistrationDetail, error)
 	CancelRegistration(ctx context.Context, actor ticketing.Actor, eventID string, registrationID string, req ticketing.CancelRegistrationRequest) (ticketing.BookingResponse, error)
+	CancelMyRegistration(ctx context.Context, actor ticketing.Actor, registrationID string, req ticketing.CancelRegistrationRequest) (ticketing.BookingResponse, error)
 	PromoteWaitlist(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.PromoteWaitlistResponse, error)
 	RunLottery(ctx context.Context, actor ticketing.Actor, eventID string, req ticketing.LotteryRunRequest) (ticketing.LotteryRun, error)
 }
