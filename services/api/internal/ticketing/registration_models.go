@@ -11,6 +11,7 @@ type Registration struct {
 	CancelKey      string    `json:"cancel_idempotency_key,omitempty"`
 	CancelledAt    time.Time `json:"cancelled_at,omitempty"`
 	CancelReason   string    `json:"cancel_reason,omitempty"`
+	FamilyCount    int       `json:"family_count"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -34,6 +35,7 @@ type PromoteWaitlistResponse struct {
 type BookingRequest struct {
 	EmployeeID     string `json:"employee_id"`
 	IdempotencyKey string `json:"idempotency_key"`
+	FamilyCount    int    `json:"family_count"`
 }
 
 type BookingResponse struct {

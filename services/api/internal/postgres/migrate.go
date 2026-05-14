@@ -125,6 +125,7 @@ var SchemaStatements = []string{
 		cancel_idempotency_key TEXT,
 		cancel_reason TEXT NOT NULL DEFAULT '',
 		cancelled_at TIMESTAMPTZ,
+		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		UNIQUE (event_id, employee_id)
 	)`,
@@ -307,6 +308,9 @@ var SchemaStatements = []string{
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancel_idempotency_key TEXT`,
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancel_reason TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ`,
+	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_family_count_check`,
+	`ALTER TABLE registrations ADD CONSTRAINT registrations_family_count_check CHECK (family_count BETWEEN 0 AND 10)`,
 	`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_status_check`,
 	`ALTER TABLE tickets ADD CONSTRAINT tickets_status_check CHECK (status IN ('active', 'redeemed', 'revoked', 'expired'))`,
 	`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sequence_number INTEGER NOT NULL DEFAULT 1`,

@@ -10,12 +10,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const maxFamilyCount = 10
+
 func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req BookingRequest) (BookingResponse, error) {
 	if err := requireRole(actor, RoleEmployee); err != nil {
 		return BookingResponse{}, err
 	}
 	if strings.TrimSpace(req.IdempotencyKey) == "" {
 		return BookingResponse{}, badRequest("idempotency_key is required")
+	}
+	if req.FamilyCount < 0 || req.FamilyCount > maxFamilyCount {
+		return BookingResponse{}, badRequest("family_count must be between 0 and 10")
 	}
 	employeeID := strings.TrimSpace(req.EmployeeID)
 	if employeeID == "" {
@@ -51,6 +56,12 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if now.Before(event.RegistrationStart) || now.After(event.RegistrationClose) {
 		return BookingResponse{}, conflict("registration window is closed")
 	}
+	if event.CapacityType == CapacityTypeLimited && req.FamilyCount > 0 {
+		return BookingResponse{}, badRequest("limited events cannot accept family attendees")
+	}
+	if event.CapacityType == CapacityTypeUnlimited && !event.AllowsFamily && req.FamilyCount > 0 {
+		return BookingResponse{}, badRequest("event does not allow family attendees")
+	}
 
 	employee, err := s.getEmployeeTx(ctx, tx, employeeID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -67,36 +78,36 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if reg, ticket, found, err := s.findRegistrationByEmployeeTx(ctx, tx, eventID, employeeID); err != nil {
 		return BookingResponse{}, err
 	} else if found {
-		capacity, err := limitedCapacity(event)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		remaining, err := s.remainingCapacityTx(ctx, tx, eventID, capacity)
+		remaining, err := s.remainingForResponseTx(ctx, tx, event)
 		if err != nil {
 			return BookingResponse{}, err
 		}
 		return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status)}, tx.Commit(ctx)
 	}
 
-	capacity, err := limitedCapacity(event)
-	if err != nil {
-		return BookingResponse{}, err
-	}
-	confirmedCount, err := s.confirmedCountTx(ctx, tx, eventID)
-	if err != nil {
-		return BookingResponse{}, err
-	}
-	status := RegistrationWaitlisted
-	if confirmedCount < capacity {
-		status = RegistrationConfirmed
+	status := RegistrationConfirmed
+	capacity := 0
+	confirmedCount := 0
+	if event.CapacityType == CapacityTypeLimited {
+		capacity, err = limitedCapacity(event)
+		if err != nil {
+			return BookingResponse{}, err
+		}
+		confirmedCount, err = s.confirmedCountTx(ctx, tx, eventID)
+		if err != nil {
+			return BookingResponse{}, err
+		}
+		if confirmedCount >= capacity {
+			status = RegistrationWaitlisted
+		}
 	}
 
 	regID, err := newID("reg")
 	if err != nil {
 		return BookingResponse{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key)
-		VALUES ($1,$2,$3,$4,$5)`, regID, eventID, employeeID, status, req.IdempotencyKey)
+	_, err = tx.Exec(ctx, `INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key, family_count)
+		VALUES ($1,$2,$3,$4,$5,$6)`, regID, eventID, employeeID, status, req.IdempotencyKey, req.FamilyCount)
 	if err != nil {
 		if isUniqueViolation(err) {
 			existing, found, findErr := s.findRegistrationByIdempotencyKey(ctx, tx, req.IdempotencyKey, eventID, employeeID)
@@ -110,7 +121,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return BookingResponse{}, err
 	}
 
-	reg := Registration{RegistrationID: regID, EventID: eventID, EmployeeID: employeeID, Status: status, IdempotencyKey: req.IdempotencyKey, CreatedAt: now}
+	reg := Registration{RegistrationID: regID, EventID: eventID, EmployeeID: employeeID, Status: status, IdempotencyKey: req.IdempotencyKey, FamilyCount: req.FamilyCount, CreatedAt: now}
 	var ticket *Ticket
 	if status == RegistrationConfirmed {
 		created, err := s.createTicketTx(ctx, tx, reg, employee)
@@ -131,19 +142,19 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if status == RegistrationWaitlisted {
 		action = "booking.waitlisted"
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, action, "registration", regID, map[string]interface{}{"event_id": eventID, "status": status}); err != nil {
+	if err := insertAudit(ctx, tx, auditID, actor, action, "registration", regID, map[string]interface{}{"event_id": eventID, "status": status, "capacity_type": event.CapacityType, "family_count": req.FamilyCount}); err != nil {
 		return BookingResponse{}, err
 	}
-	if err := insertOutbox(ctx, tx, action, regID, map[string]interface{}{"registration_id": regID, "event_id": eventID, "employee_id": employeeID}); err != nil {
+	if err := insertOutbox(ctx, tx, action, regID, map[string]interface{}{"registration_id": regID, "event_id": eventID, "employee_id": employeeID, "capacity_type": event.CapacityType, "family_count": req.FamilyCount}); err != nil {
 		return BookingResponse{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return BookingResponse{}, err
 	}
 
-	remaining := max(capacity-confirmedCount-1, 0)
-	if status == RegistrationWaitlisted {
-		remaining = 0
+	remaining := 0
+	if event.CapacityType == CapacityTypeLimited && status == RegistrationConfirmed {
+		remaining = max(capacity-confirmedCount-1, 0)
 	}
 	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", action, "status", status, "event_id", eventID, "actor_role", actor.Role)
 	return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(status)}, nil

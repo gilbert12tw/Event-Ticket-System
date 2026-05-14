@@ -210,7 +210,7 @@ func lotteryDrawKey(seed string, registrationID string) string {
 func (s *Service) lotteryCandidatesTx(ctx context.Context, tx pgx.Tx, eventID string, rule EligibilityRule, seed string) ([]lotteryCandidate, error) {
 	rows, err := tx.Query(ctx, `SELECT
 			r.registration_id, r.event_id, r.employee_id, r.status, COALESCE(r.idempotency_key, ''), COALESCE(r.cancel_idempotency_key, ''),
-			COALESCE(r.cancelled_at, '0001-01-01 00:01:00+00'::timestamptz), r.cancel_reason, r.created_at,
+			COALESCE(r.cancelled_at, '0001-01-01 00:01:00+00'::timestamptz), r.cancel_reason, r.family_count, r.created_at,
 			e.full_name, e.department, e.site, e.job_grade, e.employment_status
 		FROM registrations r
 		JOIN employees e ON e.employee_id = r.employee_id
@@ -227,7 +227,7 @@ func (s *Service) lotteryCandidatesTx(ctx context.Context, tx pgx.Tx, eventID st
 		var employee Employee
 		if err := rows.Scan(
 			&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey,
-			&reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.CreatedAt,
+			&reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt,
 			&employee.FullName, &employee.Department, &employee.Site, &employee.JobGrade, &employee.EmploymentStatus,
 		); err != nil {
 			return nil, err

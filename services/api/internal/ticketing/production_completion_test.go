@@ -126,8 +126,12 @@ func TestEventCapacityTypesValidateAndExposeSummaries(t *testing.T) {
 	if unlimited.EventCity != "Taipei" || unlimited.EventSite != "HQ" {
 		t.Fatalf("unlimited city/site = %q/%q", unlimited.EventCity, unlimited.EventSite)
 	}
-	if _, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, unlimited.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unlimited-booking"}); err == nil || ErrorStatus(err) != 501 {
-		t.Fatalf("unlimited booking error = %v, want 501", err)
+	unlimitedBooking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, unlimited.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unlimited-booking", FamilyCount: 2})
+	if err != nil {
+		t.Fatalf("unlimited booking error = %v", err)
+	}
+	if unlimitedBooking.Registration.Status != RegistrationConfirmed || unlimitedBooking.Registration.FamilyCount != 2 || unlimitedBooking.Ticket == nil {
+		t.Fatalf("unlimited booking = %+v", unlimitedBooking)
 	}
 
 	limitedType := CapacityTypeLimited

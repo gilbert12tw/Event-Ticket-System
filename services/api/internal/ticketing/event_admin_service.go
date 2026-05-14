@@ -105,6 +105,7 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	}
 	if event.CapacityType == CapacityTypeUnlimited {
 		event.Capacity = nil
+		event.AllowsFamily = true
 	}
 	if err := validateEventCapacity(event); err != nil {
 		return EventSummary{}, err

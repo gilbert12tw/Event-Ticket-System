@@ -11,7 +11,7 @@ func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID st
 	}
 	rows, err := s.db.Query(ctx, `SELECT
 			r.registration_id, r.event_id, r.employee_id, r.status, r.idempotency_key, COALESCE(r.cancel_idempotency_key, ''),
-			COALESCE(r.cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), r.cancel_reason, r.created_at,
+			COALESCE(r.cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), r.cancel_reason, r.family_count, r.created_at,
 			e.full_name,
 			COALESCE(t.ticket_id, ''), COALESCE(t.registration_id, ''), COALESCE(t.event_id, ''), COALESCE(t.employee_id, ''),
 			COALESCE(t.status, ''), COALESCE(t.sequence_number, 0),
@@ -32,7 +32,7 @@ func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID st
 		var ticket Ticket
 		var ticketID string
 		err := rows.Scan(
-			&detail.RegistrationID, &detail.EventID, &detail.EmployeeID, &detail.Status, &detail.IdempotencyKey, &detail.CancelKey, &detail.CancelledAt, &detail.CancelReason, &detail.CreatedAt,
+			&detail.RegistrationID, &detail.EventID, &detail.EmployeeID, &detail.Status, &detail.IdempotencyKey, &detail.CancelKey, &detail.CancelledAt, &detail.CancelReason, &detail.FamilyCount, &detail.CreatedAt,
 			&detail.EmployeeName,
 			&ticketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt,
 		)
@@ -86,11 +86,7 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 			if err != nil {
 				return BookingResponse{}, err
 			}
-			capacity, err := limitedCapacity(event)
-			if err != nil {
-				return BookingResponse{}, err
-			}
-			remaining, err := s.remainingCapacityTx(ctx, tx, eventID, capacity)
+			remaining, err := s.remainingForResponseTx(ctx, tx, event)
 			if err != nil {
 				return BookingResponse{}, err
 			}
@@ -130,20 +126,22 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	}
 
 	remaining := 0
-	capacity, err := limitedCapacity(event)
-	if err != nil {
-		return BookingResponse{}, err
-	}
-	if wasConfirmed {
-		promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, capacity, rule)
+	if event.CapacityType == CapacityTypeLimited {
+		capacity, err := limitedCapacity(event)
 		if err != nil {
 			return BookingResponse{}, err
 		}
-		remaining = promotion.RemainingCapacity
-	} else {
-		remaining, err = s.remainingCapacityTx(ctx, tx, eventID, capacity)
-		if err != nil {
-			return BookingResponse{}, err
+		if wasConfirmed {
+			promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, capacity, rule)
+			if err != nil {
+				return BookingResponse{}, err
+			}
+			remaining = promotion.RemainingCapacity
+		} else {
+			remaining, err = s.remainingCapacityTx(ctx, tx, eventID, capacity)
+			if err != nil {
+				return BookingResponse{}, err
+			}
 		}
 	}
 

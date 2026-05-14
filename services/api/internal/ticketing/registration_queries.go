@@ -11,9 +11,9 @@ import (
 func (s *Service) findRegistrationByIdempotencyKey(ctx context.Context, tx pgx.Tx, key string, expectedEventID string, expectedEmployeeID string) (BookingResponse, bool, error) {
 	var reg Registration
 	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, created_at
+			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
 		FROM registrations WHERE idempotency_key = $1`, key).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.CreatedAt)
+		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return BookingResponse{}, false, nil
 	}
@@ -31,23 +31,30 @@ func (s *Service) findRegistrationByIdempotencyKey(ctx context.Context, tx pgx.T
 	if err != nil {
 		return BookingResponse{}, false, err
 	}
-	capacity, err := limitedCapacity(event)
-	if err != nil {
-		return BookingResponse{}, false, err
-	}
-	remaining, err := s.remainingCapacityTx(ctx, tx, reg.EventID, capacity)
+	remaining, err := s.remainingForResponseTx(ctx, tx, event)
 	if err != nil {
 		return BookingResponse{}, false, err
 	}
 	return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status)}, true, nil
 }
 
+func (s *Service) remainingForResponseTx(ctx context.Context, tx pgx.Tx, event Event) (int, error) {
+	if event.CapacityType != CapacityTypeLimited {
+		return 0, nil
+	}
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return 0, err
+	}
+	return s.remainingCapacityTx(ctx, tx, event.EventID, capacity)
+}
+
 func (s *Service) findRegistrationByEmployee(ctx context.Context, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
 	var reg Registration
 	err := s.db.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, created_at
+			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
 		FROM registrations WHERE event_id = $1 AND employee_id = $2`, eventID, employeeID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.CreatedAt)
+		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
 	}
@@ -64,9 +71,9 @@ func (s *Service) findRegistrationByEmployee(ctx context.Context, eventID string
 func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
 	var reg Registration
 	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, created_at
+			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
 		FROM registrations WHERE event_id = $1 AND employee_id = $2`, eventID, employeeID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.CreatedAt)
+		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
 	}
@@ -83,9 +90,9 @@ func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, e
 func (s *Service) lockRegistrationTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {
 	var reg Registration
 	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, created_at
+			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
 		FROM registrations WHERE registration_id = $1 FOR UPDATE`, registrationID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.CreatedAt)
+		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return Registration{}, notFound("registration not found")
 	}
@@ -95,7 +102,7 @@ func (s *Service) lockRegistrationTx(ctx context.Context, tx pgx.Tx, registratio
 func (s *Service) nextEligibleWaitlistedTx(ctx context.Context, tx pgx.Tx, eventID string, rule EligibilityRule) (Registration, Employee, bool, error) {
 	rows, err := tx.Query(ctx, `SELECT
 			r.registration_id, r.event_id, r.employee_id, r.status, r.idempotency_key, COALESCE(r.cancel_idempotency_key, ''),
-			COALESCE(r.cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), r.cancel_reason, r.created_at,
+			COALESCE(r.cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), r.cancel_reason, r.family_count, r.created_at,
 			e.full_name, e.department, e.site, e.job_grade, e.employment_status
 		FROM registrations r
 		JOIN employees e ON e.employee_id = r.employee_id
@@ -111,7 +118,7 @@ func (s *Service) nextEligibleWaitlistedTx(ctx context.Context, tx pgx.Tx, event
 		var reg Registration
 		var employee Employee
 		if err := rows.Scan(
-			&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.CreatedAt,
+			&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt,
 			&employee.FullName, &employee.Department, &employee.Site, &employee.JobGrade, &employee.EmploymentStatus,
 		); err != nil {
 			return Registration{}, Employee{}, false, err
