@@ -161,6 +161,15 @@ var SchemaStatements = []string{
 		status TEXT NOT NULL CHECK (status IN ('accepted', 'conflict')),
 		scanned_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
+	`CREATE TABLE IF NOT EXISTS no_show_records (
+		no_show_id TEXT PRIMARY KEY,
+		registration_id TEXT NOT NULL UNIQUE REFERENCES registrations(registration_id) ON DELETE CASCADE,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id),
+		status TEXT NOT NULL CHECK (status IN ('recorded', 'cooldown_active', 'cooldown_expired')),
+		recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		cooldown_until TIMESTAMPTZ
+	)`,
 	`CREATE TABLE IF NOT EXISTS audit_logs (
 		audit_id TEXT PRIMARY KEY,
 		actor_id TEXT NOT NULL,
@@ -259,6 +268,7 @@ var SchemaStatements = []string{
 	`CREATE INDEX IF NOT EXISTS idx_eligibility_rule_versions_event ON eligibility_rule_versions(event_id, version DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_eligibility_impact_reviews_status ON eligibility_impact_reviews(status, created_at DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_registrations_event_status ON registrations(event_id, status)`,
+	`CREATE INDEX IF NOT EXISTS idx_no_show_records_employee ON no_show_records(employee_id, cooldown_until DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_tickets_employee ON tickets(employee_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_logs_filter ON audit_logs(action, entity_type, entity_id, created_at DESC)`,

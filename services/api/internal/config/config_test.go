@@ -32,6 +32,9 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	t.Setenv("WORKER_POLL_INTERVAL_MS", "1250")
 	t.Setenv("WORKER_MAX_ATTEMPTS", "5")
 	t.Setenv("WORKER_BATCH_SIZE", "17")
+	t.Setenv("NO_SHOW_THRESHOLD", "2")
+	t.Setenv("NO_SHOW_COOLDOWN_DAYS", "45")
+	t.Setenv("NO_SHOW_GRACE_HOURS", "12")
 
 	cfg := Load()
 
@@ -56,6 +59,9 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	assert.Equal(t, 1250*time.Millisecond, cfg.WorkerPollInterval)
 	assert.Equal(t, 5, cfg.WorkerMaxAttempts)
 	assert.Equal(t, 17, cfg.WorkerBatchSize)
+	assert.Equal(t, 2, cfg.NoShowThreshold)
+	assert.Equal(t, 45, cfg.NoShowCooldownDays)
+	assert.Equal(t, 12, cfg.NoShowGraceHours)
 }
 
 func TestValidateForServeRequiresDatabaseURL(t *testing.T) {

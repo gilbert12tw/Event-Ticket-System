@@ -42,6 +42,18 @@ func handleCancelRegistration(service TicketingService) http.HandlerFunc {
 	}
 }
 
+func handleCancelMyRegistration(service TicketingService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req ticketing.CancelRegistrationRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		result, err := service.CancelMyRegistration(r.Context(), actorFromRequest(r), r.PathValue("registration_id"), req)
+		writeServiceResult(w, http.StatusOK, result, err)
+	}
+}
+
 func handlePromoteWaitlist(service TicketingService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.PromoteWaitlist(r.Context(), actorFromRequest(r), r.PathValue("event_id"))

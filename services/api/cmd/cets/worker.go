@@ -37,7 +37,7 @@ func worker(cfg config.Config, logger *slog.Logger) error {
 		logger.Info("migration complete", "mode", "auto")
 	}
 
-	service := ticketing.NewService(pool, ticketing.NewSigner(cfg.TokenSigningSecret), logger)
+	service := newTicketingService(pool, cfg, logger)
 	sender := ticketing.SMTPNotificationSender{Host: cfg.MailerHost, Port: cfg.MailerPort, From: cfg.MailerFrom}
 	sender.RedirectTo = cfg.MailerRedirectTo
 	reportStore := objectstore.S3CompatibleStore{

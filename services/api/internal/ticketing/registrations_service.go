@@ -42,6 +42,9 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if existing, found, err := s.findRegistrationByIdempotencyKey(ctx, tx, req.IdempotencyKey, eventID, employeeID); err != nil {
 		return BookingResponse{}, err
 	} else if found {
+		if existing.Registration.FamilyCount != req.FamilyCount {
+			return BookingResponse{}, conflict("idempotency key belongs to a different booking request")
+		}
 		return existing, tx.Commit(ctx)
 	}
 
@@ -61,6 +64,15 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	}
 	if event.CapacityType == CapacityTypeUnlimited && !event.AllowsFamily && req.FamilyCount > 0 {
 		return BookingResponse{}, badRequest("event does not allow family attendees")
+	}
+	if event.CapacityType == CapacityTypeLimited {
+		cooldown, found, err := s.activeNoShowCooldownTx(ctx, tx, employeeID, now)
+		if err != nil {
+			return BookingResponse{}, err
+		}
+		if found {
+			return BookingResponse{}, forbidden("limited event booking blocked by no-show cooldown until " + cooldown.Format("2006-01-02"))
+		}
 	}
 
 	employee, err := s.getEmployeeTx(ctx, tx, employeeID)
