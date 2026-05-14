@@ -240,7 +240,7 @@ export function AdminEventsPage() {
                 <div className="readiness-grid">
                   <Kpi label="Confirmed" value={selectedAdminEvent.confirmed_count} />
                   <Kpi label="Waitlist" value={selectedAdminEvent.waitlist_count} />
-                  <Kpi label="剩餘" value={selectedAdminEvent.remaining_capacity} />
+                  <Kpi label="剩餘" value={selectedAdminEvent.remaining_capacity ?? "No cap"} />
                   <Kpi label="Version" value={selectedAdminEvent.version || 1} />
                 </div>
                 <fieldset className="form-section full">

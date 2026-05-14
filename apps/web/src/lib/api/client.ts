@@ -299,17 +299,28 @@ export function resolveEligibilityImpactReview(reviewID: string, body: ResolveIm
   });
 }
 
-export function bookEvent(eventID: string, idempotencyKey: string) {
+export function bookEvent(eventID: string, idempotencyKey: string, familyCount = 0) {
   return api<BookingResponse>(`/api/v1/events/${encodeURIComponent(eventID)}/bookings`, {
     method: "POST",
     body: {
+      idempotency_key: idempotencyKey,
+      family_count: familyCount
+    }
+  });
+}
+
+export function cancelMyRegistration(registrationID: string, reason: string, idempotencyKey: string) {
+  return api<BookingResponse>(`/api/v1/me/registrations/${encodeURIComponent(registrationID)}/cancel`, {
+    method: "POST",
+    body: {
+      reason,
       idempotency_key: idempotencyKey
     }
   });
 }
 
 export function cancelRegistration(eventID: string, registrationID: string, reason: string, idempotencyKey: string) {
-  return api<BookingResponse>(`/api/v1/events/${encodeURIComponent(eventID)}/bookings/${encodeURIComponent(registrationID)}/cancel`, {
+  return api<BookingResponse>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations/${encodeURIComponent(registrationID)}/cancel`, {
     method: "POST",
     body: {
       reason,

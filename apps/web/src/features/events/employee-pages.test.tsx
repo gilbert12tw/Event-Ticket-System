@@ -1,0 +1,118 @@
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { bookEvent, cancelMyRegistration, listEvents } from "@/lib/api";
+import type { AuthMeClaims, EventSummary } from "@/lib/api";
+import { EmployeeEventsPage } from "./employee-pages";
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    bookEvent: vi.fn(),
+    cancelMyRegistration: vi.fn(),
+    listEvents: vi.fn()
+  };
+});
+
+const mockListEvents = vi.mocked(listEvents);
+const mockBookEvent = vi.mocked(bookEvent);
+const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
+
+const claims: AuthMeClaims = {
+  employee_id: "E1001",
+  display_name: "Ariel Chen",
+  role_claims: ["employee"],
+  mapped_roles: ["employee"],
+  department: "Engineering",
+  site: "Taipei",
+  city: "Taipei",
+  claims_status: "complete"
+};
+
+describe("EmployeeEventsPage", () => {
+  beforeEach(() => {
+    mockListEvents.mockReset();
+    mockBookEvent.mockReset();
+    mockCancelMyRegistration.mockReset();
+  });
+
+  it("shows bounded family count only for unlimited events", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({ event_id: "evt-limited", title: "Limited", capacity_type: "limited", capacity: 5, remaining_capacity: 3 }),
+      eventFixture({
+        event_id: "evt-unlimited",
+        title: "Unlimited",
+        capacity_type: "unlimited",
+        capacity: null,
+        remaining_capacity: null,
+        allows_family: true
+      })
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText("Limited event: companions are not available.")).toBeInTheDocument();
+    const familyInput = await screen.findByRole("spinbutton", { name: "Companions for Unlimited" });
+    expect(familyInput).toHaveAttribute("max", "10");
+  });
+
+  it("shows cooldown feedback and disables self-cancel after registration close", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        current_user_registration_id: "reg-closed",
+        current_user_status: "confirmed",
+        event_id: "evt-cooldown",
+        no_show_cooldown: {
+          active: true,
+          applies_to: "limited",
+          until: "2026-08-01T00:00:00Z",
+          reason: "no_show_cooldown"
+        },
+        registration_close: "2020-01-01T00:00:00Z",
+        title: "Cooldown Event"
+      })
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText(/Limited-event booking is blocked by no-show cooldown/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cancel registration/ })).toBeDisabled();
+    expect(screen.getByText(/Self-cancel is closed/)).toBeInTheDocument();
+  });
+});
+
+function eventFixture(overrides: Partial<EventSummary> = {}): EventSummary {
+  return {
+    event_id: "evt-1",
+    title: "Event",
+    description: "A company event",
+    location: "Taipei HQ",
+    event_city: "Taipei",
+    event_site: "Taipei",
+    starts_at: "2026-06-01T10:00:00Z",
+    registration_start: "2026-05-01T10:00:00Z",
+    registration_close: "2026-05-31T10:00:00Z",
+    capacity_type: "limited",
+    capacity: 10,
+    allows_family: false,
+    status: "published",
+    allocation_mode: "fcfs",
+    created_by: "admin-1",
+    created_at: "2026-05-01T00:00:00Z",
+    updated_at: "2026-05-01T00:00:00Z",
+    rule: {
+      department: "Engineering",
+      site: "Taipei",
+      min_grade: 5,
+      employment_status: "active"
+    },
+    eligible: true,
+    eligibility_reason: "eligible",
+    confirmed_count: 1,
+    waitlist_count: 0,
+    remaining_capacity: 9,
+    current_user_status: "",
+    no_show_cooldown: { active: false },
+    ...overrides
+  };
+}

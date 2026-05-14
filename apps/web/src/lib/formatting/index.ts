@@ -2,8 +2,8 @@ import { ApiError, type AuditLogFilters, type CreateEventRequest, type EmployeeP
 
 export function defaultEventForm() {
   return {
-    title: "台北家庭電影夜",
-    description: "Phase 1 先搶先得、候補與驗票示範。",
+    title: "Taipei family movie night",
+    description: "Phase 1 demonstration for booking, waitlist, and check-in.",
     location: "Taipei HQ Auditorium",
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
@@ -110,7 +110,7 @@ export function normalizeAuditFilters(filters: AuditLogFilters): AuditLogFilters
 }
 
 export function formatDate(value?: string) {
-  if (!value) return "未設定";
+  if (!value) return "Not set";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-TW", {
@@ -139,7 +139,8 @@ export function registrationTone(status: string): "ok" | "warn" | "fail" | "info
 export function bookingActionLabel(event: EventSummary) {
   if (event.current_user_status === "confirmed") return "已報名";
   if (event.current_user_status === "waitlisted") return "候補中";
-  return event.remaining_capacity > 0 ? "報名" : "加入候補";
+  if (event.capacity_type === "unlimited") return "報名";
+  return (event.remaining_capacity ?? 0) > 0 ? "報名" : "加入候補";
 }
 
 export function roleLabel(role: Role) {
