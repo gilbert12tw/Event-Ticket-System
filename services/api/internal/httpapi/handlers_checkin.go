@@ -15,7 +15,7 @@ func handleCheckin(service TicketingService) http.HandlerFunc {
 			return
 		}
 		result, err := service.CheckIn(r.Context(), actorFromRequest(r), req)
-		if err != nil && result.CheckinID != "" {
+		if err != nil && (result.Status != "" || result.CheckinID != "") {
 			writeErrorWithData(w, ticketing.ErrorStatus(err), result, ticketing.ErrorMessage(err))
 			return
 		}

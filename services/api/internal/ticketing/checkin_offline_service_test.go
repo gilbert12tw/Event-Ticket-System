@@ -67,6 +67,10 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	require.NoError(t, err)
 	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
 	require.NoError(t, err)
+	require.Len(t, pkg.Tickets, 1)
+	assert.NotEmpty(t, pkg.Tickets[0].Holder.DisplayName)
+	assert.NotEmpty(t, pkg.Tickets[0].Holder.Department)
+	assert.NotEmpty(t, pkg.Tickets[0].Holder.City)
 
 	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
 		BatchID:          pkg.BatchID,

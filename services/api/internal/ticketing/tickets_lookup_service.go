@@ -11,13 +11,14 @@ func (s *Service) GetTicket(ctx context.Context, actor Actor, ticketID string) (
 	var ticket Ticket
 	err := s.db.QueryRow(ctx, `SELECT
 			t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
-			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at,
-			e.title, e.location, e.starts_at, emp.full_name
+			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
+			e.title, e.location, e.starts_at, emp.full_name, emp.department, emp.site
 		FROM tickets t
 		JOIN events e ON e.event_id = t.event_id
+		JOIN registrations r ON r.registration_id = t.registration_id
 		JOIN employees emp ON emp.employee_id = t.employee_id
 		WHERE t.ticket_id = $1`, ticketID).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.EventTitle, &ticket.EventLocation, &ticket.EventStartsAt, &ticket.EmployeeName)
+		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EventLocation, &ticket.EventStartsAt, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Ticket{}, notFound("ticket not found")
 	}
@@ -32,6 +33,7 @@ func (s *Service) GetTicket(ctx context.Context, actor Actor, ticketID string) (
 			return Ticket{}, err
 		}
 	}
+	ticket.NonTransferable = true
 	result, err := s.ticketForActor(actor, ticket)
 	if err != nil {
 		return Ticket{}, err

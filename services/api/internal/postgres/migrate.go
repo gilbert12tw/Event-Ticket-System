@@ -161,6 +161,16 @@ var SchemaStatements = []string{
 		status TEXT NOT NULL CHECK (status IN ('accepted', 'conflict')),
 		scanned_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
+	`CREATE TABLE IF NOT EXISTS checkin_rejections (
+		rejection_id TEXT PRIMARY KEY,
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
+		event_id TEXT NOT NULL DEFAULT '',
+		staff_id TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		detail TEXT NOT NULL DEFAULT '',
+		rejected_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
 	`CREATE TABLE IF NOT EXISTS no_show_records (
 		no_show_id TEXT PRIMARY KEY,
 		registration_id TEXT NOT NULL UNIQUE REFERENCES registrations(registration_id) ON DELETE CASCADE,
@@ -336,6 +346,17 @@ var SchemaStatements = []string{
 	`ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS token_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS conflict_reason TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE tickets ALTER COLUMN signed_token SET DEFAULT ''`,
+	`CREATE TABLE IF NOT EXISTS checkin_rejections (
+		rejection_id TEXT PRIMARY KEY,
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
+		event_id TEXT NOT NULL DEFAULT '',
+		staff_id TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		detail TEXT NOT NULL DEFAULT '',
+		rejected_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_checkin_rejections_ticket ON checkin_rejections(ticket_id)`,
 	`ALTER TABLE tickets ALTER COLUMN qr_payload SET DEFAULT ''`,
 }
 
