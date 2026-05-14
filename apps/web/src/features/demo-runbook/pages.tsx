@@ -61,7 +61,9 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
         starts_at: futureISO(72),
         registration_start: futureISO(-1),
         registration_close: futureISO(48),
+        capacity_type: "limited",
         capacity: 1,
+        allows_family: false,
         status: "published",
         rule: {
           department: "Engineering",

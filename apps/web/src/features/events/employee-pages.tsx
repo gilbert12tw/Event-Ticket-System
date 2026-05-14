@@ -18,7 +18,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
       eligible: events.filter((event) => event.eligible).length,
       confirmed: events.filter((event) => event.current_user_status === "confirmed").length,
       waitlisted: events.filter((event) => event.current_user_status === "waitlisted").length,
-      openSeats: events.reduce((sum, event) => sum + Math.max(event.remaining_capacity, 0), 0)
+      openSeats: events.reduce((sum, event) => sum + Math.max(event.remaining_capacity ?? 0, 0), 0)
     }),
     [events]
   );
@@ -121,13 +121,17 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
                   <ProgressMeter
                     label="容量使用"
                     value={event.confirmed_count}
-                    max={event.capacity}
-                    helper={`${event.confirmed_count}/${event.capacity} confirmed，候補 ${event.waitlist_count}`}
+                    max={event.capacity ?? Math.max(event.confirmed_count, 1)}
+                    helper={
+                      event.capacity_type === "unlimited"
+                        ? `${event.confirmed_count} confirmed（不限名額）`
+                        : `${event.confirmed_count}/${event.capacity} confirmed，候補 ${event.waitlist_count}`
+                    }
                   />
                 </div>
                 <div className="event-action">
-                  <Kpi label="總名額" value={event.capacity} />
-                  <Kpi label="剩餘" value={event.remaining_capacity} />
+                  <Kpi label="總名額" value={event.capacity ?? "不限"} />
+                  <Kpi label="剩餘" value={event.remaining_capacity ?? "不限"} />
                   <Kpi label="候補" value={event.waitlist_count} />
                   <button
                     className="button"
@@ -273,9 +277,13 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
             </dl>
             <ProgressMeter
               label="容量使用"
-              max={detail.capacity}
+              max={detail.capacity ?? Math.max(detail.confirmed_count, 1)}
               value={detail.confirmed_count}
-              helper={`${detail.confirmed_count}/${detail.capacity} confirmed，候補 ${detail.waitlist_count}`}
+              helper={
+                detail.capacity_type === "unlimited"
+                  ? `${detail.confirmed_count} confirmed（不限名額）`
+                  : `${detail.confirmed_count}/${detail.capacity} confirmed，候補 ${detail.waitlist_count}`
+              }
             />
           </div>
         )}
@@ -285,7 +293,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
         {!detail && <EmptyState title="等待活動" action="選擇活動後會顯示可執行動作。" />}
         {detail && (
           <div className="summary-block">
-            <Kpi label="剩餘名額" value={detail.remaining_capacity} />
+            <Kpi label="剩餘名額" value={detail.remaining_capacity ?? "不限"} />
             <Kpi label="目前狀態" value={detail.current_user_status || "none"} />
             <button
               className="button full-width"

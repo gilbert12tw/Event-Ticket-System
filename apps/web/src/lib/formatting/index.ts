@@ -8,6 +8,7 @@ export function defaultEventForm() {
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
     registration_close: localInputDate(48),
+    capacity_type: "limited" as "limited" | "unlimited",
     capacity: "1",
     status: "published",
     department: "Engineering",
@@ -25,6 +26,7 @@ export function defaultEditEventForm() {
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
     registration_close: localInputDate(48),
+    capacity_type: "limited" as "limited" | "unlimited",
     capacity: "1",
     category: "",
     tags: "",
@@ -34,6 +36,7 @@ export function defaultEditEventForm() {
 }
 
 export function editFormFromEvent(event: EventSummary) {
+  const capacityType = event.capacity_type || "limited";
   return {
     title: event.title || "",
     description: event.description || "",
@@ -41,7 +44,8 @@ export function editFormFromEvent(event: EventSummary) {
     starts_at: dateToLocalInput(event.starts_at),
     registration_start: dateToLocalInput(event.registration_start),
     registration_close: dateToLocalInput(event.registration_close),
-    capacity: String(event.capacity || 1),
+    capacity_type: capacityType as "limited" | "unlimited",
+    capacity: capacityType === "unlimited" ? "" : String(event.capacity ?? 1),
     category: event.category || "",
     tags: (event.tags || []).join(", "),
     entry_method: event.entry_method || "qr",
@@ -139,7 +143,8 @@ export function registrationTone(status: string): "ok" | "warn" | "fail" | "info
 export function bookingActionLabel(event: EventSummary) {
   if (event.current_user_status === "confirmed") return "已報名";
   if (event.current_user_status === "waitlisted") return "候補中";
-  return event.remaining_capacity > 0 ? "報名" : "加入候補";
+  if (event.capacity_type === "unlimited") return "報名";
+  return (event.remaining_capacity ?? 0) > 0 ? "報名" : "加入候補";
 }
 
 export function roleLabel(role: Role) {
