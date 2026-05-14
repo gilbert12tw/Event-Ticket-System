@@ -30,7 +30,7 @@ export function AdminEventsPage() {
       ),
     [form.department, form.site, form.min_grade, form.employment_status]
   );
-  const capacityReady = Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0;
+  const capacityReady = form.capacity_type === "unlimited" || (Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0);
   const startsAt = new Date(form.starts_at);
   const registrationStart = new Date(form.registration_start);
   const registrationClose = new Date(form.registration_close);
@@ -85,6 +85,7 @@ export function AdminEventsPage() {
     setBusy(true);
     setMessage("");
     try {
+      const unlimited = form.capacity_type === "unlimited";
       const body: CreateEventRequest = {
         title: form.title.trim(),
         description: form.description.trim(),
@@ -92,7 +93,9 @@ export function AdminEventsPage() {
         starts_at: toISO(form.starts_at),
         registration_start: toISO(form.registration_start),
         registration_close: toISO(form.registration_close),
-        capacity: Number(form.capacity),
+        capacity_type: form.capacity_type,
+        capacity: unlimited ? null : Number(form.capacity),
+        allows_family: unlimited,
         status: form.status,
         rule: {
           department: form.department.trim() || "*",
@@ -118,6 +121,7 @@ export function AdminEventsPage() {
     setBusy(true);
     setMessage("");
     try {
+      const unlimited = editForm.capacity_type === "unlimited";
       const body: UpdateEventRequest = {
         title: editForm.title.trim(),
         description: editForm.description.trim(),
@@ -125,7 +129,9 @@ export function AdminEventsPage() {
         starts_at: toISO(editForm.starts_at),
         registration_start: toISO(editForm.registration_start),
         registration_close: toISO(editForm.registration_close),
-        capacity: Number(editForm.capacity),
+        capacity_type: editForm.capacity_type,
+        capacity: unlimited ? null : Number(editForm.capacity),
+        allows_family: unlimited,
         category: editForm.category.trim(),
         tags: splitTags(editForm.tags),
         entry_method: editForm.entry_method.trim(),
@@ -196,7 +202,7 @@ export function AdminEventsPage() {
         </div>
         <div className="context-kpis">
           <Kpi label="Demo 符合人數" value={previewEmployees.length} />
-          <Kpi label="容量" value={form.capacity} />
+          <Kpi label="容量" value={form.capacity_type === "unlimited" ? "不限" : form.capacity} />
           <Kpi label="管理活動" value={adminEvents.length} />
         </div>
       </div>
@@ -240,7 +246,7 @@ export function AdminEventsPage() {
                 <div className="readiness-grid">
                   <Kpi label="Confirmed" value={selectedAdminEvent.confirmed_count} />
                   <Kpi label="Waitlist" value={selectedAdminEvent.waitlist_count} />
-                  <Kpi label="剩餘" value={selectedAdminEvent.remaining_capacity} />
+                  <Kpi label="剩餘" value={selectedAdminEvent.capacity_type === "unlimited" ? "不限" : (selectedAdminEvent.remaining_capacity ?? 0)} />
                   <Kpi label="Version" value={selectedAdminEvent.version || 1} />
                 </div>
                 <fieldset className="form-section full">
@@ -268,7 +274,22 @@ export function AdminEventsPage() {
                     onChange={(value) => setEditForm({ ...editForm, registration_close: value })}
                     required
                   />
-                  <Field label="容量" type="number" value={editForm.capacity} onChange={(value) => setEditForm({ ...editForm, capacity: value })} required />
+                  <label className="field">
+                    <span>票數類型</span>
+                    <select
+                      value={editForm.capacity_type}
+                      onChange={(event) => {
+                        const next = event.target.value as "limited" | "unlimited";
+                        setEditForm({ ...editForm, capacity_type: next, capacity: next === "unlimited" ? "" : editForm.capacity || "1" });
+                      }}
+                    >
+                      <option value="limited">limited（本人單張票）</option>
+                      <option value="unlimited">unlimited（不扣庫存，可帶家屬）</option>
+                    </select>
+                  </label>
+                  {editForm.capacity_type === "limited" && (
+                    <Field label="容量" type="number" value={editForm.capacity} onChange={(value) => setEditForm({ ...editForm, capacity: value })} required />
+                  )}
                   <Field label="分類" value={editForm.category} onChange={(value) => setEditForm({ ...editForm, category: value })} />
                   <Field label="Tags" value={editForm.tags} onChange={(value) => setEditForm({ ...editForm, tags: value })} />
                   <Field label="入場方式" value={editForm.entry_method} onChange={(value) => setEditForm({ ...editForm, entry_method: value })} />
@@ -359,7 +380,24 @@ export function AdminEventsPage() {
             onChange={(value) => setForm({ ...form, registration_close: value })}
             required
           />
-          <Field label="容量" type="number" value={form.capacity} onChange={(value) => setForm({ ...form, capacity: value })} required />
+          <label className="field">
+            <span>票數類型</span>
+            <select
+              value={form.capacity_type}
+              onChange={(event) => {
+                const next = event.target.value as "limited" | "unlimited";
+                setForm({ ...form, capacity_type: next, capacity: next === "unlimited" ? "" : form.capacity || "1" });
+              }}
+            >
+              <option value="limited">limited（本人單張票）</option>
+              <option value="unlimited">unlimited（不扣庫存，可帶家屬）</option>
+            </select>
+          </label>
+          {form.capacity_type === "limited" ? (
+            <Field label="容量" type="number" value={form.capacity} onChange={(value) => setForm({ ...form, capacity: value })} required />
+          ) : (
+            <p className="form-hint full">unlimited 活動不設總名額，員工報名時可填寫攜帶家屬人數（上限 10）。</p>
+          )}
         </fieldset>
         <fieldset className="form-section full">
           <legend>資格規則</legend>
@@ -413,8 +451,12 @@ export function AdminEventsPage() {
                 <dd>{created.event_id}</dd>
               </div>
               <div>
+                <dt>票數類型</dt>
+                <dd>{created.capacity_type}</dd>
+              </div>
+              <div>
                 <dt>容量</dt>
-                <dd>{created.capacity}</dd>
+                <dd>{created.capacity_type === "unlimited" ? "不限" : created.capacity}</dd>
               </div>
               <div>
                 <dt>規則</dt>

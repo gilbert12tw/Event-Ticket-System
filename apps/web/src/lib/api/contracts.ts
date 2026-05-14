@@ -109,6 +109,8 @@ export type ResolveImpactReviewRequest = {
   reason: string;
 };
 
+export type CapacityType = "limited" | "unlimited";
+
 export type EventSummary = {
   event_id: string;
   title: string;
@@ -117,7 +119,9 @@ export type EventSummary = {
   starts_at: string;
   registration_start: string;
   registration_close: string;
-  capacity: number;
+  capacity_type: CapacityType;
+  capacity: number | null;
+  allows_family: boolean;
   status: string;
   allocation_mode: string;
   category?: string;
@@ -134,7 +138,7 @@ export type EventSummary = {
   eligibility_reason: string;
   confirmed_count: number;
   waitlist_count: number;
-  remaining_capacity: number;
+  remaining_capacity: number | null;
   current_user_status: string;
   current_user_ticket?: Ticket;
 };
@@ -328,7 +332,9 @@ export type CreateEventRequest = {
   starts_at: string;
   registration_start: string;
   registration_close: string;
-  capacity: number;
+  capacity_type: CapacityType;
+  capacity: number | null;
+  allows_family: boolean;
   status: string;
   category?: string;
   tags?: string[];
@@ -344,7 +350,9 @@ export type UpdateEventRequest = {
   starts_at?: string;
   registration_start?: string;
   registration_close?: string;
-  capacity?: number;
+  capacity_type?: CapacityType;
+  capacity?: number | null;
+  allows_family?: boolean;
   category?: string;
   tags?: string[];
   entry_method?: string;
