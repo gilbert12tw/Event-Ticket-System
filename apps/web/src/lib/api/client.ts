@@ -299,11 +299,12 @@ export function resolveEligibilityImpactReview(reviewID: string, body: ResolveIm
   });
 }
 
-export function bookEvent(eventID: string, idempotencyKey: string) {
+export function bookEvent(eventID: string, idempotencyKey: string, familyCount = 0) {
   return api<BookingResponse>(`/api/v1/events/${encodeURIComponent(eventID)}/bookings`, {
     method: "POST",
     body: {
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
+      family_count: familyCount
     }
   });
 }

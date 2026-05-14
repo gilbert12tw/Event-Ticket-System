@@ -7,10 +7,23 @@ import { Alert, EmptyState, IdentityCard, Kpi, ProgressMeter, ProviderClaimsCard
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
 
+const MAX_FAMILY_COUNT = 10;
+
+function clampFamilyCount(value: string) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  return String(Math.min(MAX_FAMILY_COUNT, n));
+}
+
+function showFamilyInput(event: EventSummary) {
+  return event.capacity_type === "unlimited" && event.allows_family;
+}
+
 export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [familyCounts, setFamilyCounts] = useState<Record<string, string>>({});
 
   const principalID = claims.employee_id;
   const eventStats = useMemo(
@@ -41,8 +54,9 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
 
   async function book(eventID: string) {
     setMessage("");
+    const familyCount = Number(clampFamilyCount(familyCounts[eventID] ?? "0"));
     try {
-      const result = await bookEvent(eventID, `book-${eventID}-${principalID}`);
+      const result = await bookEvent(eventID, `book-${eventID}-${principalID}`, familyCount);
       setMessage(result.message);
       await refresh();
     } catch (error) {
@@ -133,6 +147,22 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
                   <Kpi label="總名額" value={event.capacity ?? "不限"} />
                   <Kpi label="剩餘" value={event.remaining_capacity ?? "不限"} />
                   <Kpi label="候補" value={event.waitlist_count} />
+                  {showFamilyInput(event) && !event.current_user_status && (
+                    <label className="field compact">
+                      <span>同行家屬人數（0–{MAX_FAMILY_COUNT}）</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={MAX_FAMILY_COUNT}
+                        step={1}
+                        value={familyCounts[event.event_id] ?? "0"}
+                        onChange={(e) =>
+                          setFamilyCounts({ ...familyCounts, [event.event_id]: clampFamilyCount(e.target.value) })
+                        }
+                        disabled={!event.eligible}
+                      />
+                    </label>
+                  )}
                   <button
                     className="button"
                     type="button"
@@ -163,6 +193,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   const [detail, setDetail] = useState<EventSummary | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [familyCount, setFamilyCount] = useState("0");
   const principalID = claims.employee_id;
 
   async function refresh(nextID = selectedID) {
@@ -194,8 +225,9 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   async function bookSelected() {
     if (!detail) return;
     setMessage("");
+    const count = Number(clampFamilyCount(familyCount));
     try {
-      const result = await bookEvent(detail.event_id, `book-${detail.event_id}-${principalID}`);
+      const result = await bookEvent(detail.event_id, `book-${detail.event_id}-${principalID}`, count);
       setMessage(result.message);
       await refresh(detail.event_id);
     } catch (error) {
@@ -295,6 +327,20 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
           <div className="summary-block">
             <Kpi label="剩餘名額" value={detail.remaining_capacity ?? "不限"} />
             <Kpi label="目前狀態" value={detail.current_user_status || "none"} />
+            {showFamilyInput(detail) && !detail.current_user_status && (
+              <label className="field">
+                <span>同行家屬人數（0–{MAX_FAMILY_COUNT}）</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_FAMILY_COUNT}
+                  step={1}
+                  value={familyCount}
+                  onChange={(e) => setFamilyCount(clampFamilyCount(e.target.value))}
+                  disabled={!detail.eligible}
+                />
+              </label>
+            )}
             <button
               className="button full-width"
               type="button"
