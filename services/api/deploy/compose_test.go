@@ -2,47 +2,32 @@ package deploy
 
 import (
 	"os"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestComposeAppPortBindingInvariant(t *testing.T) {
 	compose, err := os.ReadFile("compose.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	envExample, err := os.ReadFile(".env.example")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	composeText := string(compose)
-	if !strings.Contains(composeText, "APP_ADDR: :8080") {
-		t.Fatal("compose app must listen on the published container target port")
-	}
-	if !strings.Contains(composeText, "http://127.0.0.1:8080/readyz") {
-		t.Fatal("compose healthcheck must verify the HTTP readiness endpoint")
-	}
-	if !strings.Contains(composeText, "image: ${API_IMAGE_NAME:-cets-api}:${API_IMAGE_TAG:-dev}") {
-		t.Fatal("compose services must share a tagged API image contract")
-	}
-	if !strings.Contains(composeText, "context: ../../..") || !strings.Contains(composeText, "dockerfile: services/api/Dockerfile") {
-		t.Fatal("compose build must use the repository root context and services/api Dockerfile")
-	}
-	if strings.Contains(string(envExample), "APP_ADDR=") {
-		t.Fatal(".env.example must not expose APP_ADDR because compose publishes container port 8080")
-	}
+	assert.Contains(t, composeText, "APP_ADDR: :8080", "compose app must listen on the published container target port")
+	assert.Contains(t, composeText, "http://127.0.0.1:8080/readyz", "compose healthcheck must verify the HTTP readiness endpoint")
+	assert.Contains(t, composeText, "image: ${API_IMAGE_NAME:-cets-api}:${API_IMAGE_TAG:-dev}", "compose services must share a tagged API image contract")
+	assert.Contains(t, composeText, "context: ../../..", "compose build must use the repository root context")
+	assert.Contains(t, composeText, "dockerfile: services/api/Dockerfile", "compose build must use the services/api Dockerfile")
+	assert.NotContains(t, string(envExample), "APP_ADDR=", ".env.example must not expose APP_ADDR because compose publishes container port 8080")
 }
 
 func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	compose, err := os.ReadFile("compose.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	envExample, err := os.ReadFile(".env.example")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	combined := string(compose) + "\n" + string(envExample)
 
 	required := []string{
@@ -78,25 +63,17 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	}
 
 	for _, fragment := range required {
-		if !strings.Contains(combined, fragment) {
-			t.Fatalf("compose/env contract is missing %q", fragment)
-		}
+		assert.Contains(t, combined, fragment, "compose/env contract is missing %q", fragment)
 	}
 }
 
 func TestComposeDevOverlayDeclaresFrontendHotReloadContract(t *testing.T) {
 	compose, err := os.ReadFile("compose.dev.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	envExample, err := os.ReadFile(".env.example")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	viteConfig, err := os.ReadFile("../../../apps/web/vite.config.ts")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	combined := string(compose) + "\n" + string(envExample) + "\n" + string(viteConfig)
 
 	required := []string{
@@ -128,17 +105,13 @@ func TestComposeDevOverlayDeclaresFrontendHotReloadContract(t *testing.T) {
 	}
 
 	for _, fragment := range required {
-		if !strings.Contains(combined, fragment) {
-			t.Fatalf("frontend hot reload contract is missing %q", fragment)
-		}
+		assert.Contains(t, combined, fragment, "frontend hot reload contract is missing %q", fragment)
 	}
 }
 
 func TestDockerfileBuildsSingleRuntimeBinary(t *testing.T) {
 	dockerfile, err := os.ReadFile("../Dockerfile")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	content := string(dockerfile)
 
 	required := []string{
@@ -159,8 +132,6 @@ func TestDockerfileBuildsSingleRuntimeBinary(t *testing.T) {
 		`ENTRYPOINT ["/app/cets"]`,
 	}
 	for _, fragment := range required {
-		if !strings.Contains(content, fragment) {
-			t.Fatalf("Dockerfile is missing %q", fragment)
-		}
+		assert.Contains(t, content, fragment, "Dockerfile is missing %q", fragment)
 	}
 }

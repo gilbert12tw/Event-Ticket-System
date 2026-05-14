@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
@@ -56,9 +58,7 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 	}
 
 	for _, fragment := range required {
-		if !strings.Contains(schema, fragment) {
-			t.Fatalf("schema is missing %q", fragment)
-		}
+		assert.Contains(t, schema, fragment)
 	}
 }
 
@@ -74,13 +74,9 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
 	defer cleanup()
 
-	if err := dropSchema(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, dropSchema(ctx, pool))
 
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Migrate(ctx, pool))
 
 	requiredTables := []string{
 		"employees",
@@ -97,12 +93,8 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 	}
 	for _, table := range requiredTables {
 		var exists bool
-		if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {
-			t.Fatal(err)
-		}
-		if !exists {
-			t.Fatalf("expected table %s to exist after migration", table)
-		}
+		require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists))
+		assert.True(t, exists, "expected table %s to exist after migration", table)
 	}
 }
 
@@ -118,9 +110,7 @@ func TestMigrateSerializesConcurrentCalls(t *testing.T) {
 	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
 	defer cleanup()
 
-	if err := dropSchema(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, dropSchema(ctx, pool))
 
 	const workers = 4
 	errs := make(chan error, workers)
@@ -136,9 +126,7 @@ func TestMigrateSerializesConcurrentCalls(t *testing.T) {
 	close(errs)
 
 	for err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
+		assert.NoError(t, err)
 	}
 }
 
@@ -154,7 +142,7 @@ func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
 	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
 	defer cleanup()
 
-	if _, err := pool.Exec(ctx, `CREATE TABLE events (
+	_, err := pool.Exec(ctx, `CREATE TABLE events (
 		event_id TEXT PRIMARY KEY,
 		title TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '',
@@ -168,29 +156,23 @@ func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
 		created_by TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-	)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO events
+	)`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO events
 		(event_id, title, starts_at, registration_start, registration_close, capacity, status, created_by)
-		VALUES ('evt_legacy', 'Legacy', now() + interval '7 days', now(), now() + interval '1 day', 25, 'published', 'admin-1')`); err != nil {
-		t.Fatal(err)
-	}
+		VALUES ('evt_legacy', 'Legacy', now() + interval '7 days', now(), now() + interval '1 day', 25, 'published', 'admin-1')`)
+	require.NoError(t, err)
 
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Migrate(ctx, pool))
 
 	var capacityType string
 	var capacity int
 	var allowsFamily bool
-	if err := pool.QueryRow(ctx, `SELECT capacity_type, capacity, allows_family FROM events WHERE event_id = 'evt_legacy'`).
-		Scan(&capacityType, &capacity, &allowsFamily); err != nil {
-		t.Fatal(err)
-	}
-	if capacityType != "limited" || capacity != 25 || allowsFamily {
-		t.Fatalf("legacy capacity columns = %q %d %v", capacityType, capacity, allowsFamily)
-	}
+	require.NoError(t, pool.QueryRow(ctx, `SELECT capacity_type, capacity, allows_family FROM events WHERE event_id = 'evt_legacy'`).
+		Scan(&capacityType, &capacity, &allowsFamily))
+	assert.Equal(t, "limited", capacityType)
+	assert.Equal(t, 25, capacity)
+	assert.False(t, allowsFamily)
 }
 
 func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.T) {
@@ -205,9 +187,7 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
 	defer cleanup()
 
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Migrate(ctx, pool))
 
 	insertEvent := func(eventID string, capacityType string, capacity interface{}, allowsFamily bool) error {
 		_, err := pool.Exec(ctx, `INSERT INTO events
@@ -217,9 +197,7 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 		return err
 	}
 
-	if err := insertEvent("evt_unlimited", "unlimited", nil, true); err != nil {
-		t.Fatalf("unlimited insert failed: %v", err)
-	}
+	require.NoError(t, insertEvent("evt_unlimited", "unlimited", nil, true), "unlimited insert failed")
 	for _, tt := range []struct {
 		name         string
 		eventID      string
@@ -232,9 +210,7 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 		{"limited with family", "evt_limited_family", "limited", 10, true},
 		{"unlimited with capacity", "evt_unlimited_capacity", "unlimited", 10, false},
 	} {
-		if err := insertEvent(tt.eventID, tt.capacityType, tt.capacity, tt.allowsFamily); err == nil {
-			t.Fatalf("%s insert unexpectedly succeeded", tt.name)
-		}
+		assert.Error(t, insertEvent(tt.eventID, tt.capacityType, tt.capacity, tt.allowsFamily), "%s insert unexpectedly succeeded", tt.name)
 	}
 }
 
@@ -268,42 +244,42 @@ func newMigrationTestPool(t *testing.T, ctx context.Context, databaseURL string)
 	t.Helper()
 
 	adminPool, err := Connect(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	adminClosed := false
+	t.Cleanup(func() {
+		if !adminClosed {
+			adminPool.Close()
+		}
+	})
 
 	schema := fmt.Sprintf("migration_test_%d", time.Now().UnixNano())
 	quotedSchema := pgx.Identifier{schema}.Sanitize()
-	if _, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", quotedSchema)); err != nil {
-		adminPool.Close()
-		t.Fatal(err)
-	}
+	_, err = adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", quotedSchema))
+	require.NoError(t, err)
 
 	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		adminPool.Close()
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if cfg.ConnConfig.RuntimeParams == nil {
 		cfg.ConnConfig.RuntimeParams = map[string]string{}
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = schema
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		adminPool.Close()
-		t.Fatal(err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		adminPool.Close()
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	poolClosed := false
+	t.Cleanup(func() {
+		if !poolClosed {
+			pool.Close()
+		}
+	})
+	require.NoError(t, pool.Ping(ctx))
 
 	return pool, func() {
 		pool.Close()
+		poolClosed = true
 		dropCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, _ = adminPool.Exec(dropCtx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quotedSchema))
 		adminPool.Close()
+		adminClosed = true
 	}
 }

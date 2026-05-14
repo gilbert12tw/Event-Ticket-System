@@ -17,6 +17,8 @@ import (
 	"event-ticket-system/internal/ticketing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type fakePinger struct {
@@ -72,9 +74,7 @@ func TestHealthz(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusOK, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":true`, `"status":"ok"`)
 }
 
@@ -90,12 +90,8 @@ func TestRouterGeneratesTraceIDHeader(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	traceID := rec.Header().Get("X-Trace-ID")
-	if traceID == "" {
-		t.Fatal("expected generated X-Trace-ID response header")
-	}
-	if !strings.HasPrefix(traceID, "trc_") {
-		t.Fatalf("trace id = %q", traceID)
-	}
+	require.NotEmpty(t, traceID, "expected generated X-Trace-ID response header")
+	assert.True(t, strings.HasPrefix(traceID, "trc_"), "trace id = %q", traceID)
 }
 
 func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
@@ -117,12 +113,8 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Header().Get("X-Trace-ID") != "trace-test-123" {
-		t.Fatalf("response trace id = %q", rec.Header().Get("X-Trace-ID"))
-	}
-	if service.createTrace != "trace-test-123" {
-		t.Fatalf("service context trace id = %q", service.createTrace)
-	}
+	assert.Equal(t, "trace-test-123", rec.Header().Get("X-Trace-ID"))
+	assert.Equal(t, "trace-test-123", service.createTrace)
 	assertEnvelope(t, logs.String(), `"trace_id":"trace-test-123"`, `"path":"/api/v1/admin/events"`, `"status":201`)
 }
 
@@ -137,12 +129,8 @@ func TestIndexServesDemoUI(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if contentType := rec.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
-		t.Fatalf("content type = %q", contentType)
-	}
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
 	assertEnvelope(t, rec.Body.String(), "企業活動票務系統", `id="root"`, `type="module"`, `/assets/`)
 }
 
@@ -174,9 +162,7 @@ func TestReactSPARoutesServeIndex(t *testing.T) {
 
 			router.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d", rec.Code)
-			}
+			require.Equal(t, http.StatusOK, rec.Code)
 			assertEnvelope(t, rec.Body.String(), "企業活動票務系統", `id="root"`)
 		})
 	}
@@ -189,9 +175,7 @@ func TestStaticAssetIsServedAndMissingAssets404(t *testing.T) {
 		RequestTimeout: time.Second,
 	})
 	entries, err := os.ReadDir("static/assets")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var script string
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".js") {
@@ -199,24 +183,18 @@ func TestStaticAssetIsServedAndMissingAssets404(t *testing.T) {
 			break
 		}
 	}
-	if script == "" {
-		t.Fatal("expected generated React script asset")
-	}
+	require.NotEmpty(t, script, "expected generated React script asset")
 
 	req := httptest.NewRequest(http.MethodGet, script, nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("asset status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusOK, rec.Code)
 	assertEnvelope(t, rec.Body.String(), "React root node is missing")
 
 	req = httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("missing asset status = %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestUnknownAPIPathDoesNotServeSPA(t *testing.T) {
@@ -230,24 +208,16 @@ func TestUnknownAPIPathDoesNotServeSPA(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusNotFound, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":false`, `"not found"`)
-	if strings.Contains(rec.Body.String(), `id="root"`) {
-		t.Fatal("unknown API path served the React SPA")
-	}
+	assert.NotContains(t, rec.Body.String(), `id="root"`, "unknown API path served the React SPA")
 }
 
 func TestReactSourceKeepsPhase1UIContracts(t *testing.T) {
 	html, err := os.ReadFile("static/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	source, err := readReactSourceTree(filepath.Join("..", "..", "..", "..", "apps", "web", "src"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	content := string(html) + "\n" + source
 
 	required := []string{
@@ -290,18 +260,14 @@ func TestReactSourceKeepsPhase1UIContracts(t *testing.T) {
 		"await response.text()",
 	}
 	for _, fragment := range required {
-		if !strings.Contains(content, fragment) {
-			t.Fatalf("React UI contract is missing %q", fragment)
-		}
+		assert.Contains(t, content, fragment, "React UI contract is missing %q", fragment)
 	}
 	forbidden := []string{
 		"\"X-Actor-ID\"",
 		"\"X-Role\"",
 	}
 	for _, fragment := range forbidden {
-		if strings.Contains(content, fragment) {
-			t.Fatalf("React UI contract still exposes legacy header %q", fragment)
-		}
+		assert.NotContains(t, content, fragment, "React UI contract still exposes legacy header %q", fragment)
 	}
 }
 
@@ -343,9 +309,7 @@ func TestReadyzOK(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusOK, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":true`, `"status":"ready"`)
 }
 
@@ -360,9 +324,7 @@ func TestReadyzRejectsUnmigratedDatabase(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":false`, `"database schema is not ready"`)
 }
 
@@ -377,17 +339,13 @@ func TestReadyzDatabaseUnavailable(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":false`, `"database is not ready"`)
 }
 
 func assertEnvelope(t *testing.T, body string, parts ...string) {
 	t.Helper()
 	for _, part := range parts {
-		if !strings.Contains(body, part) {
-			t.Fatalf("response body %q does not contain %q", body, part)
-		}
+		assert.Contains(t, body, part, "response body %q does not contain %q", body, part)
 	}
 }

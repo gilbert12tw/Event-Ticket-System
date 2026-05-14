@@ -3,9 +3,11 @@ package ticketing
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type recordingNotificationSender struct {
@@ -25,22 +27,14 @@ func (s *recordingNotificationSender) Send(ctx context.Context, message Delivery
 
 func TestDeliveryAddressForEmployeeNormalizesLocalMailbox(t *testing.T) {
 	got := deliveryAddressForEmployee(" E1001 ")
-	if got != "e1001@cets.local" {
-		t.Fatalf("address = %q", got)
-	}
+	assert.Equal(t, "e1001@cets.local", got)
 }
 
 func TestDeliveryMessageForOutboxContainsEventType(t *testing.T) {
 	message := deliveryMessageForOutbox("booking.confirmed", "E1001")
-	if message.To != "e1001@cets.local" {
-		t.Fatalf("to = %q", message.To)
-	}
-	if message.Subject != "CETS update: booking.confirmed" {
-		t.Fatalf("subject = %q", message.Subject)
-	}
-	if message.Body == "" {
-		t.Fatal("expected message body")
-	}
+	assert.Equal(t, "e1001@cets.local", message.To)
+	assert.Equal(t, "CETS update: booking.confirmed", message.Subject)
+	assert.NotEmpty(t, message.Body, "expected message body")
 }
 
 func TestSMTPNotificationSenderReturnsCanceledContext(t *testing.T) {
@@ -48,9 +42,7 @@ func TestSMTPNotificationSenderReturnsCanceledContext(t *testing.T) {
 	cancel()
 	err := SMTPNotificationSender{Host: "127.0.0.1", Port: 1, From: "noreply@cets.local"}.
 		Send(ctx, DeliveryMessage{To: "e1001@cets.local", Subject: "test", Body: "body"})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want context.Canceled", err)
-	}
+	assert.ErrorIs(t, err, context.Canceled)
 }
 
 func TestSMTPNotificationSenderRedirectsRecipientInEnvelopeAndBody(t *testing.T) {
@@ -63,25 +55,15 @@ func TestSMTPNotificationSenderRedirectsRecipientInEnvelopeAndBody(t *testing.T)
 	recipient := sender.deliveryRecipient(message)
 	body := sender.deliveryBody(message, recipient)
 
-	if recipient != "notifications@cets.local" {
-		t.Fatalf("recipient = %q, want redirect", recipient)
-	}
-	if strings.Contains(body, "e1001@cets.local") {
-		t.Fatalf("body leaked employee recipient: %q", body)
-	}
-	if !strings.Contains(body, "To: notifications@cets.local") {
-		t.Fatalf("body did not contain redirected recipient: %q", body)
-	}
+	assert.Equal(t, "notifications@cets.local", recipient)
+	assert.NotContains(t, body, "e1001@cets.local", "body leaked employee recipient")
+	assert.Contains(t, body, "To: notifications@cets.local")
 }
 
 func TestNotificationCategorySuppressedMatchesLabelsCaseInsensitive(t *testing.T) {
 	prefs := outboxNotificationPreferences{optedOutCategories: []string{"Family"}}
-	if !notificationCategorySuppressed(prefs, "booking.confirmed", "family") {
-		t.Fatal("expected category suppression")
-	}
-	if notificationCategorySuppressed(prefs, "booking.confirmed", "sports") {
-		t.Fatal("did not expect unrelated category suppression")
-	}
+	assert.True(t, notificationCategorySuppressed(prefs, "booking.confirmed", "family"), "expected category suppression")
+	assert.False(t, notificationCategorySuppressed(prefs, "booking.confirmed", "sports"), "did not expect unrelated category suppression")
 }
 
 func TestProcessOutboxOnceSuppressesDisabledPreferences(t *testing.T) {
@@ -90,32 +72,21 @@ func TestProcessOutboxOnceSuppressesDisabledPreferences(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	seedWorkerEmployee(t, service, ctx)
-	if _, err := service.UpdateNotificationPreferences(ctx, Actor{ID: "E1001", Role: RoleEmployee}, NotificationPreferences{
+	_, err := service.UpdateNotificationPreferences(ctx, Actor{ID: "E1001", Role: RoleEmployee}, NotificationPreferences{
 		EmailEnabled: false,
 		InAppEnabled: false,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
+	require.NoError(t, err)
 	insertWorkerOutbox(t, service, ctx, "out-pref-suppressed", "pending", 0)
 	sender := &recordingNotificationSender{}
 
 	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed != 1 {
-		t.Fatalf("processed = %d, want 1", processed)
-	}
-	if sender.calls != 0 {
-		t.Fatalf("sender calls = %d, want 0", sender.calls)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 0, sender.calls)
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-pref-suppressed")
-	if statuses["email"] != deliveryStatusSuppressed {
-		t.Fatalf("email status = %q, want suppressed", statuses["email"])
-	}
-	if statuses["in_app"] != deliveryStatusSuppressed {
-		t.Fatalf("in_app status = %q, want suppressed", statuses["in_app"])
-	}
+	assert.Equal(t, deliveryStatusSuppressed, statuses["email"])
+	assert.Equal(t, deliveryStatusSuppressed, statuses["in_app"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-pref-suppressed", "published", 1)
 }
 
@@ -135,15 +106,9 @@ func TestProcessOutboxOnceProcessesConfiguredBatch(t *testing.T) {
 		MaxAttempts: 3,
 		BatchSize:   3,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed != 3 {
-		t.Fatalf("processed = %d, want 3", processed)
-	}
-	if sender.calls != 3 {
-		t.Fatalf("sender calls = %d, want 3", sender.calls)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 3, processed)
+	assert.Equal(t, 3, sender.calls)
 	assertWorkerOutboxStatus(t, service, ctx, "out-batch-1", "published", 1)
 	assertWorkerOutboxStatus(t, service, ctx, "out-batch-2", "published", 1)
 	assertWorkerOutboxStatus(t, service, ctx, "out-batch-3", "published", 1)
@@ -159,19 +124,11 @@ func TestProcessOutboxOnceClaimsStaleProcessingOutbox(t *testing.T) {
 	sender := &recordingNotificationSender{}
 
 	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed != 1 {
-		t.Fatalf("processed = %d, want 1", processed)
-	}
-	if sender.calls != 1 {
-		t.Fatalf("sender calls = %d, want 1", sender.calls)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 1, sender.calls)
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-stale-processing")
-	if statuses["email"] != deliveryStatusSent {
-		t.Fatalf("email status = %q, want sent", statuses["email"])
-	}
+	assert.Equal(t, deliveryStatusSent, statuses["email"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-stale-processing", "published", 2)
 }
 
@@ -186,19 +143,11 @@ func TestProcessOutboxOnceDoesNotResendAlreadySentEmail(t *testing.T) {
 	sender := &recordingNotificationSender{}
 
 	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed != 1 {
-		t.Fatalf("processed = %d, want 1", processed)
-	}
-	if sender.calls != 0 {
-		t.Fatalf("sender calls = %d, want 0", sender.calls)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 0, sender.calls)
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-recovered-sent")
-	if statuses["email"] != deliveryStatusSent {
-		t.Fatalf("email status = %q, want sent", statuses["email"])
-	}
+	assert.Equal(t, deliveryStatusSent, statuses["email"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-recovered-sent", "published", 2)
 }
 
@@ -212,19 +161,11 @@ func TestProcessOutboxOnceMarksFailedEmailForRetry(t *testing.T) {
 	sender := &recordingNotificationSender{err: errors.New("smtp unavailable")}
 
 	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed != 1 {
-		t.Fatalf("processed = %d, want 1", processed)
-	}
-	if sender.calls != 1 {
-		t.Fatalf("sender calls = %d, want 1", sender.calls)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 1, sender.calls)
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-email-failed")
-	if statuses["email"] != deliveryStatusFailed {
-		t.Fatalf("email status = %q, want failed", statuses["email"])
-	}
+	assert.Equal(t, deliveryStatusFailed, statuses["email"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-email-failed", "pending", 1)
 }
 
@@ -238,24 +179,16 @@ func TestProcessOutboxOnceMarksDeadLetterAtMaxAttempts(t *testing.T) {
 	sender := &recordingNotificationSender{err: errors.New("smtp unavailable")}
 
 	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed != 1 {
-		t.Fatalf("processed = %d, want 1", processed)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-email-dead-letter")
-	if statuses["email"] != deliveryStatusDeadLetter {
-		t.Fatalf("email status = %q, want dead_letter", statuses["email"])
-	}
+	assert.Equal(t, deliveryStatusDeadLetter, statuses["email"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-email-dead-letter", "dead_letter", 3)
 }
 
 func seedWorkerEmployee(t *testing.T, service *Service, ctx context.Context) {
 	t.Helper()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 }
 
 func insertWorkerOutbox(t *testing.T, service *Service, ctx context.Context, outboxID string, status string, attempts int) {
@@ -264,9 +197,7 @@ func insertWorkerOutbox(t *testing.T, service *Service, ctx context.Context, out
 		(outbox_id, aggregate_id, event_type, payload, publish_status, attempts, available_at)
 		VALUES ($1,$2,'booking.confirmed',$3::jsonb,$4,$5,now() - interval '1 minute')`,
 		outboxID, outboxID+"-aggregate", `{"employee_id":"E1001"}`, status, attempts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func insertWorkerDelivery(t *testing.T, service *Service, ctx context.Context, deliveryID string, outboxID string, channel string, status string) {
@@ -274,29 +205,21 @@ func insertWorkerDelivery(t *testing.T, service *Service, ctx context.Context, d
 	_, err := service.db.Exec(ctx, `INSERT INTO notification_deliveries
 		(delivery_id, outbox_id, employee_id, channel, status)
 		VALUES ($1,$2,'E1001',$3,$4)`, deliveryID, outboxID, channel, status)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func workerDeliveryStatuses(t *testing.T, service *Service, ctx context.Context, outboxID string) map[string]string {
 	t.Helper()
 	rows, err := service.db.Query(ctx, `SELECT channel, status FROM notification_deliveries WHERE outbox_id = $1`, outboxID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer rows.Close()
 	statuses := map[string]string{}
 	for rows.Next() {
 		var channel, status string
-		if err := rows.Scan(&channel, &status); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, rows.Scan(&channel, &status))
 		statuses[channel] = status
 	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, rows.Err())
 	return statuses
 }
 
@@ -304,11 +227,8 @@ func assertWorkerOutboxStatus(t *testing.T, service *Service, ctx context.Contex
 	t.Helper()
 	var gotStatus string
 	var gotAttempts int
-	if err := service.db.QueryRow(ctx, `SELECT publish_status, attempts FROM outbox_events WHERE outbox_id = $1`, outboxID).
-		Scan(&gotStatus, &gotAttempts); err != nil {
-		t.Fatal(err)
-	}
-	if gotStatus != wantStatus || gotAttempts != wantAttempts {
-		t.Fatalf("outbox = (%s, %d), want (%s, %d)", gotStatus, gotAttempts, wantStatus, wantAttempts)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT publish_status, attempts FROM outbox_events WHERE outbox_id = $1`, outboxID).
+		Scan(&gotStatus, &gotAttempts))
+	assert.Equal(t, wantStatus, gotStatus)
+	assert.Equal(t, wantAttempts, gotAttempts)
 }

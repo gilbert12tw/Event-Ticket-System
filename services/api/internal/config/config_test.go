@@ -1,9 +1,11 @@
 package config
 
 import (
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadDefaultsAndEnv(t *testing.T) {
@@ -33,51 +35,27 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 
 	cfg := Load()
 
-	if cfg.AppAddr != ":9090" {
-		t.Fatalf("AppAddr = %q", cfg.AppAddr)
-	}
-	if cfg.AppEnv != "test" {
-		t.Fatalf("AppEnv = %q", cfg.AppEnv)
-	}
-	if cfg.AuthMode != "external_sso" {
-		t.Fatalf("AuthMode = %q", cfg.AuthMode)
-	}
-	if cfg.DatabaseURL == "" {
-		t.Fatal("DatabaseURL was not loaded")
-	}
-	if cfg.RedisURL != "redis://localhost:6379/0" || cfg.QueueURL != "redis://localhost:6379/1" {
-		t.Fatalf("Redis/Queue URLs were not loaded: %#v", cfg)
-	}
-	if cfg.ObjectEndpoint != "http://localhost:9000" || cfg.ObjectBucket != "cets-dev" {
-		t.Fatalf("object storage config was not loaded: %#v", cfg)
-	}
-	if cfg.MailerHost != "mailhog" || cfg.MailerPort != 1025 || cfg.MailerFrom != "tickets@example.test" {
-		t.Fatalf("mailer config was not loaded: %#v", cfg)
-	}
-	if cfg.MailerRedirectTo != "notifications@example.test" {
-		t.Fatalf("MailerRedirectTo = %q", cfg.MailerRedirectTo)
-	}
-	if cfg.TokenSigningSecret != "test-secret" {
-		t.Fatal("TokenSigningSecret was not loaded")
-	}
-	if cfg.ProviderTokenSecret != "provider-test-secret" {
-		t.Fatal("ProviderTokenSecret was not loaded")
-	}
-	if !cfg.AutoMigrate {
-		t.Fatal("AutoMigrate = false")
-	}
-	if cfg.RequestTimeout != 2500*time.Millisecond {
-		t.Fatalf("RequestTimeout = %s", cfg.RequestTimeout)
-	}
-	if cfg.DatabaseTimeout != 1500*time.Millisecond {
-		t.Fatalf("DatabaseTimeout = %s", cfg.DatabaseTimeout)
-	}
-	if cfg.ShutdownTimeout != 7500*time.Millisecond {
-		t.Fatalf("ShutdownTimeout = %s", cfg.ShutdownTimeout)
-	}
-	if cfg.WorkerPollInterval != 1250*time.Millisecond || cfg.WorkerMaxAttempts != 5 || cfg.WorkerBatchSize != 17 {
-		t.Fatalf("worker config = %s/%d/%d", cfg.WorkerPollInterval, cfg.WorkerMaxAttempts, cfg.WorkerBatchSize)
-	}
+	assert.Equal(t, ":9090", cfg.AppAddr)
+	assert.Equal(t, "test", cfg.AppEnv)
+	assert.Equal(t, "external_sso", cfg.AuthMode)
+	assert.NotEmpty(t, cfg.DatabaseURL, "DatabaseURL was not loaded")
+	assert.Equal(t, "redis://localhost:6379/0", cfg.RedisURL)
+	assert.Equal(t, "redis://localhost:6379/1", cfg.QueueURL)
+	assert.Equal(t, "http://localhost:9000", cfg.ObjectEndpoint)
+	assert.Equal(t, "cets-dev", cfg.ObjectBucket)
+	assert.Equal(t, "mailhog", cfg.MailerHost)
+	assert.Equal(t, 1025, cfg.MailerPort)
+	assert.Equal(t, "tickets@example.test", cfg.MailerFrom)
+	assert.Equal(t, "notifications@example.test", cfg.MailerRedirectTo)
+	assert.Equal(t, "test-secret", cfg.TokenSigningSecret)
+	assert.Equal(t, "provider-test-secret", cfg.ProviderTokenSecret)
+	assert.True(t, cfg.AutoMigrate)
+	assert.Equal(t, 2500*time.Millisecond, cfg.RequestTimeout)
+	assert.Equal(t, 1500*time.Millisecond, cfg.DatabaseTimeout)
+	assert.Equal(t, 7500*time.Millisecond, cfg.ShutdownTimeout)
+	assert.Equal(t, 1250*time.Millisecond, cfg.WorkerPollInterval)
+	assert.Equal(t, 5, cfg.WorkerMaxAttempts)
+	assert.Equal(t, 17, cfg.WorkerBatchSize)
 }
 
 func TestValidateForServeRequiresDatabaseURL(t *testing.T) {
@@ -89,9 +67,7 @@ func TestValidateForServeRequiresDatabaseURL(t *testing.T) {
 		ShutdownTimeout: time.Second,
 	}
 
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected missing database URL error")
-	}
+	require.Error(t, cfg.ValidateForServe(), "expected missing database URL error")
 }
 
 func TestLoadedConfigRejectsMalformedProductionValues(t *testing.T) {
@@ -112,63 +88,47 @@ func TestLoadedConfigRejectsMalformedProductionValues(t *testing.T) {
 	t.Setenv("WORKER_MAX_ATTEMPTS", "0")
 
 	err := Load().ValidateForServe()
-	if err == nil {
-		t.Fatal("expected malformed env validation error")
-	}
-	if !strings.Contains(err.Error(), "REQUEST_TIMEOUT_MS") {
-		t.Fatalf("validation error did not include malformed keys: %v", err)
-	}
+	require.Error(t, err, "expected malformed env validation error")
+	assert.Contains(t, err.Error(), "REQUEST_TIMEOUT_MS", "validation error did not include malformed keys")
 }
 
 func TestValidateForServeRequiresProductionSecret(t *testing.T) {
 	cfg := productionServeConfig()
 	cfg.TokenSigningSecret = localTokenSecret
 
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production token secret error")
-	}
+	require.Error(t, cfg.ValidateForServe(), "expected production token secret error")
 }
 
 func TestValidateForServeRejectsDemoSecretInProduction(t *testing.T) {
 	cfg := productionServeConfig()
 	cfg.TokenSigningSecret = demoTokenSecret
 
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production demo secret error")
-	}
+	require.Error(t, cfg.ValidateForServe(), "expected production demo secret error")
 }
 
 func TestValidateForServeRejectsLocalAuthModeInProduction(t *testing.T) {
 	cfg := productionServeConfig()
 	cfg.AuthMode = "local_sso"
 
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production auth mode error")
-	}
+	require.Error(t, cfg.ValidateForServe(), "expected production auth mode error")
 }
 
 func TestValidateForServeRequiresProductionProviderTokenSecret(t *testing.T) {
 	cfg := productionServeConfig()
 	cfg.ProviderTokenSecret = demoProviderSecret
 
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production provider token secret error")
-	}
+	require.Error(t, cfg.ValidateForServe(), "expected production provider token secret error")
 }
 
 func TestValidateForServeRequiresProductionBackingServices(t *testing.T) {
 	cfg := productionServeConfig()
 	cfg.RedisURL = ""
 
-	if err := cfg.ValidateForServe(); err == nil {
-		t.Fatal("expected production Redis URL error")
-	}
+	require.Error(t, cfg.ValidateForServe(), "expected production Redis URL error")
 }
 
 func TestValidateForServeAcceptsProductionShape(t *testing.T) {
-	if err := productionServeConfig().ValidateForServe(); err != nil {
-		t.Fatalf("ValidateForServe returned error: %v", err)
-	}
+	require.NoError(t, productionServeConfig().ValidateForServe())
 }
 
 func TestValidateWorkerRequiresMailerAndPositiveRetryConfig(t *testing.T) {
@@ -183,18 +143,12 @@ func TestValidateWorkerRequiresMailerAndPositiveRetryConfig(t *testing.T) {
 		MailerFrom:         "tickets@example.test",
 	}
 
-	if err := cfg.ValidateWorker(); err != nil {
-		t.Fatalf("ValidateWorker returned error: %v", err)
-	}
+	require.NoError(t, cfg.ValidateWorker())
 	cfg.WorkerMaxAttempts = 0
-	if err := cfg.ValidateWorker(); err == nil {
-		t.Fatal("expected worker max attempts validation error")
-	}
+	require.Error(t, cfg.ValidateWorker(), "expected worker max attempts validation error")
 	cfg.WorkerMaxAttempts = 3
 	cfg.WorkerBatchSize = 0
-	if err := cfg.ValidateWorker(); err == nil {
-		t.Fatal("expected worker batch size validation error")
-	}
+	require.Error(t, cfg.ValidateWorker(), "expected worker batch size validation error")
 }
 
 func TestValidateWorkerRejectsProductionDemoToken(t *testing.T) {
@@ -204,9 +158,7 @@ func TestValidateWorkerRejectsProductionDemoToken(t *testing.T) {
 	cfg.WorkerBatchSize = 25
 	cfg.TokenSigningSecret = demoTokenSecret
 
-	if err := cfg.ValidateWorker(); err == nil {
-		t.Fatal("expected production worker token secret error")
-	}
+	require.Error(t, cfg.ValidateWorker(), "expected production worker token secret error")
 }
 
 func TestValidateWorkerRequiresProductionBackingServices(t *testing.T) {
@@ -216,17 +168,12 @@ func TestValidateWorkerRequiresProductionBackingServices(t *testing.T) {
 	cfg.WorkerBatchSize = 25
 	cfg.QueueURL = ""
 
-	if err := cfg.ValidateWorker(); err == nil {
-		t.Fatal("expected production worker queue URL error")
-	}
+	require.Error(t, cfg.ValidateWorker(), "expected production worker queue URL error")
 }
 
 func TestRedactedDatabaseURL(t *testing.T) {
 	got := RedactedDatabaseURL("postgres://user:pass@localhost:5432/cets")
-	want := "postgres://***:***@localhost:5432/cets"
-	if got != want {
-		t.Fatalf("redacted URL = %q, want %q", got, want)
-	}
+	assert.Equal(t, "postgres://***:***@localhost:5432/cets", got)
 }
 
 func productionServeConfig() Config {

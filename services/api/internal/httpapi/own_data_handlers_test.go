@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"event-ticket-system/internal/ticketing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOwnDataHandlersRejectCallerSuppliedEmployeeID(t *testing.T) {
@@ -43,15 +46,12 @@ func TestOwnDataHandlersRejectCallerSuppliedEmployeeID(t *testing.T) {
 
 			router.ServeHTTP(rec, req)
 
-			if rec.Code != tt.status {
-				t.Fatalf("%s status = %d, want %d, body = %s", tt.path, rec.Code, tt.status, rec.Body.String())
-			}
-			if service.bookCalled {
-				t.Fatal("rejected booking request must not call service.Book")
-			}
-			if service.listEventsEmployeeID != "" || service.getEventEmployeeID != "" || service.eligibilityEmployeeID != "" || service.listTicketsEmployeeID != "" {
-				t.Fatalf("rejected request leaked caller employee id into service: %#v", service)
-			}
+			assert.Equal(t, tt.status, rec.Code, "%s body=%s", tt.path, rec.Body.String())
+			assert.False(t, service.bookCalled, "rejected booking request must not call service.Book")
+			assert.Empty(t, service.listEventsEmployeeID, "rejected request leaked caller employee id")
+			assert.Empty(t, service.getEventEmployeeID, "rejected request leaked caller employee id")
+			assert.Empty(t, service.eligibilityEmployeeID, "rejected request leaked caller employee id")
+			assert.Empty(t, service.listTicketsEmployeeID, "rejected request leaked caller employee id")
 		})
 	}
 }
@@ -79,29 +79,21 @@ func TestOwnDataHandlersUseProviderClaimsIdentity(t *testing.T) {
 
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != tt.status {
-			t.Fatalf("%s %s status = %d, body = %s", tt.method, tt.path, rec.Code, rec.Body.String())
-		}
+		require.Equal(t, tt.status, rec.Code, "%s %s body=%s", tt.method, tt.path, rec.Body.String())
 	}
 
-	if service.listEventsActor.ID != "E1001" || service.listEventsActor.Role != ticketing.RoleEmployee {
-		t.Fatalf("list events actor = %+v", service.listEventsActor)
-	}
-	if service.listEventsEmployeeID != "" || service.getEventEmployeeID != "" || service.eligibilityEmployeeID != "" || service.listTicketsEmployeeID != "" {
-		t.Fatalf("own-data handler passed employee id instead of relying on provider claims: %#v", service)
-	}
-	if !service.bookCalled {
-		t.Fatal("expected canonical booking request to call service.Book")
-	}
-	if service.bookActor.ID != "E1001" || service.bookActor.Role != ticketing.RoleEmployee {
-		t.Fatalf("book actor = %+v", service.bookActor)
-	}
-	if service.bookRequest.EmployeeID != "" {
-		t.Fatalf("booking request employee id = %q", service.bookRequest.EmployeeID)
-	}
-	if service.listTicketsActor.ID != "E1001" || service.listTicketsActor.Role != ticketing.RoleEmployee {
-		t.Fatalf("tickets actor = %+v", service.listTicketsActor)
-	}
+	assert.Equal(t, "E1001", service.listEventsActor.ID)
+	assert.Equal(t, ticketing.RoleEmployee, service.listEventsActor.Role)
+	assert.Empty(t, service.listEventsEmployeeID, "own-data handler passed employee id instead of relying on provider claims")
+	assert.Empty(t, service.getEventEmployeeID, "own-data handler passed employee id instead of relying on provider claims")
+	assert.Empty(t, service.eligibilityEmployeeID, "own-data handler passed employee id instead of relying on provider claims")
+	assert.Empty(t, service.listTicketsEmployeeID, "own-data handler passed employee id instead of relying on provider claims")
+	assert.True(t, service.bookCalled, "expected canonical booking request to call service.Book")
+	assert.Equal(t, "E1001", service.bookActor.ID)
+	assert.Equal(t, ticketing.RoleEmployee, service.bookActor.Role)
+	assert.Empty(t, service.bookRequest.EmployeeID)
+	assert.Equal(t, "E1001", service.listTicketsActor.ID)
+	assert.Equal(t, ticketing.RoleEmployee, service.listTicketsActor.Role)
 }
 
 func testTicketingRouter(service *fakeTicketingService) http.Handler {

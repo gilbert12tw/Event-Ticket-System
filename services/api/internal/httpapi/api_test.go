@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"event-ticket-system/internal/ticketing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
@@ -31,12 +33,9 @@ func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if service.createActor.ID != "admin-1" || service.createActor.Role != ticketing.RoleActivityAdmin {
-		t.Fatalf("actor = %+v", service.createActor)
-	}
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, "admin-1", service.createActor.ID)
+	assert.Equal(t, ticketing.RoleActivityAdmin, service.createActor.Role)
 }
 
 func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
@@ -68,15 +67,13 @@ func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if service.createRequest.CapacityType != ticketing.CapacityTypeUnlimited || service.createRequest.Capacity != 0 || !service.createRequest.AllowsFamily {
-		t.Fatalf("create request capacity fields = %+v", service.createRequest)
-	}
-	if service.createRequest.EventCity != "Taipei" || service.createRequest.EventSite != "HQ" || service.createRequest.Rule.Department != "Engineering" {
-		t.Fatalf("create request OpenAPI fields = %+v", service.createRequest)
-	}
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, ticketing.CapacityTypeUnlimited, service.createRequest.CapacityType)
+	assert.Equal(t, 0, service.createRequest.Capacity)
+	assert.True(t, service.createRequest.AllowsFamily)
+	assert.Equal(t, "Taipei", service.createRequest.EventCity)
+	assert.Equal(t, "HQ", service.createRequest.EventSite)
+	assert.Equal(t, "Engineering", service.createRequest.Rule.Department)
 
 	patch := bytes.NewBufferString(`{"registration_opens_at":"2026-05-02T10:00:00Z","registration_closes_at":"2026-05-21T10:00:00Z","capacity_type":"limited","capacity":25,"allows_family":false}`)
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/events/evt_1", patch)
@@ -85,15 +82,13 @@ func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("patch status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if service.updateRequest.CapacityType == nil || *service.updateRequest.CapacityType != ticketing.CapacityTypeLimited {
-		t.Fatalf("update capacity type = %+v", service.updateRequest.CapacityType)
-	}
-	if service.updateRequest.Capacity == nil || *service.updateRequest.Capacity != 25 || service.updateRequest.RegistrationStart == nil || service.updateRequest.RegistrationClose == nil {
-		t.Fatalf("update OpenAPI fields = %+v", service.updateRequest)
-	}
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotNil(t, service.updateRequest.CapacityType)
+	assert.Equal(t, ticketing.CapacityTypeLimited, *service.updateRequest.CapacityType)
+	require.NotNil(t, service.updateRequest.Capacity)
+	assert.Equal(t, 25, *service.updateRequest.Capacity)
+	assert.NotNil(t, service.updateRequest.RegistrationStart)
+	assert.NotNil(t, service.updateRequest.RegistrationClose)
 }
 
 func TestBookHandlerRejectsMalformedJSON(t *testing.T) {
@@ -112,9 +107,7 @@ func TestBookHandlerRejectsMalformedJSON(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestWriteJSONEncodesNilSlicesAsEmptyArrays(t *testing.T) {
@@ -142,9 +135,7 @@ func TestCheckinHandlerReturnsDuplicateDetailsOnConflict(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	require.Equal(t, http.StatusConflict, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":false`, `"checkin_id":"chk_1"`, `"duplicate":true`)
 }
 
@@ -178,9 +169,7 @@ func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != tt.status {
-			t.Fatalf("%s %s status = %d, body = %s", tt.method, tt.path, rec.Code, rec.Body.String())
-		}
+		assert.Equal(t, tt.status, rec.Code, "%s %s body=%s", tt.method, tt.path, rec.Body.String())
 	}
 }
 
@@ -212,9 +201,7 @@ func TestRegistrationAndTicketGovernanceHandlersExposeProductionRoutes(t *testin
 
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != tt.status {
-			t.Fatalf("%s %s status = %d, body = %s", tt.method, tt.path, rec.Code, rec.Body.String())
-		}
+		assert.Equal(t, tt.status, rec.Code, "%s %s body=%s", tt.method, tt.path, rec.Body.String())
 	}
 }
 
@@ -258,9 +245,7 @@ func TestProductionBoundaryHandlersExposeSpecRoutes(t *testing.T) {
 
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != tt.status {
-			t.Fatalf("%s %s status = %d, body = %s", tt.method, tt.path, rec.Code, rec.Body.String())
-		}
+		assert.Equal(t, tt.status, rec.Code, "%s %s body=%s", tt.method, tt.path, rec.Body.String())
 	}
 }
 
@@ -280,15 +265,11 @@ func TestAuditHandlerParsesServerSideFilterQuery(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if len(service.auditQuery) != 1 {
-		t.Fatalf("expected audit query to be passed, got %#v", service.auditQuery)
-	}
-	if service.auditQuery[0].Action != "event.updated" || service.auditQuery[0].EntityType != "event" || service.auditQuery[0].Limit != 25 {
-		t.Fatalf("audit query = %#v", service.auditQuery[0])
-	}
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, service.auditQuery, 1)
+	assert.Equal(t, "event.updated", service.auditQuery[0].Action)
+	assert.Equal(t, "event", service.auditQuery[0].EntityType)
+	assert.Equal(t, 25, service.auditQuery[0].Limit)
 }
 
 func actorForRole(role string) string {
@@ -325,9 +306,7 @@ func TestSeedDemoHandlerIsHiddenOutsideLocalEnvironments(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestMockProviderTokenIssuesBearerAndMeReadsClaims(t *testing.T) {
@@ -344,34 +323,23 @@ func TestMockProviderTokenIssuesBearerAndMeReadsClaims(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var envelope struct {
 		Data mockProviderTokenResponse `json:"data"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	if envelope.Data.ProviderToken == "" {
-		t.Fatal("expected provider token")
-	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.NotEmpty(t, envelope.Data.ProviderToken)
 	assertEnvelope(t, rec.Body.String(), `"employee_id":"E1001"`, `"claims_status":"complete"`, `"provider_token"`)
-	if strings.Contains(logs.String(), `"actor_id":"E1001"`) || strings.Contains(logs.String(), `"E1001"`) {
-		t.Fatalf("mock auth log leaked raw actor id: %s", logs.String())
-	}
-	if !strings.Contains(logs.String(), `"actor_ref"`) {
-		t.Fatalf("mock auth log missing redacted actor ref: %s", logs.String())
-	}
+	assert.NotContains(t, logs.String(), `"actor_id":"E1001"`, "mock auth log leaked raw actor id")
+	assert.NotContains(t, logs.String(), `"E1001"`, "mock auth log leaked raw actor id")
+	assert.Contains(t, logs.String(), `"actor_ref"`, "mock auth log missing redacted actor ref")
 
 	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	meReq.Header.Set("Authorization", "Bearer "+envelope.Data.ProviderToken)
 	meRec := httptest.NewRecorder()
 	router.ServeHTTP(meRec, meReq)
 
-	if meRec.Code != http.StatusOK {
-		t.Fatalf("me status = %d, body = %s", meRec.Code, meRec.Body.String())
-	}
+	require.Equal(t, http.StatusOK, meRec.Code, meRec.Body.String())
 	assertEnvelope(t, meRec.Body.String(), `"employee_id":"E1001"`, `"mapped_roles":["employee"]`, `"claims_status":"complete"`)
 }
 
@@ -388,12 +356,8 @@ func TestMockProviderTokenRejectsUnknownProfile(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "provider_token") {
-		t.Fatal("invalid mock profile must not return a provider token")
-	}
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "provider_token", "invalid mock profile must not return a provider token")
 }
 
 func TestMeRequiresProviderBearerAndLogoutRouteIsRemoved(t *testing.T) {
@@ -409,17 +373,13 @@ func TestMeRequiresProviderBearerAndLogoutRouteIsRemoved(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
 	logoutReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 	logoutRec := httptest.NewRecorder()
 	router.ServeHTTP(logoutRec, logoutReq)
 
-	if logoutRec.Code != http.StatusNotFound && logoutRec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("logout status = %d", logoutRec.Code)
-	}
+	assert.True(t, logoutRec.Code == http.StatusNotFound || logoutRec.Code == http.StatusMethodNotAllowed, "logout status = %d", logoutRec.Code)
 }
 
 func TestLocalSSORoutesAreRemoved(t *testing.T) {
@@ -436,9 +396,7 @@ func TestLocalSSORoutesAreRemoved(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	assert.True(t, rec.Code == http.StatusNotFound || rec.Code == http.StatusMethodNotAllowed, "status = %d", rec.Code)
 }
 
 func TestProtectedAPIRejectsTamperedBearerWithoutLegacyFallback(t *testing.T) {
@@ -458,10 +416,6 @@ func TestProtectedAPIRejectsTamperedBearerWithoutLegacyFallback(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "evt_1") {
-		t.Fatal("tampered bearer should not fall back to legacy headers")
-	}
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "evt_1", "tampered bearer should not fall back to legacy headers")
 }

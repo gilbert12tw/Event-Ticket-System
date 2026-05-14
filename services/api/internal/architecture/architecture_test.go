@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const maxHandwrittenGoLines = 500
@@ -37,12 +40,8 @@ func TestHandwrittenGoFilesStayUnderLimit(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(offenders) > 0 {
-		t.Fatalf("hand-written Go files exceed %d lines: %s", maxHandwrittenGoLines, strings.Join(offenders, ", "))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, offenders, "hand-written Go files exceed %d lines: %s", maxHandwrittenGoLines, strings.Join(offenders, ", "))
 }
 
 func TestHandwrittenWebFilesStayUnderLimit(t *testing.T) {
@@ -69,12 +68,8 @@ func TestHandwrittenWebFilesStayUnderLimit(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(offenders) > 0 {
-		t.Fatalf("hand-written web files exceed %d lines: %s", maxHandwrittenWebLines, strings.Join(offenders, ", "))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, offenders, "hand-written web files exceed %d lines: %s", maxHandwrittenWebLines, strings.Join(offenders, ", "))
 }
 
 func TestTicketingDoesNotImportHTTPAPI(t *testing.T) {
@@ -100,12 +95,8 @@ func TestTicketingDoesNotImportHTTPAPI(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(offenders) > 0 {
-		t.Fatalf("ticketing must not import httpapi: %s", strings.Join(offenders, ", "))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, offenders, "ticketing must not import httpapi: %s", strings.Join(offenders, ", "))
 }
 
 func TestPhase1DocsDoNotClaimDeferredInfrastructureIsComplete(t *testing.T) {
@@ -144,21 +135,15 @@ func TestPhase1DocsDoNotClaimDeferredInfrastructureIsComplete(t *testing.T) {
 			}
 			return nil
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
-	if len(offenders) > 0 {
-		t.Fatalf("Phase 1 docs claim deferred infrastructure is complete: %s", strings.Join(offenders, "; "))
-	}
+	assert.Empty(t, offenders, "Phase 1 docs claim deferred infrastructure is complete: %s", strings.Join(offenders, "; "))
 }
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return root
 }
 
