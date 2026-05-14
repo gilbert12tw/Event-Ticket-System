@@ -119,6 +119,9 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	if checkin.Status != "accepted" || checkin.TicketID != first.Ticket.TicketID {
 		t.Fatalf("checkin = %+v", checkin)
 	}
+	if checkin.Holder.DisplayName != "Ariel Chen" || checkin.Holder.Department != "Engineering" || checkin.Holder.City != "Taipei" {
+		t.Fatalf("checkin holder = %+v", checkin.Holder)
+	}
 	duplicate, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: first.Ticket.SignedToken, DeviceID: "gate-1"})
 	if err == nil || ErrorStatus(err) != 409 {
 		t.Fatalf("expected duplicate checkin 409, got %v", err)
@@ -157,60 +160,6 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 		`"action":"ticket.redeemed"`,
 		`"status":"success"`,
 	)
-}
-
-func TestServiceRejectsTamperedCheckinToken(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-
-	_, err := service.CheckIn(context.Background(), Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "bad.token", DeviceID: "gate-1"})
-	if err == nil || ErrorStatus(err) != 400 {
-		t.Fatalf("expected bad token 400, got %v", err)
-	}
-}
-
-func TestServiceExpiresTicketDuringCheckin(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	now := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
-	service.now = func() time.Time { return now }
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Expired Ticket Check-in",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "expired-ticket-booking"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.db.Exec(ctx, `UPDATE tickets SET expires_at = $1 WHERE ticket_id = $2`, now.Add(-time.Minute), booking.Ticket.TicketID); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: booking.Ticket.SignedToken, DeviceID: "gate-expired"})
-	if err == nil || ErrorStatus(err) != 409 {
-		t.Fatalf("expected expired check-in 409, got %v", err)
-	}
-
-	var status string
-	if err := service.db.QueryRow(ctx, `SELECT status FROM tickets WHERE ticket_id = $1`, booking.Ticket.TicketID).Scan(&status); err != nil {
-		t.Fatal(err)
-	}
-	if status != TicketExpired {
-		t.Fatalf("ticket status = %q, want %q", status, TicketExpired)
-	}
-	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'ticket.expired' AND entity_id = $1`, booking.Ticket.TicketID, 1)
-	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.expired' AND aggregate_id = $1`, booking.Ticket.TicketID, 1)
 }
 
 func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {

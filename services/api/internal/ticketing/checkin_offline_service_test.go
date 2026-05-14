@@ -76,6 +76,9 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(pkg.Tickets) != 1 || pkg.Tickets[0].Holder.DisplayName == "" || pkg.Tickets[0].Holder.Department == "" || pkg.Tickets[0].Holder.City == "" {
+		t.Fatalf("offline package holder data = %+v", pkg.Tickets)
+	}
 
 	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
 		BatchID:          pkg.BatchID,

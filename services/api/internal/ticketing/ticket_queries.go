@@ -30,26 +30,34 @@ func (s *Service) createTicketTx(ctx context.Context, tx pgx.Tx, reg Registratio
 		return Ticket{}, err
 	}
 	return Ticket{
-		TicketID:       ticketID,
-		RegistrationID: reg.RegistrationID,
-		EventID:        reg.EventID,
-		EmployeeID:     reg.EmployeeID,
-		Status:         TicketActive,
-		SequenceNumber: 1,
-		SignedToken:    token,
-		QRPayload:      qrPayload,
-		ExpiresAt:      expiresAt,
-		IssuedAt:       issuedAt,
-		EmployeeName:   employee.FullName,
+		TicketID:        ticketID,
+		RegistrationID:  reg.RegistrationID,
+		EventID:         reg.EventID,
+		EmployeeID:      reg.EmployeeID,
+		Status:          TicketActive,
+		SequenceNumber:  1,
+		SignedToken:     token,
+		QRPayload:       qrPayload,
+		ExpiresAt:       expiresAt,
+		IssuedAt:        issuedAt,
+		EmployeeName:    employee.FullName,
+		Department:      employee.Department,
+		City:            employee.Site,
+		FamilyCount:     reg.FamilyCount,
+		NonTransferable: true,
 	}, nil
 }
 
 func (s *Service) findTicketByRegistration(ctx context.Context, registrationID string) (*Ticket, error) {
 	var ticket Ticket
-	err := s.db.QueryRow(ctx, `SELECT ticket_id, registration_id, event_id, employee_id, status, sequence_number,
-			COALESCE(expires_at, issued_at + interval '24 hours'), revoked_reason, issued_at
-		FROM tickets WHERE registration_id = $1`, registrationID).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt)
+	err := s.db.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
+			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at,
+			r.family_count, e.full_name, e.department, e.site
+		FROM tickets t
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees e ON e.employee_id = t.employee_id
+		WHERE t.registration_id = $1`, registrationID).
+		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -59,15 +67,20 @@ func (s *Service) findTicketByRegistration(ctx context.Context, registrationID s
 	if err := s.hydrateTicketToken(&ticket); err != nil {
 		return nil, err
 	}
+	ticket.NonTransferable = true
 	return &ticket, err
 }
 
 func (s *Service) findTicketByRegistrationTx(ctx context.Context, tx pgx.Tx, registrationID string) (*Ticket, error) {
 	var ticket Ticket
-	err := tx.QueryRow(ctx, `SELECT ticket_id, registration_id, event_id, employee_id, status, sequence_number,
-			COALESCE(expires_at, issued_at + interval '24 hours'), revoked_reason, issued_at
-		FROM tickets WHERE registration_id = $1`, registrationID).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt)
+	err := tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
+			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at,
+			r.family_count, e.full_name, e.department, e.site
+		FROM tickets t
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees e ON e.employee_id = t.employee_id
+		WHERE t.registration_id = $1`, registrationID).
+		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -77,18 +90,24 @@ func (s *Service) findTicketByRegistrationTx(ctx context.Context, tx pgx.Tx, reg
 	if err := s.hydrateTicketToken(&ticket); err != nil {
 		return nil, err
 	}
+	ticket.NonTransferable = true
 	return &ticket, err
 }
 
 func (s *Service) lockTicketTx(ctx context.Context, tx pgx.Tx, ticketID string) (Ticket, error) {
 	var ticket Ticket
-	err := tx.QueryRow(ctx, `SELECT ticket_id, registration_id, event_id, employee_id, status, sequence_number,
-			COALESCE(expires_at, issued_at + interval '24 hours'), revoked_reason, issued_at
-		FROM tickets WHERE ticket_id = $1 FOR UPDATE`, ticketID).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt)
+	err := tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
+			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at,
+			r.family_count, e.full_name, e.department, e.site
+		FROM tickets t
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees e ON e.employee_id = t.employee_id
+		WHERE t.ticket_id = $1 FOR UPDATE OF t`, ticketID).
+		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if err == pgx.ErrNoRows {
 		return Ticket{}, notFound("ticket not found")
 	}
+	ticket.NonTransferable = true
 	return ticket, err
 }
 
