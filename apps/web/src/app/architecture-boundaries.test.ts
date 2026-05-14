@@ -16,7 +16,7 @@ describe("frontend architecture boundaries", () => {
     const uiFiles = filesUnder(join(srcDir, "components/ui"));
 
     expect(uiFiles.some((file) => file.endsWith("button.tsx"))).toBe(true);
-    expect(uiFiles.every((file) => file.includes("components/ui"))).toBe(true);
+    expect(uiFiles.every((file) => file.replaceAll("\\", "/").includes("components/ui"))).toBe(true);
   });
 
   it("keeps shared and layout components independent from feature modules", () => {
