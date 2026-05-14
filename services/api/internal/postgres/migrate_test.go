@@ -51,6 +51,8 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS report_exports",
 		"ALTER TABLE events ALTER COLUMN capacity DROP NOT NULL",
 		"ALTER TABLE events ADD CONSTRAINT events_capacity_rules_check",
+		"family_count INTEGER NOT NULL DEFAULT 0",
+		"registrations_family_count_check",
 	}
 
 	for _, fragment := range required {

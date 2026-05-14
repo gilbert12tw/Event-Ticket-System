@@ -19,9 +19,12 @@ func normalizeEventCapacity(capacityType string, capacity int, allowsFamily bool
 		normalizedType = CapacityTypeLimited
 	}
 	var normalizedCapacity *int
-	normalizedAllowsFamily := allowsFamily
+	var normalizedAllowsFamily bool
 	switch normalizedType {
 	case CapacityTypeLimited:
+		if allowsFamily {
+			return "", nil, false, badRequest("limited events cannot allow family attendees")
+		}
 		normalizedCapacity = intPtr(capacity)
 		normalizedAllowsFamily = false
 	case CapacityTypeUnlimited:
@@ -29,10 +32,11 @@ func normalizeEventCapacity(capacityType string, capacity int, allowsFamily bool
 			return "", nil, false, badRequest("capacity must be null for unlimited events")
 		}
 		normalizedCapacity = nil
+		normalizedAllowsFamily = true
 	default:
 		return "", nil, false, badRequest("capacity_type must be limited or unlimited")
 	}
-	event := Event{CapacityType: normalizedType, Capacity: normalizedCapacity, AllowsFamily: allowsFamily}
+	event := Event{CapacityType: normalizedType, Capacity: normalizedCapacity, AllowsFamily: normalizedAllowsFamily}
 	if err := validateEventCapacity(event); err != nil {
 		return "", nil, false, err
 	}
@@ -51,6 +55,9 @@ func validateEventCapacity(event Event) error {
 	case CapacityTypeUnlimited:
 		if event.Capacity != nil {
 			return badRequest("capacity must be null for unlimited events")
+		}
+		if !event.AllowsFamily {
+			return badRequest("unlimited events must allow family attendees")
 		}
 	default:
 		return badRequest("capacity_type must be limited or unlimited")
