@@ -1,6 +1,11 @@
 package ticketing
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestEvaluateEligibilityEligible(t *testing.T) {
 	employee := Employee{EmployeeID: "E1001", Department: "Engineering", Site: "Taipei", JobGrade: 6, EmploymentStatus: "active"}
@@ -8,9 +13,7 @@ func TestEvaluateEligibilityEligible(t *testing.T) {
 
 	ok, reason := EvaluateEligibility(employee, rule)
 
-	if !ok {
-		t.Fatalf("expected eligible, got reason %q", reason)
-	}
+	require.True(t, ok, "expected eligible, got reason %q", reason)
 }
 
 func TestEvaluateEligibilityRejectsMismatchWithReason(t *testing.T) {
@@ -19,10 +22,6 @@ func TestEvaluateEligibilityRejectsMismatchWithReason(t *testing.T) {
 
 	ok, reason := EvaluateEligibility(employee, rule)
 
-	if ok {
-		t.Fatal("expected ineligible")
-	}
-	if reason == "" {
-		t.Fatal("expected rejection reason")
-	}
+	require.False(t, ok, "expected ineligible")
+	assert.NotEmpty(t, reason, "expected rejection reason")
 }

@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type recordingRoundTripper struct {
@@ -48,22 +51,11 @@ func TestS3CompatibleStorePutSignsAndUploadsObject(t *testing.T) {
 		now:       func() time.Time { return time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC) },
 	}
 
-	if err := store.Put(context.Background(), "exports/report 1.csv", "text/csv", []byte("event_id,title\n")); err != nil {
-		t.Fatal(err)
-	}
-	if transport.request.URL.EscapedPath() != "/cets-dev/exports/report%201.csv" {
-		t.Fatalf("path = %q", transport.request.URL.EscapedPath())
-	}
-	gotAuth := transport.request.Header.Get("Authorization")
-	if !strings.Contains(gotAuth, "AWS4-HMAC-SHA256 Credential=minioadmin/20260506/us-east-1/s3/aws4_request") {
-		t.Fatalf("authorization header = %q", gotAuth)
-	}
-	if transport.request.Header.Get("X-Amz-Content-Sha256") == "" {
-		t.Fatal("expected payload hash")
-	}
-	if transport.body != "event_id,title\n" {
-		t.Fatalf("body = %q", transport.body)
-	}
+	require.NoError(t, store.Put(context.Background(), "exports/report 1.csv", "text/csv", []byte("event_id,title\n")))
+	assert.Equal(t, "/cets-dev/exports/report%201.csv", transport.request.URL.EscapedPath())
+	assert.Contains(t, transport.request.Header.Get("Authorization"), "AWS4-HMAC-SHA256 Credential=minioadmin/20260506/us-east-1/s3/aws4_request")
+	assert.NotEmpty(t, transport.request.Header.Get("X-Amz-Content-Sha256"), "expected payload hash")
+	assert.Equal(t, "event_id,title\n", transport.body)
 }
 
 func TestS3CompatibleStorePutReturnsStorageError(t *testing.T) {
@@ -79,7 +71,6 @@ func TestS3CompatibleStorePutReturnsStorageError(t *testing.T) {
 	}
 
 	err := store.Put(context.Background(), "exports/report.csv", "text/csv", []byte("event_id,title\n"))
-	if err == nil || !strings.Contains(err.Error(), "status=503") {
-		t.Fatalf("err = %v, want status error", err)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "status=503")
 }

@@ -37,3 +37,14 @@ Extract helpers when they improve names, reduce nesting, isolate business rules,
 - Keep data flow explicit so callers can see dependencies, idempotency keys, transactions, and authorization decisions.
 
 Review code for design, functionality, complexity, tests, naming, comments, style, and documentation.
+
+## Testing
+
+Go tests under `services/api` use `github.com/stretchr/testify` — `require` and `assert` only. Do not write new tests with raw `if err != nil { t.Fatalf(...) }` / `if got != want { ... }` patterns.
+
+- `require.*` when the rest of the test cannot proceed if the check fails (setup, preconditions, anything later code dereferences or indexes). Stops the test on failure.
+- `assert.*` for terminal verifications where other assertions in the same test still add signal. Continues on failure.
+- Argument order is `(t, expected, actual)` — e.g. `assert.Equal(t, want, got)`. Do not flip it.
+- Prefer specific matchers over generic ones: `require.NoError`, `require.Error`, `assert.Equal`, `assert.Contains`, `assert.Len`, `assert.Empty`, `assert.True/False`. Avoid hand-rolled string formatting in `t.Errorf` once a matcher exists.
+- Split compound conditions (`if a != x || b != y { ... }`) into one assertion per field so failure messages name the field that broke.
+- Inside test helpers, keep `t.Helper()` and use `require.*` so the helper still fails the caller's line.

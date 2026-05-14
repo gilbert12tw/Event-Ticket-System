@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSignerRoundTripAndHash(t *testing.T) {
@@ -15,36 +18,29 @@ func TestSignerRoundTripAndHash(t *testing.T) {
 	}
 
 	token, err := signer.Sign(claims)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	got, err := signer.Verify(token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.TicketID != claims.TicketID || got.EventID != claims.EventID || got.EmployeeID != claims.EmployeeID {
-		t.Fatalf("claims = %+v", got)
-	}
-	if signer.HashToken(token) == "" || signer.HashToken(token) == token {
-		t.Fatal("expected non-empty token hash")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, claims.TicketID, got.TicketID)
+	assert.Equal(t, claims.EventID, got.EventID)
+	assert.Equal(t, claims.EmployeeID, got.EmployeeID)
+	hash := signer.HashToken(token)
+	assert.NotEmpty(t, hash)
+	assert.NotEqual(t, token, hash)
 }
 
 func TestSignerRejectsTampering(t *testing.T) {
 	signer := NewSigner("test-secret")
 	token, err := signer.Sign(TicketClaims{TicketID: "tkt_1", EventID: "evt_1", EmployeeID: "E1001"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	tampered := strings.Replace(token, "E", "F", 1)
 	if tampered == token {
 		tampered = token + "x"
 	}
 
-	if _, err := signer.Verify(tampered); err == nil {
-		t.Fatal("expected tampered token error")
-	}
+	_, err = signer.Verify(tampered)
+	require.Error(t, err, "expected tampered token error")
 }
 
 func TestSignerOfflinePackageRoundTrip(t *testing.T) {
@@ -58,14 +54,12 @@ func TestSignerOfflinePackageRoundTrip(t *testing.T) {
 	}
 
 	token, err := signer.SignOfflinePackage(claims)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	got, err := signer.VerifyOfflinePackage(token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.BatchID != claims.BatchID || got.EventID != claims.EventID || got.DeviceID != claims.DeviceID || got.StaffID != claims.StaffID || !got.ValidUntil.Equal(claims.ValidUntil) {
-		t.Fatalf("claims = %+v", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, claims.BatchID, got.BatchID)
+	assert.Equal(t, claims.EventID, got.EventID)
+	assert.Equal(t, claims.DeviceID, got.DeviceID)
+	assert.Equal(t, claims.StaffID, got.StaffID)
+	assert.True(t, got.ValidUntil.Equal(claims.ValidUntil), "ValidUntil mismatch: got %v want %v", got.ValidUntil, claims.ValidUntil)
 }

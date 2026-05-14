@@ -4,15 +4,16 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSyncOfflineCheckinsValidatesBatchOwnershipBeforeScans(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
 	event, ticket := createOfflineSyncTicket(t, service, ctx, "Ownership Check", "E1001", "ownership-ticket")
@@ -33,9 +34,7 @@ func TestSyncOfflineCheckinsValidatesBatchOwnershipBeforeScans(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			_, err = service.SyncOfflineCheckins(ctx, tt.actor, OfflineCheckinSyncRequest{
 				BatchID:          pkg.BatchID,
 				EventID:          tt.eventID,
@@ -43,9 +42,8 @@ func TestSyncOfflineCheckinsValidatesBatchOwnershipBeforeScans(t *testing.T) {
 				PackageSignature: pkg.PackageSignature,
 				Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: time.Now().UTC()}},
 			})
-			if err == nil || ErrorStatus(err) != tt.wantError {
-				t.Fatalf("expected %d ownership error, got %v", tt.wantError, err)
-			}
+			require.Error(t, err, "expected ownership error")
+			assert.Equal(t, tt.wantError, ErrorStatus(err))
 			assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM checkin_records WHERE ticket_id = $1`, []interface{}{ticket.TicketID}, 0)
 			assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM offline_checkin_scans WHERE batch_id = $1`, []interface{}{pkg.BatchID}, 0)
 			assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'offline_checkin.conflict' AND metadata->>'batch_id' = $1`, []interface{}{pkg.BatchID}, 0)
@@ -57,25 +55,18 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
 	event, ticket := createOfflineSyncTicket(t, service, ctx, "Per Scan Conflicts", "E1001", "conflict-ticket")
 	_, otherTicket := createOfflineSyncTicket(t, service, ctx, "Mismatched Event Token", "E1002", "mismatch-ticket")
 	_, claimsMismatchTicket := createOfflineSyncTicket(t, service, ctx, "Mismatched Claims Token", "E1001", "claims-mismatch-ticket")
 	claimsMismatchToken, err := service.signer.Sign(TicketClaims{TicketID: claimsMismatchTicket.TicketID, EventID: claimsMismatchTicket.EventID, EmployeeID: "E1002"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.db.Exec(ctx, `UPDATE tickets SET signed_token_hash = $1 WHERE ticket_id = $2`, service.signer.HashToken(claimsMismatchToken), claimsMismatchTicket.TicketID); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `UPDATE tickets SET signed_token_hash = $1 WHERE ticket_id = $2`, service.signer.HashToken(claimsMismatchToken), claimsMismatchTicket.TicketID)
+	require.NoError(t, err)
 	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
 		BatchID:          pkg.BatchID,
@@ -89,24 +80,19 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 			{SignedToken: ticket.SignedToken, ScannedAt: time.Now().UTC().Add(4 * time.Second)},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.Accepted != 1 || response.Duplicate != 0 || response.Conflict != 3 || len(response.Results) != 4 {
-		t.Fatalf("response counts = %+v", response)
-	}
-	if response.Results[0].Status != "conflict" || response.Results[0].ConflictReason != "invalid_ticket_token" {
-		t.Fatalf("invalid token result = %+v", response.Results[0])
-	}
-	if response.Results[1].Status != "conflict" || response.Results[1].ConflictReason != "offline_scan_event_mismatch" {
-		t.Fatalf("mismatched token result = %+v", response.Results[1])
-	}
-	if response.Results[2].Status != "conflict" || response.Results[2].ConflictReason != "ticket_token_claims_mismatch" {
-		t.Fatalf("claims mismatch result = %+v", response.Results[2])
-	}
-	if response.Results[3].Status != "accepted" || response.Results[3].TicketID != ticket.TicketID {
-		t.Fatalf("accepted token result = %+v", response.Results[3])
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, response.Accepted)
+	assert.Equal(t, 0, response.Duplicate)
+	assert.Equal(t, 3, response.Conflict)
+	require.Len(t, response.Results, 4)
+	assert.Equal(t, "conflict", response.Results[0].Status)
+	assert.Equal(t, "invalid_ticket_token", response.Results[0].ConflictReason)
+	assert.Equal(t, "conflict", response.Results[1].Status)
+	assert.Equal(t, "offline_scan_event_mismatch", response.Results[1].ConflictReason)
+	assert.Equal(t, "conflict", response.Results[2].Status)
+	assert.Equal(t, "ticket_token_claims_mismatch", response.Results[2].ConflictReason)
+	assert.Equal(t, "accepted", response.Results[3].Status)
+	assert.Equal(t, ticket.TicketID, response.Results[3].TicketID)
 
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM checkin_records WHERE ticket_id = $1`, []interface{}{ticket.TicketID}, 1)
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM checkin_records WHERE ticket_id = $1`, []interface{}{otherTicket.TicketID}, 0)
@@ -117,28 +103,20 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'offline_checkin.conflict' AND metadata->>'batch_id' = $1`, []interface{}{pkg.BatchID}, 3)
 
 	var batchStatus string
-	if err := service.db.QueryRow(ctx, `SELECT status FROM offline_checkin_batches WHERE batch_id = $1`, pkg.BatchID).Scan(&batchStatus); err != nil {
-		t.Fatal(err)
-	}
-	if batchStatus != "conflict" {
-		t.Fatalf("batch status = %s, want conflict", batchStatus)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT status FROM offline_checkin_batches WHERE batch_id = $1`, pkg.BatchID).Scan(&batchStatus))
+	assert.Equal(t, "conflict", batchStatus)
 }
 
 func TestSyncOfflineCheckinsKeepsFirstCommitWinsForRepeatedScans(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
 	event, ticket := createOfflineSyncTicket(t, service, ctx, "First Commit Wins", "E1001", "first-commit-ticket")
 	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	firstScannedAt := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
 
 	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
@@ -151,18 +129,16 @@ func TestSyncOfflineCheckinsKeepsFirstCommitWinsForRepeatedScans(t *testing.T) {
 			{SignedToken: ticket.SignedToken, ScannedAt: firstScannedAt.Add(time.Minute)},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.Accepted != 1 || response.Duplicate != 1 || response.Conflict != 0 || len(response.Results) != 2 {
-		t.Fatalf("response counts = %+v", response)
-	}
-	if response.Results[0].Status != "accepted" || response.Results[0].CheckinID == "" {
-		t.Fatalf("first scan result = %+v", response.Results[0])
-	}
-	if !response.Results[1].Duplicate || response.Results[1].FirstScannedBy != staff.ID || !response.Results[1].FirstScannedAt.Equal(firstScannedAt) {
-		t.Fatalf("duplicate scan result = %+v", response.Results[1])
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 1, response.Accepted)
+	assert.Equal(t, 1, response.Duplicate)
+	assert.Equal(t, 0, response.Conflict)
+	require.Len(t, response.Results, 2)
+	assert.Equal(t, "accepted", response.Results[0].Status)
+	assert.NotEmpty(t, response.Results[0].CheckinID)
+	assert.True(t, response.Results[1].Duplicate)
+	assert.Equal(t, staff.ID, response.Results[1].FirstScannedBy)
+	assert.True(t, response.Results[1].FirstScannedAt.Equal(firstScannedAt))
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM checkin_records WHERE ticket_id = $1`, []interface{}{ticket.TicketID}, 1)
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM offline_checkin_scans WHERE batch_id = $1 AND status = 'accepted'`, []interface{}{pkg.BatchID}, 1)
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM offline_checkin_scans WHERE batch_id = $1 AND status = 'duplicate'`, []interface{}{pkg.BatchID}, 1)
@@ -175,21 +151,15 @@ func TestSyncOfflineCheckinsRejectsTamperedOrExpiredPackage(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	now := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
 	event, ticket := createOfflineSyncTicket(t, service, ctx, "Package Signature", "E1001", "package-signature-ticket")
 	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pkg.PackageSignature == "" {
-		t.Fatal("offline package signature must be returned")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, pkg.PackageSignature, "offline package signature must be returned")
 
 	_, err = service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
 		BatchID:          pkg.BatchID,
@@ -198,9 +168,8 @@ func TestSyncOfflineCheckinsRejectsTamperedOrExpiredPackage(t *testing.T) {
 		PackageSignature: pkg.PackageSignature + "tampered",
 		Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: now}},
 	})
-	if err == nil || ErrorStatus(err) != 400 {
-		t.Fatalf("expected tampered package error, got %v", err)
-	}
+	require.Error(t, err, "expected tampered package error")
+	assert.Equal(t, 400, ErrorStatus(err))
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM offline_checkin_scans WHERE batch_id = $1`, []interface{}{pkg.BatchID}, 0)
 
 	service.now = func() time.Time { return pkg.ValidUntil.Add(time.Second) }
@@ -211,9 +180,8 @@ func TestSyncOfflineCheckinsRejectsTamperedOrExpiredPackage(t *testing.T) {
 		PackageSignature: pkg.PackageSignature,
 		Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: now}},
 	})
-	if err == nil || ErrorStatus(err) != 409 {
-		t.Fatalf("expected expired package conflict, got %v", err)
-	}
+	require.Error(t, err, "expected expired package conflict")
+	assert.Equal(t, 409, ErrorStatus(err))
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM offline_checkin_scans WHERE batch_id = $1`, []interface{}{pkg.BatchID}, 0)
 }
 
@@ -225,26 +193,16 @@ func createOfflineSyncTicket(t *testing.T, service *Service, ctx context.Context
 		Status:   EventStatusPublished,
 		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	booking, err := service.Book(ctx, Actor{ID: employeeID, Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: employeeID, IdempotencyKey: idempotencyKey})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if booking.Ticket == nil {
-		t.Fatalf("booking did not issue a ticket: %+v", booking)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, booking.Ticket, "booking did not issue a ticket")
 	return event, *booking.Ticket
 }
 
 func assertOfflineSyncCount(t *testing.T, service *Service, ctx context.Context, query string, args []interface{}, want int) {
 	t.Helper()
 	var got int
-	if err := service.db.QueryRow(ctx, query, args...).Scan(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got != want {
-		t.Fatalf("row count for %q = %d, want %d", query, got, want)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, query, args...).Scan(&got))
+	assert.Equal(t, want, got, "row count for %q", query)
 }

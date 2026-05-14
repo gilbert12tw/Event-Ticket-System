@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"event-ticket-system/internal/ticketing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProviderBearerMeReturnsCompleteClaims(t *testing.T) {
@@ -28,9 +31,7 @@ func TestProviderBearerMeReturnsCompleteClaims(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assertEnvelope(t, rec.Body.String(),
 		`"employee_id":"E1001"`,
 		`"display_name":"Ariel Chen"`,
@@ -47,9 +48,7 @@ func TestBearerTokenRejectsNonBearerAuthorizationScheme(t *testing.T) {
 
 	token, ok := bearerToken(req)
 
-	if ok {
-		t.Fatalf("ok = true, token = %q; want non-bearer authorization to be treated as missing bearer", token)
-	}
+	assert.False(t, ok, "ok = true, token = %q; want non-bearer authorization to be treated as missing bearer", token)
 }
 
 func TestProtectedAPIsRequireProviderBearerInProduction(t *testing.T) {
@@ -69,28 +68,21 @@ func TestProtectedAPIsRequireProviderBearerInProduction(t *testing.T) {
 	req.Header.Set("X-Role", ticketing.RoleActivityAdmin)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected header-only production request to be rejected, status = %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rec.Code, "expected header-only production request to be rejected")
 
 	cookieReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", bytes.NewBufferString(eventRequestBody()))
 	cookieReq.AddCookie(&http.Cookie{Name: "cets_session", Value: "legacy.session"})
 	cookieRec := httptest.NewRecorder()
 	router.ServeHTTP(cookieRec, cookieReq)
-	if cookieRec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected local session cookie to be rejected in production, status = %d", cookieRec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, cookieRec.Code, "expected local session cookie to be rejected in production")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", bytes.NewBufferString(eventRequestBody()))
 	okReq.Header.Set("Authorization", "Bearer "+signProviderClaims(t, secret, validProviderClaims(ticketing.RoleActivityAdmin)))
 	okRec := httptest.NewRecorder()
 	router.ServeHTTP(okRec, okReq)
-	if okRec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", okRec.Code, okRec.Body.String())
-	}
-	if service.createActor.ID != "admin-1" || service.createActor.Role != ticketing.RoleActivityAdmin {
-		t.Fatalf("actor = %+v", service.createActor)
-	}
+	require.Equal(t, http.StatusCreated, okRec.Code, okRec.Body.String())
+	assert.Equal(t, "admin-1", service.createActor.ID)
+	assert.Equal(t, ticketing.RoleActivityAdmin, service.createActor.Role)
 }
 
 func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
@@ -108,9 +100,8 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 			path:   "/api/v1/events",
 			assert: func(t *testing.T, service *fakeTicketingService) {
 				t.Helper()
-				if service.listEventsActor.ID != "E1001" || service.listEventsActor.Role != ticketing.RoleEmployee {
-					t.Fatalf("employee actor = %+v", service.listEventsActor)
-				}
+				assert.Equal(t, "E1001", service.listEventsActor.ID)
+				assert.Equal(t, ticketing.RoleEmployee, service.listEventsActor.Role)
 			},
 		},
 		{
@@ -120,9 +111,8 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 			body:   eventRequestBody(),
 			assert: func(t *testing.T, service *fakeTicketingService) {
 				t.Helper()
-				if service.createActor.ID != "admin-1" || service.createActor.Role != ticketing.RoleActivityAdmin {
-					t.Fatalf("activity admin actor = %+v", service.createActor)
-				}
+				assert.Equal(t, "admin-1", service.createActor.ID)
+				assert.Equal(t, ticketing.RoleActivityAdmin, service.createActor.Role)
 			},
 		},
 		{
@@ -132,9 +122,8 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 			body:   `{"signed_token":"ticket-token","device_id":"gate-1"}`,
 			assert: func(t *testing.T, service *fakeTicketingService) {
 				t.Helper()
-				if service.checkinActor.ID != "staff-1" || service.checkinActor.Role != ticketing.RoleCheckinStaff {
-					t.Fatalf("check-in actor = %+v", service.checkinActor)
-				}
+				assert.Equal(t, "staff-1", service.checkinActor.ID)
+				assert.Equal(t, ticketing.RoleCheckinStaff, service.checkinActor.Role)
 			},
 		},
 		{
@@ -143,9 +132,8 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 			path:   "/api/v1/admin/reports",
 			assert: func(t *testing.T, service *fakeTicketingService) {
 				t.Helper()
-				if service.reportsActor.ID != "hr-1" || service.reportsActor.Role != ticketing.RoleHRAdmin {
-					t.Fatalf("hr actor = %+v", service.reportsActor)
-				}
+				assert.Equal(t, "hr-1", service.reportsActor.ID)
+				assert.Equal(t, ticketing.RoleHRAdmin, service.reportsActor.Role)
 			},
 		},
 		{
@@ -154,9 +142,8 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 			path:   "/api/v1/admin/audit-logs",
 			assert: func(t *testing.T, service *fakeTicketingService) {
 				t.Helper()
-				if service.auditActor.ID != "system-1" || service.auditActor.Role != ticketing.RoleSystemAdmin {
-					t.Fatalf("system actor = %+v", service.auditActor)
-				}
+				assert.Equal(t, "system-1", service.auditActor.ID)
+				assert.Equal(t, ticketing.RoleSystemAdmin, service.auditActor.Role)
 			},
 		},
 	}
@@ -178,9 +165,7 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 
 			router.ServeHTTP(rec, req)
 
-			if rec.Code < http.StatusOK || rec.Code >= http.StatusMultipleChoices {
-				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-			}
+			require.True(t, rec.Code >= http.StatusOK && rec.Code < http.StatusMultipleChoices, "status = %d, body = %s", rec.Code, rec.Body.String())
 			tt.assert(t, service)
 		})
 	}
@@ -208,12 +193,8 @@ func TestProviderBearerRejectsMalformedClaimsBeforeMutatingEndpoint(t *testing.T
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if service.createActor.ID != "" {
-		t.Fatalf("malformed claims reached mutating service with actor %+v", service.createActor)
-	}
+	require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+	assert.Empty(t, service.createActor.ID, "malformed claims reached mutating service")
 }
 
 func TestProviderBearerRejectsInvalidClaims(t *testing.T) {
@@ -281,9 +262,7 @@ func TestProviderBearerRejectsInvalidClaims(t *testing.T) {
 
 			router.ServeHTTP(rec, req)
 
-			if rec.Code != tt.status {
-				t.Fatalf("status = %d, want %d, body = %s", rec.Code, tt.status, rec.Body.String())
-			}
+			assert.Equal(t, tt.status, rec.Code, "body = %s", rec.Body.String())
 		})
 	}
 }
@@ -302,16 +281,12 @@ func TestLocalSSOLoginAndLogoutRoutesAreRemoved(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d", rec.Code)
-	}
+	assert.True(t, rec.Code == http.StatusNotFound || rec.Code == http.StatusMethodNotAllowed, "status = %d", rec.Code)
 
 	logoutReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 	logoutRec := httptest.NewRecorder()
 	router.ServeHTTP(logoutRec, logoutReq)
-	if logoutRec.Code != http.StatusNotFound && logoutRec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("logout status = %d", logoutRec.Code)
-	}
+	assert.True(t, logoutRec.Code == http.StatusNotFound || logoutRec.Code == http.StatusMethodNotAllowed, "logout status = %d", logoutRec.Code)
 }
 
 func TestAuthBootstrapReportsMockProfiles(t *testing.T) {
@@ -335,9 +310,7 @@ func TestAuthBootstrapReportsMockProfiles(t *testing.T) {
 
 			router.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d", rec.Code)
-			}
+			require.Equal(t, http.StatusOK, rec.Code)
 			assertEnvelope(t, rec.Body.String(), tt.want...)
 		})
 	}
@@ -357,9 +330,7 @@ func TestMockProviderTokenUsesProviderBearerPath(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assertEnvelope(t, rec.Body.String(), `"provider_token"`, `"employee_id":"staff-1"`, `"claims_status":"complete"`)
 
 	productionReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"staff-1"}`))
@@ -371,9 +342,7 @@ func TestMockProviderTokenUsesProviderBearerPath(t *testing.T) {
 		AppEnv:         "production",
 		ProviderAuth:   ProviderAuthConfig{Secret: secret},
 	}).ServeHTTP(productionRec, productionReq)
-	if productionRec.Code != http.StatusNotFound {
-		t.Fatalf("production mock token status = %d", productionRec.Code)
-	}
+	assert.Equal(t, http.StatusNotFound, productionRec.Code)
 }
 
 func eventRequestBody() string {
@@ -429,8 +398,6 @@ func providerDisplayNameForRole(role string) string {
 func signProviderClaims(t *testing.T, secret string, claims providerClaims) string {
 	t.Helper()
 	token, err := NewProviderVerifier(ProviderAuthConfig{Secret: secret}).Sign(claims)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return token
 }

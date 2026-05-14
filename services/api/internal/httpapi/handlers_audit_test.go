@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"event-ticket-system/internal/ticketing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAuditHandlerRejectsMalformedCursorAndTimeFilters(t *testing.T) {
@@ -32,8 +34,6 @@ func TestAuditHandlerRejectsMalformedCursorAndTimeFilters(t *testing.T) {
 
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("%s status = %d, body = %s", path, rec.Code, rec.Body.String())
-		}
+		assert.Equal(t, http.StatusBadRequest, rec.Code, "%s body=%s", path, rec.Body.String())
 	}
 }

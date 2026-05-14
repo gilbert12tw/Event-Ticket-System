@@ -3,15 +3,16 @@ package ticketing
 import (
 	"context"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCancelRegistrationPromotesWaitlistInSingleTransaction(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -20,74 +21,45 @@ func TestCancelRegistrationPromotesWaitlistInSingleTransaction(t *testing.T) {
 		Status:   EventStatusPublished,
 		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	confirmed, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "book-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	waitlist, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "book-2"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	cancelled, err := service.CancelRegistration(ctx, admin, event.EventID, confirmed.Registration.RegistrationID, CancelRegistrationRequest{
 		IdempotencyKey: "cancel-1",
 		Reason:         "speaker change",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cancelled.Registration.Status != RegistrationCancelled {
-		t.Fatalf("cancelled registration status = %s, want %s", cancelled.Registration.Status, RegistrationCancelled)
-	}
-	if cancelled.RemainingCapacity != 0 {
-		t.Fatalf("remaining capacity = %d, want %d", cancelled.RemainingCapacity, 0)
-	}
-	if cancelled.Ticket != nil && (cancelled.Ticket.SignedToken != "" || cancelled.Ticket.QRPayload != "") {
-		t.Fatalf("admin cancellation response should not expose reusable token: %+v", cancelled.Ticket)
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationCancelled, cancelled.Registration.Status)
+	assert.Equal(t, 0, cancelled.RemainingCapacity)
+	if cancelled.Ticket != nil {
+		assert.Empty(t, cancelled.Ticket.SignedToken, "admin cancellation response should not expose reusable token")
+		assert.Empty(t, cancelled.Ticket.QRPayload, "admin cancellation response should not expose reusable token")
 	}
 
 	var promotedStatus string
-	if err := service.db.QueryRow(ctx, `SELECT status FROM registrations WHERE registration_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotedStatus); err != nil {
-		t.Fatal(err)
-	}
-	if promotedStatus != RegistrationConfirmed {
-		t.Fatalf("promoted registration status = %s, want %s", promotedStatus, RegistrationConfirmed)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT status FROM registrations WHERE registration_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotedStatus))
+	assert.Equal(t, RegistrationConfirmed, promotedStatus)
 	var promotedTicketCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM tickets WHERE registration_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotedTicketCount); err != nil {
-		t.Fatal(err)
-	}
-	if promotedTicketCount != 1 {
-		t.Fatalf("promoted ticket count = %d, want %d", promotedTicketCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM tickets WHERE registration_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotedTicketCount))
+	assert.Equal(t, 1, promotedTicketCount)
 
 	var canceledOutboxCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID).Scan(&canceledOutboxCount); err != nil {
-		t.Fatal(err)
-	}
-	if canceledOutboxCount != 1 {
-		t.Fatalf("registration cancelled outbox count = %d, want %d", canceledOutboxCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID).Scan(&canceledOutboxCount))
+	assert.Equal(t, 1, canceledOutboxCount)
 	var promotedOutboxCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'waitlist.promoted' AND aggregate_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotedOutboxCount); err != nil {
-		t.Fatal(err)
-	}
-	if promotedOutboxCount != 1 {
-		t.Fatalf("waitlist promoted outbox count = %d, want %d", promotedOutboxCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'waitlist.promoted' AND aggregate_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotedOutboxCount))
+	assert.Equal(t, 1, promotedOutboxCount)
 }
 
 func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -96,79 +68,47 @@ func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 		Status:   EventStatusPublished,
 		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	confirmed, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "idem-book-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	waitlist, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "idem-book-2"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	first, err := service.CancelRegistration(ctx, admin, event.EventID, confirmed.Registration.RegistrationID, CancelRegistrationRequest{
 		IdempotencyKey: "cancel-idem-1",
 		Reason:         "full cancellation",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.Registration.Status != RegistrationCancelled {
-		t.Fatalf("first cancellation status = %s, want %s", first.Registration.Status, RegistrationCancelled)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationCancelled, first.Registration.Status)
 
 	second, err := service.CancelRegistration(ctx, admin, event.EventID, confirmed.Registration.RegistrationID, CancelRegistrationRequest{
 		IdempotencyKey: "cancel-idem-1",
 		Reason:         "retry",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.Message != "registration already cancelled" {
-		t.Fatalf("second cancellation message = %s, want %s", second.Message, "registration already cancelled")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "registration already cancelled", second.Message)
 
 	var cancellationAuditCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'registration.cancelled' AND entity_id = $1`, confirmed.Registration.RegistrationID).Scan(&cancellationAuditCount); err != nil {
-		t.Fatal(err)
-	}
-	if cancellationAuditCount != 1 {
-		t.Fatalf("registration cancelled audit count = %d, want %d", cancellationAuditCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'registration.cancelled' AND entity_id = $1`, confirmed.Registration.RegistrationID).Scan(&cancellationAuditCount))
+	assert.Equal(t, 1, cancellationAuditCount)
 
 	var promotionAuditCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'waitlist.promoted' AND entity_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotionAuditCount); err != nil {
-		t.Fatal(err)
-	}
-	if promotionAuditCount != 1 {
-		t.Fatalf("waitlist promoted audit count = %d, want %d", promotionAuditCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'waitlist.promoted' AND entity_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotionAuditCount))
+	assert.Equal(t, 1, promotionAuditCount)
 	var promotionOutboxCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'waitlist.promoted' AND aggregate_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotionOutboxCount); err != nil {
-		t.Fatal(err)
-	}
-	if promotionOutboxCount != 1 {
-		t.Fatalf("waitlist promoted outbox count = %d, want %d", promotionOutboxCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'waitlist.promoted' AND aggregate_id = $1`, waitlist.Registration.RegistrationID).Scan(&promotionOutboxCount))
+	assert.Equal(t, 1, promotionOutboxCount)
 	var cancelledOutboxCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID).Scan(&cancelledOutboxCount); err != nil {
-		t.Fatal(err)
-	}
-	if cancelledOutboxCount != 1 {
-		t.Fatalf("registration cancelled outbox count = %d, want %d", cancelledOutboxCount, 1)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID).Scan(&cancelledOutboxCount))
+	assert.Equal(t, 1, cancelledOutboxCount)
 }
 
 func TestPromoteWaitlistDoesNotExposeTicketTokenToAdmin(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -177,27 +117,18 @@ func TestPromoteWaitlistDoesNotExposeTicketTokenToAdmin(t *testing.T) {
 		Status:   EventStatusPublished,
 		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "sanitize-book-1"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "sanitize-book-2"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.db.Exec(ctx, `UPDATE events SET capacity = 2 WHERE event_id = $1`, event.EventID); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "sanitize-book-1"})
+	require.NoError(t, err)
+	_, err = service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "sanitize-book-2"})
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `UPDATE events SET capacity = 2 WHERE event_id = $1`, event.EventID)
+	require.NoError(t, err)
 
 	promoted, err := service.PromoteWaitlist(ctx, admin, event.EventID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if promoted.Promoted == nil || promoted.Promoted.Ticket == nil {
-		t.Fatalf("expected promoted registration with ticket: %+v", promoted)
-	}
-	if promoted.Promoted.Ticket.SignedToken != "" || promoted.Promoted.Ticket.QRPayload != "" {
-		t.Fatalf("admin promotion response should not expose reusable token: %+v", promoted.Promoted.Ticket)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, promoted.Promoted, "expected promoted registration")
+	require.NotNil(t, promoted.Promoted.Ticket, "expected promoted registration with ticket")
+	assert.Empty(t, promoted.Promoted.Ticket.SignedToken, "admin promotion response should not expose reusable token")
+	assert.Empty(t, promoted.Promoted.Ticket.QRPayload, "admin promotion response should not expose reusable token")
 }

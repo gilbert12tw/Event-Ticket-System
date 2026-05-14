@@ -3,6 +3,9 @@ package ticketing
 import (
 	"context"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetTicketTokenVisibleOnlyToOwningEmployee(t *testing.T) {
@@ -10,9 +13,7 @@ func TestGetTicketTokenVisibleOnlyToOwningEmployee(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -21,53 +22,36 @@ func TestGetTicketTokenVisibleOnlyToOwningEmployee(t *testing.T) {
 		Status:   EventStatusPublished,
 		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 0, EmploymentStatus: "active"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	owner := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, owner, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "ticket-vis-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	owned, err := service.GetTicket(ctx, owner, booking.Ticket.TicketID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if owned.SignedToken == "" || owned.QRPayload == "" {
-		t.Fatalf("owning employee should receive token payload")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, owned.SignedToken, "owning employee should receive token payload")
+	assert.NotEmpty(t, owned.QRPayload, "owning employee should receive token payload")
 
 	hr := Actor{ID: "hr-1", Role: RoleHRAdmin}
 	hrView, err := service.GetTicket(ctx, hr, booking.Ticket.TicketID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hrView.SignedToken != "" || hrView.QRPayload != "" {
-		t.Fatalf("hr should receive sanitized ticket: %+v", hrView)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, hrView.SignedToken, "hr should receive sanitized ticket")
+	assert.Empty(t, hrView.QRPayload, "hr should receive sanitized ticket")
 
 	checkin := Actor{ID: "staff-1", Role: RoleCheckinStaff}
 	checkinView, err := service.GetTicket(ctx, checkin, booking.Ticket.TicketID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if checkinView.SignedToken != "" || checkinView.QRPayload != "" {
-		t.Fatalf("checkin staff should receive sanitized ticket: %+v", checkinView)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, checkinView.SignedToken, "checkin staff should receive sanitized ticket")
+	assert.Empty(t, checkinView.QRPayload, "checkin staff should receive sanitized ticket")
 
 	activityAdmin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	adminView, err := service.GetTicket(ctx, activityAdmin, booking.Ticket.TicketID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if adminView.SignedToken != "" || adminView.QRPayload != "" {
-		t.Fatalf("activity admin should receive sanitized ticket: %+v", adminView)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, adminView.SignedToken, "activity admin should receive sanitized ticket")
+	assert.Empty(t, adminView.QRPayload, "activity admin should receive sanitized ticket")
 
 	_, err = service.GetTicket(ctx, Actor{ID: "E1002", Role: RoleEmployee}, booking.Ticket.TicketID)
-	if err == nil || ErrorStatus(err) != 403 {
-		t.Fatalf("non-owner employee should be forbidden: %v", err)
-	}
+	require.Error(t, err, "non-owner employee should be forbidden")
+	assert.Equal(t, 403, ErrorStatus(err))
 }
 
 func TestRevokeTicketWritesOutbox(t *testing.T) {
@@ -75,9 +59,7 @@ func TestRevokeTicketWritesOutbox(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	if err := service.SeedDemoData(ctx); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, service.SeedDemoData(ctx))
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -86,23 +68,13 @@ func TestRevokeTicketWritesOutbox(t *testing.T) {
 		Status:   EventStatusPublished,
 		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 0, EmploymentStatus: "active"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "revoke-ticket-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = service.RevokeTicket(ctx, admin, booking.Ticket.TicketID, RevokeTicketRequest{Reason: "fraud detected"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	var outboxCount int
-	if err := service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.revoked' AND aggregate_id = $1`, booking.Ticket.TicketID).Scan(&outboxCount); err != nil {
-		t.Fatal(err)
-	}
-	if outboxCount != 1 {
-		t.Fatalf("ticket revoked outbox count = %d, want 1", outboxCount)
-	}
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.revoked' AND aggregate_id = $1`, booking.Ticket.TicketID).Scan(&outboxCount))
+	assert.Equal(t, 1, outboxCount)
 }
