@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { bookEvent, getEvent, listEvents } from "@/lib/api";
+import { bookEvent, cancelMyRegistration, getEvent, listEvents } from "@/lib/api";
 import type { AuthMeClaims, EventSummary } from "@/lib/api";
 import { navigate } from "@/app/routes";
 import { bookingActionLabel, errorMessage, eventStatusTone, formatDate, registrationTone } from "@/lib/formatting";
@@ -7,31 +7,25 @@ import { Alert, EmptyState, IdentityCard, Kpi, ProgressMeter, ProviderClaimsCard
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
 
-const MAX_FAMILY_COUNT = 10;
+const maxFamilyCount = 10;
 
-function clampFamilyCount(value: string) {
-  const n = Math.floor(Number(value));
-  if (!Number.isFinite(n) || n <= 0) return "0";
-  return String(Math.min(MAX_FAMILY_COUNT, n));
-}
-
-function showFamilyInput(event: EventSummary) {
-  return event.capacity_type === "unlimited" && event.allows_family;
-}
+type NumberByEvent = Record<string, number>;
+type TextByEvent = Record<string, string>;
 
 export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [familyCounts, setFamilyCounts] = useState<NumberByEvent>({});
+  const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [familyCounts, setFamilyCounts] = useState<Record<string, string>>({});
 
   const principalID = claims.employee_id;
   const eventStats = useMemo(
     () => ({
-      eligible: events.filter((event) => event.eligible).length,
+      eligible: events.filter((event) => event.eligible && !event.no_show_cooldown?.active).length,
       confirmed: events.filter((event) => event.current_user_status === "confirmed").length,
       waitlisted: events.filter((event) => event.current_user_status === "waitlisted").length,
-      openSeats: events.reduce((sum, event) => sum + Math.max(event.remaining_capacity ?? 0, 0), 0)
+      openSeats: events.reduce((sum, event) => sum + (event.remaining_capacity ?? 0), 0)
     }),
     [events]
   );
@@ -52,11 +46,25 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
     void refresh();
   }, [principalID]);
 
-  async function book(eventID: string) {
+  async function book(event: EventSummary) {
     setMessage("");
-    const familyCount = Number(clampFamilyCount(familyCounts[eventID] ?? "0"));
     try {
-      const result = await bookEvent(eventID, `book-${eventID}-${principalID}`, familyCount);
+      const familyCount = event.capacity_type === "unlimited" ? familyCounts[event.event_id] ?? 0 : 0;
+      const result = await bookEvent(event.event_id, `book-${event.event_id}-${principalID}`, familyCount);
+      setMessage(result.message);
+      await refresh();
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }
+
+  async function cancel(event: EventSummary) {
+    const registrationID = registrationIDFor(event);
+    if (!registrationID) return;
+    const reason = (cancelReasons[event.event_id] || "").trim() || "employee cancellation";
+    setMessage("");
+    try {
+      const result = await cancelMyRegistration(registrationID, reason, `cancel-${registrationID}-${principalID}`);
       setMessage(result.message);
       await refresh();
     } catch (error) {
@@ -69,116 +77,44 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
       <div className="panel span-12 workspace-context user-context">
         <div>
           <div className="eyebrow">User Workspace</div>
-          <h2>員工入口</h2>
-          <p>以目前員工 HR 屬性判斷活動資格，報名結果會立即反映 confirmed、waitlisted 或不可報名原因。</p>
+          <h2>Employee events</h2>
+          <p>Book eligible events, track waitlist state, and cancel open registrations with a retry-safe request.</p>
         </div>
         <IdentityCard claims={claims} />
         <div className="context-kpis">
-          <Kpi label="可報名" value={eventStats.eligible} />
-          <Kpi label="已確認" value={eventStats.confirmed} />
-          <Kpi label="候補中" value={eventStats.waitlisted} />
-          <Kpi label="剩餘名額" value={eventStats.openSeats} />
+          <Kpi label="Eligible" value={eventStats.eligible} />
+          <Kpi label="Confirmed" value={eventStats.confirmed} />
+          <Kpi label="Waitlisted" value={eventStats.waitlisted} />
+          <Kpi label="Open seats" value={eventStats.openSeats} />
         </div>
       </div>
       <div className="panel span-8">
         <div className="section-heading">
           <div>
-            <h2>可報名活動</h2>
-            <p>依員工屬性顯示資格、剩餘名額與目前報名狀態。</p>
+            <h2>Available events</h2>
+            <p>Limited events issue one employee-bound ticket. Unlimited events keep companions on the main registration.</p>
           </div>
           <button className="button secondary" type="button" onClick={refresh} disabled={loading}>
             <Icon name="refresh" />
-            重新整理
+            Refresh
           </button>
         </div>
-        {message && <Alert tone={message.includes("eligible") || message.includes("不") ? "warn" : "info"}>{message}</Alert>}
+        {message && <Alert tone={messageTone(message)}>{message}</Alert>}
         <div className="event-list" aria-busy={loading}>
           {loading && <SkeletonRows rows={3} />}
-          {!loading && events.length === 0 && (
-            <EmptyState title="目前沒有已發布活動" action="請到活動主辦頁建立一筆活動，或執行 Demo Runbook。" />
-          )}
+          {!loading && events.length === 0 && <EmptyState title="No events published" action="Ask an activity admin to publish an event." />}
           {!loading &&
             events.map((event) => (
-              <article className="event-card" key={event.event_id}>
-                <div>
-                  <div className="event-card-top">
-                    <StatusBadge tone={event.eligible ? "ok" : "fail"}>
-                      {event.eligible ? "符合資格" : "不可報名"}
-                    </StatusBadge>
-                    <StatusBadge tone={eventStatusTone(event.status)}>{event.status}</StatusBadge>
-                    {event.current_user_status && (
-                      <StatusBadge tone={registrationTone(event.current_user_status)}>{event.current_user_status}</StatusBadge>
-                    )}
-                  </div>
-                  <h3>{event.title}</h3>
-                  <p>{event.description || "此活動尚未填寫描述。"}</p>
-                  <dl className="meta-list">
-                    <div>
-                      <dt>地點</dt>
-                      <dd>{event.location || "未設定"}</dd>
-                    </div>
-                    <div>
-                      <dt>開始時間</dt>
-                      <dd>{formatDate(event.starts_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>報名截止</dt>
-                      <dd>{formatDate(event.registration_close)}</dd>
-                    </div>
-                    <div>
-                      <dt>資格規則</dt>
-                      <dd>
-                        {event.rule.department} / {event.rule.site} / G{event.rule.min_grade}+
-                      </dd>
-                    </div>
-                  </dl>
-                  <ProgressMeter
-                    label="容量使用"
-                    value={event.confirmed_count}
-                    max={event.capacity ?? Math.max(event.confirmed_count, 1)}
-                    helper={
-                      event.capacity_type === "unlimited"
-                        ? `${event.confirmed_count} confirmed（不限名額）`
-                        : `${event.confirmed_count}/${event.capacity} confirmed，候補 ${event.waitlist_count}`
-                    }
-                  />
-                </div>
-                <div className="event-action">
-                  <Kpi label="總名額" value={event.capacity ?? "不限"} />
-                  <Kpi label="剩餘" value={event.remaining_capacity ?? "不限"} />
-                  <Kpi label="候補" value={event.waitlist_count} />
-                  {showFamilyInput(event) && !event.current_user_status && (
-                    <label className="field compact">
-                      <span>同行家屬人數（0–{MAX_FAMILY_COUNT}）</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={MAX_FAMILY_COUNT}
-                        step={1}
-                        value={familyCounts[event.event_id] ?? "0"}
-                        onChange={(e) =>
-                          setFamilyCounts({ ...familyCounts, [event.event_id]: clampFamilyCount(e.target.value) })
-                        }
-                        disabled={!event.eligible}
-                      />
-                    </label>
-                  )}
-                  <button
-                    className="button"
-                    type="button"
-                    disabled={!event.eligible || event.current_user_status === "confirmed" || event.current_user_status === "waitlisted"}
-                    onClick={() => void book(event.event_id)}
-                  >
-                    <Icon name="ticket" />
-                    {bookingActionLabel(event)}
-                  </button>
-                  <button className="button secondary" type="button" onClick={() => navigate(`/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`)}>
-                    <Icon name="audit" />
-                    詳情
-                  </button>
-                  <p className="form-hint">{event.eligible ? `報名模式：${event.allocation_mode}` : event.eligibility_reason}</p>
-                </div>
-              </article>
+              <EmployeeEventCard
+                cancelReason={cancelReasons[event.event_id] || ""}
+                event={event}
+                familyCount={familyCounts[event.event_id] ?? 0}
+                key={event.event_id}
+                onBook={() => void book(event)}
+                onCancel={() => void cancel(event)}
+                onCancelReasonChange={(value) => setCancelReasons((current) => ({ ...current, [event.event_id]: value }))}
+                onFamilyCountChange={(value) => setFamilyCounts((current) => ({ ...current, [event.event_id]: value }))}
+              />
             ))}
         </div>
       </div>
@@ -191,9 +127,10 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [selectedID, setSelectedID] = useState(() => new URLSearchParams(window.location.search).get("event_id") || "");
   const [detail, setDetail] = useState<EventSummary | null>(null);
+  const [familyCount, setFamilyCount] = useState(0);
+  const [cancelReason, setCancelReason] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [familyCount, setFamilyCount] = useState("0");
   const principalID = claims.employee_id;
 
   async function refresh(nextID = selectedID) {
@@ -225,9 +162,23 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   async function bookSelected() {
     if (!detail) return;
     setMessage("");
-    const count = Number(clampFamilyCount(familyCount));
     try {
-      const result = await bookEvent(detail.event_id, `book-${detail.event_id}-${principalID}`, count);
+      const nextFamilyCount = detail.capacity_type === "unlimited" ? familyCount : 0;
+      const result = await bookEvent(detail.event_id, `book-${detail.event_id}-${principalID}`, nextFamilyCount);
+      setMessage(result.message);
+      await refresh(detail.event_id);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }
+
+  async function cancelSelected() {
+    if (!detail) return;
+    const registrationID = registrationIDFor(detail);
+    if (!registrationID) return;
+    setMessage("");
+    try {
+      const result = await cancelMyRegistration(registrationID, cancelReason.trim() || "employee cancellation", `cancel-${registrationID}-${principalID}`);
       setMessage(result.message);
       await refresh(detail.event_id);
     } catch (error) {
@@ -240,13 +191,13 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
       <div className="panel span-12 workspace-context user-context">
         <div>
           <div className="eyebrow">User Workspace</div>
-          <h2>單一活動詳情</h2>
-          <p>使用新單筆 API 重新檢查資格與目前報名狀態，避免只依賴列表快取。</p>
+          <h2>Event detail</h2>
+          <p>Review eligibility, family-count limits, cancellation state, and ticket handoff from the same event record.</p>
         </div>
         <label className="field compact">
-          <span>選擇活動</span>
+          <span>Event</span>
           <select value={selectedID} onChange={(event) => void selectEvent(event.target.value)} disabled={busy}>
-            <option value="">選擇活動</option>
+            <option value="">Choose event</option>
             {events.map((event) => (
               <option value={event.event_id} key={event.event_id}>
                 {event.title}
@@ -258,102 +209,197 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
       <div className="panel span-8">
         <div className="section-heading">
           <div>
-            <h2>活動與資格狀態</h2>
-            <p>單筆查詢以 provider claims 身分重新計算資格與目前報名狀態。</p>
+            <h2>Booking facts</h2>
+            <p>Provider claims and event policy are rechecked before booking or cancellation.</p>
           </div>
           <button className="button secondary" type="button" onClick={() => void refresh()} disabled={busy || !selectedID}>
             <Icon name="refresh" />
-            重新整理
+            Refresh
           </button>
         </div>
-        {message && <Alert tone={message.includes("eligible") || message.includes("not") ? "warn" : "info"}>{message}</Alert>}
-        {!detail && <EmptyState title="尚未選擇活動" action="從下拉選單選擇活動後會顯示完整狀態。" />}
-        {detail && (
-          <div className="summary-block">
-            <div className="event-card-top">
-              <StatusBadge tone={detail.eligible ? "ok" : "fail"}>{detail.eligible ? "符合資格" : "不可報名"}</StatusBadge>
-              <StatusBadge tone={eventStatusTone(detail.status)}>{detail.status}</StatusBadge>
-              {detail.current_user_status && <StatusBadge tone={registrationTone(detail.current_user_status)}>{detail.current_user_status}</StatusBadge>}
-            </div>
-            <h2>{detail.title}</h2>
-            <p>{detail.description || "此活動尚未填寫描述。"}</p>
-            <dl className="meta-list">
-              <div>
-                <dt>地點</dt>
-                <dd>{detail.location || "未設定"}</dd>
-              </div>
-              <div>
-                <dt>開始時間</dt>
-                <dd>{formatDate(detail.starts_at)}</dd>
-              </div>
-              <div>
-                <dt>報名期間</dt>
-                <dd>
-                  {formatDate(detail.registration_start)} 到 {formatDate(detail.registration_close)}
-                </dd>
-              </div>
-              <div>
-                <dt>資格原因</dt>
-                <dd>{detail.eligibility_reason || "符合資格"}</dd>
-              </div>
-              <div>
-                <dt>規則</dt>
-                <dd>
-                  {detail.rule.department} / {detail.rule.site} / G{detail.rule.min_grade}+
-                </dd>
-              </div>
-              <div>
-                <dt>Event ID</dt>
-                <dd>{detail.event_id}</dd>
-              </div>
-            </dl>
-            <ProgressMeter
-              label="容量使用"
-              max={detail.capacity ?? Math.max(detail.confirmed_count, 1)}
-              value={detail.confirmed_count}
-              helper={
-                detail.capacity_type === "unlimited"
-                  ? `${detail.confirmed_count} confirmed（不限名額）`
-                  : `${detail.confirmed_count}/${detail.capacity} confirmed，候補 ${detail.waitlist_count}`
-              }
-            />
-          </div>
-        )}
+        {message && <Alert tone={messageTone(message)}>{message}</Alert>}
+        {!detail && <EmptyState title="No event selected" action="Choose an event to inspect booking state." />}
+        {detail && <EventSummaryBlock event={detail} />}
       </div>
       <div className="panel span-4">
-        <h2>報名決策</h2>
-        {!detail && <EmptyState title="等待活動" action="選擇活動後會顯示可執行動作。" />}
+        <h2>Action</h2>
+        {!detail && <EmptyState title="Choose an event" action="Booking and cancellation controls appear here." />}
         {detail && (
           <div className="summary-block">
-            <Kpi label="剩餘名額" value={detail.remaining_capacity ?? "不限"} />
-            <Kpi label="目前狀態" value={detail.current_user_status || "none"} />
-            {showFamilyInput(detail) && !detail.current_user_status && (
-              <label className="field">
-                <span>同行家屬人數（0–{MAX_FAMILY_COUNT}）</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={MAX_FAMILY_COUNT}
-                  step={1}
-                  value={familyCount}
-                  onChange={(e) => setFamilyCount(clampFamilyCount(e.target.value))}
-                  disabled={!detail.eligible}
-                />
-              </label>
-            )}
-            <button
-              className="button full-width"
-              type="button"
-              onClick={() => void bookSelected()}
-              disabled={!detail.eligible || detail.current_user_status === "confirmed" || detail.current_user_status === "waitlisted"}
-            >
+            <FamilyCountControl event={detail} value={familyCount} onChange={setFamilyCount} />
+            <button className="button full-width" type="button" onClick={() => void bookSelected()} disabled={!canBook(detail)}>
               <Icon name="ticket" />
               {bookingActionLabel(detail)}
             </button>
+            <CancellationControl event={detail} reason={cancelReason} onCancel={() => void cancelSelected()} onReasonChange={setCancelReason} />
             {detail.current_user_ticket && <TicketPanel compact ticket={detail.current_user_ticket} />}
           </div>
         )}
       </div>
     </section>
   );
+}
+
+function EmployeeEventCard({
+  cancelReason,
+  event,
+  familyCount,
+  onBook,
+  onCancel,
+  onCancelReasonChange,
+  onFamilyCountChange
+}: {
+  cancelReason: string;
+  event: EventSummary;
+  familyCount: number;
+  onBook: () => void;
+  onCancel: () => void;
+  onCancelReasonChange: (value: string) => void;
+  onFamilyCountChange: (value: number) => void;
+}) {
+  return (
+    <article className="event-card">
+      <EventSummaryBlock event={event} compact />
+      <div className="event-action">
+        <Kpi label="Capacity" value={event.capacity_type === "limited" ? event.capacity ?? 0 : "Open"} />
+        <Kpi label="Open" value={event.remaining_capacity ?? "No cap"} />
+        <Kpi label="Waitlist" value={event.waitlist_count} />
+        <FamilyCountControl event={event} value={familyCount} onChange={onFamilyCountChange} />
+        <button className="button" type="button" disabled={!canBook(event)} onClick={onBook}>
+          <Icon name="ticket" />
+          {bookingActionLabel(event)}
+        </button>
+        <button className="button secondary" type="button" onClick={() => navigate(`/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`)}>
+          <Icon name="audit" />
+          Detail
+        </button>
+        <CancellationControl event={event} reason={cancelReason} onCancel={onCancel} onReasonChange={onCancelReasonChange} />
+      </div>
+    </article>
+  );
+}
+
+function EventSummaryBlock({ compact = false, event }: { compact?: boolean; event: EventSummary }) {
+  const capacityMax = event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
+  const cooldown = event.no_show_cooldown;
+  return (
+    <div className={compact ? "" : "summary-block"}>
+      <div className="event-card-top">
+        <StatusBadge tone={event.eligible && !cooldown?.active ? "ok" : "fail"}>{event.eligible ? "eligible" : "not eligible"}</StatusBadge>
+        <StatusBadge tone={event.capacity_type === "unlimited" ? "info" : "neutral"}>{event.capacity_type}</StatusBadge>
+        <StatusBadge tone={eventStatusTone(event.status)}>{event.status}</StatusBadge>
+        {event.current_user_status && <StatusBadge tone={registrationTone(event.current_user_status)}>{event.current_user_status}</StatusBadge>}
+      </div>
+      <h3>{event.title}</h3>
+      <p>{event.description || "No description provided."}</p>
+      {cooldown?.active && <Alert tone="warn">Limited-event booking is blocked by no-show cooldown until {formatDate(cooldown.until || "")}.</Alert>}
+      <dl className="meta-list">
+        <div>
+          <dt>Location</dt>
+          <dd>{event.location || event.event_site || "Not set"}</dd>
+        </div>
+        <div>
+          <dt>Starts</dt>
+          <dd>{formatDate(event.starts_at)}</dd>
+        </div>
+        <div>
+          <dt>Registration closes</dt>
+          <dd>{formatDate(event.registration_close)}</dd>
+        </div>
+        <div>
+          <dt>Rule</dt>
+          <dd>
+            {event.rule.department} / {event.rule.site} / G{event.rule.min_grade}+
+          </dd>
+        </div>
+      </dl>
+      {event.capacity_type === "limited" ? (
+        <ProgressMeter
+          label="容量使用"
+          value={event.confirmed_count}
+          max={capacityMax}
+          helper={`${event.confirmed_count}/${capacityMax} confirmed, ${event.waitlist_count} waitlisted`}
+        />
+      ) : (
+        <p className="form-hint">Unlimited event: booking does not decrement inventory or create companion tickets.</p>
+      )}
+    </div>
+  );
+}
+
+function FamilyCountControl({ event, onChange, value }: { event: EventSummary; onChange: (value: number) => void; value: number }) {
+  if (event.capacity_type === "limited") {
+    return <p className="form-hint">Limited event: companions are not available.</p>;
+  }
+  if (!event.allows_family) {
+    return <p className="form-hint">Unlimited event: no companions allowed for this event.</p>;
+  }
+  const boundedValue = Math.min(Math.max(value, 0), maxFamilyCount);
+  return (
+    <label className="field compact">
+      <span>Companions</span>
+      <input
+        aria-label={`Companions for ${event.title}`}
+        max={maxFamilyCount}
+        min={0}
+        onChange={(input) => onChange(Math.min(Math.max(Number(input.target.value || 0), 0), maxFamilyCount))}
+        type="number"
+        value={boundedValue}
+      />
+      <small className="form-hint">0 to {maxFamilyCount}; companions are recorded on your main ticket.</small>
+    </label>
+  );
+}
+
+function CancellationControl({
+  event,
+  onCancel,
+  onReasonChange,
+  reason
+}: {
+  event: EventSummary;
+  onCancel: () => void;
+  onReasonChange: (value: string) => void;
+  reason: string;
+}) {
+  const registrationID = registrationIDFor(event);
+  const booked = event.current_user_status === "confirmed" || event.current_user_status === "waitlisted";
+  if (!booked) return <p className="form-hint">No active registration to cancel.</p>;
+  const open = cancellationOpen(event);
+  return (
+    <div className="cancel-box">
+      <label className="field compact">
+        <span>Cancellation reason</span>
+        <input value={reason} onChange={(input) => onReasonChange(input.target.value)} placeholder="Optional reason" disabled={!open} />
+      </label>
+      <button className="button secondary" type="button" onClick={onCancel} disabled={!open || !registrationID}>
+        <Icon name="x" />
+        Cancel registration
+      </button>
+      <p className="form-hint">
+        {open ? "Cancellation is retry-safe while registration is open." : "Self-cancel is closed. Contact an activity admin for an exception."}
+      </p>
+    </div>
+  );
+}
+
+function canBook(event: EventSummary) {
+  return event.eligible && !event.no_show_cooldown?.active && event.current_user_status !== "confirmed" && event.current_user_status !== "waitlisted";
+}
+
+function cancellationOpen(event: EventSummary) {
+  const close = Date.parse(event.registration_close);
+  return Number.isFinite(close) && close > Date.now();
+}
+
+function registrationIDFor(event: EventSummary) {
+  return event.current_user_registration_id || event.current_user_ticket?.registration_id || "";
+}
+
+function messageTone(message: string): "ok" | "warn" | "fail" | "info" {
+  const lower = message.toLowerCase();
+  if (lower.includes("cancelled") || lower.includes("confirmed")) return "ok";
+  if (lower.includes("cooldown") || lower.includes("closed") || lower.includes("waitlist")) return "warn";
+  if (lower.includes("error") || lower.includes("failed") || lower.includes("not eligible")) return "fail";
+  return "info";
 }

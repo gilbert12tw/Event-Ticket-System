@@ -38,14 +38,23 @@ type Event struct {
 
 type EventSummary struct {
 	Event
-	Rule              EligibilityRule `json:"rule"`
-	Eligible          bool            `json:"eligible"`
-	EligibilityReason string          `json:"eligibility_reason"`
-	ConfirmedCount    int             `json:"confirmed_count"`
-	WaitlistCount     int             `json:"waitlist_count"`
-	RemainingCapacity *int            `json:"remaining_capacity"`
-	CurrentUserStatus string          `json:"current_user_status"`
-	CurrentUserTicket *Ticket         `json:"current_user_ticket,omitempty"`
+	Rule                      EligibilityRule `json:"rule"`
+	Eligible                  bool            `json:"eligible"`
+	EligibilityReason         string          `json:"eligibility_reason"`
+	ConfirmedCount            int             `json:"confirmed_count"`
+	WaitlistCount             int             `json:"waitlist_count"`
+	RemainingCapacity         *int            `json:"remaining_capacity"`
+	CurrentUserStatus         string          `json:"current_user_status"`
+	CurrentUserRegistrationID string          `json:"current_user_registration_id,omitempty"`
+	CurrentUserTicket         *Ticket         `json:"current_user_ticket,omitempty"`
+	NoShowCooldown            NoShowCooldown  `json:"no_show_cooldown"`
+}
+
+type NoShowCooldown struct {
+	Active    bool       `json:"active"`
+	AppliesTo string     `json:"applies_to,omitempty"`
+	Until     *time.Time `json:"until,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
 }
 
 type CreateEventRequest struct {

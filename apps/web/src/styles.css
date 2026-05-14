@@ -909,6 +909,12 @@ p {
   gap: 8px;
 }
 
+.cancel-box {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
 .meta-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

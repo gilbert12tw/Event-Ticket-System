@@ -76,6 +76,13 @@ EventSummary:
         - string
         - "null"
       description: Current employee booking status when visible to the caller.
+    current_user_registration_id:
+      type:
+        - string
+        - "null"
+      description: Current employee registration identifier when visible to the caller.
+    no_show_cooldown:
+      "$ref": "#/NoShowCooldown"
     category:
       type:
         - string
@@ -244,3 +251,26 @@ ChangeEventStateRequest:
       type: string
       minLength: 1
       maxLength: 500
+NoShowCooldown:
+  type: object
+  required:
+    - active
+  properties:
+    active:
+      type: boolean
+    applies_to:
+      type:
+        - string
+        - "null"
+      enum:
+        - limited
+        - null
+    until:
+      type:
+        - string
+        - "null"
+      format: date-time
+    reason:
+      type:
+        - string
+        - "null"

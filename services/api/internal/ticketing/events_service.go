@@ -194,6 +194,7 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 	}
 	summary.Eligible = false
 	summary.EligibilityReason = "provider claims employee identity is required"
+	summary.NoShowCooldown = NoShowCooldown{Active: false}
 	if employeeID != "" {
 		employee, err := s.getEmployee(ctx, employeeID)
 		if err != nil {
@@ -211,7 +212,30 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 		}
 		if found {
 			summary.CurrentUserStatus = reg.Status
+			summary.CurrentUserRegistrationID = reg.RegistrationID
 			summary.CurrentUserTicket = sanitizeTicket(ticket)
+		}
+		if summary.CapacityType == CapacityTypeLimited {
+			tx, err := s.db.Begin(ctx)
+			if err != nil {
+				return EventSummary{}, err
+			}
+			defer rollback(ctx, tx)
+			until, active, err := s.activeNoShowCooldownTx(ctx, tx, employeeID, s.now())
+			if err != nil {
+				return EventSummary{}, err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return EventSummary{}, err
+			}
+			if active {
+				summary.NoShowCooldown = NoShowCooldown{
+					Active:    true,
+					AppliesTo: CapacityTypeLimited,
+					Until:     &until,
+					Reason:    "no_show_cooldown",
+				}
+			}
 		}
 	}
 	return summary, nil
