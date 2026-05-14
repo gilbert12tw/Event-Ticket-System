@@ -23,10 +23,14 @@ var SchemaStatements = []string{
 		title TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '',
 		location TEXT NOT NULL DEFAULT '',
+		event_city TEXT NOT NULL DEFAULT '',
+		event_site TEXT NOT NULL DEFAULT '',
 		starts_at TIMESTAMPTZ NOT NULL,
 		registration_start TIMESTAMPTZ NOT NULL,
 		registration_close TIMESTAMPTZ NOT NULL,
-		capacity INTEGER NOT NULL CHECK (capacity > 0),
+		capacity_type TEXT NOT NULL DEFAULT 'limited' CHECK (capacity_type IN ('limited', 'unlimited')),
+		capacity INTEGER,
+		allows_family BOOLEAN NOT NULL DEFAULT false,
 		status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'closed', 'cancelled', 'archived')),
 		allocation_mode TEXT NOT NULL DEFAULT 'fcfs',
 		category TEXT NOT NULL DEFAULT '',
@@ -37,7 +41,11 @@ var SchemaStatements = []string{
 		archived_at TIMESTAMPTZ,
 		created_by TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		CONSTRAINT events_capacity_rules_check CHECK (
+			(capacity_type = 'limited' AND capacity IS NOT NULL AND capacity > 0 AND allows_family = false)
+			OR (capacity_type = 'unlimited' AND capacity IS NULL)
+		)
 	)`,
 	`CREATE TABLE IF NOT EXISTS event_versions (
 		version_id TEXT PRIMARY KEY,
@@ -46,10 +54,14 @@ var SchemaStatements = []string{
 		title TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '',
 		location TEXT NOT NULL DEFAULT '',
+		event_city TEXT NOT NULL DEFAULT '',
+		event_site TEXT NOT NULL DEFAULT '',
 		starts_at TIMESTAMPTZ NOT NULL,
 		registration_start TIMESTAMPTZ NOT NULL,
 		registration_close TIMESTAMPTZ NOT NULL,
-		capacity INTEGER NOT NULL CHECK (capacity > 0),
+		capacity_type TEXT NOT NULL DEFAULT 'limited' CHECK (capacity_type IN ('limited', 'unlimited')),
+		capacity INTEGER,
+		allows_family BOOLEAN NOT NULL DEFAULT false,
 		status TEXT NOT NULL,
 		allocation_mode TEXT NOT NULL DEFAULT 'fcfs',
 		category TEXT NOT NULL DEFAULT '',
@@ -59,6 +71,10 @@ var SchemaStatements = []string{
 		changed_by TEXT NOT NULL,
 		change_reason TEXT NOT NULL DEFAULT '',
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		CONSTRAINT event_versions_capacity_rules_check CHECK (
+			(capacity_type = 'limited' AND capacity IS NOT NULL AND capacity > 0 AND allows_family = false)
+			OR (capacity_type = 'unlimited' AND capacity IS NULL)
+		),
 		UNIQUE (event_id, version)
 	)`,
 	`CREATE TABLE IF NOT EXISTS event_assets (
@@ -253,11 +269,41 @@ var SchemaStatements = []string{
 	`ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check`,
 	`ALTER TABLE events ADD CONSTRAINT events_status_check CHECK (status IN ('draft', 'published', 'closed', 'cancelled', 'archived'))`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS event_city TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS event_site TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS capacity_type TEXT NOT NULL DEFAULT 'limited'`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS allows_family BOOLEAN NOT NULL DEFAULT false`,
+	`ALTER TABLE events DROP CONSTRAINT IF EXISTS events_capacity_check`,
+	`ALTER TABLE events DROP CONSTRAINT IF EXISTS events_capacity_type_check`,
+	`ALTER TABLE events DROP CONSTRAINT IF EXISTS events_capacity_rules_check`,
+	`ALTER TABLE events ALTER COLUMN capacity DROP NOT NULL`,
+	`UPDATE events SET capacity_type = 'limited' WHERE capacity_type = ''`,
+	`UPDATE events SET allows_family = false WHERE capacity_type = 'limited'`,
+	`ALTER TABLE events ADD CONSTRAINT events_capacity_type_check CHECK (capacity_type IN ('limited', 'unlimited'))`,
+	`ALTER TABLE events ADD CONSTRAINT events_capacity_rules_check CHECK (
+		(capacity_type = 'limited' AND capacity IS NOT NULL AND capacity > 0 AND allows_family = false)
+		OR (capacity_type = 'unlimited' AND capacity IS NULL)
+	)`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS tags TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS entry_method TEXT NOT NULL DEFAULT 'qr'`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'eligible'`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+	`ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS event_city TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS event_site TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS capacity_type TEXT NOT NULL DEFAULT 'limited'`,
+	`ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS allows_family BOOLEAN NOT NULL DEFAULT false`,
+	`ALTER TABLE event_versions DROP CONSTRAINT IF EXISTS event_versions_capacity_check`,
+	`ALTER TABLE event_versions DROP CONSTRAINT IF EXISTS event_versions_capacity_type_check`,
+	`ALTER TABLE event_versions DROP CONSTRAINT IF EXISTS event_versions_capacity_rules_check`,
+	`ALTER TABLE event_versions ALTER COLUMN capacity DROP NOT NULL`,
+	`UPDATE event_versions SET capacity_type = 'limited' WHERE capacity_type = ''`,
+	`UPDATE event_versions SET allows_family = false WHERE capacity_type = 'limited'`,
+	`ALTER TABLE event_versions ADD CONSTRAINT event_versions_capacity_type_check CHECK (capacity_type IN ('limited', 'unlimited'))`,
+	`ALTER TABLE event_versions ADD CONSTRAINT event_versions_capacity_rules_check CHECK (
+		(capacity_type = 'limited' AND capacity IS NOT NULL AND capacity > 0 AND allows_family = false)
+		OR (capacity_type = 'unlimited' AND capacity IS NULL)
+	)`,
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancel_idempotency_key TEXT`,
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancel_reason TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ`,

@@ -31,7 +31,11 @@ func (s *Service) findRegistrationByIdempotencyKey(ctx context.Context, tx pgx.T
 	if err != nil {
 		return BookingResponse{}, false, err
 	}
-	remaining, err := s.remainingCapacityTx(ctx, tx, reg.EventID, event.Capacity)
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	remaining, err := s.remainingCapacityTx(ctx, tx, reg.EventID, capacity)
 	if err != nil {
 		return BookingResponse{}, false, err
 	}

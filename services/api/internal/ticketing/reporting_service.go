@@ -1,13 +1,17 @@
 package ticketing
 
-import "context"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error) {
 	if err := requireRole(actor, RoleHRAdmin); err != nil {
 		return nil, err
 	}
 	rows, err := s.db.Query(ctx, `SELECT
-			e.event_id, e.title, e.capacity, e.starts_at,
+			e.event_id, e.title, e.capacity_type, e.capacity, e.starts_at,
 			count(DISTINCT r.registration_id) FILTER (WHERE r.status = 'confirmed') AS confirmed_count,
 			count(DISTINCT r.registration_id) FILTER (WHERE r.status = 'waitlisted') AS waitlist_count,
 			count(DISTINCT t.ticket_id) AS ticket_count,
@@ -16,7 +20,7 @@ func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error)
 		LEFT JOIN registrations r ON r.event_id = e.event_id
 		LEFT JOIN tickets t ON t.event_id = e.event_id
 		LEFT JOIN checkin_records c ON c.ticket_id = t.ticket_id
-		GROUP BY e.event_id, e.title, e.capacity, e.starts_at
+		GROUP BY e.event_id, e.title, e.capacity_type, e.capacity, e.starts_at
 		ORDER BY e.starts_at DESC`)
 	if err != nil {
 		return nil, err
@@ -26,10 +30,15 @@ func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error)
 	var reports []ReportRow
 	for rows.Next() {
 		var row ReportRow
-		if err := rows.Scan(&row.EventID, &row.Title, &row.Capacity, &row.StartsAt, &row.ConfirmedCount, &row.WaitlistCount, &row.TicketCount, &row.CheckinCount); err != nil {
+		var capacity pgtype.Int4
+		if err := rows.Scan(&row.EventID, &row.Title, &row.CapacityType, &capacity, &row.StartsAt, &row.ConfirmedCount, &row.WaitlistCount, &row.TicketCount, &row.CheckinCount); err != nil {
 			return nil, err
 		}
-		row.RemainingCapacity = max(row.Capacity-row.ConfirmedCount, 0)
+		if capacity.Valid {
+			value := int(capacity.Int32)
+			row.Capacity = &value
+			row.RemainingCapacity = intPtr(max(value-row.ConfirmedCount, 0))
+		}
 		reports = append(reports, row)
 	}
 	return reports, rows.Err()

@@ -72,6 +72,85 @@ func TestEventGovernancePersistsVersionsAuditsAndRejectsIllegalRollback(t *testi
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM event_versions WHERE event_id = $1`, duplicate.EventID, 1)
 }
 
+func TestEventCapacityTypesValidateAndExposeSummaries(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	if err := service.SeedDemoData(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	if _, err := service.CreateEvent(ctx, admin, CreateEventRequest{Title: "Missing Capacity"}); err == nil || ErrorStatus(err) != 400 {
+		t.Fatalf("missing limited capacity error = %v, want 400", err)
+	}
+	if _, err := service.CreateEvent(ctx, admin, CreateEventRequest{Title: "Zero Capacity", Capacity: 0}); err == nil || ErrorStatus(err) != 400 {
+		t.Fatalf("zero limited capacity error = %v, want 400", err)
+	}
+	if _, err := service.CreateEvent(ctx, admin, CreateEventRequest{Title: "Family Limited", Capacity: 10, AllowsFamily: true}); err == nil || ErrorStatus(err) != 400 {
+		t.Fatalf("limited family error = %v, want 400", err)
+	}
+
+	legacy, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Legacy Limited",
+		Location: "Taipei HQ",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.CapacityType != CapacityTypeLimited || capacityValue(legacy.Capacity) != 2 || legacy.RemainingCapacity == nil || *legacy.RemainingCapacity != 2 {
+		t.Fatalf("legacy limited summary = %+v", legacy)
+	}
+	if legacy.EventCity != "Taipei HQ" || legacy.EventSite != "Taipei HQ" || legacy.AllowsFamily {
+		t.Fatalf("legacy fallback fields = city %q site %q family %v", legacy.EventCity, legacy.EventSite, legacy.AllowsFamily)
+	}
+
+	unlimited, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:        "Unlimited Family",
+		EventCity:    "Taipei",
+		EventSite:    "HQ",
+		CapacityType: CapacityTypeUnlimited,
+		AllowsFamily: true,
+		Status:       EventStatusPublished,
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unlimited.CapacityType != CapacityTypeUnlimited || unlimited.Capacity != nil || unlimited.RemainingCapacity != nil || !unlimited.AllowsFamily {
+		t.Fatalf("unlimited summary = %+v", unlimited)
+	}
+	if unlimited.EventCity != "Taipei" || unlimited.EventSite != "HQ" {
+		t.Fatalf("unlimited city/site = %q/%q", unlimited.EventCity, unlimited.EventSite)
+	}
+	if _, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, unlimited.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unlimited-booking"}); err == nil || ErrorStatus(err) != 501 {
+		t.Fatalf("unlimited booking error = %v, want 501", err)
+	}
+
+	limitedType := CapacityTypeLimited
+	if _, err := service.UpdateEvent(ctx, admin, unlimited.EventID, UpdateEventRequest{CapacityType: &limitedType}); err == nil || ErrorStatus(err) != 400 {
+		t.Fatalf("invalid update to limited without capacity error = %v, want 400", err)
+	}
+	allowFamily := true
+	if _, err := service.UpdateEvent(ctx, admin, legacy.EventID, UpdateEventRequest{AllowsFamily: &allowFamily}); err == nil || ErrorStatus(err) != 400 {
+		t.Fatalf("invalid limited family update error = %v, want 400", err)
+	}
+
+	if _, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, legacy.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "capacity-type-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, legacy.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "capacity-type-2"}); err != nil {
+		t.Fatal(err)
+	}
+	one := 1
+	if _, err := service.UpdateEvent(ctx, admin, legacy.EventID, UpdateEventRequest{Capacity: &one}); err == nil || ErrorStatus(err) != 409 {
+		t.Fatalf("capacity below confirmed error = %v, want 409", err)
+	}
+}
+
 func TestCheckinStaffCanListEventsForOfflinePackageSelectionOnly(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

@@ -9,6 +9,7 @@ import (
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventRequest) (EventSummary, error) {
@@ -18,8 +19,9 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 	if strings.TrimSpace(req.Title) == "" {
 		return EventSummary{}, badRequest("title is required")
 	}
-	if req.Capacity <= 0 {
-		return EventSummary{}, badRequest("capacity must be positive")
+	capacityType, capacity, allowsFamily, err := normalizeEventCapacity(req.CapacityType, req.Capacity, req.AllowsFamily)
+	if err != nil {
+		return EventSummary{}, err
 	}
 	if req.Status == "" {
 		req.Status = EventStatusPublished
@@ -47,6 +49,8 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 		return EventSummary{}, badRequest("registration_start must be before registration_close")
 	}
 	ruleInput := normalizeRuleInput(req.Rule)
+	eventCity := eventCityOrFallback(req.EventCity, req.Location)
+	eventSite := eventSiteOrFallback(req.EventSite, req.Location)
 
 	eventID, err := newID("evt")
 	if err != nil {
@@ -68,10 +72,11 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 	defer rollback(ctx, tx)
 
 	_, err = tx.Exec(ctx, `INSERT INTO events
-		(event_id, title, description, location, starts_at, registration_start, registration_close, capacity, status, allocation_mode, category, tags, entry_method, visibility, version, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'fcfs',$10,$11,$12,$13,1,$14)`,
-		eventID, strings.TrimSpace(req.Title), req.Description, req.Location, req.StartsAt, req.RegistrationStart, req.RegistrationClose, req.Capacity, req.Status,
-		strings.TrimSpace(req.Category), joinTags(req.Tags), strings.TrimSpace(req.EntryMethod), strings.TrimSpace(req.Visibility), actor.ID)
+		(event_id, title, description, location, event_city, event_site, starts_at, registration_start, registration_close,
+		 capacity_type, capacity, allows_family, status, allocation_mode, category, tags, entry_method, visibility, version, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'fcfs',$14,$15,$16,$17,1,$18)`,
+		eventID, strings.TrimSpace(req.Title), req.Description, req.Location, eventCity, eventSite, req.StartsAt, req.RegistrationStart, req.RegistrationClose,
+		capacityType, capacity, allowsFamily, req.Status, strings.TrimSpace(req.Category), joinTags(req.Tags), strings.TrimSpace(req.EntryMethod), strings.TrimSpace(req.Visibility), actor.ID)
 	if err != nil {
 		return EventSummary{}, err
 	}
@@ -80,10 +85,14 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 		Title:             strings.TrimSpace(req.Title),
 		Description:       req.Description,
 		Location:          req.Location,
+		EventCity:         eventCity,
+		EventSite:         eventSite,
 		StartsAt:          req.StartsAt,
 		RegistrationStart: req.RegistrationStart,
 		RegistrationClose: req.RegistrationClose,
-		Capacity:          req.Capacity,
+		CapacityType:      capacityType,
+		Capacity:          capacity,
+		AllowsFamily:      allowsFamily,
 		Status:            req.Status,
 		AllocationMode:    "fcfs",
 		Category:          strings.TrimSpace(req.Category),
@@ -109,7 +118,7 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 	if err := insertEligibilityRuleVersionTx(ctx, tx, eventID, 1, ruleInput, matchCount, actor.ID); err != nil {
 		return EventSummary{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "event.created", "event", eventID, map[string]interface{}{"capacity": req.Capacity, "status": req.Status}); err != nil {
+	if err := insertAudit(ctx, tx, auditID, actor, "event.created", "event", eventID, map[string]interface{}{"capacity_type": capacityType, "capacity": capacity, "allows_family": allowsFamily, "status": req.Status}); err != nil {
 		return EventSummary{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -149,9 +158,10 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeID string) (EventSummary, error) {
 	var summary EventSummary
 	var tags string
+	var capacity pgtype.Int4
 	err := s.db.QueryRow(ctx, `SELECT
-			e.event_id, e.title, e.description, e.location, e.starts_at, e.registration_start, e.registration_close,
-			e.capacity, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
+			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
+			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
 			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
 			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
 			(SELECT count(*) FROM registrations rg WHERE rg.event_id = e.event_id AND rg.status = 'confirmed') AS confirmed_count,
@@ -160,8 +170,8 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 		JOIN eligibility_rules r ON r.event_id = e.event_id
 		WHERE e.event_id = $1`, eventID).
 		Scan(
-			&summary.EventID, &summary.Title, &summary.Description, &summary.Location, &summary.StartsAt, &summary.RegistrationStart, &summary.RegistrationClose,
-			&summary.Capacity, &summary.Status, &summary.AllocationMode, &summary.Category, &tags, &summary.EntryMethod, &summary.Visibility, &summary.Version,
+			&summary.EventID, &summary.Title, &summary.Description, &summary.Location, &summary.EventCity, &summary.EventSite, &summary.StartsAt, &summary.RegistrationStart, &summary.RegistrationClose,
+			&summary.CapacityType, &capacity, &summary.AllowsFamily, &summary.Status, &summary.AllocationMode, &summary.Category, &tags, &summary.EntryMethod, &summary.Visibility, &summary.Version,
 			&summary.ArchivedAt, &summary.CreatedBy, &summary.CreatedAt, &summary.UpdatedAt,
 			&summary.Rule.RuleID, &summary.Rule.EventID, &summary.Rule.Department, &summary.Rule.Site, &summary.Rule.MinGrade, &summary.Rule.EmploymentStatus, &summary.Rule.Version,
 			&summary.ConfirmedCount, &summary.WaitlistCount,
@@ -172,8 +182,16 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 	if err != nil {
 		return EventSummary{}, err
 	}
+	if capacity.Valid {
+		value := int(capacity.Int32)
+		summary.Capacity = &value
+	}
+	summary.EventCity = eventCityOrFallback(summary.EventCity, summary.Location)
+	summary.EventSite = eventSiteOrFallback(summary.EventSite, summary.Location)
 	summary.Tags = splitTags(tags)
-	summary.RemainingCapacity = max(summary.Capacity-summary.ConfirmedCount, 0)
+	if summary.CapacityType == CapacityTypeLimited && summary.Capacity != nil {
+		summary.RemainingCapacity = intPtr(max(*summary.Capacity-summary.ConfirmedCount, 0))
+	}
 	summary.Eligible = false
 	summary.EligibilityReason = "provider claims employee identity is required"
 	if employeeID != "" {

@@ -39,11 +39,12 @@ type LotteryRun struct {
 type ReportRow struct {
 	EventID           string    `json:"event_id"`
 	Title             string    `json:"title"`
-	Capacity          int       `json:"capacity"`
+	CapacityType      string    `json:"capacity_type"`
+	Capacity          *int      `json:"capacity"`
 	ConfirmedCount    int       `json:"confirmed_count"`
 	WaitlistCount     int       `json:"waitlist_count"`
 	TicketCount       int       `json:"ticket_count"`
 	CheckinCount      int       `json:"checkin_count"`
-	RemainingCapacity int       `json:"remaining_capacity"`
+	RemainingCapacity *int      `json:"remaining_capacity"`
 	StartsAt          time.Time `json:"starts_at"`
 }

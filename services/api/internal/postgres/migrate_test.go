@@ -18,8 +18,12 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 
 	required := []string{
 		"CREATE TABLE IF NOT EXISTS events",
-		"capacity INTEGER NOT NULL CHECK (capacity > 0)",
+		"capacity_type TEXT NOT NULL DEFAULT 'limited'",
+		"capacity INTEGER",
+		"allows_family BOOLEAN NOT NULL DEFAULT false",
+		"events_capacity_rules_check",
 		"CREATE TABLE IF NOT EXISTS event_versions",
+		"event_versions_capacity_rules_check",
 		"CREATE TABLE IF NOT EXISTS event_assets",
 		"CREATE TABLE IF NOT EXISTS eligibility_rules",
 		"CREATE TABLE IF NOT EXISTS eligibility_rule_versions",
@@ -45,6 +49,8 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS offline_checkin_batches",
 		"package_signature TEXT NOT NULL DEFAULT ''",
 		"CREATE TABLE IF NOT EXISTS report_exports",
+		"ALTER TABLE events ALTER COLUMN capacity DROP NOT NULL",
+		"ALTER TABLE events ADD CONSTRAINT events_capacity_rules_check",
 	}
 
 	for _, fragment := range required {
@@ -130,6 +136,102 @@ func TestMigrateSerializesConcurrentCalls(t *testing.T) {
 	for err := range errs {
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	if _, err := pool.Exec(ctx, `CREATE TABLE events (
+		event_id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		location TEXT NOT NULL DEFAULT '',
+		starts_at TIMESTAMPTZ NOT NULL,
+		registration_start TIMESTAMPTZ NOT NULL,
+		registration_close TIMESTAMPTZ NOT NULL,
+		capacity INTEGER NOT NULL CHECK (capacity > 0),
+		status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'closed', 'cancelled')),
+		allocation_mode TEXT NOT NULL DEFAULT 'fcfs',
+		created_by TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO events
+		(event_id, title, starts_at, registration_start, registration_close, capacity, status, created_by)
+		VALUES ('evt_legacy', 'Legacy', now() + interval '7 days', now(), now() + interval '1 day', 25, 'published', 'admin-1')`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+
+	var capacityType string
+	var capacity int
+	var allowsFamily bool
+	if err := pool.QueryRow(ctx, `SELECT capacity_type, capacity, allows_family FROM events WHERE event_id = 'evt_legacy'`).
+		Scan(&capacityType, &capacity, &allowsFamily); err != nil {
+		t.Fatal(err)
+	}
+	if capacityType != "limited" || capacity != 25 || allowsFamily {
+		t.Fatalf("legacy capacity columns = %q %d %v", capacityType, capacity, allowsFamily)
+	}
+}
+
+func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+
+	insertEvent := func(eventID string, capacityType string, capacity interface{}, allowsFamily bool) error {
+		_, err := pool.Exec(ctx, `INSERT INTO events
+			(event_id, title, starts_at, registration_start, registration_close, capacity_type, capacity, allows_family, status, created_by)
+			VALUES ($1, 'Capacity Test', now() + interval '7 days', now(), now() + interval '1 day', $2, $3, $4, 'published', 'admin-1')`,
+			eventID, capacityType, capacity, allowsFamily)
+		return err
+	}
+
+	if err := insertEvent("evt_unlimited", "unlimited", nil, true); err != nil {
+		t.Fatalf("unlimited insert failed: %v", err)
+	}
+	for _, tt := range []struct {
+		name         string
+		eventID      string
+		capacityType string
+		capacity     interface{}
+		allowsFamily bool
+	}{
+		{"limited null capacity", "evt_limited_null", "limited", nil, false},
+		{"limited non-positive capacity", "evt_limited_zero", "limited", 0, false},
+		{"limited with family", "evt_limited_family", "limited", 10, true},
+		{"unlimited with capacity", "evt_unlimited_capacity", "unlimited", 10, false},
+	} {
+		if err := insertEvent(tt.eventID, tt.capacityType, tt.capacity, tt.allowsFamily); err == nil {
+			t.Fatalf("%s insert unexpectedly succeeded", tt.name)
 		}
 	}
 }

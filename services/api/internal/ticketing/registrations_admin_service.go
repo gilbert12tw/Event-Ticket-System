@@ -86,7 +86,11 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 			if err != nil {
 				return BookingResponse{}, err
 			}
-			remaining, err := s.remainingCapacityTx(ctx, tx, eventID, event.Capacity)
+			capacity, err := limitedCapacity(event)
+			if err != nil {
+				return BookingResponse{}, err
+			}
+			remaining, err := s.remainingCapacityTx(ctx, tx, eventID, capacity)
 			if err != nil {
 				return BookingResponse{}, err
 			}
@@ -126,14 +130,18 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	}
 
 	remaining := 0
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return BookingResponse{}, err
+	}
 	if wasConfirmed {
-		promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, event.Capacity, rule)
+		promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, capacity, rule)
 		if err != nil {
 			return BookingResponse{}, err
 		}
 		remaining = promotion.RemainingCapacity
 	} else {
-		remaining, err = s.remainingCapacityTx(ctx, tx, eventID, event.Capacity)
+		remaining, err = s.remainingCapacityTx(ctx, tx, eventID, capacity)
 		if err != nil {
 			return BookingResponse{}, err
 		}
@@ -159,7 +167,11 @@ func (s *Service) PromoteWaitlist(ctx context.Context, actor Actor, eventID stri
 	if err != nil {
 		return PromoteWaitlistResponse{}, err
 	}
-	promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, event.Capacity, rule)
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return PromoteWaitlistResponse{}, err
+	}
+	promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, capacity, rule)
 	if err != nil {
 		return PromoteWaitlistResponse{}, err
 	}

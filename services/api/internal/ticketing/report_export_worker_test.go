@@ -15,6 +15,16 @@ type recordingReportStore struct {
 	body        string
 }
 
+func TestNullableIntCSVValue(t *testing.T) {
+	if got := nullableIntCSVValue(nil); got != "" {
+		t.Fatalf("nil CSV value = %q, want blank", got)
+	}
+	value := 12
+	if got := nullableIntCSVValue(&value); got != "12" {
+		t.Fatalf("CSV value = %q, want 12", got)
+	}
+}
+
 func (s *recordingReportStore) Put(ctx context.Context, key string, contentType string, body []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err

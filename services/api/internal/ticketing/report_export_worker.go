@@ -65,12 +65,12 @@ func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
 		if err := writer.Write([]string{
 			row.EventID,
 			row.Title,
-			strconv.Itoa(row.Capacity),
+			nullableIntCSVValue(row.Capacity),
 			strconv.Itoa(row.ConfirmedCount),
 			strconv.Itoa(row.WaitlistCount),
 			strconv.Itoa(row.TicketCount),
 			strconv.Itoa(row.CheckinCount),
-			strconv.Itoa(row.RemainingCapacity),
+			nullableIntCSVValue(row.RemainingCapacity),
 			row.StartsAt.UTC().Format(time.RFC3339),
 		}); err != nil {
 			return nil, err
@@ -78,6 +78,13 @@ func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
 	}
 	writer.Flush()
 	return buffer.Bytes(), writer.Error()
+}
+
+func nullableIntCSVValue(value *int) string {
+	if value == nil {
+		return ""
+	}
+	return strconv.Itoa(*value)
 }
 
 func (s *Service) markReportExportReady(ctx context.Context, exportID string) error {
