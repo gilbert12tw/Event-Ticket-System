@@ -77,7 +77,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
       <div className="panel span-12 workspace-context user-context">
         <div>
           <div className="eyebrow">User Workspace</div>
-          <h2>Employee events</h2>
+          <h2>員工入口</h2>
           <p>Book eligible events, track waitlist state, and cancel open registrations with a retry-safe request.</p>
         </div>
         <IdentityCard claims={claims} />
@@ -191,7 +191,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
       <div className="panel span-12 workspace-context user-context">
         <div>
           <div className="eyebrow">User Workspace</div>
-          <h2>Event detail</h2>
+          <h2>單一活動詳情</h2>
           <p>Review eligibility, family-count limits, cancellation state, and ticket handoff from the same event record.</p>
         </div>
         <label className="field compact">
