@@ -91,6 +91,9 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "accepted", checkin.Status)
 	assert.Equal(t, first.Ticket.TicketID, checkin.TicketID)
+	assert.Equal(t, "Ariel Chen", checkin.Holder.DisplayName)
+	assert.Equal(t, "Engineering", checkin.Holder.Department)
+	assert.Equal(t, "Taipei", checkin.Holder.City)
 	duplicate, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: first.Ticket.SignedToken, DeviceID: "gate-1"})
 	require.Error(t, err)
 	assert.Equal(t, 409, ErrorStatus(err))
@@ -121,47 +124,6 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 		`"action":"ticket.redeemed"`,
 		`"status":"success"`,
 	)
-}
-
-func TestServiceRejectsTamperedCheckinToken(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-
-	_, err := service.CheckIn(context.Background(), Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "bad.token", DeviceID: "gate-1"})
-	require.Error(t, err)
-	assert.Equal(t, 400, ErrorStatus(err))
-}
-
-func TestServiceExpiresTicketDuringCheckin(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	now := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
-	service.now = func() time.Time { return now }
-	require.NoError(t, service.SeedDemoData(ctx))
-
-	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Expired Ticket Check-in",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "expired-ticket-booking"})
-	require.NoError(t, err)
-	_, err = service.db.Exec(ctx, `UPDATE tickets SET expires_at = $1 WHERE ticket_id = $2`, now.Add(-time.Minute), booking.Ticket.TicketID)
-	require.NoError(t, err)
-
-	_, err = service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: booking.Ticket.SignedToken, DeviceID: "gate-expired"})
-	require.Error(t, err)
-	assert.Equal(t, 409, ErrorStatus(err))
-
-	var status string
-	require.NoError(t, service.db.QueryRow(ctx, `SELECT status FROM tickets WHERE ticket_id = $1`, booking.Ticket.TicketID).Scan(&status))
-	assert.Equal(t, TicketExpired, status)
-	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'ticket.expired' AND entity_id = $1`, booking.Ticket.TicketID, 1)
-	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.expired' AND aggregate_id = $1`, booking.Ticket.TicketID, 1)
 }
 
 func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {

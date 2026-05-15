@@ -31,7 +31,12 @@ func (s *Service) OfflineCheckinPackage(ctx context.Context, actor Actor, eventI
 	if deviceID == "" {
 		return OfflineCheckinPackage{}, badRequest("device_id is required")
 	}
-	rows, err := s.db.Query(ctx, `SELECT ticket_id, employee_id, signed_token_hash FROM tickets WHERE event_id = $1 AND status = 'active' ORDER BY issued_at ASC`, eventID)
+	rows, err := s.db.Query(ctx, `SELECT t.ticket_id, t.employee_id, t.signed_token_hash, r.family_count, e.full_name, e.department, e.site
+		FROM tickets t
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees e ON e.employee_id = t.employee_id
+		WHERE t.event_id = $1 AND t.status = 'active'
+		ORDER BY t.issued_at ASC`, eventID)
 	if err != nil {
 		return OfflineCheckinPackage{}, err
 	}
@@ -39,7 +44,7 @@ func (s *Service) OfflineCheckinPackage(ctx context.Context, actor Actor, eventI
 	var tickets []OfflineTicket
 	for rows.Next() {
 		var ticket OfflineTicket
-		if err := rows.Scan(&ticket.TicketID, &ticket.EmployeeID, &ticket.TokenHash); err != nil {
+		if err := rows.Scan(&ticket.TicketID, &ticket.EmployeeID, &ticket.TokenHash, &ticket.FamilyCount, &ticket.Holder.DisplayName, &ticket.Holder.Department, &ticket.Holder.City); err != nil {
 			return OfflineCheckinPackage{}, err
 		}
 		tickets = append(tickets, ticket)
@@ -182,9 +187,15 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 	defer rollback(ctx, tx)
 
 	var ticket Ticket
-	err = tx.QueryRow(ctx, `SELECT ticket_id, registration_id, event_id, employee_id, status, sequence_number, COALESCE(expires_at, issued_at + interval '24 hours'), revoked_reason, issued_at
-		FROM tickets WHERE signed_token_hash = $1 FOR UPDATE`, tokenHash).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt)
+	err = tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
+			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
+			e.full_name, e.department, e.site
+		FROM tickets t
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees e ON e.employee_id = t.employee_id
+		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash).
+		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber,
+			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		result := conflictResultFromClaims(req, claims, scan.ScannedAt, offlineConflictNotFound)
 		if err := s.insertOfflineScanTx(ctx, tx, req, "", offlineScanStatusConflict, scan.ScannedAt, tokenHash, result.ConflictReason); err != nil {
@@ -209,17 +220,28 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
 	status := offlineScanStatusAccepted
-	result := CheckinResponse{TicketID: ticket.TicketID, EventID: ticket.EventID, EmployeeID: ticket.EmployeeID, Status: offlineScanStatusAccepted, ScannedAt: scan.ScannedAt}
+	result := CheckinResponse{
+		TicketID:    ticket.TicketID,
+		EventID:     ticket.EventID,
+		EmployeeID:  ticket.EmployeeID,
+		Status:      offlineScanStatusAccepted,
+		ReasonCode:  "accepted",
+		ScannedAt:   scan.ScannedAt,
+		Holder:      ticketHolderFromTicket(ticket),
+		FamilyCount: ticket.FamilyCount,
+	}
 	if found {
 		status = offlineScanStatusDuplicate
 		result = duplicateOfflineResult(existing)
 	} else if ticket.Status != TicketActive {
 		status = offlineScanStatusConflict
 		result.Status = offlineScanStatusConflict
+		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictNotActive
 	} else if !ticket.ExpiresAt.IsZero() && s.now().After(ticket.ExpiresAt) {
 		status = offlineScanStatusConflict
 		result.Status = offlineScanStatusConflict
+		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictExpired
 	} else {
 		checkinID, err := newID("chk")
@@ -280,7 +302,17 @@ func (s *Service) recordOfflineUnknownConflict(ctx context.Context, actor Actor,
 }
 
 func (s *Service) recordKnownOfflineConflict(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, ticket Ticket, scannedAt time.Time, tokenHash string, reason string) (CheckinResponse, string, error) {
-	result := CheckinResponse{TicketID: ticket.TicketID, EventID: ticket.EventID, EmployeeID: ticket.EmployeeID, Status: offlineScanStatusConflict, ScannedAt: scannedAt, ConflictReason: reason}
+	result := CheckinResponse{
+		TicketID:       ticket.TicketID,
+		EventID:        ticket.EventID,
+		EmployeeID:     ticket.EmployeeID,
+		Status:         offlineScanStatusConflict,
+		ReasonCode:     "offline_conflict",
+		ScannedAt:      scannedAt,
+		ConflictReason: reason,
+		Holder:         ticketHolderFromTicket(ticket),
+		FamilyCount:    ticket.FamilyCount,
+	}
 	if err := s.insertOfflineScanTx(ctx, tx, req, ticket.TicketID, offlineScanStatusConflict, scannedAt, tokenHash, reason); err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
@@ -334,7 +366,7 @@ func conflictResultFromClaims(req OfflineCheckinSyncRequest, claims TicketClaims
 	if eventID == "" {
 		eventID = req.EventID
 	}
-	return CheckinResponse{TicketID: claims.TicketID, EventID: eventID, EmployeeID: claims.EmployeeID, Status: offlineScanStatusConflict, ScannedAt: scannedAt, ConflictReason: reason}
+	return CheckinResponse{TicketID: claims.TicketID, EventID: eventID, EmployeeID: claims.EmployeeID, Status: offlineScanStatusConflict, ReasonCode: "offline_conflict", ScannedAt: scannedAt, ConflictReason: reason}
 }
 
 func claimsMatchTicket(claims TicketClaims, ticket Ticket) bool {
@@ -345,5 +377,6 @@ func duplicateOfflineResult(existing CheckinResponse) CheckinResponse {
 	existing.Duplicate = true
 	existing.FirstScannedAt = existing.ScannedAt
 	existing.ConflictReason = offlineConflictRedeemed
+	existing.ReasonCode = "duplicate_scan"
 	return existing
 }

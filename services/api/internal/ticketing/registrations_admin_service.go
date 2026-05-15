@@ -3,6 +3,8 @@ package ticketing
 import (
 	"context"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID string) ([]RegistrationDetail, error) {
@@ -70,12 +72,10 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	if reg.EventID != eventID {
 		return BookingResponse{}, notFound("registration not found")
 	}
-	if actor.Role == RoleEmployee {
+	isEmployeeCancel := actor.Role == RoleEmployee
+	if isEmployeeCancel {
 		if actor.ID != reg.EmployeeID {
 			return BookingResponse{}, forbidden("employees may only cancel their own registrations")
-		}
-		if s.now().After(event.RegistrationClose) {
-			return BookingResponse{}, conflict("registration window is closed; contact an activity admin")
 		}
 	} else if err := requireRole(actor, RoleActivityAdmin); err != nil {
 		return BookingResponse{}, err
@@ -92,6 +92,13 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 			}
 			return BookingResponse{Registration: reg, Ticket: sanitizeTicket(ticket), RemainingCapacity: remaining, Message: "registration already cancelled"}, tx.Commit(ctx)
 		}
+	}
+	if isEmployeeCancel {
+		if s.now().After(event.RegistrationClose) {
+			return BookingResponse{}, conflict("registration window is closed; contact an activity admin")
+		}
+	} else if strings.TrimSpace(req.Reason) == "" {
+		return BookingResponse{}, badRequest("reason is required for admin exception cancellation")
 	}
 	if reg.Status != RegistrationConfirmed && reg.Status != RegistrationWaitlisted {
 		return BookingResponse{}, conflict("registration cannot be cancelled")
@@ -149,6 +156,20 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 		return BookingResponse{}, err
 	}
 	return BookingResponse{Registration: reg, Ticket: sanitizeTicket(ticket), RemainingCapacity: remaining, Message: "registration cancelled"}, nil
+}
+
+func (s *Service) CancelMyRegistration(ctx context.Context, actor Actor, registrationID string, req CancelRegistrationRequest) (BookingResponse, error) {
+	if err := requireRole(actor, RoleEmployee); err != nil {
+		return BookingResponse{}, err
+	}
+	var eventID string
+	if err := s.db.QueryRow(ctx, `SELECT event_id FROM registrations WHERE registration_id = $1`, registrationID).Scan(&eventID); err != nil {
+		if err == pgx.ErrNoRows {
+			return BookingResponse{}, notFound("registration not found")
+		}
+		return BookingResponse{}, err
+	}
+	return s.CancelRegistration(ctx, actor, eventID, registrationID, req)
 }
 
 func (s *Service) PromoteWaitlist(ctx context.Context, actor Actor, eventID string) (PromoteWaitlistResponse, error) {

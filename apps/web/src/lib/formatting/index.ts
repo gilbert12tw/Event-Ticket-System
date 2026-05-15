@@ -2,8 +2,8 @@ import { ApiError, type AuditLogFilters, type CreateEventRequest, type EmployeeP
 
 export function defaultEventForm() {
   return {
-    title: "台北家庭電影夜",
-    description: "Phase 1 先搶先得、候補與驗票示範。",
+    title: "Taipei family movie night",
+    description: "Phase 1 demonstration for booking, waitlist, and check-in.",
     location: "Taipei HQ Auditorium",
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
@@ -114,7 +114,7 @@ export function normalizeAuditFilters(filters: AuditLogFilters): AuditLogFilters
 }
 
 export function formatDate(value?: string) {
-  if (!value) return "未設定";
+  if (!value) return "Not set";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-TW", {

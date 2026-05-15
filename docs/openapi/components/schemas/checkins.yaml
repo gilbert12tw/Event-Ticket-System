@@ -22,12 +22,11 @@ OfflineCheckInSyncResponseEnvelope:
 CreateCheckInRequest:
   type: object
   required:
-    - ticket_token
-    - event_id
+    - signed_token
     - device_id
   additionalProperties: false
   properties:
-    ticket_token:
+    signed_token:
       type: string
     event_id:
       type: string
@@ -51,11 +50,29 @@ CheckInResult:
 CheckInResolvedResult:
   type: object
   required:
+    - ticket_id
+    - event_id
+    - employee_id
     - status
     - reason_code
+    - scanned_at
+    - duplicate
     - holder
     - family_count
   properties:
+    checkin_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    ticket_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    employee_id:
+      type: string
     status:
       type: string
       enum:
@@ -68,16 +85,24 @@ CheckInResolvedResult:
         - accepted
         - duplicate_scan
         - offline_conflict
-    checkin_id:
-      type:
-        - string
-        - "null"
-      format: uuid
-    first_checkin_at:
+    scanned_at:
+      type: string
+      format: date-time
+    first_scanned_at:
       type:
         - string
         - "null"
       format: date-time
+    first_scanned_by:
+      type:
+        - string
+        - "null"
+    conflict_reason:
+      type:
+        - string
+        - "null"
+    duplicate:
+      type: boolean
     holder:
       "$ref": "./tickets.yaml#/TicketHolder"
     family_count:
@@ -90,9 +115,26 @@ CheckInResolvedResult:
 CheckInRejectedResult:
   type: object
   required:
+    - ticket_id
+    - event_id
+    - employee_id
     - status
     - reason_code
+    - scanned_at
   properties:
+    checkin_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+    ticket_id:
+      type: string
+      format: uuid
+    event_id:
+      type: string
+      format: uuid
+    employee_id:
+      type: string
     status:
       type: string
       const: rejected
@@ -105,10 +147,26 @@ CheckInRejectedResult:
         - event_mismatch
         - holder_mismatch
         - transfer_attempt
-    checkin_id:
-      type: "null"
-    first_checkin_at:
-      type: "null"
+        - ticket_not_active
+        - ticket_token_claims_mismatch
+    scanned_at:
+      type: string
+      format: date-time
+    first_scanned_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    first_scanned_by:
+      type:
+        - string
+        - "null"
+    conflict_reason:
+      type:
+        - string
+        - "null"
+    duplicate:
+      type: boolean
     holder:
       oneOf:
         - "$ref": "./tickets.yaml#/TicketHolder"
@@ -199,11 +257,11 @@ OfflineCheckInSyncRequest:
 OfflineCheckInScanInput:
   type: object
   required:
-    - ticket_token
+    - signed_token
     - scanned_at
   additionalProperties: false
   properties:
-    ticket_token:
+    signed_token:
       type: string
     scanned_at:
       type: string

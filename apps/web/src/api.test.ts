@@ -175,7 +175,7 @@ describe("api client", () => {
     expect(fetchCall(2).path).toBe("/api/v1/events/evt%2F1/eligibility");
     expect(fetchCall(3)).toMatchObject({
       path: "/api/v1/events/evt%2F1/bookings",
-      body: { idempotency_key: "book-1" }
+      body: { idempotency_key: "book-1", family_count: 0 }
     });
     expect(fetchCall(4).path).toBe("/api/v1/me/tickets");
     for (let index = 0; index < 5; index += 1) {

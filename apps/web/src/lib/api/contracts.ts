@@ -116,6 +116,8 @@ export type EventSummary = {
   title: string;
   description: string;
   location: string;
+  event_city?: string;
+  event_site?: string;
   starts_at: string;
   registration_start: string;
   registration_close: string;
@@ -140,7 +142,16 @@ export type EventSummary = {
   waitlist_count: number;
   remaining_capacity: number | null;
   current_user_status: string;
+  current_user_registration_id?: string;
   current_user_ticket?: Ticket;
+  no_show_cooldown?: NoShowCooldown;
+};
+
+export type NoShowCooldown = {
+  active: boolean;
+  applies_to?: "limited" | "";
+  until?: string | null;
+  reason?: string;
 };
 
 export type Ticket = {
@@ -159,6 +170,7 @@ export type Ticket = {
   event_location?: string;
   event_starts_at?: string;
   employee_name?: string;
+  family_count?: number;
 };
 
 export type BookingResponse = {
@@ -171,6 +183,7 @@ export type BookingResponse = {
     cancel_idempotency_key?: string;
     cancelled_at?: string;
     cancel_reason?: string;
+    family_count?: number;
     created_at: string;
   };
   ticket?: Ticket;
@@ -187,6 +200,7 @@ export type RegistrationDetail = {
   cancel_idempotency_key?: string;
   cancelled_at?: string;
   cancel_reason?: string;
+  family_count?: number;
   created_at: string;
   employee_name: string;
   ticket?: Ticket;

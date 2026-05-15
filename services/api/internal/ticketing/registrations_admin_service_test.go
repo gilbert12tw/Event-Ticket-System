@@ -84,7 +84,6 @@ func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 
 	second, err := service.CancelRegistration(ctx, admin, event.EventID, confirmed.Registration.RegistrationID, CancelRegistrationRequest{
 		IdempotencyKey: "cancel-idem-1",
-		Reason:         "retry",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "registration already cancelled", second.Message)
