@@ -408,7 +408,6 @@ function eligibilityLabel(event: EventSummary) {
   const reason = event.eligibility_reason.trim();
   if (!reason) return event.eligible ? "符合資格" : "不可報名";
   if (reason === "eligible") return "符合資格";
-  if (reason === "no_show_cooldown") return "未報到冷卻中";
   return reason;
 }
 
