@@ -18,17 +18,13 @@ var knownCities = []string{
 // cross-city comparisons).
 func eventCityOrFallback(city string, location string) string {
 	if strings.TrimSpace(city) != "" {
-		return city
+		return normalizeLocation(city)
 	}
-	locationLower := strings.ToLower(location)
-	for _, c := range knownCities {
-		if strings.Contains(locationLower, strings.ToLower(c)) {
-			return c
-		}
-	}
-	return location
+	return normalizeLocation(location)
 }
 
+// eventSiteOrFallback returns the explicit site if set, otherwise falls back to
+// the raw location string.
 func eventSiteOrFallback(site string, location string) string {
 	if strings.TrimSpace(site) != "" {
 		return site
