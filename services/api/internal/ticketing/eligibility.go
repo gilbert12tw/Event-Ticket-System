@@ -24,7 +24,8 @@ func EvaluateEligibility(employee Employee, rule EligibilityRule) (bool, string)
 	if rule.EmploymentStatus != "" && rule.EmploymentStatus != "*" && employee.EmploymentStatus != rule.EmploymentStatus {
 		return false, fmt.Sprintf("employment status %s is not eligible", employee.EmploymentStatus)
 	}
-	return true, "eligible"
+
+	return true, ""
 }
 
 func normalizeLocation(input string) string {
@@ -37,19 +38,6 @@ func normalizeLocation(input string) string {
 		if strings.Contains(inputLower, strings.ToLower(c)) {
 			return c
 		}
-	}
-	return input
-}
-
-func normalizeRuleInput(input RuleInput) RuleInput {
-	if input.Department == "" {
-		input.Department = "*"
-	}
-	if input.Site == "" {
-		input.Site = "*"
-	}
-	if input.EmploymentStatus == "" {
-		input.EmploymentStatus = "active"
 	}
 	return input
 }
