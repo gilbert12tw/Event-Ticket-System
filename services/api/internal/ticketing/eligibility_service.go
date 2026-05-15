@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 )
+
 // ErrMissingClaims is returned when provider/HR claims are absent or
 // incomplete. Callers must treat this as a safe degraded rejection (do not
 // mutate state) and must not log the raw claims.
