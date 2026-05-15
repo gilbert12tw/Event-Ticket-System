@@ -8,8 +8,8 @@ import (
 )
 
 func TestEvaluateEligibilityEligible(t *testing.T) {
-	employee := Employee{EmployeeID: "E1001", Department: "Engineering", Site: "Taipei", JobGrade: 6, EmploymentStatus: "active"}
-	rule := EligibilityRule{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"}
+	employee := Employee{EmployeeID: "E1001", Department: "Engineering", Site: "Taipei HQ", JobGrade: 6, EmploymentStatus: "active"}
+	rule := EligibilityRule{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"}
 
 	ok, reason := EvaluateEligibility(employee, rule)
 
@@ -17,11 +17,21 @@ func TestEvaluateEligibilityEligible(t *testing.T) {
 }
 
 func TestEvaluateEligibilityRejectsMismatchWithReason(t *testing.T) {
-	employee := Employee{EmployeeID: "E1001", Department: "Sales", Site: "Taipei", JobGrade: 4, EmploymentStatus: "active"}
-	rule := EligibilityRule{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"}
+	employee := Employee{EmployeeID: "E1001", Department: "Sales", Site: "Taipei HQ", JobGrade: 4, EmploymentStatus: "active"}
+	rule := EligibilityRule{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"}
 
 	ok, reason := EvaluateEligibility(employee, rule)
 
 	require.False(t, ok, "expected ineligible")
 	assert.NotEmpty(t, reason, "expected rejection reason")
 }
+
+func TestEvaluateEligibilityNormalizedSite(t *testing.T) {
+	employee := Employee{EmployeeID: "E1001", Department: "Engineering", Site: "Taipei HQ", JobGrade: 6, EmploymentStatus: "active"}
+	rule := EligibilityRule{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"}
+
+	ok, reason := EvaluateEligibility(employee, rule)
+
+	require.True(t, ok, "expected eligible with normalization, got reason %q", reason)
+}
+

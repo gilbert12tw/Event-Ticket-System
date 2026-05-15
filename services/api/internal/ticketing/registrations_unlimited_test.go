@@ -19,7 +19,7 @@ func TestUnlimitedEventBookingConfirmsAndPersistsFamilyCount(t *testing.T) {
 		Location:     "Taipei HQ",
 		CapacityType: CapacityTypeUnlimited,
 		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assert.True(t, event.AllowsFamily, "unlimited create should auto-enable allows_family")
@@ -52,7 +52,7 @@ func TestUnlimitedBookingRejectsFamilyCountOverCap(t *testing.T) {
 		Location:     "Taipei HQ",
 		CapacityType: CapacityTypeUnlimited,
 		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-cap", FamilyCount: 11})
@@ -74,7 +74,7 @@ func TestLimitedBookingRejectsFamilyCount(t *testing.T) {
 		Location: "Taipei HQ",
 		Capacity: 5,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lim-fam", FamilyCount: 1})
@@ -98,7 +98,7 @@ func TestUnlimitedBookingCancelAndRebook(t *testing.T) {
 		Location:     "Taipei HQ",
 		CapacityType: CapacityTypeUnlimited,
 		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	booked, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-cancel", FamilyCount: 2})

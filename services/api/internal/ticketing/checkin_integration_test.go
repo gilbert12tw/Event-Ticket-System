@@ -30,7 +30,7 @@ func TestServiceRejectsEventAndClaimsMismatchCheckinTokens(t *testing.T) {
 		Title:    "Mismatch Check-in",
 		Capacity: 1,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestServiceRejectsEventAndClaimsMismatchCheckinTokens(t *testing.T) {
 		Title:    "Other Mismatch Check-in",
 		Capacity: 1,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestServicePersistsHolderMismatchRejectionWithoutRedeeming(t *testing.T) {
 		Title:    "Holder Mismatch",
 		Capacity: 1,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestServiceExpiresTicketDuringCheckin(t *testing.T) {
 		Title:    "Expired Ticket Check-in",
 		Capacity: 1,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestServiceRejectsRevokedTicketDuringCheckin(t *testing.T) {
 		Title:    "Revoked Ticket Check-in",
 		Capacity: 1,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)

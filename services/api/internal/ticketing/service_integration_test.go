@@ -36,13 +36,13 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 		Location:    "Taipei HQ",
 		Capacity:    1,
 		Status:      EventStatusPublished,
-		Rule:        RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:        RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'event.created' AND entity_id = $1`, event.EventID, 1)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1 AND version = 1`, event.EventID, 1)
 
-	eligible, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{Department: "Engineering", Site: "Taipei", City: "Taipei"}}, event.EventID, "")
+	eligible, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{Department: "Engineering", Site: "Taipei HQ", City: "Taipei"}}, event.EventID, "")
 	require.NoError(t, err)
 	assert.Equal(t, true, eligible.Eligible)
 
@@ -137,7 +137,7 @@ func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {
 		Title:    "Eligibility Impact",
 		Capacity: 2,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1 AND version = 1`, event.EventID, 1)
@@ -153,7 +153,7 @@ func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {
 	assert.Equal(t, 409, ErrorStatus(err))
 
 	updated, err := service.UpdateEligibility(ctx, admin, event.EventID, UpdateEligibilityRequest{
-		Rule: RuleInput{Department: "Sales", Site: "Taipei", MinGrade: 4, EmploymentStatus: "active"},
+		Rule: RuleInput{Department: "Sales", Site: "Taipei HQ", MinGrade: 4, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, updated.MatchCount)
@@ -179,7 +179,7 @@ func TestServiceRejectsIdempotencyKeyCollisionAcrossEmployees(t *testing.T) {
 		Title:    "Collision Test",
 		Capacity: 2,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "shared-key"})
@@ -198,7 +198,7 @@ func TestServiceConcurrentBookingsDoNotOversellLastSeat(t *testing.T) {
 		Title:    "Last Seat Race",
 		Capacity: 1,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 
