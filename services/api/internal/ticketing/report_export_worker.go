@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -58,19 +59,28 @@ func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
 	}
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"event_id", "title", "capacity", "confirmed_count", "waitlist_count", "ticket_count", "checkin_count", "remaining_capacity", "starts_at"}); err != nil {
+	if err := writer.Write([]string{"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count", "employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count", "remaining_capacity", "city_distribution", "starts_at"}); err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
+		cityDistribution, err := cityDistributionCSVValue(row.CityDistribution)
+		if err != nil {
+			return nil, err
+		}
 		if err := writer.Write([]string{
 			row.EventID,
 			row.Title,
+			row.CapacityType,
 			nullableIntCSVValue(row.Capacity),
 			strconv.Itoa(row.ConfirmedCount),
 			strconv.Itoa(row.WaitlistCount),
+			strconv.Itoa(row.EmployeeCount),
+			strconv.Itoa(row.FamilyCount),
+			strconv.Itoa(row.TotalAttendeeCount),
 			strconv.Itoa(row.TicketCount),
 			strconv.Itoa(row.CheckinCount),
 			nullableIntCSVValue(row.RemainingCapacity),
+			cityDistribution,
 			row.StartsAt.UTC().Format(time.RFC3339),
 		}); err != nil {
 			return nil, err
@@ -78,6 +88,17 @@ func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
 	}
 	writer.Flush()
 	return buffer.Bytes(), writer.Error()
+}
+
+func cityDistributionCSVValue(distribution map[string]int) (string, error) {
+	if distribution == nil {
+		distribution = map[string]int{}
+	}
+	payload, err := json.Marshal(distribution)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
 }
 
 func nullableIntCSVValue(value *int) string {
