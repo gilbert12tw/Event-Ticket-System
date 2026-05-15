@@ -23,6 +23,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
     paths:
       - ".github/workflows/ci.yml"
       - ".dockerignore"
@@ -41,10 +43,13 @@ on:
       - "scripts/*openapi*"
       - "services/api/**"
       - "turbo.json"
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       run_full_ci:
-        description: Run backend, frontend, live, and selected k6 gates
+        description: Run the complete release gate
         required: false
         type: boolean
         default: false
@@ -57,7 +62,7 @@ on:
         description: Run the k6 smoke profile
         required: false
         type: boolean
-        default: true
+        default: false
       run_k6_release:
         description: Run the k6 release profile
         required: false
@@ -95,7 +100,11 @@ jobs:
           set -euo pipefail
 
           force_full=false
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          release_full=false
+          if [[ "${{ github.event_name }}" == "release" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+            release_full=true
+            : > /tmp/changed-files
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             : > /tmp/changed-files
           else
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -130,7 +139,13 @@ jobs:
           frontend=false
           openapi=false
           live=false
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "$release_full" == "true" ]]; then
+            full=true
+            backend=true
+            frontend=true
+            openapi=true
+            live=true
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ inputs.run_full_ci }}" == "true" ]]; then
               full=true
               backend=true
@@ -153,7 +168,7 @@ jobs:
           if grep -Eq '^(\.github/workflows/ci\.yml$|k6/|services/api/deploy/|services/api/Dockerfile$|apps/web/e2e-live/)' /tmp/changed-files; then
             live=true
           fi
-          if [[ "$full" == "true" || "$backend" == "true" ]]; then
+          if [[ "$full" == "true" ]]; then
             live=true
           fi
           quick=false
@@ -240,6 +255,11 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.3
+      - name: Restore Node path for local act runs
+        if: env.ACT == 'true'
+        run: |
+          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+          echo "$node_bin" >> "$GITHUB_PATH"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -273,8 +293,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter cets-web exec playwright install chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true' || env.ACT == 'true'
+        run: |
+          if [[ "${ACT:-}" == "true" ]]; then
+            pnpm --filter cets-web exec playwright install --with-deps chromium
+          else
+            pnpm --filter cets-web exec playwright install chromium
+          fi
       - name: Run mocked Playwright viewport checks
         run: pnpm --filter cets-web test:e2e
 
@@ -296,6 +321,7 @@ jobs:
       COMPOSE_PROJECT_NAME: cets-ci
       POSTGRES_PORT: 15432
       API_IMAGE_TAG: ci
+      K6_RELEASE_DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.k6_release_duration || '10s' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -303,6 +329,11 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.3
+      - name: Restore Node path for local act runs
+        if: env.ACT == 'true'
+        run: |
+          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+          echo "$node_bin" >> "$GITHUB_PATH"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -318,8 +349,13 @@ jobs:
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter cets-web exec playwright install chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true' || env.ACT == 'true'
+        run: |
+          if [[ "${ACT:-}" == "true" ]]; then
+            pnpm --filter cets-web exec playwright install --with-deps chromium
+          else
+            pnpm --filter cets-web exec playwright install chromium
+          fi
       - name: Validate Docker Compose config
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
       - name: Set up Docker Buildx
@@ -352,11 +388,11 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_live_playwright
         run: PLAYWRIGHT_LIVE_BASE_URL=http://127.0.0.1:8080 pnpm --filter cets-web test:e2e:live
       - name: Run k6 smoke gate checks
-        if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_k6_smoke
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_smoke))
         run: docker run --rm --network host --cap-add=SYS_ADMIN -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_BROWSER_ENABLED=true -e K6_SMOKE_DURATION=20s "$K6_IMAGE" run /k6/phase1-production-gate.js
       - name: Run k6 release gate checks
-        if: github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_release)
-        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_RELEASE_DURATION="${{ inputs.k6_release_duration }}" "$K6_IMAGE" run /k6/phase1-release-gate.js
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_release))
+        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_RELEASE_DURATION="$K6_RELEASE_DURATION" "$K6_IMAGE" run /k6/phase1-release-gate.js
       - name: Scan live gate logs for sensitive leakage
         run: |
           docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color app worker > /tmp/cets-app-worker.log
