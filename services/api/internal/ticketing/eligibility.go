@@ -6,6 +6,7 @@ import (
 )
 
 func EvaluateEligibility(employee Employee, rule EligibilityRule) (bool, string) {
+	panic(fmt.Sprintf("DEBUG: EvaluateEligibility running for %s at site %s", employee.EmployeeID, employee.Site))
 	if employee.EmployeeID == "" {
 		return false, "employee not found"
 	}
