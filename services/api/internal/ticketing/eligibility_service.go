@@ -50,7 +50,7 @@ func (s *Service) CheckEligibilityFromClaims(
 		EmployeeID:       actor.ID,
 		Department:       actor.Claims.Department,
 		Site:             actor.Claims.Site,
-		JobGrade:         6,       // assume senior grade for synthetic claim-based check
+		JobGrade:         6, // assume senior grade for synthetic claim-based check
 		EmploymentStatus: "active",
 	}
 	eligible, reason := EvaluateEligibility(synthetic, event.Rule)
