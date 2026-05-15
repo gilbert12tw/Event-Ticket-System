@@ -51,6 +51,7 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
+    expect(await screen.findAllByText("符合資格")).toHaveLength(2);
     expect(await screen.findByText("Limited event: companions are not available.")).toBeInTheDocument();
     const familyInput = await screen.findByRole("spinbutton", { name: "Companions for Unlimited" });
     expect(familyInput).toHaveAttribute("max", "10");

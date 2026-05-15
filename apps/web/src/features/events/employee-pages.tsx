@@ -285,7 +285,7 @@ function EventSummaryBlock({ compact = false, event }: { compact?: boolean; even
   return (
     <div className={compact ? "" : "summary-block"}>
       <div className="event-card-top">
-        <StatusBadge tone={event.eligible && !cooldown?.active ? "ok" : "fail"}>{event.eligible ? "eligible" : "not eligible"}</StatusBadge>
+        <StatusBadge tone={event.eligible && !cooldown?.active ? "ok" : "fail"}>{eligibilityLabel(event)}</StatusBadge>
         <StatusBadge tone={event.capacity_type === "unlimited" ? "info" : "neutral"}>{event.capacity_type}</StatusBadge>
         <StatusBadge tone={eventStatusTone(event.status)}>{event.status}</StatusBadge>
         {event.current_user_status && <StatusBadge tone={registrationTone(event.current_user_status)}>{event.current_user_status}</StatusBadge>}
@@ -294,6 +294,12 @@ function EventSummaryBlock({ compact = false, event }: { compact?: boolean; even
       <p>{event.description || "No description provided."}</p>
       {cooldown?.active && <Alert tone="warn">Limited-event booking is blocked by no-show cooldown until {formatDate(cooldown.until || "")}.</Alert>}
       <dl className="meta-list">
+        {!compact && (
+          <div>
+            <dt>Event ID</dt>
+            <dd>{event.event_id}</dd>
+          </div>
+        )}
         <div>
           <dt>Location</dt>
           <dd>{event.location || event.event_site || "Not set"}</dd>
@@ -385,6 +391,13 @@ function CancellationControl({
 
 function canBook(event: EventSummary) {
   return event.eligible && !event.no_show_cooldown?.active && event.current_user_status !== "confirmed" && event.current_user_status !== "waitlisted";
+}
+
+function eligibilityLabel(event: EventSummary) {
+  const reason = event.eligibility_reason.trim();
+  if (!reason) return event.eligible ? "eligible" : "not eligible";
+  if (reason === "eligible") return "符合資格";
+  return reason;
 }
 
 function cancellationOpen(event: EventSummary) {
