@@ -11,7 +11,7 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 
 	employees := []Employee{
 		{EmployeeID: "E1001", FullName: "Ariel Chen", Department: "Engineering", Site: "Taipei", JobGrade: 6, EmploymentStatus: "active"},
-		{EmployeeID: "E1002", FullName: "Ben Lin", Department: "Engineering", Site: "Taipei", JobGrade: 5, EmploymentStatus: "active"},
+		{EmployeeID: "E1002", FullName: "Ben Lin", Department: "Engineering", Site: "Tainan", JobGrade: 5, EmploymentStatus: "active"},
 		{EmployeeID: "E2001", FullName: "Carla Wu", Department: "Sales", Site: "Taipei", JobGrade: 4, EmploymentStatus: "active"},
 	}
 	for _, employee := range employees {

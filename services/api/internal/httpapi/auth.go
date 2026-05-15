@@ -68,8 +68,8 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:    stringPointer("Product Designer"),
 		RoleClaims:  []string{ticketing.RoleEmployee},
 		Department:  "Engineering",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		Site:        "Tainan HQ",
+		City:        "Tainan",
 	},
 	{
 		EmployeeID:  "E2001",
