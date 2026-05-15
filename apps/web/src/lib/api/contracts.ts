@@ -380,6 +380,8 @@ export type CreateEventRequest = {
   title: string;
   description: string;
   location: string;
+  event_city?: string;
+  event_site?: string;
   starts_at: string;
   registration_start: string;
   registration_close: string;
@@ -398,6 +400,8 @@ export type UpdateEventRequest = {
   title?: string;
   description?: string;
   location?: string;
+  event_city?: string;
+  event_site?: string;
   starts_at?: string;
   registration_start?: string;
   registration_close?: string;
