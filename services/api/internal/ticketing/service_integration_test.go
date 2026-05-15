@@ -258,7 +258,7 @@ func newIntegrationServiceWithLogger(t *testing.T, logger *slog.Logger) (*Servic
 		require.NoError(t, err)
 	}
 	suffix := time.Now().UnixNano()
-	if _, err := pool.Exec(ctx, fmt.Sprintf("TRUNCATE outbox_events, audit_logs, checkin_records, tickets, registrations, eligibility_rules, events, employees RESTART IDENTITY CASCADE")); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE outbox_events, audit_logs, checkin_records, tickets, registrations, eligibility_rules, events, employees RESTART IDENTITY CASCADE"); err != nil {
 		cleanup()
 		require.NoError(t, err)
 	}

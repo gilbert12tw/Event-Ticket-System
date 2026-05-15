@@ -55,7 +55,7 @@ func (s SMTPNotificationSender) Send(ctx context.Context, message DeliveryMessag
 	if err != nil {
 		return contextError(ctx, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
@@ -73,7 +73,7 @@ func (s SMTPNotificationSender) Send(ctx context.Context, message DeliveryMessag
 	if err != nil {
 		return contextError(ctx, err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	if err := client.Mail(s.From); err != nil {
 		return contextError(ctx, err)
 	}

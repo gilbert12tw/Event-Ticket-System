@@ -6,18 +6,21 @@ import { fileURLToPath, URL } from "node:url";
 const configuredWebDevPort = process.env.WEB_DEV_PORT;
 const webDevPort = Number(configuredWebDevPort ?? "5173");
 const apiTarget = process.env.CETS_DEV_API_TARGET ?? "http://localhost:8080";
-const watchOptions = process.env.CHOKIDAR_USEPOLLING === "true" ? { usePolling: true, interval: 100 } : undefined;
+const watchOptions =
+  process.env.CHOKIDAR_USEPOLLING === "true"
+    ? { usePolling: true, interval: 100 }
+    : undefined;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url))
-    }
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
   build: {
     outDir: "../../services/api/internal/httpapi/static",
-    emptyOutDir: true
+    emptyOutDir: true,
   },
   server: {
     host: "0.0.0.0",
@@ -28,21 +31,28 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: apiTarget,
-        changeOrigin: true
+        changeOrigin: true,
       },
       "/healthz": {
         target: apiTarget,
-        changeOrigin: true
+        changeOrigin: true,
       },
       "/readyz": {
         target: apiTarget,
-        changeOrigin: true
-      }
-    }
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
-    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**", "**/e2e-live/**", "**/playwright-report/**", "**/playwright-live-report/**"]
-  }
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/e2e/**",
+      "**/e2e-live/**",
+      "**/playwright-report/**",
+      "**/playwright-live-report/**",
+    ],
+  },
 });

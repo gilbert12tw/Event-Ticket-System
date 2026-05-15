@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "lint": "eslint . --max-warnings=0",
+    "type-check": "tsc -b --pretty false",
     "preview": "vite preview --host 0.0.0.0",
     "e2e": "pnpm run test:e2e:mock",
     "test:e2e": "pnpm run test:e2e:mock",

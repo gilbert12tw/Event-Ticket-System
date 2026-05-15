@@ -13,7 +13,13 @@ export function TicketQrCode({ token }: { token: string }) {
 
   return (
     <div className="qr" aria-label="QR Code visual">
-      <QRCodeSVG value={token} size={QR_SIZE} level="M" marginSize={4} title="Ticket QR Code" />
+      <QRCodeSVG
+        value={token}
+        size={QR_SIZE}
+        level="M"
+        marginSize={4}
+        title="Ticket QR Code"
+      />
     </div>
   );
 }

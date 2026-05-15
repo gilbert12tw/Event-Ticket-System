@@ -6,6 +6,7 @@ on:
       - ".github/workflows/ci.yml"
       - ".dockerignore"
       - ".npmrc"
+      - ".prettierignore"
       - "apps/web/**"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
@@ -22,10 +23,13 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
     paths:
       - ".github/workflows/ci.yml"
       - ".dockerignore"
       - ".npmrc"
+      - ".prettierignore"
       - "apps/web/**"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
@@ -39,10 +43,13 @@ on:
       - "scripts/*openapi*"
       - "services/api/**"
       - "turbo.json"
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       run_full_ci:
-        description: Run backend, frontend, live, and selected k6 gates
+        description: Run the complete release gate
         required: false
         type: boolean
         default: false
@@ -55,7 +62,7 @@ on:
         description: Run the k6 smoke profile
         required: false
         type: boolean
-        default: true
+        default: false
       run_k6_release:
         description: Run the k6 release profile
         required: false
@@ -93,7 +100,11 @@ jobs:
           set -euo pipefail
 
           force_full=false
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          release_full=false
+          if [[ "${{ github.event_name }}" == "release" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+            release_full=true
+            : > /tmp/changed-files
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             : > /tmp/changed-files
           else
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -128,7 +139,13 @@ jobs:
           frontend=false
           openapi=false
           live=false
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "$release_full" == "true" ]]; then
+            full=true
+            backend=true
+            frontend=true
+            openapi=true
+            live=true
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ inputs.run_full_ci }}" == "true" ]]; then
               full=true
               backend=true
@@ -142,7 +159,7 @@ jobs:
           if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$)' /tmp/changed-files; then
             backend=true
           fi
-          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$)' /tmp/changed-files; then
+          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' /tmp/changed-files; then
             frontend=true
           fi
           if grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' /tmp/changed-files; then
@@ -151,7 +168,7 @@ jobs:
           if grep -Eq '^(\.github/workflows/ci\.yml$|k6/|services/api/deploy/|services/api/Dockerfile$|apps/web/e2e-live/)' /tmp/changed-files; then
             live=true
           fi
-          if [[ "$full" == "true" || "$backend" == "true" ]]; then
+          if [[ "$full" == "true" ]]; then
             live=true
           fi
           quick=false
@@ -207,6 +224,12 @@ jobs:
           go-version-file: services/api/go.mod
           cache: true
           cache-dependency-path: services/api/go.sum
+      - name: Run Go lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.7.2
+          working-directory: services/api
+          args: --timeout=5m
       - name: Run Go tests
         working-directory: services/api
         run: go test ./... -count=1
@@ -232,22 +255,51 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.3
+      - name: Restore Node path for local act runs
+        if: env.ACT == 'true'
+        run: |
+          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+          echo "$node_bin" >> "$GITHUB_PATH"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
+            ${{ runner.os }}-turbo-
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
       - name: Lint web
-        run: pnpm --filter cets-web lint
+        run: pnpm lint:web
+      - name: Type-check web
+        run: pnpm type-check
+      - name: Check formatting
+        run: pnpm format:check
       - name: Test web
-        run: pnpm --filter cets-web test
+        run: pnpm test
       - name: Build web
-        run: pnpm --filter cets-web build
+        run: pnpm build
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright browsers
-        run: pnpm --filter cets-web exec playwright install chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true' || env.ACT == 'true'
+        run: |
+          if [[ "${ACT:-}" == "true" ]]; then
+            pnpm --filter cets-web exec playwright install --with-deps chromium
+          else
+            pnpm --filter cets-web exec playwright install chromium
+          fi
       - name: Run mocked Playwright viewport checks
         run: pnpm --filter cets-web test:e2e
 
@@ -269,6 +321,7 @@ jobs:
       COMPOSE_PROJECT_NAME: cets-ci
       POSTGRES_PORT: 15432
       API_IMAGE_TAG: ci
+      K6_RELEASE_DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.k6_release_duration || '10s' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -276,20 +329,50 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.3
+      - name: Restore Node path for local act runs
+        if: env.ACT == 'true'
+        run: |
+          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+          echo "$node_bin" >> "$GITHUB_PATH"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: pnpm --filter cets-web exec playwright install chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true' || env.ACT == 'true'
+        run: |
+          if [[ "${ACT:-}" == "true" ]]; then
+            pnpm --filter cets-web exec playwright install --with-deps chromium
+          else
+            pnpm --filter cets-web exec playwright install chromium
+          fi
       - name: Validate Docker Compose config
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build release image
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml build app
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/api/Dockerfile
+          load: true
+          tags: cets-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start backing services for live gates
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d postgres redis minio mailhog minio-init
+      - name: Run explicit database migration
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml run --rm migrate
       - name: Start API services for live gates
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d app worker
       - name: Wait for API readiness
@@ -305,21 +388,21 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_live_playwright
         run: PLAYWRIGHT_LIVE_BASE_URL=http://127.0.0.1:8080 pnpm --filter cets-web test:e2e:live
       - name: Run k6 smoke gate checks
-        if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_k6_smoke
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_smoke))
         run: docker run --rm --network host --cap-add=SYS_ADMIN -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_BROWSER_ENABLED=true -e K6_SMOKE_DURATION=20s "$K6_IMAGE" run /k6/phase1-production-gate.js
       - name: Run k6 release gate checks
-        if: github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_release)
-        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_RELEASE_DURATION="${{ inputs.k6_release_duration }}" "$K6_IMAGE" run /k6/phase1-release-gate.js
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_release))
+        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_RELEASE_DURATION="$K6_RELEASE_DURATION" "$K6_IMAGE" run /k6/phase1-release-gate.js
       - name: Scan live gate logs for sensitive leakage
         run: |
           docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color app worker > /tmp/cets-app-worker.log
-          if grep -E -i 'signed[_ -]?token|qr_payload|auth_session|token_signing|object_storage_secret|session=|set-cookie|local_dev_.*secret|[A-Za-z0-9._%+-]+@cets\.local|Ariel Chen|Ben Lin|Cara Wu' /tmp/cets-app-worker.log; then
+          if grep -E -i 'signed[_ -]?token|qr_payload|auth_session|token_signing|object_storage_secret|session=|set-cookie|local_dev_.*secret|[A-Za-z0-9._%+-]+@cets\.local|Ariel Chen|Ben Lin|Carla Wu' /tmp/cets-app-worker.log; then
             echo "Sensitive app/worker log output detected" >&2
             exit 1
           fi
 
           docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color mailhog > /tmp/cets-mailhog.log
-          if grep -E -i 'e1001@cets\.local|e1002@cets\.local|e2001@cets\.local|Ariel Chen|Ben Lin|Cara Wu' /tmp/cets-mailhog.log; then
+          if grep -E -i 'e1001@cets\.local|e1002@cets\.local|e2001@cets\.local|Ariel Chen|Ben Lin|Carla Wu' /tmp/cets-mailhog.log; then
             echo "Employee-specific MailHog recipient or full-name output detected" >&2
             exit 1
           fi

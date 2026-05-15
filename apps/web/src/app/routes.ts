@@ -71,7 +71,7 @@ export const routes: NavItem[] = [
     eyebrow: "User Workspace",
     description: "員工瀏覽活動、確認資格、報名或加入候補。",
     icon: "calendar",
-    signals: ["資格檢核", "名額狀態", "報名結果"]
+    signals: ["資格檢核", "名額狀態", "報名結果"],
   },
   {
     key: "user-event-detail",
@@ -81,7 +81,7 @@ export const routes: NavItem[] = [
     eyebrow: "User Workspace",
     description: "員工檢視單一活動的完整時間、資格、容量與目前報名狀態。",
     icon: "audit",
-    signals: ["單筆查詢", "資格原因", "容量證據"]
+    signals: ["單筆查詢", "資格原因", "容量證據"],
   },
   {
     key: "user-tickets",
@@ -91,7 +91,7 @@ export const routes: NavItem[] = [
     eyebrow: "User Workspace",
     description: "員工查看電子票券與 QR 入場資訊。",
     icon: "ticket",
-    signals: ["票券狀態", "QR 入場", "Token 保護"]
+    signals: ["票券狀態", "QR 入場", "Token 保護"],
   },
   {
     key: "user-notifications",
@@ -101,7 +101,7 @@ export const routes: NavItem[] = [
     eyebrow: "User Workspace",
     description: "員工查看報名、候補、票券與驗票相關通知的產品占位頁。",
     icon: "bell",
-    signals: ["站內通知", "電子郵件", "重試狀態"]
+    signals: ["站內通知", "電子郵件", "重試狀態"],
   },
   {
     key: "admin-events",
@@ -111,7 +111,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "活動主辦建立活動、設定容量、報名期間與資格規則。",
     icon: "activity",
-    signals: ["發布檢查", "資格預覽", "Audit 寫入"]
+    signals: ["發布檢查", "資格預覽", "Audit 寫入"],
   },
   {
     key: "admin-registrations",
@@ -121,7 +121,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "管理活動報名清單、候補提升、取消報名與票券撤銷。",
     icon: "users",
-    signals: ["候補提升", "取消報名", "撤銷票券"]
+    signals: ["候補提升", "取消報名", "撤銷票券"],
   },
   {
     key: "admin-notifications",
@@ -131,7 +131,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "保留通知模板、投遞、重試與失敗記錄的 Phase 1 邊界。",
     icon: "send",
-    signals: ["Outbox", "Retry", "Delivery log"]
+    signals: ["Outbox", "Retry", "Delivery log"],
   },
   {
     key: "admin-checkin",
@@ -141,7 +141,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "驗票員以線上 token 核銷，清楚處理首次與重複掃描。",
     icon: "scan",
-    signals: ["首次核銷", "重複阻擋", "裝置追蹤"]
+    signals: ["首次核銷", "重複阻擋", "裝置追蹤"],
   },
   {
     key: "admin-offline-checkin",
@@ -149,9 +149,10 @@ export const routes: NavItem[] = [
     path: "/admin/checkin/offline",
     label: "離線驗票邊界",
     eyebrow: "Admin Console",
-    description: "說明離線名單、同步、first-commit-wins 衝突與 audit 保留邊界。",
+    description:
+      "說明離線名單、同步、first-commit-wins 衝突與 audit 保留邊界。",
     icon: "wifiOff",
-    signals: ["名單快照", "同步衝突", "Audit 保留"]
+    signals: ["名單快照", "同步衝突", "Audit 保留"],
   },
   {
     key: "admin-reports",
@@ -161,7 +162,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "HR 檢視參與彙總、票券數、候補量與到場率。",
     icon: "chart",
-    signals: ["彙總數據", "到場率", "最小個資"]
+    signals: ["彙總數據", "到場率", "最小個資"],
   },
   {
     key: "admin-hr-settings",
@@ -171,7 +172,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "保留 HR 屬性同步、欄位映射與手動匯入的設定邊界。",
     icon: "settings",
-    signals: ["欄位映射", "同步狀態", "最小個資"]
+    signals: ["欄位映射", "同步狀態", "最小個資"],
   },
   {
     key: "admin-audit",
@@ -181,7 +182,7 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "系統管理員追蹤敏感操作、衝突與稽核 metadata。",
     icon: "audit",
-    signals: ["敏感操作", "Metadata", "衝突追蹤"]
+    signals: ["敏感操作", "Metadata", "衝突追蹤"],
   },
   {
     key: "admin-demo",
@@ -191,8 +192,8 @@ export const routes: NavItem[] = [
     eyebrow: "Admin Console",
     description: "一鍵驗證 Phase 1 MVP 端到端流程。",
     icon: "play",
-    signals: ["AC-9", "端到端", "可重跑"]
-  }
+    signals: ["AC-9", "端到端", "可重跑"],
+  },
 ];
 
 export const routeAliases: Record<string, RouteKey> = {
@@ -206,25 +207,69 @@ export const routeAliases: Record<string, RouteKey> = {
   "/hr/reports": "admin-reports",
   "/admin/hr-sync": "admin-hr-settings",
   "/admin/settings": "admin-hr-settings",
-  "/demo": "admin-demo"
+  "/demo": "admin-demo",
 };
 
-export const routeByPath = new Map<string, RouteKey>([...routes.map((route) => [route.path, route.key] as const), ...Object.entries(routeAliases)]);
+export const routeByPath = new Map<string, RouteKey>([
+  ...routes.map((route) => [route.path, route.key] as const),
+  ...Object.entries(routeAliases),
+]);
 const routePatterns: RoutePattern[] = [
-  { pattern: /^\/user\/events\/([^/]+)$/, key: "user-event-detail", eventIDMatch: 1 },
-  { pattern: /^\/admin\/events\/([^/]+)\/edit$/, key: "admin-events", eventIDMatch: 1 },
-  { pattern: /^\/admin\/events\/([^/]+)\/eligibility$/, key: "admin-events", eventIDMatch: 1 },
-  { pattern: /^\/admin\/events\/([^/]+)\/registrations$/, key: "admin-registrations", eventIDMatch: 1 }
+  {
+    pattern: /^\/user\/events\/([^/]+)$/,
+    key: "user-event-detail",
+    eventIDMatch: 1,
+  },
+  {
+    pattern: /^\/admin\/events\/([^/]+)\/edit$/,
+    key: "admin-events",
+    eventIDMatch: 1,
+  },
+  {
+    pattern: /^\/admin\/events\/([^/]+)\/eligibility$/,
+    key: "admin-events",
+    eventIDMatch: 1,
+  },
+  {
+    pattern: /^\/admin\/events\/([^/]+)\/registrations$/,
+    key: "admin-registrations",
+    eventIDMatch: 1,
+  },
 ];
 export const userRoutes = routes.filter((route) => route.workspace === "user");
-export const adminRoutes = routes.filter((route) => route.workspace === "admin");
+export const adminRoutes = routes.filter(
+  (route) => route.workspace === "admin",
+);
 
 export const roleRouteAccess: Record<Role, RouteKey[]> = {
-  employee: ["user-events", "user-event-detail", "user-tickets", "user-notifications"],
-  activity_admin: ["admin-events", "admin-registrations", "admin-notifications", "admin-demo"],
+  employee: [
+    "user-events",
+    "user-event-detail",
+    "user-tickets",
+    "user-notifications",
+  ],
+  activity_admin: [
+    "admin-events",
+    "admin-registrations",
+    "admin-notifications",
+    "admin-demo",
+  ],
   checkin_staff: ["admin-checkin", "admin-offline-checkin"],
-  hr_admin: ["admin-events", "admin-registrations", "admin-notifications", "admin-reports", "admin-hr-settings", "admin-audit", "admin-demo"],
-  system_admin: ["admin-reports", "admin-hr-settings", "admin-audit", "admin-notifications"]
+  hr_admin: [
+    "admin-events",
+    "admin-registrations",
+    "admin-notifications",
+    "admin-reports",
+    "admin-hr-settings",
+    "admin-audit",
+    "admin-demo",
+  ],
+  system_admin: [
+    "admin-reports",
+    "admin-hr-settings",
+    "admin-audit",
+    "admin-notifications",
+  ],
 };
 
 export const demoSteps = [
@@ -237,7 +282,7 @@ export const demoSteps = [
   ["ticket", "顯示電子票券"],
   ["checkin", "完成首次驗票"],
   ["duplicate", "拒絕重複掃描"],
-  ["report", "檢視報表與 audit"]
+  ["report", "檢視報表與 audit"],
 ] as const;
 
 export function routeMatchForPath(pathname: string): RouteMatch {
@@ -247,10 +292,12 @@ export function routeMatchForPath(pathname: string): RouteMatch {
   for (const routePattern of routePatterns) {
     const match = routePattern.pattern.exec(pathname);
     if (!match) continue;
-    const rawEventID = routePattern.eventIDMatch ? match[routePattern.eventIDMatch] : undefined;
+    const rawEventID = routePattern.eventIDMatch
+      ? match[routePattern.eventIDMatch]
+      : undefined;
     return {
       key: routePattern.key,
-      eventID: rawEventID ? decodePathSegment(rawEventID) : undefined
+      eventID: rawEventID ? decodePathSegment(rawEventID) : undefined,
     };
   }
 
@@ -281,7 +328,9 @@ export function defaultRouteForRole(role: Role): RouteKey {
 }
 
 export function defaultAdminRouteForRole(role: Role): RouteKey {
-  const adminRoute = roleRouteAccess[role].find((route) => routes.find((item) => item.key === route)?.workspace === "admin");
+  const adminRoute = roleRouteAccess[role].find(
+    (route) => routes.find((item) => item.key === route)?.workspace === "admin",
+  );
   return adminRoute || defaultRouteForRole(role);
 }
 
@@ -295,7 +344,11 @@ function preserveEventIDQuery(match: RouteMatch) {
   if (params.has("event_id")) return;
   params.set("event_id", match.eventID);
   const query = params.toString();
-  window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+  window.history.replaceState(
+    {},
+    "",
+    `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+  );
 }
 
 function decodePathSegment(value: string) {

@@ -1,18 +1,34 @@
 import { useState } from "react";
 import type { ApiLogEntry, AuthSession, Role } from "@/lib/api";
 import type { RouteKey, WorkspaceKey } from "@/app/routes";
-import { adminRoutes, canAccessRoute, defaultAdminRouteForRole, navigate, routePath, routes, userRoutes } from "@/app/routes";
+import {
+  adminRoutes,
+  canAccessRoute,
+  defaultAdminRouteForRole,
+  navigate,
+  routePath,
+  routes,
+  userRoutes,
+} from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
 import { Icon } from "@/components/shared/icon";
 import { SkeletonRows, StatusBadge } from "@/components/shared";
 
-export function WorkspaceSwitch({ active, role }: { active: WorkspaceKey; role: Role }) {
+export function WorkspaceSwitch({
+  active,
+  role,
+}: {
+  active: WorkspaceKey;
+  role: Role;
+}) {
   const canUser = userRoutes.some((route) => canAccessRoute(route.key, role));
   const canAdmin = adminRoutes.some((route) => canAccessRoute(route.key, role));
   return (
     <div className="workspace-switch" aria-label="切換工作區">
       <button
-        className={active === "user" ? "workspace-option active" : "workspace-option"}
+        className={
+          active === "user" ? "workspace-option active" : "workspace-option"
+        }
         type="button"
         disabled={!canUser}
         onClick={() => navigate("/user/events")}
@@ -20,7 +36,9 @@ export function WorkspaceSwitch({ active, role }: { active: WorkspaceKey; role: 
         User
       </button>
       <button
-        className={active === "admin" ? "workspace-option active" : "workspace-option"}
+        className={
+          active === "admin" ? "workspace-option active" : "workspace-option"
+        }
         type="button"
         disabled={!canAdmin}
         onClick={() => navigate(routePath(defaultAdminRouteForRole(role)))}
@@ -35,7 +53,7 @@ export function Header({
   route,
   session,
   mockProfilesEnabled,
-  onSwitchProfile
+  onSwitchProfile,
 }: {
   route: RouteKey;
   session: AuthSession;
@@ -70,14 +88,23 @@ export function Header({
             {session.actor.id} · {roleLabel(session.actor.role)}
           </span>
         </div>
-        {mockProfilesEnabled && canAccessRoute("admin-demo", session.actor.role) && (
-          <button className="button ghost" type="button" onClick={() => navigate("/admin/demo")}>
-            <Icon name="play" />
-            跑完整 Demo
-          </button>
-        )}
+        {mockProfilesEnabled &&
+          canAccessRoute("admin-demo", session.actor.role) && (
+            <button
+              className="button ghost"
+              type="button"
+              onClick={() => navigate("/admin/demo")}
+            >
+              <Icon name="play" />
+              跑完整 Demo
+            </button>
+          )}
         {mockProfilesEnabled && onSwitchProfile && (
-          <button className="button secondary" type="button" onClick={onSwitchProfile}>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={onSwitchProfile}
+          >
             <Icon name="logout" />
             切換 Profile
           </button>
@@ -106,18 +133,32 @@ export function LoadingScreen() {
   );
 }
 
-export function StatusPanel({ health, ready }: { health: string; ready: string }) {
+export function StatusPanel({
+  health,
+  ready,
+}: {
+  health: string;
+  ready: string;
+}) {
   return (
     <div className="status-panel" aria-label="系統狀態">
       <div className="status-line">
         <span>App</span>
-        <StatusBadge tone={health === "ok" ? "ok" : health === "checking" ? "neutral" : "fail"}>
+        <StatusBadge
+          tone={
+            health === "ok" ? "ok" : health === "checking" ? "neutral" : "fail"
+          }
+        >
           {health === "checking" ? "checking" : health}
         </StatusBadge>
       </div>
       <div className="status-line">
         <span>PostgreSQL</span>
-        <StatusBadge tone={ready === "ok" ? "ok" : ready === "checking" ? "neutral" : "fail"}>
+        <StatusBadge
+          tone={
+            ready === "ok" ? "ok" : ready === "checking" ? "neutral" : "fail"
+          }
+        >
           {ready === "checking" ? "checking" : ready}
         </StatusBadge>
       </div>
@@ -125,7 +166,13 @@ export function StatusPanel({ health, ready }: { health: string; ready: string }
   );
 }
 
-export function ApiActivity({ entries, onClear }: { entries: ApiLogEntry[]; onClear: () => void }) {
+export function ApiActivity({
+  entries,
+  onClear,
+}: {
+  entries: ApiLogEntry[];
+  onClear: () => void;
+}) {
   const [collapsed, setCollapsed] = useState(true);
   return (
     <aside
@@ -147,7 +194,12 @@ export function ApiActivity({ entries, onClear }: { entries: ApiLogEntry[]; onCl
           >
             {collapsed ? `顯示 ${entries.length}` : "收合"}
           </button>
-          <button className="button icon-only ghost" type="button" onClick={onClear} aria-label="清除 API activity">
+          <button
+            className="button icon-only ghost"
+            type="button"
+            onClick={onClear}
+            aria-label="清除 API activity"
+          >
             <Icon name="x" />
           </button>
         </div>
@@ -158,7 +210,9 @@ export function ApiActivity({ entries, onClear }: { entries: ApiLogEntry[]; onCl
           {entries.map((entry) => (
             <details className="api-entry" key={entry.id}>
               <summary>
-                <StatusBadge tone={entry.ok ? "ok" : "fail"}>{entry.status}</StatusBadge>
+                <StatusBadge tone={entry.ok ? "ok" : "fail"}>
+                  {entry.status}
+                </StatusBadge>
                 <span>{entry.label}</span>
               </summary>
               <pre>{JSON.stringify(entry.payload, null, 2)}</pre>
