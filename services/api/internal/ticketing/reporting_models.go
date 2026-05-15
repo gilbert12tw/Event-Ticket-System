@@ -37,14 +37,18 @@ type LotteryRun struct {
 }
 
 type ReportRow struct {
-	EventID           string    `json:"event_id"`
-	Title             string    `json:"title"`
-	CapacityType      string    `json:"capacity_type"`
-	Capacity          *int      `json:"capacity"`
-	ConfirmedCount    int       `json:"confirmed_count"`
-	WaitlistCount     int       `json:"waitlist_count"`
-	TicketCount       int       `json:"ticket_count"`
-	CheckinCount      int       `json:"checkin_count"`
-	RemainingCapacity *int      `json:"remaining_capacity"`
-	StartsAt          time.Time `json:"starts_at"`
+	EventID            string         `json:"event_id"`
+	Title              string         `json:"title"`
+	CapacityType       string         `json:"capacity_type"`
+	Capacity           *int           `json:"capacity"`
+	ConfirmedCount     int            `json:"confirmed_count"`
+	WaitlistCount      int            `json:"waitlist_count"`
+	EmployeeCount      int            `json:"employee_count"`
+	FamilyCount        int            `json:"family_count"`
+	TotalAttendeeCount int            `json:"total_attendee_count"`
+	TicketCount        int            `json:"ticket_count"`
+	CheckinCount       int            `json:"checkin_count"`
+	RemainingCapacity  *int           `json:"remaining_capacity"`
+	CityDistribution   map[string]int `json:"city_distribution"`
+	StartsAt           time.Time      `json:"starts_at"`
 }
