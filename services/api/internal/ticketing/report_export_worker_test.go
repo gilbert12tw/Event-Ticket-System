@@ -3,7 +3,9 @@ package ticketing
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,11 +57,56 @@ func TestProcessOutboxOnceGeneratesReportExportArtifact(t *testing.T) {
 	require.Len(t, store.keys, 1)
 	assert.Equal(t, export.ObjectKey, store.keys[0])
 	assert.Equal(t, "text/csv; charset=utf-8", store.contentType)
-	assert.Contains(t, store.body, "event_id,title,capacity")
+	records := parseReportCSV(t, store.body)
+	require.NotEmpty(t, records)
+	assert.Equal(t, []string{
+		"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count",
+		"employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count",
+		"remaining_capacity", "city_distribution", "starts_at",
+	}, records[0])
 	assert.Contains(t, store.body, event.Title)
+	assert.NotContains(t, store.body, "Ariel Chen")
+	assert.NotContains(t, store.body, "signed_token")
+	assert.NotContains(t, store.body, "qr_payload")
 
 	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusReady, true)
 	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "published", 1)
+}
+
+func TestBuildReportExportCSVIncludesAggregateColumns(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:        "CSV Aggregate Report",
+		EventCity:    "Tainan",
+		CapacityType: CapacityTypeUnlimited,
+		Status:       EventStatusPublished,
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "csv-aggregate-book", FamilyCount: 2})
+	require.NoError(t, err)
+
+	body, err := service.buildReportExportCSV(ctx)
+	require.NoError(t, err)
+	records := parseReportCSV(t, string(body))
+	require.GreaterOrEqual(t, len(records), 2)
+	row := findReportCSVRecord(t, records, event.EventID)
+	assert.Equal(t, event.Title, row[1])
+	assert.Equal(t, CapacityTypeUnlimited, row[2])
+	assert.Equal(t, "", row[3])
+	assert.Equal(t, "1", row[4])
+	assert.Equal(t, "0", row[5])
+	assert.Equal(t, "1", row[6])
+	assert.Equal(t, "2", row[7])
+	assert.Equal(t, "3", row[8])
+	assert.Equal(t, `{"Tainan":3}`, row[12])
+	assert.NotContains(t, string(body), "Ariel Chen")
+	assert.NotContains(t, string(body), "E1001")
+	assert.NotContains(t, string(body), "signed_token")
+	assert.NotContains(t, string(body), "qr_payload")
 }
 
 func TestProcessOutboxOncePrioritizesReportExportOverNotificationBacklog(t *testing.T) {
@@ -120,4 +167,23 @@ func assertReportExportOutboxStatus(t *testing.T, service *Service, ctx context.
 		Scan(&gotStatus, &gotAttempts))
 	assert.Equal(t, wantStatus, gotStatus)
 	assert.Equal(t, wantAttempts, gotAttempts)
+}
+
+func parseReportCSV(t *testing.T, body string) [][]string {
+	t.Helper()
+	records, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+	require.NoError(t, err)
+	return records
+}
+
+func findReportCSVRecord(t *testing.T, records [][]string, eventID string) []string {
+	t.Helper()
+	for _, record := range records[1:] {
+		require.Len(t, record, 14)
+		if record[0] == eventID {
+			return record
+		}
+	}
+	require.Failf(t, "CSV record not found", "event_id=%s", eventID)
+	return nil
 }
