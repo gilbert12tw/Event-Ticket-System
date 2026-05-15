@@ -186,7 +186,10 @@
 }
 
 .workspace-context:has(.identity-card):has(.context-kpis) {
-  grid-template-columns: minmax(0, 1fr) minmax(178px, 220px) minmax(280px, 460px);
+  grid-template-columns: minmax(0, 1fr) minmax(178px, 220px) minmax(
+      280px,
+      460px
+    );
 }
 
 .context-kpis {
@@ -314,7 +317,10 @@ th {
 
 @media (min-width: 1680px) {
   .app-shell:has(.api-panel:not(.collapsed)) {
-    grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr) minmax(300px, 330px);
+    grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr) minmax(
+        300px,
+        330px
+      );
   }
 
   .app-shell:has(.api-panel:not(.collapsed)) .api-panel {

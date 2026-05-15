@@ -11,7 +11,7 @@ vi.mock("@/lib/api", async () => {
     authBootstrap: vi.fn(),
     me: vi.fn(),
     readiness: vi.fn(),
-    setApiObserver: vi.fn()
+    setApiObserver: vi.fn(),
   };
 });
 
@@ -29,7 +29,7 @@ describe("App", () => {
     const session: AuthSession = {
       actor: {
         id: "staff-1",
-        role: "checkin_staff"
+        role: "checkin_staff",
       },
       expires_at: "2026-05-06T10:00:00Z",
       claims: {
@@ -40,33 +40,51 @@ describe("App", () => {
         department: "Operations",
         site: "Taipei HQ",
         city: "Taipei",
-        claims_status: "complete"
+        claims_status: "complete",
       },
-      source: "provider"
+      source: "provider",
     };
 
     mockMe.mockResolvedValueOnce(session);
-    mockAuthBootstrap.mockResolvedValue({ mock_profiles_enabled: false, mock_profiles: [] });
+    mockAuthBootstrap.mockResolvedValue({
+      mock_profiles_enabled: false,
+      mock_profiles: [],
+    });
     mockReadiness.mockResolvedValue({});
 
     window.history.pushState({}, "", "/admin/events");
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText("權限不足")).toBeInTheDocument());
-    expect(screen.getByRole("heading", { name: "現場驗票" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回預設頁面" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText("權限不足")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("heading", { name: "現場驗票" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "返回預設頁面" }),
+    ).toBeInTheDocument();
   });
 
   it("shows SSO required state when provider auth fails and local demo is disabled", async () => {
     mockMe.mockRejectedValueOnce(new Error("authentication required"));
-    mockAuthBootstrap.mockResolvedValueOnce({ mock_profiles_enabled: false, mock_profiles: [] });
+    mockAuthBootstrap.mockResolvedValueOnce({
+      mock_profiles_enabled: false,
+      mock_profiles: [],
+    });
     mockReadiness.mockResolvedValue({});
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: "需要企業 SSO 身分" })).toBeInTheDocument());
-    expect(screen.queryByLabelText("Mock provider profiles")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "需要企業 SSO 身分" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByLabelText("Mock provider profiles"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows mock profile selector when bootstrap allows it", async () => {
@@ -81,15 +99,21 @@ describe("App", () => {
           mapped_roles: ["employee"],
           department: "Engineering",
           site: "Taipei HQ",
-          city: "Taipei"
-        }
-      ]
+          city: "Taipei",
+        },
+      ],
     });
     mockReadiness.mockResolvedValue({});
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByLabelText("Mock provider profiles")).toBeInTheDocument());
-    expect(screen.getByRole("heading", { name: "選擇一個模擬 provider profile" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Mock provider profiles"),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("heading", { name: "選擇一個模擬 provider profile" }),
+    ).toBeInTheDocument();
   });
 });

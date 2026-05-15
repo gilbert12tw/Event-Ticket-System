@@ -41,8 +41,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/readyz >/dev/null" ]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/readyz >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -81,6 +83,8 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
 
   migrate:
     <<: *api-image
@@ -94,6 +98,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  seed:
+    <<: *api-image
+    restart: "no"
+    command: ["seed"]
+    environment:
+      APP_ADDR: :8080
+      APP_ENV: ${APP_ENV:-local}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
+      PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:16.13-alpine

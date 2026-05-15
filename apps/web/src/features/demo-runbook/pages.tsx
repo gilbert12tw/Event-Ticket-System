@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { auditLogs, bookEvent, checkIn, createEvent, listEvents, listTickets, reports, seedDemo, selectMockProfile } from "@/lib/api";
+import {
+  auditLogs,
+  bookEvent,
+  checkIn,
+  createEvent,
+  listEvents,
+  listTickets,
+  reports,
+  seedDemo,
+  selectMockProfile,
+} from "@/lib/api";
 import type { AuthSession, ReportRow, Ticket } from "@/lib/api";
 import type { StepState } from "@/app/routes";
 import { errorMessage, formatDate, futureISO } from "@/lib/formatting";
@@ -18,11 +28,19 @@ const demoSteps = [
   ["ticket", "顯示電子票券"],
   ["checkin", "完成首次驗票"],
   ["duplicate", "拒絕重複掃描"],
-  ["report", "檢視報表與 audit"]
+  ["report", "檢視報表與 audit"],
 ] as const;
 
-export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSession; onSessionChange: (session: AuthSession | null) => void }) {
-  const [steps, setSteps] = useState<Record<string, { state: StepState; hint: string }>>(() => initialSteps());
+export function DemoRunbookPage({
+  session,
+  onSessionChange,
+}: {
+  session: AuthSession;
+  onSessionChange: (session: AuthSession | null) => void;
+}) {
+  const [steps, setSteps] = useState<
+    Record<string, { state: StepState; hint: string }>
+  >(() => initialSteps());
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [reportRows, setReportRows] = useState<ReportRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -69,8 +87,8 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
           department: "Engineering",
           site: "Taipei",
           min_grade: 5,
-          employment_status: "active"
-        }
+          employment_status: "active",
+        },
       });
       mark("event", "done", event.title);
 
@@ -78,7 +96,11 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
       await runAs("E1001");
       const eventRows = await listEvents();
       const current = eventRows.find((row) => row.event_id === event.event_id);
-      mark("browse", current?.eligible ? "done" : "fail", current?.eligibility_reason || "未找到新活動");
+      mark(
+        "browse",
+        current?.eligible ? "done" : "fail",
+        current?.eligibility_reason || "未找到新活動",
+      );
 
       startStep("book", "送出第一筆報名");
       await runAs("E1001");
@@ -124,9 +146,16 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
 
       startStep("report", "載入報表與 audit");
       await runAs("hr-1");
-      const [nextReports, nextAudits] = await Promise.all([reports(), auditLogs()]);
+      const [nextReports, nextAudits] = await Promise.all([
+        reports(),
+        auditLogs(),
+      ]);
       setReportRows(nextReports);
-      mark("report", "done", `${nextReports.length} rows, ${nextAudits.length} audit records.`);
+      mark(
+        "report",
+        "done",
+        `${nextReports.length} rows, ${nextAudits.length} audit records.`,
+      );
     } catch (error) {
       if (currentStep) mark(currentStep, "fail", errorMessage(error));
     } finally {
@@ -145,9 +174,17 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
         <div>
           <div className="eyebrow">Admin Console</div>
           <h2>Demo Runbook</h2>
-          <p>保留 AC-9 驗證入口，從 admin console 一次跑完活動建立、報名、候補、驗票、報表與 audit。</p>
+          <p>
+            保留 AC-9 驗證入口，從 admin console
+            一次跑完活動建立、報名、候補、驗票、報表與 audit。
+          </p>
         </div>
-        <button className="button" type="button" onClick={() => void runDemo()} disabled={busy}>
+        <button
+          className="button"
+          type="button"
+          onClick={() => void runDemo()}
+          disabled={busy}
+        >
           <Icon name="play" />
           {busy ? "執行中" : "Run full demo"}
         </button>
@@ -186,5 +223,10 @@ export function DemoRunbookPage({ session, onSessionChange }: { session: AuthSes
 }
 
 function initialSteps() {
-  return Object.fromEntries(demoSteps.map(([id]) => [id, { state: "pending" as StepState, hint: "Pending" }]));
+  return Object.fromEntries(
+    demoSteps.map(([id]) => [
+      id,
+      { state: "pending" as StepState, hint: "Pending" },
+    ]),
+  );
 }

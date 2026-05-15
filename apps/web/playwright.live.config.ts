@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: "./e2e-live",
   timeout: 120_000,
   expect: {
-    timeout: 10_000
+    timeout: 10_000,
   },
   fullyParallel: false,
   workers: 1,
@@ -15,20 +15,20 @@ export default defineConfig({
   reporter: [
     ["list"],
     ["html", { open: "never", outputFolder: "playwright-live-report" }],
-    ["json", { outputFile: "test-results/playwright-live-results.json" }]
+    ["json", { outputFile: "test-results/playwright-live-results.json" }],
   ],
   use: {
     baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
-    video: "retain-on-failure"
+    video: "retain-on-failure",
   },
   forbidOnly: isCI,
   projects: [375, 768, 1024, 1440].map((width) => ({
     name: `chromium-live-${width}`,
     use: {
       ...devices["Desktop Chrome"],
-      viewport: { width, height: 900 }
-    }
-  }))
+      viewport: { width, height: 900 },
+    },
+  })),
 });

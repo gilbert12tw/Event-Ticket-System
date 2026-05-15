@@ -13,9 +13,9 @@
   --surface-inset: oklch(0.938 0.008 238);
   --surface-muted: oklch(0.904 0.01 238);
   --sidebar: oklch(0.948 0.007 238);
-  --ink: oklch(0.30 0.022 245);
-  --ink-soft: oklch(0.40 0.026 245);
-  --muted: oklch(0.50 0.025 245);
+  --ink: oklch(0.3 0.022 245);
+  --ink-soft: oklch(0.4 0.026 245);
+  --muted: oklch(0.5 0.025 245);
   --muted-2: oklch(0.62 0.022 245);
   --line: oklch(0.84 0.014 238);
   --line-strong: oklch(0.73 0.018 240);
@@ -36,11 +36,18 @@
   --info: oklch(0.41 0.072 250);
   --info-bg: oklch(0.918 0.02 250);
   --info-line: oklch(0.74 0.04 250);
-  --shadow: 0 18px 45px oklch(0.30 0.022 245 / 0.07);
-  --shadow-soft: 0 8px 22px oklch(0.30 0.022 245 / 0.045);
+  --shadow: 0 18px 45px oklch(0.3 0.022 245 / 0.07);
+  --shadow-soft: 0 8px 22px oklch(0.3 0.022 245 / 0.045);
   --radius: 0.625rem;
   --radius-sm: 7px;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -238,7 +245,10 @@ p {
   background: var(--surface);
   color: var(--ink);
   text-align: left;
-  transition: border-color 180ms ease-out, background-color 180ms ease-out, transform 180ms ease-out;
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    transform 180ms ease-out;
 }
 
 .principal-card:hover {
@@ -370,7 +380,10 @@ p {
   border-radius: var(--radius);
   color: var(--muted);
   text-decoration: none;
-  transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    color 180ms ease-out;
 }
 
 .nav-link:hover {
@@ -632,7 +645,11 @@ p {
   font-weight: 730;
   line-height: 1.1;
   white-space: nowrap;
-  transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out, transform 180ms ease-out;
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    color 180ms ease-out,
+    transform 180ms ease-out;
 }
 
 .button:hover:not(:disabled) {
@@ -699,7 +716,9 @@ p {
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
-  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+  transition:
+    border-color 160ms ease-out,
+    box-shadow 160ms ease-out;
 }
 
 .field input:hover,
@@ -883,7 +902,10 @@ p {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-raised);
-  transition: border-color 180ms ease-out, background-color 180ms ease-out, box-shadow 180ms ease-out;
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out;
 }
 
 .event-card:hover {
@@ -1124,7 +1146,9 @@ p {
   background: var(--surface-raised);
   color: var(--ink);
   text-align: left;
-  transition: border-color 180ms ease-out, background-color 180ms ease-out;
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out;
 }
 
 .ticket-row:hover {
@@ -1437,7 +1461,12 @@ th {
 .skeleton-row {
   height: 108px;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--surface-inset), var(--surface-muted), var(--surface-inset));
+  background: linear-gradient(
+    90deg,
+    var(--surface-inset),
+    var(--surface-muted),
+    var(--surface-inset)
+  );
   background-size: 220% 100%;
   animation: shimmer 1.2s ease-out infinite;
 }
@@ -1620,7 +1649,7 @@ th {
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: "Geist Variable", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

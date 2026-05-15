@@ -1,16 +1,32 @@
 import { useEffect, useState } from "react";
-import { listNotificationDeliveries, listEvents, listTickets, retryNotificationDelivery, type NotificationDelivery } from "@/lib/api";
+import {
+  listNotificationDeliveries,
+  listEvents,
+  listTickets,
+  retryNotificationDelivery,
+  type NotificationDelivery,
+} from "@/lib/api";
 import type { EventSummary, Ticket } from "@/lib/api";
 import { registrationTone } from "@/lib/formatting";
-import { BoundaryContext, EmptyState, Kpi, ResponsiveTable, StatusBadge } from "@/components/shared";
+import {
+  BoundaryContext,
+  EmptyState,
+  Kpi,
+  ResponsiveTable,
+  StatusBadge,
+} from "@/components/shared";
 
 export function UserNotificationsPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
 
   useEffect(() => {
-    listEvents().then(setEvents).catch(() => setEvents([]));
-    listTickets().then(setTickets).catch(() => setTickets([]));
+    listEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]));
+    listTickets()
+      .then(setTickets)
+      .catch(() => setTickets([]));
   }, []);
 
   const notificationRows = [
@@ -21,15 +37,21 @@ export function UserNotificationsPage() {
         kind: "Registration",
         title: event.title,
         status: event.current_user_status,
-        detail: event.current_user_status === "waitlisted" ? "候補名單會由主辦在有空位時提升。" : "報名狀態已更新。"
+        detail:
+          event.current_user_status === "waitlisted"
+            ? "候補名單會由主辦在有空位時提升。"
+            : "報名狀態已更新。",
       })),
     ...tickets.map((ticket) => ({
       id: ticket.ticket_id,
       kind: "Ticket",
       title: ticket.event_title || ticket.event_id,
       status: ticket.status,
-      detail: ticket.status === "active" ? "票券已核發，可於現場驗票使用。" : `票券狀態：${ticket.status}`
-    }))
+      detail:
+        ticket.status === "active"
+          ? "票券已核發，可於現場驗票使用。"
+          : `票券狀態：${ticket.status}`,
+    })),
   ];
 
   return (
@@ -38,11 +60,21 @@ export function UserNotificationsPage() {
         <div>
           <div className="eyebrow">User Workspace</div>
           <h2>通知中心</h2>
-          <p>Phase 1 先以目前報名與票券狀態呈現通知，占位保留 Email 與站內通知投遞紀錄。</p>
+          <p>
+            Phase 1 先以目前報名與票券狀態呈現通知，占位保留 Email
+            與站內通知投遞紀錄。
+          </p>
         </div>
         <div className="context-kpis">
           <Kpi label="通知候選" value={notificationRows.length} />
-          <Kpi label="候補提醒" value={events.filter((event) => event.current_user_status === "waitlisted").length} />
+          <Kpi
+            label="候補提醒"
+            value={
+              events.filter(
+                (event) => event.current_user_status === "waitlisted",
+              ).length
+            }
+          />
           <Kpi label="票券提醒" value={tickets.length} />
         </div>
       </div>
@@ -62,14 +94,21 @@ export function UserNotificationsPage() {
                 <td>{row.kind}</td>
                 <td>{row.title}</td>
                 <td>
-                  <StatusBadge tone={registrationTone(row.status)}>{row.status}</StatusBadge>
+                  <StatusBadge tone={registrationTone(row.status)}>
+                    {row.status}
+                  </StatusBadge>
                 </td>
                 <td>{row.detail}</td>
               </tr>
             ))}
           </tbody>
         </ResponsiveTable>
-        {notificationRows.length === 0 && <EmptyState title="尚無通知" action="完成報名或取得票券後，這裡會顯示可投遞的使用者通知。" />}
+        {notificationRows.length === 0 && (
+          <EmptyState
+            title="尚無通知"
+            action="完成報名或取得票券後，這裡會顯示可投遞的使用者通知。"
+          />
+        )}
       </div>
     </section>
   );
@@ -103,7 +142,11 @@ export function NotificationDeliveryPage() {
     setMessage("");
     try {
       const updated = await retryNotificationDelivery(row.delivery_id);
-      setDeliveries((current) => current.map((candidate) => (candidate.delivery_id === row.delivery_id ? updated : candidate)));
+      setDeliveries((current) =>
+        current.map((candidate) =>
+          candidate.delivery_id === row.delivery_id ? updated : candidate,
+        ),
+      );
       setMessage(`已重試投遞 ${row.delivery_id}。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "重試投遞失敗。");
@@ -112,15 +155,28 @@ export function NotificationDeliveryPage() {
     }
   }
 
-  const filteredDeliveries = deliveries.filter((delivery) => statusFilter === "all" || delivery.status === statusFilter);
+  const filteredDeliveries = deliveries.filter(
+    (delivery) => statusFilter === "all" || delivery.status === statusFilter,
+  );
   const deliveryStats = {
     total: deliveries.length,
-    failed: deliveries.filter((delivery) => delivery.status === "failed").length,
-    deadLetter: deliveries.filter((delivery) => delivery.status === "dead_letter").length,
-    pending: deliveries.filter((delivery) => delivery.status === "pending").length
+    failed: deliveries.filter((delivery) => delivery.status === "failed")
+      .length,
+    deadLetter: deliveries.filter(
+      (delivery) => delivery.status === "dead_letter",
+    ).length,
+    pending: deliveries.filter((delivery) => delivery.status === "pending")
+      .length,
   };
 
-  const visibleStatuses = ["all", "pending", "failed", "dead_letter", "sent", "suppressed"];
+  const visibleStatuses = [
+    "all",
+    "pending",
+    "failed",
+    "dead_letter",
+    "sent",
+    "suppressed",
+  ];
 
   return (
     <section className="content-grid">
@@ -133,12 +189,18 @@ export function NotificationDeliveryPage() {
         <div className="section-heading">
           <div>
             <h2>Delivery log</h2>
-            <p>從 Admin endpoint 讀取投遞紀錄，並支援對失敗與 dead-letter 事件重新嘗試。</p>
+            <p>
+              從 Admin endpoint 讀取投遞紀錄，並支援對失敗與 dead-letter
+              事件重新嘗試。
+            </p>
           </div>
           <div className="toolbar">
             <label className="field compact">
               <span>狀態</span>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
                 {visibleStatuses.map((status) => (
                   <option key={status} value={status}>
                     {status}
@@ -146,7 +208,12 @@ export function NotificationDeliveryPage() {
                 ))}
               </select>
             </label>
-            <button className="button secondary" type="button" onClick={() => void refresh()} disabled={loading}>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => void refresh()}
+              disabled={loading}
+            >
               重新整理
             </button>
           </div>
@@ -190,7 +257,9 @@ export function NotificationDeliveryPage() {
                 <td>{row.employee_id || "system"}</td>
                 <td>{row.channel}</td>
                 <td>
-                  <StatusBadge tone={deliveryTone(row.status)}>{row.status}</StatusBadge>
+                  <StatusBadge tone={deliveryTone(row.status)}>
+                    {row.status}
+                  </StatusBadge>
                 </td>
                 <td>{row.attempts}</td>
                 <td>{row.last_error || "—"}</td>
@@ -198,7 +267,11 @@ export function NotificationDeliveryPage() {
                   <button
                     className="button secondary compact-button"
                     type="button"
-                    disabled={loading || !canRetryDelivery(row.status) || retrying === row.delivery_id}
+                    disabled={
+                      loading ||
+                      !canRetryDelivery(row.status) ||
+                      retrying === row.delivery_id
+                    }
                     onClick={() => void retry(row)}
                   >
                     {retrying === row.delivery_id ? "重試中" : "Retry"}
@@ -208,13 +281,20 @@ export function NotificationDeliveryPage() {
             ))}
           </tbody>
         </ResponsiveTable>
-        {!loading && filteredDeliveries.length === 0 && <EmptyState title="尚無投遞紀錄" action="完成報名或觸發通知事件後，會出現 worker 投遞結果。" />}
+        {!loading && filteredDeliveries.length === 0 && (
+          <EmptyState
+            title="尚無投遞紀錄"
+            action="完成報名或觸發通知事件後，會出現 worker 投遞結果。"
+          />
+        )}
       </div>
     </section>
   );
 }
 
-function deliveryTone(status: string): "ok" | "warn" | "fail" | "info" | "neutral" {
+function deliveryTone(
+  status: string,
+): "ok" | "warn" | "fail" | "info" | "neutral" {
   if (status === "sent") return "ok";
   if (status === "pending") return "warn";
   if (status === "failed" || status === "dead_letter") return "fail";
@@ -223,5 +303,7 @@ function deliveryTone(status: string): "ok" | "warn" | "fail" | "info" | "neutra
 }
 
 function canRetryDelivery(status: string): boolean {
-  return status === "failed" || status === "dead_letter" || status === "pending";
+  return (
+    status === "failed" || status === "dead_letter" || status === "pending"
+  );
 }

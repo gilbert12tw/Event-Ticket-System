@@ -272,19 +272,6 @@ func TestAuditHandlerParsesServerSideFilterQuery(t *testing.T) {
 	assert.Equal(t, 25, service.auditQuery[0].Limit)
 }
 
-func actorForRole(role string) string {
-	switch role {
-	case ticketing.RoleEmployee:
-		return "E1001"
-	case ticketing.RoleCheckinStaff:
-		return "staff-1"
-	case ticketing.RoleHRAdmin:
-		return "hr-1"
-	default:
-		return "admin-1"
-	}
-}
-
 func authorizeRequest(t *testing.T, req *http.Request, role string) {
 	t.Helper()
 	req.Header.Set("Authorization", "Bearer "+signProviderClaims(t, providerTestSecret(), validProviderClaims(role)))

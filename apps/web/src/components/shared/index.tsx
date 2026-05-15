@@ -9,7 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Icon } from "./icon";
 
-export function BoundaryContext({ title, description, icon }: { title: string; description: string; icon: IconName }) {
+export function BoundaryContext({
+  title,
+  description,
+  icon,
+}: {
+  title: string;
+  description: string;
+  icon: IconName;
+}) {
   return (
     <div className="panel span-12 workspace-context admin-context">
       <div>
@@ -68,7 +76,11 @@ export function ProviderClaimsCard({ claims }: { claims: AuthMeClaims }) {
   );
 }
 
-export function EmployeeProfileCard({ employee }: { employee: EmployeeProfile }) {
+export function EmployeeProfileCard({
+  employee,
+}: {
+  employee: EmployeeProfile;
+}) {
   return (
     <aside className="panel span-4">
       <h2>HR 屬性</h2>
@@ -106,7 +118,7 @@ export function Field({
   value,
   onChange,
   type = "text",
-  required = false
+  required = false,
 }: {
   label: string;
   value: string;
@@ -120,12 +132,23 @@ export function Field({
         {label}
         {required && <em aria-label="必填"> *</em>}
       </span>
-      <Input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} />
+      <Input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        required={required}
+      />
     </label>
   );
 }
 
-export function Alert({ children, tone }: { children: ReactNode; tone: "ok" | "warn" | "fail" | "info" }) {
+export function Alert({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: "ok" | "warn" | "fail" | "info";
+}) {
   return (
     <UiAlert className={`alert ${tone}`} role="status" aria-live="polite">
       {children}
@@ -133,7 +156,13 @@ export function Alert({ children, tone }: { children: ReactNode; tone: "ok" | "w
   );
 }
 
-export function StatusBadge({ children, tone }: { children: ReactNode; tone: "ok" | "warn" | "fail" | "info" | "neutral" }) {
+export function StatusBadge({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: "ok" | "warn" | "fail" | "info" | "neutral";
+}) {
   return (
     <Badge className={`status-badge ${tone}`} variant="outline">
       {children}
@@ -141,7 +170,13 @@ export function StatusBadge({ children, tone }: { children: ReactNode; tone: "ok
   );
 }
 
-export function Kpi({ label, value }: { label: string; value: number | string }) {
+export function Kpi({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
   return (
     <div className="kpi">
       <strong>{value}</strong>
@@ -150,10 +185,25 @@ export function Kpi({ label, value }: { label: string; value: number | string })
   );
 }
 
-export function ProgressMeter({ label, value, max, helper, compact = false }: { label: string; value: number; max: number; helper: string; compact?: boolean }) {
+export function ProgressMeter({
+  label,
+  value,
+  max,
+  helper,
+  compact = false,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  helper: string;
+  compact?: boolean;
+}) {
   const ratio = max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0;
   return (
-    <div className={compact ? "progress-meter compact" : "progress-meter"} aria-label={`${label} ${helper}`}>
+    <div
+      className={compact ? "progress-meter compact" : "progress-meter"}
+      aria-label={`${label} ${helper}`}
+    >
       <div className="progress-meter-head">
         <span>{label}</span>
         <strong>{helper}</strong>
@@ -165,7 +215,13 @@ export function ProgressMeter({ label, value, max, helper, compact = false }: { 
   );
 }
 
-export function EmptyState({ title, action }: { title: string; action: string }) {
+export function EmptyState({
+  title,
+  action,
+}: {
+  title: string;
+  action: string;
+}) {
   return (
     <UiEmpty className="empty-state">
       <strong>{title}</strong>

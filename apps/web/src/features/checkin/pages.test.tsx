@@ -12,7 +12,7 @@ vi.mock("@/lib/api", async () => {
     listAdminEvents: vi.fn(),
     offlineCheckinPackage: vi.fn(),
     reports: vi.fn(),
-    syncOfflineCheckins: vi.fn()
+    syncOfflineCheckins: vi.fn(),
   };
 });
 
@@ -29,12 +29,20 @@ describe("CheckinPage", () => {
     mockReports.mockResolvedValue([]);
     localStorage.setItem("cets:lastTicketToken", "legacy-token");
 
-    window.history.pushState({ cetsCheckinToken: "state-token" }, "", "/admin/checkin");
+    window.history.pushState(
+      { cetsCheckinToken: "state-token" },
+      "",
+      "/admin/checkin",
+    );
     render(<CheckinPage />);
 
-    const tokenField = (await screen.findByRole("textbox", { name: /signed token/i })) as HTMLTextAreaElement;
+    const tokenField = (await screen.findByRole("textbox", {
+      name: /signed token/i,
+    })) as HTMLTextAreaElement;
     expect(tokenField.value).toBe("state-token");
-    expect(screen.getByRole("button", { name: "使用最近票券" })).toHaveAttribute("disabled");
+    expect(
+      screen.getByRole("button", { name: "使用最近票券" }),
+    ).toHaveAttribute("disabled");
   });
 
   it("shows empty token input when no handoff source exists", async () => {
@@ -42,8 +50,12 @@ describe("CheckinPage", () => {
     mockReports.mockResolvedValue([]);
     render(<CheckinPage />);
 
-    const tokenField = (await screen.findByRole("textbox", { name: /signed token/i })) as HTMLTextAreaElement;
+    const tokenField = (await screen.findByRole("textbox", {
+      name: /signed token/i,
+    })) as HTMLTextAreaElement;
     expect(tokenField.value).toBe("");
-    expect(screen.getByRole("button", { name: "使用最近票券" })).toHaveAttribute("disabled");
+    expect(
+      screen.getByRole("button", { name: "使用最近票券" }),
+    ).toHaveAttribute("disabled");
   });
 });

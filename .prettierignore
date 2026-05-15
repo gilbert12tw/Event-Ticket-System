@@ -1,0 +1,13 @@
+.agents/**
+.turbo/**
+coverage/**
+dist/**
+build/**
+node_modules/**
+apps/web/dist/**
+apps/web/coverage/**
+apps/web/playwright-report/**
+apps/web/playwright-live-report/**
+apps/web/test-results/**
+services/api/internal/httpapi/static/assets/**
+pnpm-lock.yaml

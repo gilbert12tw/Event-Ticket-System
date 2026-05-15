@@ -13,8 +13,8 @@ export default tseslint.config(
       "**/coverage/**",
       "**/.turbo/**",
       "**/.vite/**",
-      "services/api/internal/httpapi/static/assets/**"
-    ]
+      "services/api/internal/httpapi/static/assets/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -26,19 +26,19 @@ export default tseslint.config(
       globals: {
         ...globals.browser,
         ...globals.node,
-        ...globals.es2024
-      }
+        ...globals.es2024,
+      },
     },
     rules: {
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         {
-          "argsIgnorePattern": "^_",
-          "varsIgnorePattern": "^_",
-          "caughtErrorsIgnorePattern": "^_"
-        }
-      ]
-    }
-  }
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 );
