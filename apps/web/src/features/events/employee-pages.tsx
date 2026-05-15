@@ -372,9 +372,9 @@ function CancellationControl({
         <span>Cancellation reason</span>
         <input value={reason} onChange={(input) => onReasonChange(input.target.value)} placeholder="Optional reason" disabled={!open} />
       </label>
-      <button className="button secondary" type="button" onClick={onCancel} disabled={!open || !registrationID}>
+      <button aria-label="Cancel registration" className="button secondary" type="button" onClick={onCancel} disabled={!open || !registrationID}>
         <Icon name="x" />
-        Cancel registration
+        Cancel
       </button>
       <p className="form-hint">
         {open ? "Cancellation is retry-safe while registration is open." : "Self-cancel is closed. Contact an activity admin for an exception."}
