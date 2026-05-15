@@ -87,7 +87,7 @@ func TestEventCapacityTypesValidateAndExposeSummaries(t *testing.T) {
 	require.NotNil(t, legacy.RemainingCapacity)
 	assert.Equal(t, 2, *legacy.RemainingCapacity)
 	assert.Equal(t, "Taipei", legacy.EventCity)
-	assert.Equal(t, "Taipei", legacy.EventSite)
+	assert.Equal(t, "Taipei HQ", legacy.EventSite)
 	assert.False(t, legacy.AllowsFamily)
 
 	unlimited, err := service.CreateEvent(ctx, admin, CreateEventRequest{
