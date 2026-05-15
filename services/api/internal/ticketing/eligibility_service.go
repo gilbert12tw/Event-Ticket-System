@@ -64,8 +64,8 @@ func (s *Service) CheckEligibilityFromClaims(
 	var warnings []EligibilityWarning
 	if event.EventCity != "" && actor.Claims.City != event.EventCity {
 		warnings = append(warnings, EligibilityWarning{
-			Code: WarningCrossCity,
-			Message: "This event is in " + event.EventCity + "; your registered city is " + actor.Claims.City + ".",
+			Code:         WarningCrossCity,
+			Message:      "This event is in " + event.EventCity + "; your registered city is " + actor.Claims.City + ".",
 			EmployeeCity: actor.Claims.City,
 			EventCity:    event.EventCity,
 		})
