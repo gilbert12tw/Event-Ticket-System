@@ -72,15 +72,6 @@ var mockProviderProfiles = []providerClaims{
 		City:        "Taipei",
 	},
 	{
-		EmployeeID:  "E1003",
-		DisplayName: "Tainan User",
-		JobTitle:    stringPointer("Field Engineer"),
-		RoleClaims:  []string{ticketing.RoleEmployee},
-		Department:  "Engineering",
-		Site:        "Tainan HQ",
-		City:        "Tainan",
-	},
-	{
 		EmployeeID:  "E2001",
 		DisplayName: "Carla Wu",
 		JobTitle:    stringPointer("Account Manager"),
