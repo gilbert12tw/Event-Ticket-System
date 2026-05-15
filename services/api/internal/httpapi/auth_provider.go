@@ -60,7 +60,15 @@ func (v *ProviderVerifier) IdentityFromToken(token string) (authIdentity, error)
 		return identity, errProviderRoleRejected
 	}
 	return authIdentity{
-		Actor:     ticketing.Actor{ID: claims.EmployeeID, Role: mappedRoles[0]},
+		Actor: ticketing.Actor{
+			ID:   claims.EmployeeID,
+			Role: mappedRoles[0],
+			Claims: &ticketing.ProviderClaims{
+				Department: claims.Department,
+				Site:       claims.Site,
+				City:       claims.City,
+			},
+		},
 		Claims:    providerClaimsPayload(claims, mappedRoles),
 		ExpiresAt: time.Unix(claims.ExpiresAt, 0).UTC(),
 		Source:    authSourceProvider,
