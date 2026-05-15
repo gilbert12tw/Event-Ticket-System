@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { bookEvent, cancelMyRegistration, getEvent, listEvents } from "@/lib/api";
 import type { AuthMeClaims, EventSummary } from "@/lib/api";
+import { getEligibilityDecision } from "@/lib/api/contracts";
 import { navigate } from "@/app/routes";
 import { bookingActionLabel, errorMessage, eventStatusTone, formatDate, registrationTone } from "@/lib/formatting";
 import { Alert, EmptyState, IdentityCard, Kpi, ProgressMeter, ProviderClaimsCard, SkeletonRows, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
+import { EligibilityWarningList } from "./eligibility-warning";
 
 const maxFamilyCount = 10;
 
@@ -22,7 +24,10 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const principalID = claims.employee_id;
   const eventStats = useMemo(
     () => ({
-      eligible: events.filter((event) => event.eligible && !event.no_show_cooldown?.active).length,
+      eligible: events.filter((event) => {
+        const d = getEligibilityDecision(event);
+        return d ? d.can_book && !d.no_show_cooldown.active : false;
+      }).length,
       confirmed: events.filter((event) => event.current_user_status === "confirmed").length,
       waitlisted: events.filter((event) => event.current_user_status === "waitlisted").length,
       openSeats: events.reduce((sum, event) => sum + (event.remaining_capacity ?? 0), 0)
@@ -281,18 +286,33 @@ function EmployeeEventCard({
 
 function EventSummaryBlock({ compact = false, event }: { compact?: boolean; event: EventSummary }) {
   const capacityMax = event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
-  const cooldown = event.no_show_cooldown;
+  const eligibility = getEligibilityDecision(event);
+  const cooldown = eligibility?.no_show_cooldown ?? event.no_show_cooldown;
+  const isEligible = eligibility ? eligibility.eligible : false;
+  const warnings = eligibility?.warnings ?? [];
+  const ineligibleReasons = eligibility && !eligibility.eligible ? (eligibility.reasons ?? []) : [];
+
   return (
     <div className={compact ? "" : "summary-block"}>
       <div className="event-card-top">
-        <StatusBadge tone={event.eligible && !cooldown?.active ? "ok" : "fail"}>{eligibilityLabel(event)}</StatusBadge>
-        <StatusBadge tone={event.capacity_type === "unlimited" ? "info" : "neutral"}>{event.capacity_type}</StatusBadge>
+        <StatusBadge tone={isEligible && !cooldown?.active ? "ok" : "fail"}>{eligibilityLabel(event)}</StatusBadge>
+        <StatusBadge tone={event.capacity_type === "unlimited" ? "info" : "neutral"}>
+          {event.capacity_type === "unlimited" ? "Unlimited activity" : "Limited capacity"}
+        </StatusBadge>
         <StatusBadge tone={eventStatusTone(event.status)}>{event.status}</StatusBadge>
         {event.current_user_status && <StatusBadge tone={registrationTone(event.current_user_status)}>{event.current_user_status}</StatusBadge>}
       </div>
       <h3>{event.title}</h3>
       <p>{event.description || "No description provided."}</p>
       {cooldown?.active && <Alert tone="warn">Limited-event booking is blocked by no-show cooldown until {formatDate(cooldown.until || "")}.</Alert>}
+      {warnings.length > 0 && <EligibilityWarningList warnings={warnings} />}
+      {ineligibleReasons.length > 0 && (
+        <Alert tone="fail">
+          <strong>Not eligible:</strong>{" "}
+          {ineligibleReasons.join("; ")}.
+          {" "}Contact HR or the event organizer if this looks incorrect.
+        </Alert>
+      )}
       <dl className="meta-list">
         {!compact && (
           <div>
@@ -304,6 +324,12 @@ function EventSummaryBlock({ compact = false, event }: { compact?: boolean; even
           <dt>Location</dt>
           <dd>{event.location || event.event_site || "Not set"}</dd>
         </div>
+        {event.event_city && (
+          <div>
+            <dt>Event city</dt>
+            <dd>{event.event_city}</dd>
+          </div>
+        )}
         <div>
           <dt>Starts</dt>
           <dd>{formatDate(event.starts_at)}</dd>
@@ -318,6 +344,12 @@ function EventSummaryBlock({ compact = false, event }: { compact?: boolean; even
             {event.rule.department} / {event.rule.site} / G{event.rule.min_grade}+
           </dd>
         </div>
+        {event.allows_family && event.capacity_type === "unlimited" && (
+          <div>
+            <dt>Family participation</dt>
+            <dd>Allowed. Family count is used for planning and entry support; tickets remain tied to the employee registration.</dd>
+          </div>
+        )}
       </dl>
       {event.capacity_type === "limited" ? (
         <ProgressMeter
@@ -390,13 +422,21 @@ function CancellationControl({
 }
 
 function canBook(event: EventSummary) {
-  return event.eligible && !event.no_show_cooldown?.active && event.current_user_status !== "confirmed" && event.current_user_status !== "waitlisted";
+  const eligibility = getEligibilityDecision(event);
+  // Derive can_book from typed eligibility if available; fall back to legacy flat fields.
+  const bookable = eligibility ? eligibility.can_book && !eligibility.no_show_cooldown.active : (event.eligible ?? false) && !event.no_show_cooldown?.active;
+  return bookable && event.current_user_status !== "confirmed" && event.current_user_status !== "waitlisted";
 }
 
 function eligibilityLabel(event: EventSummary) {
-  const reason = event.eligibility_reason.trim();
-  if (!reason) return event.eligible ? "eligible" : "not eligible";
-  if (reason === "eligible") return "符合資格";
+  const eligibility = getEligibilityDecision(event);
+  if (eligibility) {
+    if (eligibility.eligible) return eligibility.warnings.length > 0 ? "符合資格 ⚠" : "符合資格";
+    return eligibility.reasons[0] || "不符合資格";
+  }
+  // Legacy flat-field fallback
+  const reason = (event.eligibility_reason ?? "").trim();
+  if (!reason || reason === "eligible") return event.eligible ? "符合資格" : "不符合資格";
   return reason;
 }
 
