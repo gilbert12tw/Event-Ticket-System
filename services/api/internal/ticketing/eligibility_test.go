@@ -27,7 +27,7 @@ func TestEvaluateEligibilityRejectsMismatchWithReason(t *testing.T) {
 }
 
 func TestEvaluateEligibilityNormalizedSite(t *testing.T) {
-	employee := Employee{EmployeeID: "E1001", Department: "Engineering", Site: "Taipei HQ", JobGrade: 6, EmploymentStatus: "active"}
+	employee := Employee{EmployeeID: "E1001", Department: "Engineering", Site: "Taipei", JobGrade: 6, EmploymentStatus: "active"}
 	rule := EligibilityRule{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"}
 
 	ok, reason := EvaluateEligibility(employee, rule)
