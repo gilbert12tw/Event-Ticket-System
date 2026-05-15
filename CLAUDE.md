@@ -56,11 +56,11 @@ dc()    { docker compose --env-file services/api/deploy/.env.example -f services
 dcdev() { docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.dev.yaml "$@"; }
 
 dc build app
-dc up -d postgres redis minio mailhog minio-init
-dc run --rm migrate                # one-off admin process
-dc up -d app worker
+dc up -d app worker                # auto: migrate → seed → app/worker
 curl -fsS http://localhost:8080/readyz
 ```
+
+`seed` 服務經 `depends_on` 串接，每次 `dc up` 會跑一次 `SeedDemoData` 寫入 demo 員工 (E1001/E1002/E2001)；`ON CONFLICT DO UPDATE` 重跑安全。
 
 Rebuild `app` only when Go code, migrations, the embedded production frontend bundle (`services/api/internal/httpapi/static`), the Dockerfile, or dependency manifests change. Pure frontend hot-reload uses `dcdev ... up -d web-dev` and Vite at `:5173`.
 

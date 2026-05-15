@@ -290,10 +290,6 @@ jobs:
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
       - name: Build release image
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml build app
-      - name: Start backing services for live gates
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d postgres redis minio mailhog minio-init
-      - name: Run explicit database migration
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml run --rm migrate
       - name: Start API services for live gates
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d app worker
       - name: Wait for API readiness

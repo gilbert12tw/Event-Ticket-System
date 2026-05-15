@@ -45,11 +45,11 @@ dcdev() {
 
 ```bash
 dc build app
-dc up -d postgres redis minio mailhog minio-init
-dc run --rm migrate
 dc up -d app worker
 curl -fsS http://localhost:8080/readyz
 ```
+
+`dc up` 會自動跑 `migrate` → `seed` → `app`/`worker` (依 compose `depends_on` 鏈)。`seed` 寫入 demo 員工 (E1001 Ariel / E1002 Ben / E2001 Carla)，`ON CONFLICT DO UPDATE` 重跑安全。
 
 Open `http://localhost:8080` for the User Workspace, or `http://localhost:8080/admin/demo` to run the full acceptance flow.
 
@@ -57,7 +57,6 @@ Open `http://localhost:8080` for the User Workspace, or `http://localhost:8080/a
 
 ```bash
 dc build app
-dc run --rm migrate
 dc up -d app worker
 dc ps
 ```
@@ -85,8 +84,6 @@ For containerized frontend hot reload, use the dev overlay. It bind-mounts the r
 
 ```bash
 dc build app
-dcdev up -d postgres redis minio mailhog minio-init
-dcdev run --rm migrate
 dcdev up -d app worker web-dev
 ```
 
