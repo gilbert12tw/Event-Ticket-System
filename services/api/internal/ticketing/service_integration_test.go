@@ -42,9 +42,9 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'event.created' AND entity_id = $1`, event.EventID, 1)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1 AND version = 1`, event.EventID, 1)
 
-	eligible, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, "")
+	eligible, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{Department: "Engineering", Site: "Taipei", City: "Taipei"}}, event.EventID, "")
 	require.NoError(t, err)
-	assert.Equal(t, true, eligible["eligible"])
+	assert.Equal(t, true, eligible.Eligible)
 
 	first, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "idem-1"})
 	require.NoError(t, err)

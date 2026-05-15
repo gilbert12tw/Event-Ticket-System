@@ -30,7 +30,7 @@ type EventService interface {
 }
 
 type EligibilityService interface {
-	CheckEligibility(ctx context.Context, actor ticketing.Actor, eventID string, employeeID string) (map[string]interface{}, error)
+	CheckEligibility(ctx context.Context, actor ticketing.Actor, eventID string, employeeID string) (ticketing.EligibilityDecision, error)
 	PreviewEligibility(ctx context.Context, actor ticketing.Actor, eventID string, req ticketing.EligibilityPreviewRequest) (ticketing.EligibilityPreviewResponse, error)
 	UpdateEligibility(ctx context.Context, actor ticketing.Actor, eventID string, req ticketing.UpdateEligibilityRequest) (ticketing.EligibilityPreviewResponse, error)
 	EligibilityImpactReviews(ctx context.Context, actor ticketing.Actor) ([]ticketing.EligibilityImpactReview, error)

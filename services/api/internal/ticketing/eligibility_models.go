@@ -48,3 +48,35 @@ type EligibilityImpactReview struct {
 type ResolveImpactReviewRequest struct {
 	Reason string `json:"reason"`
 }
+
+// WarningCode identifies a non-blocking advisory returned alongside an
+// eligibility decision.
+type WarningCode string
+
+const (
+	// WarningCrossCity is emitted when the employee's provider city differs
+	// from the event city. It is advisory — it must never set Eligible=false
+	// or CanBook=false on its own.
+	WarningCrossCity WarningCode = "cross_city"
+)
+
+// EligibilityWarning is a structured, non-blocking advisory. It must never
+// prevent booking on its own.
+type EligibilityWarning struct {
+	Code         WarningCode `json:"code"`
+	Message      string      `json:"message"`
+	EmployeeCity string      `json:"employee_city,omitempty"`
+	EventCity    string      `json:"event_city,omitempty"`
+}
+
+// EligibilityDecision is the response returned to an employee for a single
+// event eligibility check. It replaces the previous map[string]interface{}
+// returned by CheckEligibility.
+type EligibilityDecision struct {
+	EventID        string               `json:"event_id"`
+	Eligible       bool                 `json:"eligible"`
+	CanBook        bool                 `json:"can_book"`
+	Reasons        []string             `json:"reasons"`
+	Warnings       []EligibilityWarning `json:"warnings"`
+	NoShowCooldown NoShowCooldown       `json:"no_show_cooldown"`
+}

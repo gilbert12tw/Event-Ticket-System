@@ -38,9 +38,10 @@ type Event struct {
 
 type EventSummary struct {
 	Event
-	Rule                      EligibilityRule `json:"rule"`
-	Eligible                  bool            `json:"eligible"`
-	EligibilityReason         string          `json:"eligibility_reason"`
+	Rule                      EligibilityRule     `json:"rule"`
+	Eligibility               EligibilityDecision `json:"eligibility"`
+	Eligible                  bool                `json:"eligible"`
+	EligibilityReason         string              `json:"eligibility_reason"`
 	ConfirmedCount            int             `json:"confirmed_count"`
 	WaitlistCount             int             `json:"waitlist_count"`
 	RemainingCapacity         *int            `json:"remaining_capacity"`

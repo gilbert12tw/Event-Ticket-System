@@ -126,7 +126,7 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 	}
 
 	s.logger.Info("event created", "trace_id", traceid.FromContext(ctx), "action", "event.created", "status", "success", "event_id", eventID, "actor_role", actor.Role)
-	return s.GetEventSummary(ctx, eventID, "")
+	return s.GetEventSummary(ctx, actor, eventID, "")
 }
 
 func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string) ([]EventSummary, error) {
@@ -146,7 +146,7 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 		if err := rows.Scan(&eventID); err != nil {
 			return nil, err
 		}
-		summary, err := s.GetEventSummary(ctx, eventID, employeeID)
+		summary, err := s.GetEventSummary(ctx, actor, eventID, employeeID)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +155,7 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 	return summaries, rows.Err()
 }
 
-func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeID string) (EventSummary, error) {
+func (s *Service) GetEventSummary(ctx context.Context, actor Actor, eventID string, employeeID string) (EventSummary, error) {
 	var summary EventSummary
 	var tags string
 	var capacity pgtype.Int4
@@ -192,20 +192,47 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 	if summary.CapacityType == CapacityTypeLimited && summary.Capacity != nil {
 		summary.RemainingCapacity = intPtr(max(*summary.Capacity-summary.ConfirmedCount, 0))
 	}
+
+	summary.Eligibility = EligibilityDecision{EventID: eventID, Eligible: false, Reasons: []string{"provider claims employee identity is required"}}
 	summary.Eligible = false
-	summary.EligibilityReason = "provider claims employee identity is required"
+	summary.EligibilityReason = summary.Eligibility.Reasons[0]
 	summary.NoShowCooldown = NoShowCooldown{Active: false}
+
 	if employeeID != "" {
-		employee, err := s.getEmployee(ctx, employeeID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				summary.EligibilityReason = "employee not found"
-			} else {
-				return EventSummary{}, err
-			}
+		if actor.ID == employeeID && actor.Claims != nil {
+			decision, _ := s.CheckEligibilityFromClaims(ctx, actor, eventID)
+			summary.Eligibility = decision
 		} else {
-			summary.Eligible, summary.EligibilityReason = EvaluateEligibility(employee, summary.Rule)
+			employee, err := s.getEmployee(ctx, employeeID)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					summary.Eligibility.Reasons = []string{"employee not found"}
+				} else {
+					return EventSummary{}, err
+				}
+			} else {
+				eligible, reason := EvaluateEligibility(employee, summary.Rule)
+				var reasons []string
+				if reason != "" {
+					reasons = append(reasons, reason)
+				}
+				summary.Eligibility = EligibilityDecision{
+					EventID:  eventID,
+					Eligible: eligible,
+					CanBook:  eligible, // Admin preview ignores cooldown dynamically
+					Reasons:  reasons,
+				}
+			}
 		}
+
+		// Shims for backward compatibility
+		summary.Eligible = summary.Eligibility.Eligible
+		if len(summary.Eligibility.Reasons) > 0 {
+			summary.EligibilityReason = summary.Eligibility.Reasons[0]
+		} else {
+			summary.EligibilityReason = ""
+		}
+
 		reg, ticket, found, err := s.findRegistrationByEmployee(ctx, eventID, employeeID)
 		if err != nil {
 			return EventSummary{}, err
@@ -241,22 +268,15 @@ func (s *Service) GetEventSummary(ctx context.Context, eventID string, employeeI
 	return summary, nil
 }
 
-func (s *Service) CheckEligibility(ctx context.Context, actor Actor, eventID string, employeeID string) (map[string]interface{}, error) {
-	employeeID, err := authorizeEmployeeRead(actor, employeeID)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(employeeID) == "" {
-		return nil, badRequest("employee_id is required")
-	}
-	summary, err := s.GetEventSummary(ctx, eventID, employeeID)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]interface{}{
-		"event_id":    eventID,
-		"employee_id": employeeID,
-		"eligible":    summary.Eligible,
-		"reason":      summary.EligibilityReason,
-	}, nil
+// CheckEligibility is the employee-facing eligibility entry point. It
+// delegates to CheckEligibilityFromClaims and returns EligibilityDecision.
+// Callers that previously used map[string]interface{} must be updated to use
+// EligibilityDecision fields directly.
+func (s *Service) CheckEligibility(
+	ctx context.Context,
+	actor Actor,
+	eventID string,
+	_ string, // employeeID arg retained for interface compat; ignored — use actor.Claims
+) (EligibilityDecision, error) {
+	return s.CheckEligibilityFromClaims(ctx, actor, eventID)
 }

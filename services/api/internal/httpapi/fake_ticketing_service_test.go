@@ -68,10 +68,10 @@ func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Act
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
 }
 
-func (s *fakeTicketingService) CheckEligibility(_ context.Context, actor ticketing.Actor, _ string, employeeID string) (map[string]interface{}, error) {
+func (s *fakeTicketingService) CheckEligibility(_ context.Context, actor ticketing.Actor, _ string, employeeID string) (ticketing.EligibilityDecision, error) {
 	s.eligibilityActor = actor
 	s.eligibilityEmployeeID = employeeID
-	return map[string]interface{}{"eligible": true}, nil
+	return ticketing.EligibilityDecision{Eligible: true}, nil
 }
 
 func (s *fakeTicketingService) PreviewEligibility(context.Context, ticketing.Actor, string, ticketing.EligibilityPreviewRequest) (ticketing.EligibilityPreviewResponse, error) {
