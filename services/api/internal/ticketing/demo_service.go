@@ -8,7 +8,6 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 		return err
 	}
 	defer rollback(ctx, tx)
-	
 	// Ensure a clean slate for demo data to prevent stale state from previous runs
 	if _, err := tx.Exec(ctx, "TRUNCATE employees CASCADE"); err != nil {
 		return err

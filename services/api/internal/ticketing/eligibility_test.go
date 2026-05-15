@@ -34,4 +34,3 @@ func TestEvaluateEligibilityNormalizedSite(t *testing.T) {
 
 	require.True(t, ok, "expected eligible with normalization, got reason %q", reason)
 }
-
