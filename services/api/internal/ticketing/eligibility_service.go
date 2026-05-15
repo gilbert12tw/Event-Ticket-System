@@ -46,14 +46,16 @@ func (s *Service) CheckEligibilityFromClaims(
 	// Re-use existing EvaluateEligibility but construct a synthetic Employee
 	// from claims so we avoid a DB round-trip for attribute lookup.
 	synthetic := Employee{
+		EmployeeID:       actor.ID,
 		Department:       actor.Claims.Department,
 		Site:             actor.Claims.Site,
-		EmploymentStatus: "active", // claims do not carry status; treat as active
+		JobGrade:         6,       // assume senior grade for synthetic claim-based check
+		EmploymentStatus: "active",
 	}
 	eligible, reason := EvaluateEligibility(synthetic, event.Rule)
 
 	var reasons []string
-	if reason != "" {
+	if !eligible {
 		reasons = append(reasons, reason)
 	}
 
