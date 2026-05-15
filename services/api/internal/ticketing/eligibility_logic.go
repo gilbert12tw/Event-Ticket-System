@@ -41,3 +41,16 @@ func normalizeLocation(input string) string {
 	}
 	return input
 }
+
+func normalizeRuleInput(input RuleInput) RuleInput {
+	if input.Department == "" {
+		input.Department = "*"
+	}
+	if input.Site == "" {
+		input.Site = "*"
+	}
+	if input.EmploymentStatus == "" {
+		input.EmploymentStatus = "active"
+	}
+	return input
+}
