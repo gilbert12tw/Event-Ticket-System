@@ -31,8 +31,11 @@ import type {
   Ticket,
   UpdateEligibilityRequest,
   UpdateNotificationPreferencesRequest,
-  UpdateEventRequest
+  UpdateEventRequest,
 } from "./contracts";
+import { redact } from "./redaction";
+
+export { employees } from "./demo-data";
 
 type RequestOptions = Omit<RequestInit, "headers" | "body"> & {
   body?: unknown;
@@ -68,36 +71,9 @@ export class ApiError extends Error {
   }
 }
 
-export const employees = [
-  {
-    employee_id: "E1001",
-    full_name: "Ariel Chen",
-    department: "Engineering",
-    site: "Taipei",
-    job_grade: 6,
-    employment_status: "active"
-  },
-  {
-    employee_id: "E1002",
-    full_name: "Ben Lin",
-    department: "Engineering",
-    site: "Taipei",
-    job_grade: 5,
-    employment_status: "active"
-  },
-  {
-    employee_id: "E2001",
-    full_name: "Carla Wu",
-    department: "Sales",
-    site: "Taipei",
-    job_grade: 4,
-    employment_status: "active"
-  }
-];
-
 function headersFor(): HeadersInit {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
   };
   const providerToken = currentProviderToken();
   if (providerToken) {
@@ -107,7 +83,11 @@ function headersFor(): HeadersInit {
 }
 
 function defaultProviderTokenProvider() {
-  const token = (globalThis as typeof globalThis & { __CETS_PROVIDER_TOKEN__?: string | null }).__CETS_PROVIDER_TOKEN__;
+  const token = (
+    globalThis as typeof globalThis & {
+      __CETS_PROVIDER_TOKEN__?: string | null;
+    }
+  ).__CETS_PROVIDER_TOKEN__;
   return typeof token === "string" ? token : "";
 }
 
@@ -122,7 +102,8 @@ async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
       ...options,
       credentials: "same-origin",
       headers: headersFor(),
-      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+      body:
+        options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     const contentType = response.headers.get("Content-Type") || "";
     const envelope = contentType.includes("application/json")
@@ -130,7 +111,7 @@ async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
       : ({
           success: false,
           data: null as T,
-          error: await response.text()
+          error: await response.text(),
         } satisfies ApiEnvelope<T>);
 
     logApi(`${method} ${path}`, response.status, response.ok, envelope);
@@ -140,53 +121,45 @@ async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
     return envelope.data;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    logApi(`${method} ${path}`, "ERR", false, { error: error instanceof Error ? error.message : String(error) });
+    logApi(`${method} ${path}`, "ERR", false, {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }
 
-async function apiList<T>(path: string, options: RequestOptions = {}): Promise<T[]> {
+async function apiList<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T[]> {
   return (await api<T[] | null>(path, options)) ?? [];
 }
 
-function logApi(label: string, status: number | "ERR", ok: boolean, payload: unknown) {
+function logApi(
+  label: string,
+  status: number | "ERR",
+  ok: boolean,
+  payload: unknown,
+) {
   observer?.({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     label,
     status,
     ok,
     payload: redact(payload),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   });
-}
-
-function redact(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redact);
-  if (!value || typeof value !== "object") return value;
-  const output: Record<string, unknown> = {};
-  for (const [key, raw] of Object.entries(value)) {
-    if (key === "provider_token") {
-      output[key] = typeof raw === "string" && raw.length > 0 ? "[redacted provider token]" : raw;
-    } else if (key === "signed_token" || key === "qr_payload") {
-      output[key] = typeof raw === "string" && raw.length > 0 ? "[redacted ticket token]" : raw;
-    } else if (key === "cets_session" || key === "session" || key === "token") {
-      output[key] = typeof raw === "string" && raw.length > 0 ? "[redacted session]" : raw;
-    } else {
-      output[key] = redact(raw);
-    }
-  }
-  return output;
 }
 
 export function authSessionFromClaims(claims: AuthMeClaims): AuthSession {
   return {
     actor: {
       id: claims.employee_id,
-      role: claims.mapped_roles[0] || "employee"
+      role: claims.mapped_roles[0] || "employee",
     },
     expires_at: "",
     claims,
-    source: "provider"
+    source: "provider",
   };
 }
 
@@ -202,12 +175,14 @@ export function mockProviderToken(profileID: string) {
   return api<MockProviderToken>("/api/v1/auth/mock-provider-token", {
     method: "POST",
     body: {
-      profile_id: profileID
-    }
+      profile_id: profileID,
+    },
   });
 }
 
-export async function selectMockProfile(profileID: string): Promise<AuthSession> {
+export async function selectMockProfile(
+  profileID: string,
+): Promise<AuthSession> {
   const token = await mockProviderToken(profileID);
   setProviderToken(token.provider_token);
   return me();
@@ -220,14 +195,14 @@ export function clearProviderToken() {
 export function seedDemo() {
   return api<{ status: string }>("/api/v1/admin/seed-demo", {
     method: "POST",
-    body: {}
+    body: {},
   });
 }
 
 export function createEvent(body: CreateEventRequest) {
   return api<EventSummary>("/api/v1/admin/events", {
     method: "POST",
-    body
+    body,
   });
 }
 
@@ -244,107 +219,175 @@ export function getEvent(eventID: string) {
 }
 
 export function checkEligibility(eventID: string) {
-  return api<EligibilityCheckResult>(`/api/v1/events/${encodeURIComponent(eventID)}/eligibility`);
+  return api<EligibilityCheckResult>(
+    `/api/v1/events/${encodeURIComponent(eventID)}/eligibility`,
+  );
 }
 
 export function updateEvent(eventID: string, body: UpdateEventRequest) {
-  return api<EventSummary>(`/api/v1/admin/events/${encodeURIComponent(eventID)}`, {
-    method: "PATCH",
-    body
-  });
+  return api<EventSummary>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}`,
+    {
+      method: "PATCH",
+      body,
+    },
+  );
 }
 
-export function changeEventState(eventID: string, status: string, reason: string) {
-  return api<EventSummary>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/state`, {
-    method: "POST",
-    body: { status, reason }
-  });
+export function changeEventState(
+  eventID: string,
+  status: string,
+  reason: string,
+) {
+  return api<EventSummary>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/state`,
+    {
+      method: "POST",
+      body: { status, reason },
+    },
+  );
 }
 
 export function duplicateEvent(eventID: string) {
-  return api<EventSummary>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/duplicate`, {
-    method: "POST",
-    body: {}
-  });
+  return api<EventSummary>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/duplicate`,
+    {
+      method: "POST",
+      body: {},
+    },
+  );
 }
 
 export function archiveEvent(eventID: string) {
-  return api<EventSummary>(`/api/v1/admin/events/${encodeURIComponent(eventID)}`, {
-    method: "DELETE"
-  });
+  return api<EventSummary>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
-export function previewEligibility(eventID: string, body: EligibilityPreviewRequest) {
-  return api<EligibilityPreviewResponse>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/eligibility/preview`, {
-    method: "POST",
-    body
-  });
+export function previewEligibility(
+  eventID: string,
+  body: EligibilityPreviewRequest,
+) {
+  return api<EligibilityPreviewResponse>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/eligibility/preview`,
+    {
+      method: "POST",
+      body,
+    },
+  );
 }
 
-export function updateEligibility(eventID: string, body: UpdateEligibilityRequest) {
-  return api<EligibilityPreviewResponse>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/eligibility`, {
-    method: "PUT",
-    body
-  });
+export function updateEligibility(
+  eventID: string,
+  body: UpdateEligibilityRequest,
+) {
+  return api<EligibilityPreviewResponse>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/eligibility`,
+    {
+      method: "PUT",
+      body,
+    },
+  );
 }
 
 export function listEligibilityImpactReviews() {
-  return apiList<EligibilityImpactReview>("/api/v1/admin/eligibility-impact-reviews");
+  return apiList<EligibilityImpactReview>(
+    "/api/v1/admin/eligibility-impact-reviews",
+  );
 }
 
-export function resolveEligibilityImpactReview(reviewID: string, body: ResolveImpactReviewRequest) {
-  return api<EligibilityImpactReview>(`/api/v1/admin/eligibility-impact-reviews/${encodeURIComponent(reviewID)}/resolve`, {
-    method: "POST",
-    body
-  });
+export function resolveEligibilityImpactReview(
+  reviewID: string,
+  body: ResolveImpactReviewRequest,
+) {
+  return api<EligibilityImpactReview>(
+    `/api/v1/admin/eligibility-impact-reviews/${encodeURIComponent(reviewID)}/resolve`,
+    {
+      method: "POST",
+      body,
+    },
+  );
 }
 
-export function bookEvent(eventID: string, idempotencyKey: string, familyCount = 0) {
-  return api<BookingResponse>(`/api/v1/events/${encodeURIComponent(eventID)}/bookings`, {
-    method: "POST",
-    body: {
-      idempotency_key: idempotencyKey,
-      family_count: familyCount
-    }
-  });
+export function bookEvent(
+  eventID: string,
+  idempotencyKey: string,
+  familyCount = 0,
+) {
+  return api<BookingResponse>(
+    `/api/v1/events/${encodeURIComponent(eventID)}/bookings`,
+    {
+      method: "POST",
+      body: {
+        idempotency_key: idempotencyKey,
+        family_count: familyCount,
+      },
+    },
+  );
 }
 
-export function cancelMyRegistration(registrationID: string, reason: string, idempotencyKey: string) {
-  return api<BookingResponse>(`/api/v1/me/registrations/${encodeURIComponent(registrationID)}/cancel`, {
-    method: "POST",
-    body: {
-      reason,
-      idempotency_key: idempotencyKey
-    }
-  });
+export function cancelMyRegistration(
+  registrationID: string,
+  reason: string,
+  idempotencyKey: string,
+) {
+  return api<BookingResponse>(
+    `/api/v1/me/registrations/${encodeURIComponent(registrationID)}/cancel`,
+    {
+      method: "POST",
+      body: {
+        reason,
+        idempotency_key: idempotencyKey,
+      },
+    },
+  );
 }
 
-export function cancelRegistration(eventID: string, registrationID: string, reason: string, idempotencyKey: string) {
-  return api<BookingResponse>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations/${encodeURIComponent(registrationID)}/cancel`, {
-    method: "POST",
-    body: {
-      reason,
-      idempotency_key: idempotencyKey
-    }
-  });
+export function cancelRegistration(
+  eventID: string,
+  registrationID: string,
+  reason: string,
+  idempotencyKey: string,
+) {
+  return api<BookingResponse>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations/${encodeURIComponent(registrationID)}/cancel`,
+    {
+      method: "POST",
+      body: {
+        reason,
+        idempotency_key: idempotencyKey,
+      },
+    },
+  );
 }
 
 export function listRegistrations(eventID: string) {
-  return apiList<RegistrationDetail>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations`);
+  return apiList<RegistrationDetail>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations`,
+  );
 }
 
 export function promoteWaitlist(eventID: string) {
-  return api<PromoteWaitlistResponse>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/waitlist/promote`, {
-    method: "POST",
-    body: {}
-  });
+  return api<PromoteWaitlistResponse>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/waitlist/promote`,
+    {
+      method: "POST",
+      body: {},
+    },
+  );
 }
 
 export function runLottery(eventID: string, body: LotteryRunRequest) {
-  return api<LotteryRun>(`/api/v1/admin/events/${encodeURIComponent(eventID)}/lottery-runs`, {
-    method: "POST",
-    body
-  });
+  return api<LotteryRun>(
+    `/api/v1/admin/events/${encodeURIComponent(eventID)}/lottery-runs`,
+    {
+      method: "POST",
+      body,
+    },
+  );
 }
 
 export function listTickets() {
@@ -360,29 +403,34 @@ export function checkIn(signedToken: string, deviceID: string) {
     method: "POST",
     body: {
       signed_token: signedToken,
-      device_id: deviceID
-    }
+      device_id: deviceID,
+    },
   });
 }
 
 export function revokeTicket(ticketID: string, reason: string) {
-  return api<Ticket>(`/api/v1/admin/tickets/${encodeURIComponent(ticketID)}/revoke`, {
-    method: "POST",
-    body: { reason }
-  });
+  return api<Ticket>(
+    `/api/v1/admin/tickets/${encodeURIComponent(ticketID)}/revoke`,
+    {
+      method: "POST",
+      body: { reason },
+    },
+  );
 }
 
 export function offlineCheckinPackage(eventID: string, deviceID: string) {
   const params = new URLSearchParams();
   if (deviceID.trim()) params.set("device_id", deviceID.trim());
   const query = params.toString();
-  return api<OfflineCheckinPackage>(`/api/v1/checkins/events/${encodeURIComponent(eventID)}/offline-package${query ? `?${query}` : ""}`);
+  return api<OfflineCheckinPackage>(
+    `/api/v1/checkins/events/${encodeURIComponent(eventID)}/offline-package${query ? `?${query}` : ""}`,
+  );
 }
 
 export function syncOfflineCheckins(body: OfflineCheckinSyncRequest) {
   return api<OfflineCheckinSyncResponse>("/api/v1/checkins/offline-sync", {
     method: "POST",
-    body
+    body,
   });
 }
 
@@ -390,22 +438,29 @@ export function getNotificationPreferences() {
   return api<NotificationPreferences>("/api/v1/notifications/preferences");
 }
 
-export function updateNotificationPreferences(body: UpdateNotificationPreferencesRequest) {
+export function updateNotificationPreferences(
+  body: UpdateNotificationPreferencesRequest,
+) {
   return api<NotificationPreferences>("/api/v1/notifications/preferences", {
     method: "PUT",
-    body
+    body,
   });
 }
 
 export function listNotificationDeliveries() {
-  return apiList<NotificationDelivery>("/api/v1/admin/notifications/deliveries");
+  return apiList<NotificationDelivery>(
+    "/api/v1/admin/notifications/deliveries",
+  );
 }
 
 export function retryNotificationDelivery(deliveryID: string) {
-  return api<NotificationDelivery>(`/api/v1/admin/notifications/deliveries/${encodeURIComponent(deliveryID)}/retry`, {
-    method: "POST",
-    body: {}
-  });
+  return api<NotificationDelivery>(
+    `/api/v1/admin/notifications/deliveries/${encodeURIComponent(deliveryID)}/retry`,
+    {
+      method: "POST",
+      body: {},
+    },
+  );
 }
 
 export function reports() {
@@ -415,21 +470,26 @@ export function reports() {
 export function createReportExport(body: ReportExportRequest) {
   return api<ReportExport>("/api/v1/admin/reports/exports", {
     method: "POST",
-    body
+    body,
   });
 }
 
 export function getReportExport(exportID: string) {
-  return api<ReportExport>(`/api/v1/admin/reports/exports/${encodeURIComponent(exportID)}`);
+  return api<ReportExport>(
+    `/api/v1/admin/reports/exports/${encodeURIComponent(exportID)}`,
+  );
 }
 
 export function auditLogs(filters: AuditLogFilters = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && String(value).trim() !== "") params.set(key, String(value).trim());
+    if (value !== undefined && String(value).trim() !== "")
+      params.set(key, String(value).trim());
   }
   const query = params.toString();
-  return apiList<AuditLog>(`/api/v1/admin/audit-logs${query ? `?${query}` : ""}`);
+  return apiList<AuditLog>(
+    `/api/v1/admin/audit-logs${query ? `?${query}` : ""}`,
+  );
 }
 
 export function readiness(path: "/healthz" | "/readyz") {

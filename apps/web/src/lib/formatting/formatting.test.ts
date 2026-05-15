@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bookingActionLabel, eventStatusTone, normalizeAuditFilters, registrationTone } from ".";
+import {
+  bookingActionLabel,
+  eventStatusTone,
+  normalizeAuditFilters,
+  registrationTone,
+} from ".";
 import type { EventSummary } from "@/lib/api";
 
 describe("formatting helpers", () => {
@@ -8,7 +13,7 @@ describe("formatting helpers", () => {
       actor_id: "hr-1",
       from: "2026-05-06T08:00",
       to: "2026-05-06T09:00",
-      limit: ""
+      limit: "",
     });
 
     expect(filters.actor_id).toBe("hr-1");
@@ -20,6 +25,11 @@ describe("formatting helpers", () => {
   it("maps event, registration, and booking state to stable UI vocabulary", () => {
     expect(eventStatusTone("published")).toBe("ok");
     expect(registrationTone("waitlisted")).toBe("warn");
-    expect(bookingActionLabel({ current_user_status: "", remaining_capacity: 0 } as EventSummary)).toBe("加入候補");
+    expect(
+      bookingActionLabel({
+        current_user_status: "",
+        remaining_capacity: 0,
+      } as EventSummary),
+    ).toBe("加入候補");
   });
 });

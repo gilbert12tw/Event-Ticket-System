@@ -15,7 +15,7 @@ describe("shared product components", () => {
       <>
         <EmptyState title="尚無資料" action="建立活動後會出現在這裡。" />
         <SkeletonRows rows={3} />
-      </>
+      </>,
     );
 
     expect(screen.getByText("尚無資料")).toBeInTheDocument();

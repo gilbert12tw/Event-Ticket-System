@@ -23,7 +23,7 @@ describe("TicketPanel", () => {
       issued_at: "2026-05-06T10:00:00Z",
       event_title: "台北家庭電影夜",
       event_location: "Taipei HQ",
-      employee_name: "Ariel Chen"
+      employee_name: "Ariel Chen",
     };
 
     render(<TicketPanel ticket={ticket} />);
@@ -42,14 +42,20 @@ describe("TicketPanel", () => {
       employee_id: "E1001",
       status: "active",
       signed_token: "signed-secret",
-      issued_at: "2026-05-06T10:00:00Z"
+      issued_at: "2026-05-06T10:00:00Z",
     };
 
     const { container } = render(<TicketPanel compact ticket={ticket} />);
 
-    expect(container.querySelector(".ticket-panel.compact")).toBeInTheDocument();
-    expect(screen.getByText("evt_1234567890abcdef1234567890abcdef")).toBeInTheDocument();
-    expect(screen.getByText("tic_1234567890abcdef1234567890abcdef")).toBeInTheDocument();
+    expect(
+      container.querySelector(".ticket-panel.compact"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("evt_1234567890abcdef1234567890abcdef"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("tic_1234567890abcdef1234567890abcdef"),
+    ).toBeInTheDocument();
   });
 
   it("uses in-memory checkin handoff instead of localStorage", async () => {
@@ -63,7 +69,7 @@ describe("TicketPanel", () => {
       issued_at: "2026-05-06T10:00:00Z",
       event_title: "台北家庭電影夜",
       event_location: "Taipei HQ",
-      employee_name: "Ariel Chen"
+      employee_name: "Ariel Chen",
     };
 
     const pushStateSpy = vi.spyOn(window.history, "pushState");
@@ -72,7 +78,11 @@ describe("TicketPanel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "帶到驗票頁" }));
 
-    expect(pushStateSpy).toHaveBeenCalledWith({ cetsCheckinToken: "signed-secret" }, "", "/admin/checkin");
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      { cetsCheckinToken: "signed-secret" },
+      "",
+      "/admin/checkin",
+    );
     expect(setItemSpy).not.toHaveBeenCalled();
     pushStateSpy.mockRestore();
     setItemSpy.mockRestore();

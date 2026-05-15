@@ -1,4 +1,9 @@
-export type Role = "employee" | "activity_admin" | "checkin_staff" | "hr_admin" | "system_admin";
+export type Role =
+  | "employee"
+  | "activity_admin"
+  | "checkin_staff"
+  | "hr_admin"
+  | "system_admin";
 
 export type Actor = {
   id: string;

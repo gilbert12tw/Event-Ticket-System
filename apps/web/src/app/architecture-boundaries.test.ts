@@ -16,12 +16,21 @@ describe("frontend architecture boundaries", () => {
     const uiFiles = filesUnder(join(srcDir, "components/ui"));
 
     expect(uiFiles.some((file) => file.endsWith("button.tsx"))).toBe(true);
-    expect(uiFiles.every((file) => file.replaceAll("\\", "/").includes("components/ui"))).toBe(true);
+    expect(
+      uiFiles.every((file) =>
+        file.replaceAll("\\", "/").includes("components/ui"),
+      ),
+    ).toBe(true);
   });
 
   it("keeps shared and layout components independent from feature modules", () => {
-    const reusableFiles = [...filesUnder(join(srcDir, "components/shared")), ...filesUnder(join(srcDir, "components/layout"))];
-    const offenders = reusableFiles.filter((file) => readFileSync(file, "utf8").includes("@/features/"));
+    const reusableFiles = [
+      ...filesUnder(join(srcDir, "components/shared")),
+      ...filesUnder(join(srcDir, "components/layout")),
+    ];
+    const offenders = reusableFiles.filter((file) =>
+      readFileSync(file, "utf8").includes("@/features/"),
+    );
 
     expect(offenders).toEqual([]);
   });

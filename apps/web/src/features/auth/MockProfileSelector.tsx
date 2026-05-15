@@ -8,7 +8,7 @@ export function MockProfileSelector({
   ready,
   message,
   profiles,
-  onSelect
+  onSelect,
 }: {
   health: string;
   ready: string;
@@ -16,7 +16,9 @@ export function MockProfileSelector({
   profiles: MockProfile[];
   onSelect: (profileID: string) => void;
 }) {
-  const groups = Array.from(new Set(profiles.map((profile) => profile.department || "Mock Profiles")));
+  const groups = Array.from(
+    new Set(profiles.map((profile) => profile.department || "Mock Profiles")),
+  );
   return (
     <main className="login-shell">
       <section className="login-panel">
@@ -33,7 +35,10 @@ export function MockProfileSelector({
           <div>
             <div className="eyebrow">Metadata Profile</div>
             <h1>選擇一個模擬 provider profile</h1>
-            <p>此入口只在 local、demo、test 可用；選擇後會由後端簽發 mock provider token，產品 shell 仍走 bearer claims。</p>
+            <p>
+              此入口只在 local、demo、test 可用；選擇後會由後端簽發 mock
+              provider token，產品 shell 仍走 bearer claims。
+            </p>
           </div>
           <StatusPanel health={health} ready={ready} />
           {message && <Alert tone="warn">{message}</Alert>}
@@ -43,19 +48,34 @@ export function MockProfileSelector({
             <div className="principal-group" key={group}>
               <h2>{group}</h2>
               {profiles
-                .filter((profile) => (profile.department || "Mock Profiles") === group)
+                .filter(
+                  (profile) =>
+                    (profile.department || "Mock Profiles") === group,
+                )
                 .map((profile) => (
-                  <button className="principal-card" type="button" key={profile.profile_id} onClick={() => onSelect(profile.profile_id)}>
+                  <button
+                    className="principal-card"
+                    type="button"
+                    key={profile.profile_id}
+                    onClick={() => onSelect(profile.profile_id)}
+                  >
                     <span>
                       <strong>{profile.display_name}</strong>
                       <small>{profile.profile_id}</small>
                     </span>
                     <span>
-                      <StatusBadge tone={profile.mapped_roles[0] === "employee" ? "info" : "neutral"}>
+                      <StatusBadge
+                        tone={
+                          profile.mapped_roles[0] === "employee"
+                            ? "info"
+                            : "neutral"
+                        }
+                      >
                         {roleLabel(profile.mapped_roles[0] || "employee")}
                       </StatusBadge>
                       <small>
-                        {profile.job_title || profile.department} · {profile.site}
+                        {profile.job_title || profile.department} ·{" "}
+                        {profile.site}
                       </small>
                     </span>
                   </button>

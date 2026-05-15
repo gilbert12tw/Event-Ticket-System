@@ -1,8 +1,21 @@
 import { useEffect, useState } from "react";
-import { cancelRegistration, listAdminEvents, listRegistrations, promoteWaitlist, revokeTicket } from "@/lib/api";
+import {
+  cancelRegistration,
+  listAdminEvents,
+  listRegistrations,
+  promoteWaitlist,
+  revokeTicket,
+} from "@/lib/api";
 import type { EventSummary, RegistrationDetail, Ticket } from "@/lib/api";
 import { errorMessage, formatDate, registrationTone } from "@/lib/formatting";
-import { Alert, EmptyState, Field, Kpi, ResponsiveTable, StatusBadge } from "@/components/shared";
+import {
+  Alert,
+  EmptyState,
+  Field,
+  Kpi,
+  ResponsiveTable,
+  StatusBadge,
+} from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 
 export function AdminRegistrationsPage() {
@@ -53,7 +66,12 @@ export function AdminRegistrationsPage() {
     setBusy(true);
     setMessage("");
     try {
-      const result = await cancelRegistration(row.event_id, row.registration_id, reason, `cancel-${row.registration_id}`);
+      const result = await cancelRegistration(
+        row.event_id,
+        row.registration_id,
+        reason,
+        `cancel-${row.registration_id}`,
+      );
       setMessage(result.message);
       await refresh(row.event_id);
     } catch (error) {
@@ -81,7 +99,7 @@ export function AdminRegistrationsPage() {
     confirmed: rows.filter((row) => row.status === "confirmed").length,
     waitlisted: rows.filter((row) => row.status === "waitlisted").length,
     cancelled: rows.filter((row) => row.status === "cancelled").length,
-    tickets: rows.filter((row) => row.ticket).length
+    tickets: rows.filter((row) => row.ticket).length,
   };
 
   return (
@@ -90,11 +108,18 @@ export function AdminRegistrationsPage() {
         <div>
           <div className="eyebrow">Admin Console</div>
           <h2>報名治理入口</h2>
-          <p>針對單一活動檢視 registration detail，執行候補提升、取消報名與撤銷票券。</p>
+          <p>
+            針對單一活動檢視 registration
+            detail，執行候補提升、取消報名與撤銷票券。
+          </p>
         </div>
         <label className="field compact">
           <span>活動</span>
-          <select value={eventID} onChange={(event) => void refresh(event.target.value)} disabled={busy}>
+          <select
+            value={eventID}
+            onChange={(event) => void refresh(event.target.value)}
+            disabled={busy}
+          >
             <option value="">選擇活動</option>
             {events.map((event) => (
               <option value={event.event_id} key={event.event_id}>
@@ -108,21 +133,44 @@ export function AdminRegistrationsPage() {
         <div className="section-heading">
           <div>
             <h2>{selectedEvent?.title || "Registration detail"}</h2>
-            <p>後端仍以交易、唯一約束與 audit log 保證取消、撤銷與候補提升的一致性。</p>
+            <p>
+              後端仍以交易、唯一約束與 audit log
+              保證取消、撤銷與候補提升的一致性。
+            </p>
           </div>
           <div className="toolbar">
             <Field label="原因" value={reason} onChange={setReason} required />
-            <button className="button secondary" type="button" onClick={() => void refresh()} disabled={busy}>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => void refresh()}
+              disabled={busy}
+            >
               <Icon name="refresh" />
               重新整理
             </button>
-            <button className="button" type="button" onClick={() => void promote()} disabled={busy || !eventID}>
+            <button
+              className="button"
+              type="button"
+              onClick={() => void promote()}
+              disabled={busy || !eventID}
+            >
               <Icon name="users" />
               提升候補
             </button>
           </div>
         </div>
-        {message && <Alert tone={message.includes("cancel") || message.includes("撤銷") ? "warn" : "info"}>{message}</Alert>}
+        {message && (
+          <Alert
+            tone={
+              message.includes("cancel") || message.includes("撤銷")
+                ? "warn"
+                : "info"
+            }
+          >
+            {message}
+          </Alert>
+        )}
         <div className="kpi-row four">
           <Kpi label="Confirmed" value={stats.confirmed} />
           <Kpi label="Waitlist" value={stats.waitlisted} />
@@ -149,14 +197,24 @@ export function AdminRegistrationsPage() {
                 </td>
                 <td className="mono-cell">{row.registration_id}</td>
                 <td>
-                  <StatusBadge tone={registrationTone(row.status)}>{row.status}</StatusBadge>
-                  {row.cancel_reason && <span className="table-muted">{row.cancel_reason}</span>}
+                  <StatusBadge tone={registrationTone(row.status)}>
+                    {row.status}
+                  </StatusBadge>
+                  {row.cancel_reason && (
+                    <span className="table-muted">{row.cancel_reason}</span>
+                  )}
                 </td>
                 <td>
                   {row.ticket ? (
                     <>
-                      <StatusBadge tone={row.ticket.status === "active" ? "ok" : "neutral"}>{row.ticket.status}</StatusBadge>
-                      <span className="table-muted">{row.ticket.ticket_id}</span>
+                      <StatusBadge
+                        tone={row.ticket.status === "active" ? "ok" : "neutral"}
+                      >
+                        {row.ticket.status}
+                      </StatusBadge>
+                      <span className="table-muted">
+                        {row.ticket.ticket_id}
+                      </span>
                     </>
                   ) : (
                     <span className="table-muted">no ticket</span>
@@ -165,14 +223,21 @@ export function AdminRegistrationsPage() {
                 <td>{formatDate(row.created_at)}</td>
                 <td>
                   <div className="row-actions">
-                    <button className="button secondary compact-button" type="button" onClick={() => void cancel(row)} disabled={busy || row.status === "cancelled"}>
+                    <button
+                      className="button secondary compact-button"
+                      type="button"
+                      onClick={() => void cancel(row)}
+                      disabled={busy || row.status === "cancelled"}
+                    >
                       取消
                     </button>
                     <button
                       className="button secondary compact-button"
                       type="button"
                       onClick={() => row.ticket && void revoke(row.ticket)}
-                      disabled={busy || !row.ticket || row.ticket.status !== "active"}
+                      disabled={
+                        busy || !row.ticket || row.ticket.status !== "active"
+                      }
                     >
                       撤銷票券
                     </button>
@@ -182,7 +247,12 @@ export function AdminRegistrationsPage() {
             ))}
           </tbody>
         </ResponsiveTable>
-        {rows.length === 0 && <EmptyState title="尚無報名資料" action="選擇已有報名的活動，或先執行 Demo Runbook。" />}
+        {rows.length === 0 && (
+          <EmptyState
+            title="尚無報名資料"
+            action="選擇已有報名的活動，或先執行 Demo Runbook。"
+          />
+        )}
       </div>
     </section>
   );

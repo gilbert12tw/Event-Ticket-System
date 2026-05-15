@@ -1,13 +1,23 @@
 import { useEffect, useState } from "react";
-import { listEligibilityImpactReviews, resolveEligibilityImpactReview } from "@/lib/api";
+import {
+  listEligibilityImpactReviews,
+  resolveEligibilityImpactReview,
+} from "@/lib/api";
 import type { EligibilityImpactReview } from "@/lib/api";
 import { errorMessage, formatDate } from "@/lib/formatting";
-import { EmptyState, Kpi, ResponsiveTable, StatusBadge } from "@/components/shared";
+import {
+  EmptyState,
+  Kpi,
+  ResponsiveTable,
+  StatusBadge,
+} from "@/components/shared";
 
 export function HrSyncSettingsPage() {
   const [reviews, setReviews] = useState<EligibilityImpactReview[]>([]);
   const [statusFilter, setStatusFilter] = useState("open");
-  const [reasonByReview, setReasonByReview] = useState<Record<string, string>>({});
+  const [reasonByReview, setReasonByReview] = useState<Record<string, string>>(
+    {},
+  );
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState("");
@@ -32,14 +42,21 @@ export function HrSyncSettingsPage() {
     setResolving(review.review_id);
     setMessage("");
     try {
-      const reason = reasonByReview[review.review_id]?.trim() || "HR 已人工處置影響項目。";
-      const updated = await resolveEligibilityImpactReview(review.review_id, { reason });
+      const reason =
+        reasonByReview[review.review_id]?.trim() || "HR 已人工處置影響項目。";
+      const updated = await resolveEligibilityImpactReview(review.review_id, {
+        reason,
+      });
       setReasonByReview((current) => {
         const next = { ...current };
         delete next[review.review_id];
         return next;
       });
-      setReviews((current) => current.map((candidate) => (candidate.review_id === review.review_id ? updated : candidate)));
+      setReviews((current) =>
+        current.map((candidate) =>
+          candidate.review_id === review.review_id ? updated : candidate,
+        ),
+      );
       setMessage(`已解析 review ${review.review_id}。`);
     } catch (error) {
       setMessage(errorMessage(error));
@@ -53,7 +70,9 @@ export function HrSyncSettingsPage() {
     if (statusFilter === "open") return review.status !== "resolved";
     return review.status === statusFilter;
   });
-  const unresolvedCount = reviews.filter((review) => review.status !== "resolved").length;
+  const unresolvedCount = reviews.filter(
+    (review) => review.status !== "resolved",
+  ).length;
   const resolvedCount = reviews.length - unresolvedCount;
 
   return (
@@ -62,7 +81,10 @@ export function HrSyncSettingsPage() {
         <div>
           <div className="eyebrow">Admin Console</div>
           <h2>HR 同步設定</h2>
-          <p>審核 HR 異動造成的 eligibility 影響；必要時以手動 resolve 導回一致性。</p>
+          <p>
+            審核 HR 異動造成的 eligibility 影響；必要時以手動 resolve
+            導回一致性。
+          </p>
         </div>
         <div className="kpi-row">
           <Kpi label="待處理" value={unresolvedCount} />
@@ -74,18 +96,28 @@ export function HrSyncSettingsPage() {
         <div className="section-heading">
           <div>
             <h2>影響項目清單</h2>
-            <p>每列對應一筆 eligibility 影響，保留人工處置紀錄以進行稽核交接。</p>
+            <p>
+              每列對應一筆 eligibility 影響，保留人工處置紀錄以進行稽核交接。
+            </p>
           </div>
           <div className="toolbar">
             <label className="field compact">
               <span>狀態</span>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
                 <option value="open">open</option>
                 <option value="resolved">resolved</option>
                 <option value="all">all</option>
               </select>
             </label>
-            <button className="button secondary" type="button" onClick={() => void refresh()} disabled={loading}>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => void refresh()}
+              disabled={loading}
+            >
               重新整理
             </button>
           </div>
@@ -112,7 +144,11 @@ export function HrSyncSettingsPage() {
                 <td>{review.employee_id}</td>
                 <td>{review.ticket_id}</td>
                 <td>
-                  <StatusBadge tone={review.status === "resolved" ? "ok" : "warn"}>{review.status}</StatusBadge>
+                  <StatusBadge
+                    tone={review.status === "resolved" ? "ok" : "warn"}
+                  >
+                    {review.status}
+                  </StatusBadge>
                 </td>
                 <td>
                   <div className="cell-vertical">
@@ -126,7 +162,7 @@ export function HrSyncSettingsPage() {
                           onChange={(event) =>
                             setReasonByReview((current) => ({
                               ...current,
-                              [review.review_id]: event.target.value
+                              [review.review_id]: event.target.value,
                             }))
                           }
                         />
@@ -139,7 +175,11 @@ export function HrSyncSettingsPage() {
                   <button
                     className="button secondary compact-button"
                     type="button"
-                    disabled={review.status === "resolved" || loading || resolving === review.review_id}
+                    disabled={
+                      review.status === "resolved" ||
+                      loading ||
+                      resolving === review.review_id
+                    }
                     onClick={() => void resolve(review)}
                   >
                     {resolving === review.review_id ? "解析中" : "Resolve"}
@@ -149,7 +189,12 @@ export function HrSyncSettingsPage() {
             ))}
           </tbody>
         </ResponsiveTable>
-        {!loading && filteredReviews.length === 0 && <EmptyState title="目前沒有影響項目" action="HR 同步後，如有影響將會出現在此清單。" />}
+        {!loading && filteredReviews.length === 0 && (
+          <EmptyState
+            title="目前沒有影響項目"
+            action="HR 同步後，如有影響將會出現在此清單。"
+          />
+        )}
       </div>
     </section>
   );

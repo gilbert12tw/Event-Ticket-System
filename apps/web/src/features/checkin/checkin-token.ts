@@ -10,8 +10,13 @@ export function checkinHistoryState(token: string): CheckinHistoryState {
   return { [CHECKIN_HISTORY_TOKEN_KEY]: token };
 }
 
-export function readHistoryCheckinToken(state: unknown = window.history.state): string {
-  const payload = (state && typeof state === "object" && !Array.isArray(state) ? (state as Record<string, unknown>) : null);
+export function readHistoryCheckinToken(
+  state: unknown = window.history.state,
+): string {
+  const payload =
+    state && typeof state === "object" && !Array.isArray(state)
+      ? (state as Record<string, unknown>)
+      : null;
   if (!payload) {
     return "";
   }

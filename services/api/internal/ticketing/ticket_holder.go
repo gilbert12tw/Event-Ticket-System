@@ -7,11 +7,3 @@ func ticketHolderFromTicket(ticket Ticket) TicketHolder {
 		City:        ticket.City,
 	}
 }
-
-func ticketHolderFromEmployee(employee Employee) TicketHolder {
-	return TicketHolder{
-		DisplayName: employee.FullName,
-		Department:  employee.Department,
-		City:        employee.Site,
-	}
-}

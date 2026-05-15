@@ -6,6 +6,7 @@ on:
       - ".github/workflows/ci.yml"
       - ".dockerignore"
       - ".npmrc"
+      - ".prettierignore"
       - "apps/web/**"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
@@ -26,6 +27,7 @@ on:
       - ".github/workflows/ci.yml"
       - ".dockerignore"
       - ".npmrc"
+      - ".prettierignore"
       - "apps/web/**"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
@@ -142,7 +144,7 @@ jobs:
           if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$)' /tmp/changed-files; then
             backend=true
           fi
-          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$)' /tmp/changed-files; then
+          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' /tmp/changed-files; then
             frontend=true
           fi
           if grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' /tmp/changed-files; then
@@ -207,6 +209,12 @@ jobs:
           go-version-file: services/api/go.mod
           cache: true
           cache-dependency-path: services/api/go.sum
+      - name: Run Go lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.7.2
+          working-directory: services/api
+          args: --timeout=5m
       - name: Run Go tests
         working-directory: services/api
         run: go test ./... -count=1
@@ -238,15 +246,34 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
+            ${{ runner.os }}-turbo-
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
       - name: Lint web
-        run: pnpm --filter cets-web lint
+        run: pnpm lint:web
+      - name: Type-check web
+        run: pnpm type-check
+      - name: Check formatting
+        run: pnpm format:check
       - name: Test web
-        run: pnpm --filter cets-web test
+        run: pnpm test
       - name: Build web
-        run: pnpm --filter cets-web build
+        run: pnpm build
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter cets-web exec playwright install chromium
       - name: Run mocked Playwright viewport checks
         run: pnpm --filter cets-web test:e2e
@@ -282,14 +309,34 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter cets-web exec playwright install chromium
       - name: Validate Docker Compose config
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build release image
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml build app
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/api/Dockerfile
+          load: true
+          tags: cets-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start backing services for live gates
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d postgres redis minio mailhog minio-init
+      - name: Run explicit database migration
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml run --rm migrate
       - name: Start API services for live gates
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d app worker
       - name: Wait for API readiness
@@ -313,13 +360,13 @@ jobs:
       - name: Scan live gate logs for sensitive leakage
         run: |
           docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color app worker > /tmp/cets-app-worker.log
-          if grep -E -i 'signed[_ -]?token|qr_payload|auth_session|token_signing|object_storage_secret|session=|set-cookie|local_dev_.*secret|[A-Za-z0-9._%+-]+@cets\.local|Ariel Chen|Ben Lin|Cara Wu' /tmp/cets-app-worker.log; then
+          if grep -E -i 'signed[_ -]?token|qr_payload|auth_session|token_signing|object_storage_secret|session=|set-cookie|local_dev_.*secret|[A-Za-z0-9._%+-]+@cets\.local|Ariel Chen|Ben Lin|Carla Wu' /tmp/cets-app-worker.log; then
             echo "Sensitive app/worker log output detected" >&2
             exit 1
           fi
 
           docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color mailhog > /tmp/cets-mailhog.log
-          if grep -E -i 'e1001@cets\.local|e1002@cets\.local|e2001@cets\.local|Ariel Chen|Ben Lin|Cara Wu' /tmp/cets-mailhog.log; then
+          if grep -E -i 'e1001@cets\.local|e1002@cets\.local|e2001@cets\.local|Ariel Chen|Ben Lin|Carla Wu' /tmp/cets-mailhog.log; then
             echo "Employee-specific MailHog recipient or full-name output detected" >&2
             exit 1
           fi

@@ -12,7 +12,7 @@ describe("CheckinResult", () => {
       employee_id: "E1001",
       status: "accepted",
       scanned_at: "2026-05-06T10:00:00Z",
-      duplicate: false
+      duplicate: false,
     };
 
     render(<CheckinResult result={result} />);
@@ -32,7 +32,7 @@ describe("CheckinResult", () => {
       scanned_at: "2026-05-06T10:05:00Z",
       first_scanned_at: "2026-05-06T10:00:00Z",
       first_scanned_by: "gate-1",
-      duplicate: true
+      duplicate: true,
     };
 
     render(<CheckinResult result={result} />);
