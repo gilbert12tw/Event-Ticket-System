@@ -3,7 +3,6 @@ package ticketing
 import "context"
 
 func (s *Service) SeedDemoData(ctx context.Context) error {
-	panic("DEBUG: SeedDemoData is running with Taipei HQ and TRUNCATE")
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
