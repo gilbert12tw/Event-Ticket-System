@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProcessNoShowsAppliesLimitedCooldownAndBlocksLimitedBookings(t *testing.T) {
@@ -81,6 +84,48 @@ func TestProcessNoShowsAppliesLimitedCooldownAndBlocksLimitedBookings(t *testing
 	if err != nil {
 		t.Fatalf("cooldown should not block unlimited booking: %v", err)
 	}
+}
+
+func TestRecordNoShowSkipsSideEffectsWhenInsertIsDeduplicated(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now.Add(-96 * time.Hour) }
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:             "Deduped No Show",
+		Capacity:          5,
+		Status:            EventStatusPublished,
+		StartsAt:          now.Add(-48 * time.Hour),
+		RegistrationStart: now.Add(-120 * time.Hour),
+		RegistrationClose: now.Add(-72 * time.Hour),
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "dedupe-no-show-book"})
+	require.NoError(t, err)
+
+	service.now = func() time.Time { return now }
+	actor := Actor{ID: "system-1", Role: RoleSystemAdmin}
+	policy := service.noShowPolicy.Normalize()
+	recorded, applied, err := service.recordNoShow(ctx, actor, booking.Registration.RegistrationID, event.EventID, "E1001", policy)
+	require.NoError(t, err)
+	assert.True(t, recorded)
+	assert.True(t, applied)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM no_show_records WHERE registration_id = $1`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'registration.no_show_recorded' AND entity_id = $1`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.no_show_recorded' AND aggregate_id = $1`, booking.Registration.RegistrationID, 1)
+
+	recorded, applied, err = service.recordNoShow(ctx, actor, booking.Registration.RegistrationID, event.EventID, "E1001", policy)
+	require.NoError(t, err)
+	assert.False(t, recorded)
+	assert.False(t, applied)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM no_show_records WHERE registration_id = $1`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'registration.no_show_recorded' AND entity_id = $1`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.no_show_recorded' AND aggregate_id = $1`, booking.Registration.RegistrationID, 1)
 }
 
 func TestEmployeeCancellationCutoffAndAdminReason(t *testing.T) {

@@ -55,9 +55,12 @@ func (s *Service) ProcessNoShows(ctx context.Context, actor Actor) (NoShowProces
 
 	var result NoShowProcessingResult
 	for _, next := range candidates {
-		applied, err := s.recordNoShow(ctx, actor, next.registrationID, next.eventID, next.employeeID, policy)
+		recorded, applied, err := s.recordNoShow(ctx, actor, next.registrationID, next.eventID, next.employeeID, policy)
 		if err != nil {
 			return NoShowProcessingResult{}, err
+		}
+		if !recorded {
+			continue
 		}
 		result.Processed++
 		if applied {
@@ -86,16 +89,16 @@ func (s *Service) activeNoShowCooldownTx(ctx context.Context, tx pgx.Tx, employe
 	return cooldownUntil, true, nil
 }
 
-func (s *Service) recordNoShow(ctx context.Context, actor Actor, registrationID string, eventID string, employeeID string, policy NoShowPolicy) (bool, error) {
+func (s *Service) recordNoShow(ctx context.Context, actor Actor, registrationID string, eventID string, employeeID string, policy NoShowPolicy) (bool, bool, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	defer rollback(ctx, tx)
 
 	var previousCount int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM no_show_records WHERE employee_id = $1`, employeeID).Scan(&previousCount); err != nil {
-		return false, err
+		return false, false, err
 	}
 	appliesCooldown := previousCount+1 >= policy.Threshold
 	status := "recorded"
@@ -107,26 +110,29 @@ func (s *Service) recordNoShow(ctx context.Context, actor Actor, registrationID 
 	}
 	noShowID, err := newID("nsh")
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO no_show_records
+	tag, err := tx.Exec(ctx, `INSERT INTO no_show_records
 		(no_show_id, registration_id, event_id, employee_id, status, recorded_at, cooldown_until)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)
 		ON CONFLICT (registration_id) DO NOTHING`,
 		noShowID, registrationID, eventID, employeeID, status, s.now(), cooldownUntil)
 	if err != nil {
-		return false, err
+		return false, false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return false, false, nil
 	}
 	auditID, err := newID("aud")
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if err := insertAudit(ctx, tx, auditID, actor, "registration.no_show_recorded", "registration", registrationID, map[string]interface{}{
 		"event_id":        eventID,
 		"cooldown_until":  cooldownUntil,
 		"cooldown_status": status,
 	}); err != nil {
-		return false, err
+		return false, false, err
 	}
 	if err := insertOutbox(ctx, tx, "registration.no_show_recorded", registrationID, map[string]interface{}{
 		"registration_id": registrationID,
@@ -134,7 +140,7 @@ func (s *Service) recordNoShow(ctx context.Context, actor Actor, registrationID 
 		"employee_id":     employeeID,
 		"cooldown_until":  cooldownUntil,
 	}); err != nil {
-		return false, err
+		return false, false, err
 	}
-	return appliesCooldown, tx.Commit(ctx)
+	return true, appliesCooldown, tx.Commit(ctx)
 }
