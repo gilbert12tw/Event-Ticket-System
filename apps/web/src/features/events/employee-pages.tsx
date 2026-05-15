@@ -7,6 +7,7 @@ import { bookingActionLabel, errorMessage, eventStatusTone, formatDate, registra
 import { Alert, EmptyState, IdentityCard, Kpi, ProgressMeter, ProviderClaimsCard, SkeletonRows, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EligibilityWarningList } from "./eligibility-warning";
 
 const maxFamilyCount = 10;
@@ -20,6 +21,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingCrossCity, setPendingCrossCity] = useState<EventSummary | null>(null);
 
   const principalID = claims.employee_id;
   const eventStats = useMemo(
@@ -61,6 +63,14 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
     } catch (error) {
       setMessage(errorMessage(error));
     }
+  }
+
+  async function requestBooking(event: EventSummary) {
+    if (needsCrossCityConfirm(event)) {
+      setPendingCrossCity(event);
+      return;
+    }
+    await book(event);
   }
 
   async function cancel(event: EventSummary) {
@@ -115,7 +125,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
                 event={event}
                 familyCount={familyCounts[event.event_id] ?? 0}
                 key={event.event_id}
-                onBook={() => void book(event)}
+                onBook={() => void requestBooking(event)}
                 onCancel={() => void cancel(event)}
                 onCancelReasonChange={(value) => setCancelReasons((current) => ({ ...current, [event.event_id]: value }))}
                 onFamilyCountChange={(value) => setFamilyCounts((current) => ({ ...current, [event.event_id]: value }))}
@@ -124,6 +134,33 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
         </div>
       </div>
       <ProviderClaimsCard claims={claims} />
+      <Dialog open={pendingCrossCity !== null} onOpenChange={(open) => (!open ? setPendingCrossCity(null) : null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cross-city confirmation</DialogTitle>
+            <DialogDescription>
+              {pendingCrossCity ? crossCityWarningMessage(pendingCrossCity) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button className="button secondary" type="button" onClick={() => setPendingCrossCity(null)}>
+              Cancel
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => {
+                if (pendingCrossCity) {
+                  void book(pendingCrossCity);
+                }
+                setPendingCrossCity(null);
+              }}
+            >
+              Confirm booking
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -136,6 +173,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   const [cancelReason, setCancelReason] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingCrossCity, setPendingCrossCity] = useState(false);
   const principalID = claims.employee_id;
 
   async function refresh(nextID = selectedID) {
@@ -164,8 +202,12 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
     await refresh(eventID);
   }
 
-  async function bookSelected() {
+  async function bookSelected(confirmCrossCity = false) {
     if (!detail) return;
+    if (!confirmCrossCity && needsCrossCityConfirm(detail)) {
+      setPendingCrossCity(true);
+      return;
+    }
     setMessage("");
     try {
       const nextFamilyCount = detail.capacity_type === "unlimited" ? familyCount : 0;
@@ -241,6 +283,29 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
           </div>
         )}
       </div>
+      <Dialog open={pendingCrossCity} onOpenChange={(open) => (!open ? setPendingCrossCity(false) : null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cross-city confirmation</DialogTitle>
+            <DialogDescription>{detail ? crossCityWarningMessage(detail) : ""}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button className="button secondary" type="button" onClick={() => setPendingCrossCity(false)}>
+              Cancel
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => {
+                setPendingCrossCity(false);
+                void bookSelected(true);
+              }}
+            >
+              Confirm booking
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -438,6 +503,19 @@ function eligibilityLabel(event: EventSummary) {
   const reason = (event.eligibility_reason ?? "").trim();
   if (!reason || reason === "eligible") return event.eligible ? "符合資格" : "不符合資格";
   return reason;
+}
+
+function needsCrossCityConfirm(event: EventSummary) {
+  const eligibility = getEligibilityDecision(event);
+  return eligibility?.warnings?.some((warning) => warning.code === "cross_city") ?? false;
+}
+
+function crossCityWarningMessage(event: EventSummary) {
+  const eligibility = getEligibilityDecision(event);
+  const warning = eligibility?.warnings?.find((item) => item.code === "cross_city");
+  if (warning?.message) return warning.message;
+  if (event.event_city) return `This event is in ${event.event_city}; please confirm before booking.`;
+  return "This event is in a different city; please confirm before booking.";
 }
 
 function cancellationOpen(event: EventSummary) {
