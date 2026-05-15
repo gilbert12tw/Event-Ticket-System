@@ -111,6 +111,24 @@ export type ResolveImpactReviewRequest = {
 
 export type CapacityType = "limited" | "unlimited";
 
+export type WarningCode = "cross_city" | string;
+
+export interface EligibilityWarning {
+  code: WarningCode;
+  message: string;
+  employee_city?: string;
+  event_city?: string;
+}
+
+export interface EligibilityDecision {
+  event_id: string;
+  eligible: boolean;
+  can_book: boolean;
+  reasons: string[];
+  warnings: EligibilityWarning[];
+  no_show_cooldown: NoShowCooldown;
+}
+
 export type EventSummary = {
   event_id: string;
   title: string;
@@ -136,8 +154,9 @@ export type EventSummary = {
   created_at: string;
   updated_at: string;
   rule: EligibilityRule;
-  eligible: boolean;
-  eligibility_reason: string;
+  eligibility?: EligibilityDecision;
+  eligible?: boolean;
+  eligibility_reason?: string;
   confirmed_count: number;
   waitlist_count: number;
   remaining_capacity: number | null;
@@ -146,6 +165,24 @@ export type EventSummary = {
   current_user_ticket?: Ticket;
   no_show_cooldown?: NoShowCooldown;
 };
+
+export function getEligibilityDecision(event: EventSummary): EligibilityDecision | undefined {
+  if (event.eligibility) return event.eligibility;
+
+  // Temporary compatibility shim. Remove after backend always returns eligibility.
+  if (typeof event.eligible === "boolean") {
+    return {
+      event_id: event.event_id,
+      eligible: event.eligible,
+      can_book: event.eligible,
+      reasons: event.eligibility_reason ? [event.eligibility_reason] : [],
+      warnings: [],
+      no_show_cooldown: event.no_show_cooldown ?? { active: false },
+    };
+  }
+
+  return undefined;
+}
 
 export type NoShowCooldown = {
   active: boolean;
@@ -343,6 +380,8 @@ export type CreateEventRequest = {
   title: string;
   description: string;
   location: string;
+  event_city?: string;
+  event_site?: string;
   starts_at: string;
   registration_start: string;
   registration_close: string;
@@ -361,6 +400,8 @@ export type UpdateEventRequest = {
   title?: string;
   description?: string;
   location?: string;
+  event_city?: string;
+  event_site?: string;
   starts_at?: string;
   registration_start?: string;
   registration_close?: string;

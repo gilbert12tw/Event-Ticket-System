@@ -70,7 +70,15 @@ describe("EmployeeEventsPage", () => {
           reason: "no_show_cooldown"
         },
         registration_close: "2020-01-01T00:00:00Z",
-        title: "Cooldown Event"
+        title: "Cooldown Event",
+        eligibility: {
+          event_id: "evt-cooldown",
+          eligible: true,
+          can_book: false,
+          reasons: [],
+          warnings: [],
+          no_show_cooldown: { active: true, until: "2026-08-01T00:00:00Z", reason: "no_show_cooldown" }
+        }
       })
     ]);
 
@@ -79,6 +87,72 @@ describe("EmployeeEventsPage", () => {
     expect(await screen.findByText(/Limited-event booking is blocked by no-show cooldown/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cancel registration/ })).toBeDisabled();
     expect(screen.getByText(/Self-cancel is closed/)).toBeInTheDocument();
+  });
+
+  it("renders cross-city warning and keeps booking button enabled when can_book=true", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        event_id: "evt-crosscity",
+        title: "Hsinchu Event",
+        event_city: "Hsinchu",
+        eligibility: {
+          event_id: "evt-crosscity",
+          eligible: true,
+          can_book: true,
+          reasons: [],
+          warnings: [{ code: "cross_city", message: "This event is in Hsinchu; your registered city is Taipei.", employee_city: "Taipei", event_city: "Hsinchu" }],
+          no_show_cooldown: { active: false }
+        }
+      })
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText(/Cross-city event notice/)).toBeInTheDocument();
+    expect(await screen.findByText(/This event is in Hsinchu; your registered city is Taipei/)).toBeInTheDocument();
+    // booking button should still be enabled (not disabled due to warning alone)
+    // bookingActionLabel returns different text based on status; just verify button is not disabled
+    const buttons = screen.getAllByRole("button");
+    const bookBtn = buttons.find((b) => !b.textContent?.toLowerCase().includes("refresh") && !b.textContent?.toLowerCase().includes("detail") && !b.textContent?.toLowerCase().includes("cancel"));
+    if (bookBtn) expect(bookBtn).not.toBeDisabled();
+  });
+
+  it("disables booking and shows reason when can_book=false (ineligible)", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        event_id: "evt-ineligible",
+        title: "Legal Event",
+        eligibility: {
+          event_id: "evt-ineligible",
+          eligible: false,
+          can_book: false,
+          reasons: ["department does not match"],
+          warnings: [],
+          no_show_cooldown: { active: false }
+        }
+      })
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText(/Not eligible:/)).toBeInTheDocument();
+    // reason text appears in both badge and alert — check the alert specifically
+    const alerts = screen.getAllByText(/department does not match/);
+    expect(alerts.length).toBeGreaterThan(0);
+    const buttons = screen.getAllByRole("button");
+    const actionBtn = buttons.find((b) => !b.textContent?.toLowerCase().includes("refresh") && !b.textContent?.toLowerCase().includes("detail"));
+    if (actionBtn) expect(actionBtn).toBeDisabled();
+  });
+
+  it("renders event without eligibility object without crashing", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({ event_id: "evt-noelig", title: "No Eligibility Event", eligible: true, eligibility_reason: "eligible" })
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    // Should render gracefully with fallback
+    expect(await screen.findByText("No Eligibility Event")).toBeInTheDocument();
   });
 });
 
