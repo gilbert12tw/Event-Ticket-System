@@ -21,7 +21,7 @@ func TestReportsIncludeAggregateAttendanceAndCityDistribution(t *testing.T) {
 		EventCity: "Taipei",
 		Capacity:  1,
 		Status:    EventStatusPublished,
-		Rule:      RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	unlimited, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -29,7 +29,7 @@ func TestReportsIncludeAggregateAttendanceAndCityDistribution(t *testing.T) {
 		EventCity:    "Hsinchu",
 		CapacityType: CapacityTypeUnlimited,
 		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 
@@ -76,7 +76,7 @@ func TestReportsUseUnknownCityWhenEventCityIsEmpty(t *testing.T) {
 		Title:    "Unknown City Aggregate",
 		Capacity: 2,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 

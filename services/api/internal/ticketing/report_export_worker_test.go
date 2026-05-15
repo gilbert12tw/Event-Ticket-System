@@ -83,7 +83,7 @@ func TestBuildReportExportCSVIncludesAggregateColumns(t *testing.T) {
 		EventCity:    "Tainan",
 		CapacityType: CapacityTypeUnlimited,
 		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "csv-aggregate-book", FamilyCount: 2})
