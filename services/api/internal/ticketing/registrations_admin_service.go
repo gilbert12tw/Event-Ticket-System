@@ -72,17 +72,13 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	if reg.EventID != eventID {
 		return BookingResponse{}, notFound("registration not found")
 	}
-	if actor.Role == RoleEmployee {
+	isEmployeeCancel := actor.Role == RoleEmployee
+	if isEmployeeCancel {
 		if actor.ID != reg.EmployeeID {
 			return BookingResponse{}, forbidden("employees may only cancel their own registrations")
 		}
-		if s.now().After(event.RegistrationClose) {
-			return BookingResponse{}, conflict("registration window is closed; contact an activity admin")
-		}
 	} else if err := requireRole(actor, RoleActivityAdmin); err != nil {
 		return BookingResponse{}, err
-	} else if strings.TrimSpace(req.Reason) == "" {
-		return BookingResponse{}, badRequest("reason is required for admin exception cancellation")
 	}
 	if reg.Status == RegistrationCancelled {
 		if reg.CancelKey == cancelID {
@@ -96,6 +92,13 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 			}
 			return BookingResponse{Registration: reg, Ticket: sanitizeTicket(ticket), RemainingCapacity: remaining, Message: "registration already cancelled"}, tx.Commit(ctx)
 		}
+	}
+	if isEmployeeCancel {
+		if s.now().After(event.RegistrationClose) {
+			return BookingResponse{}, conflict("registration window is closed; contact an activity admin")
+		}
+	} else if strings.TrimSpace(req.Reason) == "" {
+		return BookingResponse{}, badRequest("reason is required for admin exception cancellation")
 	}
 	if reg.Status != RegistrationConfirmed && reg.Status != RegistrationWaitlisted {
 		return BookingResponse{}, conflict("registration cannot be cancelled")
