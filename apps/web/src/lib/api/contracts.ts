@@ -166,19 +166,30 @@ export type EventSummary = {
   no_show_cooldown?: NoShowCooldown;
 };
 
+function normalizeEligibilityDecision(decision: EligibilityDecision): EligibilityDecision {
+  return {
+    event_id: decision.event_id,
+    eligible: decision.eligible,
+    can_book: decision.can_book,
+    reasons: decision.reasons ?? [],
+    warnings: decision.warnings ?? [],
+    no_show_cooldown: decision.no_show_cooldown ?? { active: false },
+  };
+}
+
 export function getEligibilityDecision(event: EventSummary): EligibilityDecision | undefined {
-  if (event.eligibility) return event.eligibility;
+  if (event.eligibility) return normalizeEligibilityDecision(event.eligibility);
 
   // Temporary compatibility shim. Remove after backend always returns eligibility.
   if (typeof event.eligible === "boolean") {
-    return {
+    return normalizeEligibilityDecision({
       event_id: event.event_id,
       eligible: event.eligible,
       can_book: event.eligible,
       reasons: event.eligibility_reason ? [event.eligibility_reason] : [],
       warnings: [],
       no_show_cooldown: event.no_show_cooldown ?? { active: false },
-    };
+    });
   }
 
   return undefined;
