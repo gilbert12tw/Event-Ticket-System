@@ -111,7 +111,7 @@ async function expectEmployeeCanBrowseAndBook(page: Page, event: EventSummary) {
   await expect(card).toBeVisible();
   await expect(card.getByText("符合資格")).toBeVisible();
   await card.getByRole("button", { name: "報名" }).click();
-  await expect(card.locator('[data-slot="badge"]').filter({ hasText: /^confirmed$/ })).toBeVisible();
+  await expect(card.locator('[data-slot="badge"]').filter({ hasText: /^已確認$/ })).toBeVisible();
   await expect(card.getByRole("button", { name: "已報名" })).toBeDisabled();
   await expectNoHorizontalOverflow(page);
 }
@@ -119,7 +119,7 @@ async function expectEmployeeCanBrowseAndBook(page: Page, event: EventSummary) {
 async function expectEmployeeDetailRoute(page: Page, event: EventSummary) {
   await expectRoute(page, `/user/events/${encodeURIComponent(event.event_id)}`, "單一活動詳情");
   await expect(page.getByRole("heading", { name: event.title })).toBeVisible();
-  await expect(page.locator(".meta-list div").filter({ hasText: "Event ID" }).locator("dd")).toHaveText(event.event_id);
+  await expect(page.locator(".meta-list div").filter({ hasText: "活動 ID" }).locator("dd")).toHaveText(event.event_id);
 }
 
 async function expectEmployeeTicketAndNotifications(page: Page, event: EventSummary) {

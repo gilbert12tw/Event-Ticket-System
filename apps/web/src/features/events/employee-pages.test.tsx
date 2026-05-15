@@ -38,10 +38,10 @@ describe("EmployeeEventsPage", () => {
 
   it("shows bounded family count only for unlimited events", async () => {
     mockListEvents.mockResolvedValue([
-      eventFixture({ event_id: "evt-limited", title: "Limited", capacity_type: "limited", capacity: 5, remaining_capacity: 3 }),
+      eventFixture({ event_id: "evt-limited", title: "限量活動", capacity_type: "limited", capacity: 5, remaining_capacity: 3 }),
       eventFixture({
         event_id: "evt-unlimited",
-        title: "Unlimited",
+        title: "家庭日",
         capacity_type: "unlimited",
         capacity: null,
         remaining_capacity: null,
@@ -52,8 +52,8 @@ describe("EmployeeEventsPage", () => {
     render(<EmployeeEventsPage claims={claims} />);
 
     expect(await screen.findAllByText("符合資格")).toHaveLength(2);
-    expect(await screen.findByText("Limited event: companions are not available.")).toBeInTheDocument();
-    const familyInput = await screen.findByRole("spinbutton", { name: "Companions for Unlimited" });
+    expect(await screen.findByText("限量活動不開放同行人數。")).toBeInTheDocument();
+    const familyInput = await screen.findByRole("spinbutton", { name: "同行人數：家庭日" });
     expect(familyInput).toHaveAttribute("max", "10");
   });
 
@@ -70,15 +70,15 @@ describe("EmployeeEventsPage", () => {
           reason: "no_show_cooldown"
         },
         registration_close: "2020-01-01T00:00:00Z",
-        title: "Cooldown Event"
+        title: "冷卻活動"
       })
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText(/Limited-event booking is blocked by no-show cooldown/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Cancel registration/ })).toBeDisabled();
-    expect(screen.getByText(/Self-cancel is closed/)).toBeInTheDocument();
+    expect(await screen.findByText(/限量活動報名因未報到冷卻而暫停/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /取消報名/ })).toBeDisabled();
+    expect(screen.getByText(/自助取消已關閉/)).toBeInTheDocument();
   });
 });
 

@@ -133,11 +133,39 @@ export function eventStatusTone(status: string): "ok" | "warn" | "fail" | "info"
   return "info";
 }
 
+export function eventStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    closed: "已關閉",
+    draft: "草稿",
+    published: "已發布"
+  };
+  return labels[status] || status;
+}
+
 export function registrationTone(status: string): "ok" | "warn" | "fail" | "info" | "neutral" {
   if (status === "confirmed") return "ok";
   if (status === "waitlisted") return "warn";
   if (status === "rejected" || status === "cancelled") return "fail";
   return "info";
+}
+
+export function registrationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    confirmed: "已確認",
+    rejected: "已拒絕",
+    waitlisted: "候補中"
+  };
+  return labels[status] || status;
+}
+
+export function capacityTypeLabel(type: EventSummary["capacity_type"]) {
+  const labels: Record<EventSummary["capacity_type"], string> = {
+    limited: "限量",
+    unlimited: "不限量"
+  };
+  return labels[type];
 }
 
 export function bookingActionLabel(event: EventSummary) {
