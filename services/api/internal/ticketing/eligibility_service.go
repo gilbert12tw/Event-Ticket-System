@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 )
+
 // ErrMissingClaims is returned when provider/HR claims are absent or
 // incomplete. Callers must treat this as a safe degraded rejection (do not
 // mutate state) and must not log the raw claims.
@@ -49,7 +50,7 @@ func (s *Service) CheckEligibilityFromClaims(
 		EmployeeID:       actor.ID,
 		Department:       actor.Claims.Department,
 		Site:             actor.Claims.Site,
-		JobGrade:         6,       // assume senior grade for synthetic claim-based check
+		JobGrade:         6, // assume senior grade for synthetic claim-based check
 		EmploymentStatus: "active",
 	}
 	eligible, reason := EvaluateEligibility(synthetic, event.Rule)
@@ -63,8 +64,8 @@ func (s *Service) CheckEligibilityFromClaims(
 	var warnings []EligibilityWarning
 	if event.EventCity != "" && actor.Claims.City != event.EventCity {
 		warnings = append(warnings, EligibilityWarning{
-			Code: WarningCrossCity,
-			Message: "This event is in " + event.EventCity + "; your registered city is " + actor.Claims.City + ".",
+			Code:         WarningCrossCity,
+			Message:      "This event is in " + event.EventCity + "; your registered city is " + actor.Claims.City + ".",
 			EmployeeCity: actor.Claims.City,
 			EventCity:    event.EventCity,
 		})

@@ -116,20 +116,39 @@ describe("EmployeeEventsPage", () => {
           eligible: true,
           can_book: true,
           reasons: [],
-          warnings: [{ code: "cross_city", message: "This event is in Hsinchu; your registered city is Taipei.", employee_city: "Taipei", event_city: "Hsinchu" }],
-          no_show_cooldown: { active: false }
-        }
-      })
+          warnings: [
+            {
+              code: "cross_city",
+              message:
+                "This event is in Hsinchu; your registered city is Taipei.",
+              employee_city: "Taipei",
+              event_city: "Hsinchu",
+            },
+          ],
+          no_show_cooldown: { active: false },
+        },
+      }),
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText(/Cross-city event notice/)).toBeInTheDocument();
-    expect(await screen.findByText(/This event is in Hsinchu; your registered city is Taipei/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Cross-city event notice/),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /This event is in Hsinchu; your registered city is Taipei/,
+      ),
+    ).toBeInTheDocument();
     // booking button should still be enabled (not disabled due to warning alone)
     // bookingActionLabel returns different text based on status; just verify button is not disabled
     const buttons = screen.getAllByRole("button");
-    const bookBtn = buttons.find((b) => !b.textContent?.toLowerCase().includes("refresh") && !b.textContent?.toLowerCase().includes("detail") && !b.textContent?.toLowerCase().includes("cancel"));
+    const bookBtn = buttons.find(
+      (b) =>
+        !b.textContent?.toLowerCase().includes("refresh") &&
+        !b.textContent?.toLowerCase().includes("detail") &&
+        !b.textContent?.toLowerCase().includes("cancel"),
+    );
     if (bookBtn) expect(bookBtn).not.toBeDisabled();
   });
 
@@ -144,9 +163,9 @@ describe("EmployeeEventsPage", () => {
           can_book: false,
           reasons: ["department does not match"],
           warnings: [],
-          no_show_cooldown: { active: false }
-        }
-      })
+          no_show_cooldown: { active: false },
+        },
+      }),
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);
@@ -156,13 +175,22 @@ describe("EmployeeEventsPage", () => {
     const alerts = screen.getAllByText(/department does not match/);
     expect(alerts.length).toBeGreaterThan(0);
     const buttons = screen.getAllByRole("button");
-    const actionBtn = buttons.find((b) => !b.textContent?.toLowerCase().includes("refresh") && !b.textContent?.toLowerCase().includes("detail"));
+    const actionBtn = buttons.find(
+      (b) =>
+        !b.textContent?.toLowerCase().includes("refresh") &&
+        !b.textContent?.toLowerCase().includes("detail"),
+    );
     if (actionBtn) expect(actionBtn).toBeDisabled();
   });
 
   it("renders event without eligibility object without crashing", async () => {
     mockListEvents.mockResolvedValue([
-      eventFixture({ event_id: "evt-noelig", title: "No Eligibility Event", eligible: true, eligibility_reason: "eligible" })
+      eventFixture({
+        event_id: "evt-noelig",
+        title: "No Eligibility Event",
+        eligible: true,
+        eligibility_reason: "eligible",
+      }),
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);

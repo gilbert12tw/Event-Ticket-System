@@ -171,7 +171,9 @@ export type EventSummary = {
   no_show_cooldown?: NoShowCooldown;
 };
 
-function normalizeEligibilityDecision(decision: EligibilityDecision): EligibilityDecision {
+function normalizeEligibilityDecision(
+  decision: EligibilityDecision,
+): EligibilityDecision {
   return {
     event_id: decision.event_id,
     eligible: decision.eligible,
@@ -182,7 +184,9 @@ function normalizeEligibilityDecision(decision: EligibilityDecision): Eligibilit
   };
 }
 
-export function getEligibilityDecision(event: EventSummary): EligibilityDecision | undefined {
+export function getEligibilityDecision(
+  event: EventSummary,
+): EligibilityDecision | undefined {
   if (event.eligibility) return normalizeEligibilityDecision(event.eligibility);
 
   // Temporary compatibility shim. Remove after backend always returns eligibility.

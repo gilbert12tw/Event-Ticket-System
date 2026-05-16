@@ -42,13 +42,13 @@ type EventSummary struct {
 	Eligibility               EligibilityDecision `json:"eligibility"`
 	Eligible                  bool                `json:"eligible"`
 	EligibilityReason         string              `json:"eligibility_reason"`
-	ConfirmedCount            int             `json:"confirmed_count"`
-	WaitlistCount             int             `json:"waitlist_count"`
-	RemainingCapacity         *int            `json:"remaining_capacity"`
-	CurrentUserStatus         string          `json:"current_user_status"`
-	CurrentUserRegistrationID string          `json:"current_user_registration_id,omitempty"`
-	CurrentUserTicket         *Ticket         `json:"current_user_ticket,omitempty"`
-	NoShowCooldown            NoShowCooldown  `json:"no_show_cooldown"`
+	ConfirmedCount            int                 `json:"confirmed_count"`
+	WaitlistCount             int                 `json:"waitlist_count"`
+	RemainingCapacity         *int                `json:"remaining_capacity"`
+	CurrentUserStatus         string              `json:"current_user_status"`
+	CurrentUserRegistrationID string              `json:"current_user_registration_id,omitempty"`
+	CurrentUserTicket         *Ticket             `json:"current_user_ticket,omitempty"`
+	NoShowCooldown            NoShowCooldown      `json:"no_show_cooldown"`
 }
 
 type NoShowCooldown struct {

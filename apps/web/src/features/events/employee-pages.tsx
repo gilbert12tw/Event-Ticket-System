@@ -45,7 +45,9 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [pendingCrossCity, setPendingCrossCity] = useState<EventSummary | null>(null);
+  const [pendingCrossCity, setPendingCrossCity] = useState<EventSummary | null>(
+    null,
+  );
 
   const principalID = claims.employee_id;
   const eventStats = useMemo(
@@ -209,7 +211,9 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
           <DialogHeader>
             <DialogTitle>Cross-city confirmation</DialogTitle>
             <DialogDescription>
-              {pendingCrossCity ? crossCityWarningMessage(pendingCrossCity) : ""}
+              {pendingCrossCity
+                ? crossCityWarningMessage(pendingCrossCity)
+                : ""}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

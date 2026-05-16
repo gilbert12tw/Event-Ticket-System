@@ -191,16 +191,21 @@ export function AdminEventGovernancePanel({
                   <select
                     value={editForm.capacity_type}
                     onChange={(event) => {
-                      const next = event.target.value as "limited" | "unlimited";
+                      const next = event.target.value as
+                        | "limited"
+                        | "unlimited";
                       onEditFormChange({
                         ...editForm,
                         capacity_type: next,
-                        capacity: next === "unlimited" ? "" : editForm.capacity || "1",
+                        capacity:
+                          next === "unlimited" ? "" : editForm.capacity || "1",
                       });
                     }}
                   >
                     <option value="limited">limited（本人單張票）</option>
-                    <option value="unlimited">unlimited（不扣庫存，可帶家屬）</option>
+                    <option value="unlimited">
+                      unlimited（不扣庫存，可帶家屬）
+                    </option>
                     <option value="unlimited">
                       unlimited（不扣庫存，可帶家屬）
                     </option>
