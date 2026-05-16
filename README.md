@@ -1,6 +1,6 @@
 # Event-Ticket-System
 
-企業員工活動票務與現場驗票系統。Phase 1 以 Go modular monolith 搭配 Docker Compose backing services，提供可本地展示的 React 前端、活動建立、資格檢查、報名、票券、驗票、報表與 audit flow。
+Corporate employee event ticketing and on-site check-in system. Phase 1 uses a Go modular monolith with Docker Compose backing services, providing a locally demoable React frontend, event creation, eligibility checks, registration, tickets, check-in, reporting, and audit flow.
 
 ## Local Developer Docker
 
@@ -45,11 +45,11 @@ dcdev() {
 
 ```bash
 dc build app
-dc up -d postgres redis minio mailhog minio-init
-dc run --rm migrate
 dc up -d app worker
 curl -fsS http://localhost:8080/readyz
 ```
+
+`dc up` automatically runs `migrate` → `seed` → `app`/`worker` (via the compose `depends_on` chain). `seed` writes demo employees (E1001 Ariel / E1002 Ben / E2001 Carla); `ON CONFLICT DO UPDATE` makes reruns safe.
 
 Open `http://localhost:8080` for the User Workspace, or `http://localhost:8080/admin/demo` to run the full acceptance flow.
 
@@ -57,7 +57,6 @@ Open `http://localhost:8080` for the User Workspace, or `http://localhost:8080/a
 
 ```bash
 dc build app
-dc run --rm migrate
 dc up -d app worker
 dc ps
 ```
@@ -85,8 +84,6 @@ For containerized frontend hot reload, use the dev overlay. It bind-mounts the r
 
 ```bash
 dc build app
-dcdev up -d postgres redis minio mailhog minio-init
-dcdev run --rm migrate
 dcdev up -d app worker web-dev
 ```
 

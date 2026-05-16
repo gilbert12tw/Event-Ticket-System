@@ -21,7 +21,7 @@ import {
   Trash2,
   Users,
   WifiOff,
-  X
+  X,
 } from "lucide-react";
 import type { IconName } from "@/app/routes";
 
@@ -47,10 +47,18 @@ const iconComponents: Record<IconName, LucideIcon> = {
   trash: Trash2,
   users: Users,
   wifiOff: WifiOff,
-  x: X
+  x: X,
 };
 
 export function Icon({ name }: { name: IconName }) {
   const Component = iconComponents[name];
-  return <Component aria-hidden="true" className="icon" size={16} strokeWidth={2} absoluteStrokeWidth />;
+  return (
+    <Component
+      aria-hidden="true"
+      className="icon"
+      size={16}
+      strokeWidth={2}
+      absoluteStrokeWidth
+    />
+  );
 }

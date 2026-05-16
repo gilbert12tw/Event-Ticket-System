@@ -10,7 +10,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     bookEvent: vi.fn(),
     cancelMyRegistration: vi.fn(),
-    listEvents: vi.fn()
+    listEvents: vi.fn(),
   };
 });
 
@@ -26,7 +26,7 @@ const claims: AuthMeClaims = {
   department: "Engineering",
   site: "Taipei",
   city: "Taipei",
-  claims_status: "complete"
+  claims_status: "complete",
 };
 
 describe("EmployeeEventsPage", () => {
@@ -38,22 +38,32 @@ describe("EmployeeEventsPage", () => {
 
   it("shows bounded family count only for unlimited events", async () => {
     mockListEvents.mockResolvedValue([
-      eventFixture({ event_id: "evt-limited", title: "Limited", capacity_type: "limited", capacity: 5, remaining_capacity: 3 }),
+      eventFixture({
+        event_id: "evt-limited",
+        title: "限量活動",
+        capacity_type: "limited",
+        capacity: 5,
+        remaining_capacity: 3,
+      }),
       eventFixture({
         event_id: "evt-unlimited",
-        title: "Unlimited",
+        title: "家庭日",
         capacity_type: "unlimited",
         capacity: null,
         remaining_capacity: null,
-        allows_family: true
-      })
+        allows_family: true,
+      }),
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);
 
     expect(await screen.findAllByText("符合資格")).toHaveLength(2);
-    expect(await screen.findByText("Limited event: companions are not available.")).toBeInTheDocument();
-    const familyInput = await screen.findByRole("spinbutton", { name: "Companions for Unlimited" });
+    expect(
+      await screen.findByText("限量活動不開放同行人數。"),
+    ).toBeInTheDocument();
+    const familyInput = await screen.findByRole("spinbutton", {
+      name: "同行人數：家庭日",
+    });
     expect(familyInput).toHaveAttribute("max", "10");
   });
 
@@ -67,26 +77,32 @@ describe("EmployeeEventsPage", () => {
           active: true,
           applies_to: "limited",
           until: "2026-08-01T00:00:00Z",
-          reason: "no_show_cooldown"
+          reason: "no_show_cooldown",
         },
         registration_close: "2020-01-01T00:00:00Z",
-        title: "Cooldown Event",
+        title: "冷卻活動",
         eligibility: {
           event_id: "evt-cooldown",
           eligible: true,
           can_book: false,
           reasons: [],
           warnings: [],
-          no_show_cooldown: { active: true, until: "2026-08-01T00:00:00Z", reason: "no_show_cooldown" }
-        }
-      })
+          no_show_cooldown: {
+            active: true,
+            until: "2026-08-01T00:00:00Z",
+            reason: "no_show_cooldown",
+          },
+        },
+      }),
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText(/Limited-event booking is blocked by no-show cooldown/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Cancel registration/ })).toBeDisabled();
-    expect(screen.getByText(/Self-cancel is closed/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/限量活動報名因未報到冷卻而暫停/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /取消報名/ })).toBeDisabled();
+    expect(screen.getByText(/自助取消已關閉/)).toBeInTheDocument();
   });
 
   it("renders cross-city warning and keeps booking button enabled when can_book=true", async () => {
@@ -179,7 +195,7 @@ function eventFixture(overrides: Partial<EventSummary> = {}): EventSummary {
       department: "Engineering",
       site: "Taipei",
       min_grade: 5,
-      employment_status: "active"
+      employment_status: "active",
     },
     eligible: true,
     eligibility_reason: "eligible",
@@ -188,6 +204,6 @@ function eventFixture(overrides: Partial<EventSummary> = {}): EventSummary {
     remaining_capacity: 9,
     current_user_status: "",
     no_show_cooldown: { active: false },
-    ...overrides
+    ...overrides,
   };
 }

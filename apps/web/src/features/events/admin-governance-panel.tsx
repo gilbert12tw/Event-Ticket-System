@@ -88,7 +88,10 @@ export function AdminEventGovernancePanel({
             </button>
           ))}
         </div>
-        <form className="governance-editor" onSubmit={(event) => void onSave(event)}>
+        <form
+          className="governance-editor"
+          onSubmit={(event) => void onSave(event)}
+        >
           {!selectedEvent && (
             <EmptyState
               title="尚未選擇活動"
@@ -198,6 +201,9 @@ export function AdminEventGovernancePanel({
                   >
                     <option value="limited">limited（本人單張票）</option>
                     <option value="unlimited">unlimited（不扣庫存，可帶家屬）</option>
+                    <option value="unlimited">
+                      unlimited（不扣庫存，可帶家屬）
+                    </option>
                   </select>
                 </label>
                 {editForm.capacity_type === "limited" && (

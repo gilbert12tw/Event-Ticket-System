@@ -1,4 +1,11 @@
-import { ApiError, type AuditLogFilters, type CreateEventRequest, type EmployeeProfile, type EventSummary, type Role } from "@/lib/api";
+import {
+  ApiError,
+  type AuditLogFilters,
+  type CreateEventRequest,
+  type EmployeeProfile,
+  type EventSummary,
+  type Role,
+} from "@/lib/api";
 
 export function defaultEventForm() {
   return {
@@ -15,7 +22,7 @@ export function defaultEventForm() {
     department: "Engineering",
     site: "Taipei",
     min_grade: "5",
-    employment_status: "active"
+    employment_status: "active",
   };
 }
 
@@ -33,7 +40,7 @@ export function defaultEditEventForm() {
     category: "",
     tags: "",
     entry_method: "qr",
-    visibility: "eligible"
+    visibility: "eligible",
   };
 }
 
@@ -52,7 +59,7 @@ export function editFormFromEvent(event: EventSummary) {
     category: event.category || "",
     tags: (event.tags || []).join(", "),
     entry_method: event.entry_method || "qr",
-    visibility: event.visibility || "eligible"
+    visibility: event.visibility || "eligible",
   };
 }
 
@@ -72,7 +79,10 @@ export function splitTags(value: string) {
 
 export function employeeMatchesRule(
   employee: EmployeeProfile,
-  rule: Pick<CreateEventRequest["rule"], "department" | "site" | "min_grade" | "employment_status">
+  rule: Pick<
+    CreateEventRequest["rule"],
+    "department" | "site" | "min_grade" | "employment_status"
+  >,
 ) {
   const department = rule.department.trim();
   const site = rule.site.trim();
@@ -81,7 +91,9 @@ export function employeeMatchesRule(
     (!department || department === "*" || employee.department === department) &&
     (!site || site === "*" || employee.site === site) &&
     employee.job_grade >= Number(rule.min_grade || 0) &&
-    (!employmentStatus || employmentStatus === "*" || employee.employment_status === employmentStatus)
+    (!employmentStatus ||
+      employmentStatus === "*" ||
+      employee.employment_status === employmentStatus)
   );
 }
 
@@ -107,12 +119,14 @@ export function toISO(value: string) {
   return new Date(value).toISOString();
 }
 
-export function normalizeAuditFilters(filters: AuditLogFilters): AuditLogFilters {
+export function normalizeAuditFilters(
+  filters: AuditLogFilters,
+): AuditLogFilters {
   return {
     ...filters,
     from: filters.from ? toISO(filters.from) : undefined,
     to: filters.to ? toISO(filters.to) : undefined,
-    limit: filters.limit || "50"
+    limit: filters.limit || "50",
   };
 }
 
@@ -124,11 +138,13 @@ export function formatDate(value?: string) {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 }
 
-export function eventStatusTone(status: string): "ok" | "warn" | "fail" | "info" | "neutral" {
+export function eventStatusTone(
+  status: string,
+): "ok" | "warn" | "fail" | "info" | "neutral" {
   if (status === "published") return "ok";
   if (status === "draft") return "neutral";
   if (status === "closed") return "warn";
@@ -136,11 +152,41 @@ export function eventStatusTone(status: string): "ok" | "warn" | "fail" | "info"
   return "info";
 }
 
-export function registrationTone(status: string): "ok" | "warn" | "fail" | "info" | "neutral" {
+export function eventStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    closed: "已關閉",
+    draft: "草稿",
+    published: "已發布",
+  };
+  return labels[status] || status;
+}
+
+export function registrationTone(
+  status: string,
+): "ok" | "warn" | "fail" | "info" | "neutral" {
   if (status === "confirmed") return "ok";
   if (status === "waitlisted") return "warn";
   if (status === "rejected" || status === "cancelled") return "fail";
   return "info";
+}
+
+export function registrationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    confirmed: "已確認",
+    rejected: "已拒絕",
+    waitlisted: "候補中",
+  };
+  return labels[status] || status;
+}
+
+export function capacityTypeLabel(type: EventSummary["capacity_type"]) {
+  const labels: Record<EventSummary["capacity_type"], string> = {
+    limited: "限量",
+    unlimited: "不限量",
+  };
+  return labels[type];
 }
 
 export function bookingActionLabel(event: EventSummary) {
@@ -156,7 +202,7 @@ export function roleLabel(role: Role) {
     activity_admin: "Activity Admin",
     checkin_staff: "Check-in Staff",
     hr_admin: "HR Admin",
-    system_admin: "System Admin"
+    system_admin: "System Admin",
   };
   return labels[role];
 }

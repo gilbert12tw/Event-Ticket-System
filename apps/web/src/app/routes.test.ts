@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { adminRoutes, canAccessRoute, currentRoute, defaultAdminRouteForRole, defaultRouteForRole, routeKeyForPath, routePath, userRoutes } from "./routes";
+import {
+  adminRoutes,
+  canAccessRoute,
+  currentRoute,
+  defaultAdminRouteForRole,
+  defaultRouteForRole,
+  routeKeyForPath,
+  routePath,
+  userRoutes,
+} from "./routes";
 
 describe("route guards", () => {
   it("keeps employee routes separate from admin routes", () => {
@@ -22,10 +31,18 @@ describe("route guards", () => {
     expect(routeKeyForPath("/user/events/evt_1")).toBe("user-event-detail");
     expect(routeKeyForPath("/admin/events/new")).toBe("admin-events");
     expect(routeKeyForPath("/admin/events/evt_1/edit")).toBe("admin-events");
-    expect(routeKeyForPath("/admin/events/evt_1/eligibility")).toBe("admin-events");
-    expect(routeKeyForPath("/admin/events/evt_1/registrations")).toBe("admin-registrations");
-    expect(routeKeyForPath("/admin/checkin/offline")).toBe("admin-offline-checkin");
-    expect(routeKeyForPath("/admin/offline-checkin")).toBe("admin-offline-checkin");
+    expect(routeKeyForPath("/admin/events/evt_1/eligibility")).toBe(
+      "admin-events",
+    );
+    expect(routeKeyForPath("/admin/events/evt_1/registrations")).toBe(
+      "admin-registrations",
+    );
+    expect(routeKeyForPath("/admin/checkin/offline")).toBe(
+      "admin-offline-checkin",
+    );
+    expect(routeKeyForPath("/admin/offline-checkin")).toBe(
+      "admin-offline-checkin",
+    );
     expect(routeKeyForPath("/admin/hr-sync")).toBe("admin-hr-settings");
     expect(routeKeyForPath("/admin/settings")).toBe("admin-hr-settings");
   });
@@ -38,6 +55,8 @@ describe("route guards", () => {
     window.history.replaceState({}, "", "/user/events/evt_1");
 
     expect(currentRoute()).toBe("user-event-detail");
-    expect(new URLSearchParams(window.location.search).get("event_id")).toBe("evt_1");
+    expect(new URLSearchParams(window.location.search).get("event_id")).toBe(
+      "evt_1",
+    );
   });
 });

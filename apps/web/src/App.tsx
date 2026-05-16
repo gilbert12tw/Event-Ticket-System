@@ -1,17 +1,49 @@
 import { useEffect, useState } from "react";
-import { authBootstrap, clearProviderToken, me, readiness, selectMockProfile, setApiObserver } from "@/lib/api";
+import {
+  authBootstrap,
+  clearProviderToken,
+  me,
+  readiness,
+  selectMockProfile,
+  setApiObserver,
+} from "@/lib/api";
 import type { ApiLogEntry, AuthSession, MockProfile } from "@/lib/api";
-import { adminRoutes, canAccessRoute, currentRoute, defaultRouteForRole, navigate, routePath, routes, userRoutes } from "@/app/routes";
+import {
+  adminRoutes,
+  canAccessRoute,
+  currentRoute,
+  defaultRouteForRole,
+  navigate,
+  routePath,
+  routes,
+  userRoutes,
+} from "@/app/routes";
 import type { RouteKey } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
 import { Alert } from "@/components/shared";
-import { ApiActivity, Header, LoadingScreen, StatusPanel, WorkspaceSwitch } from "@/components/layout";
+import {
+  ApiActivity,
+  Header,
+  LoadingScreen,
+  StatusPanel,
+  WorkspaceSwitch,
+} from "@/components/layout";
 import { MockProfileSelector } from "@/features/auth/MockProfileSelector";
-import { AdminEventsPage, EmployeeEventDetailPage, EmployeeEventsPage } from "@/features/events/pages";
+import {
+  AdminEventsPage,
+  EmployeeEventDetailPage,
+  EmployeeEventsPage,
+} from "@/features/events/pages";
 import { EmployeeTicketsPage } from "@/features/tickets/pages";
 import { AdminRegistrationsPage } from "@/features/registrations/pages";
-import { UserNotificationsPage, NotificationDeliveryPage } from "@/features/notifications/pages";
-import { CheckinPage, OfflineCheckinBoundaryPage } from "@/features/checkin/pages";
+import {
+  UserNotificationsPage,
+  NotificationDeliveryPage,
+} from "@/features/notifications/pages";
+import {
+  CheckinPage,
+  OfflineCheckinBoundaryPage,
+} from "@/features/checkin/pages";
 import { HrReportsPage } from "@/features/reporting/pages";
 import { HrSyncSettingsPage } from "@/features/hr-settings/pages";
 import { AdminAuditPage } from "@/features/audit/pages";
@@ -30,12 +62,21 @@ function App() {
   const [ready, setReady] = useState<"checking" | "ok" | "down">("checking");
   const canUseDemo = Boolean(auth && mockProfilesEnabled);
   const demoRouteBlocked = auth ? route === "admin-demo" && !canUseDemo : false;
-  const unauthorizedRoute = auth ? !canAccessRoute(route, auth.actor.role) || demoRouteBlocked : false;
-  const safeRoute = auth && unauthorizedRoute ? defaultRouteForRole(auth.actor.role) : route;
-  const activeRoute = routes.find((candidate) => candidate.key === safeRoute) || routes[0];
+  const unauthorizedRoute = auth
+    ? !canAccessRoute(route, auth.actor.role) || demoRouteBlocked
+    : false;
+  const safeRoute =
+    auth && unauthorizedRoute ? defaultRouteForRole(auth.actor.role) : route;
+  const activeRoute =
+    routes.find((candidate) => candidate.key === safeRoute) || routes[0];
   const activeWorkspace = activeRoute.workspace;
-  const navRoutes = (activeWorkspace === "user" ? userRoutes : adminRoutes).filter(
-    (item) => auth && canAccessRoute(item.key, auth.actor.role) && (item.key !== "admin-demo" || canUseDemo)
+  const navRoutes = (
+    activeWorkspace === "user" ? userRoutes : adminRoutes
+  ).filter(
+    (item) =>
+      auth &&
+      canAccessRoute(item.key, auth.actor.role) &&
+      (item.key !== "admin-demo" || canUseDemo),
   );
 
   useEffect(() => {
@@ -95,11 +136,13 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([readiness("/healthz"), readiness("/readyz")]).then(([healthResult, readyResult]) => {
-      if (!active) return;
-      setHealth(healthResult.status === "fulfilled" ? "ok" : "down");
-      setReady(readyResult.status === "fulfilled" ? "ok" : "down");
-    });
+    Promise.allSettled([readiness("/healthz"), readiness("/readyz")]).then(
+      ([healthResult, readyResult]) => {
+        if (!active) return;
+        setHealth(healthResult.status === "fulfilled" ? "ok" : "down");
+        setReady(readyResult.status === "fulfilled" ? "ok" : "down");
+      },
+    );
     return () => {
       active = false;
     };
@@ -139,7 +182,9 @@ function App() {
         />
       );
     }
-    return <AuthRequiredState health={health} ready={ready} message={authMessage} />;
+    return (
+      <AuthRequiredState health={health} ready={ready} message={authMessage} />
+    );
   }
 
   return (
@@ -156,10 +201,14 @@ function App() {
         </div>
         <WorkspaceSwitch active={activeWorkspace} role={auth.actor.role} />
         <nav className="nav-list">
-          <div className="nav-group-label">{activeWorkspace === "user" ? "User Workspace" : "Admin Console"}</div>
+          <div className="nav-group-label">
+            {activeWorkspace === "user" ? "User Workspace" : "Admin Console"}
+          </div>
           {navRoutes.map((item) => (
             <a
-              className={item.key === safeRoute ? "nav-link active" : "nav-link"}
+              className={
+                item.key === safeRoute ? "nav-link active" : "nav-link"
+              }
               href={item.path}
               key={item.key}
               onClick={(event) => {
@@ -185,7 +234,9 @@ function App() {
           route={safeRoute}
           session={auth}
           mockProfilesEnabled={mockProfilesEnabled}
-          onSwitchProfile={mockProfilesEnabled ? handleSwitchProfile : undefined}
+          onSwitchProfile={
+            mockProfilesEnabled ? handleSwitchProfile : undefined
+          }
         />
         {authMessage && <Alert tone="warn">{authMessage}</Alert>}
         {unauthorizedRoute ? (
@@ -196,19 +247,34 @@ function App() {
           />
         ) : (
           <>
-            {safeRoute === "user-events" && <EmployeeEventsPage claims={auth.claims} />}
-            {safeRoute === "user-event-detail" && <EmployeeEventDetailPage claims={auth.claims} />}
-            {safeRoute === "user-tickets" && <EmployeeTicketsPage claims={auth.claims} />}
+            {safeRoute === "user-events" && (
+              <EmployeeEventsPage claims={auth.claims} />
+            )}
+            {safeRoute === "user-event-detail" && (
+              <EmployeeEventDetailPage claims={auth.claims} />
+            )}
+            {safeRoute === "user-tickets" && (
+              <EmployeeTicketsPage claims={auth.claims} />
+            )}
             {safeRoute === "user-notifications" && <UserNotificationsPage />}
             {safeRoute === "admin-events" && <AdminEventsPage />}
             {safeRoute === "admin-registrations" && <AdminRegistrationsPage />}
-            {safeRoute === "admin-notifications" && <NotificationDeliveryPage />}
+            {safeRoute === "admin-notifications" && (
+              <NotificationDeliveryPage />
+            )}
             {safeRoute === "admin-checkin" && <CheckinPage />}
-            {safeRoute === "admin-offline-checkin" && <OfflineCheckinBoundaryPage />}
+            {safeRoute === "admin-offline-checkin" && (
+              <OfflineCheckinBoundaryPage />
+            )}
             {safeRoute === "admin-reports" && <HrReportsPage />}
             {safeRoute === "admin-hr-settings" && <HrSyncSettingsPage />}
             {safeRoute === "admin-audit" && <AdminAuditPage />}
-            {safeRoute === "admin-demo" && canUseDemo && <DemoRunbookPage session={auth} onSessionChange={(next) => setAuth(next)} />}
+            {safeRoute === "admin-demo" && canUseDemo && (
+              <DemoRunbookPage
+                session={auth}
+                onSessionChange={(next) => setAuth(next)}
+              />
+            )}
           </>
         )}
       </main>
@@ -218,7 +284,15 @@ function App() {
   );
 }
 
-function AuthRequiredState({ health, ready, message }: { health: string; ready: string; message: string }) {
+function AuthRequiredState({
+  health,
+  ready,
+  message,
+}: {
+  health: string;
+  ready: string;
+  message: string;
+}) {
   return (
     <main className="login-shell">
       <section className="login-panel compact-login">
@@ -234,7 +308,10 @@ function AuthRequiredState({ health, ready, message }: { health: string; ready: 
         <div>
           <div className="eyebrow">Provider Claims Required</div>
           <h1>需要企業 SSO 身分</h1>
-          <p>請從企業身分提供者進入工作台，系統會使用 provider claims 載入角色與員工屬性。</p>
+          <p>
+            請從企業身分提供者進入工作台，系統會使用 provider claims
+            載入角色與員工屬性。
+          </p>
         </div>
         <StatusPanel health={health} ready={ready} />
         {message && <Alert tone="warn">{message}</Alert>}
@@ -246,14 +323,16 @@ function AuthRequiredState({ health, ready, message }: { health: string; ready: 
 function UnauthorizedState({
   requestedRoute,
   fallbackRoute,
-  onReturn
+  onReturn,
 }: {
   requestedRoute: RouteKey;
   fallbackRoute: RouteKey;
   onReturn: () => void;
 }) {
-  const requested = routes.find((candidate) => candidate.key === requestedRoute) || routes[0];
-  const fallback = routes.find((candidate) => candidate.key === fallbackRoute) || routes[0];
+  const requested =
+    routes.find((candidate) => candidate.key === requestedRoute) || routes[0];
+  const fallback =
+    routes.find((candidate) => candidate.key === fallbackRoute) || routes[0];
 
   return (
     <section className="panel span-12">
@@ -264,7 +343,8 @@ function UnauthorizedState({
         </div>
       </div>
       <Alert tone="warn">
-        請切換到你的可存取頁面，或使用對應角色的帳號重新登入。建議先回到「{fallback.label}」繼續操作。
+        請切換到你的可存取頁面，或使用對應角色的帳號重新登入。建議先回到「
+        {fallback.label}」繼續操作。
       </Alert>
       <button className="button" type="button" onClick={onReturn}>
         返回預設頁面

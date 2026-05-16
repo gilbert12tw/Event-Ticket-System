@@ -26,12 +26,15 @@ export function AdminCreateResult({ event }: { event: EventSummary | null }) {
             </div>
             <div>
               <dt>容量</dt>
-              <dd>{event.capacity_type === "unlimited" ? "不限" : event.capacity}</dd>
+              <dd>
+                {event.capacity_type === "unlimited" ? "不限" : event.capacity}
+              </dd>
             </div>
             <div>
               <dt>規則</dt>
               <dd>
-                {event.rule.department} / {event.rule.site} / G{event.rule.min_grade}+
+                {event.rule.department} / {event.rule.site} / G
+                {event.rule.min_grade}+
               </dd>
             </div>
           </dl>

@@ -2,14 +2,17 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationDeliveryPage } from "./pages";
-import { listNotificationDeliveries, retryNotificationDelivery } from "@/lib/api";
+import {
+  listNotificationDeliveries,
+  retryNotificationDelivery,
+} from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     listNotificationDeliveries: vi.fn(),
-    retryNotificationDelivery: vi.fn()
+    retryNotificationDelivery: vi.fn(),
   };
 });
 
@@ -29,8 +32,8 @@ describe("NotificationDeliveryPage", () => {
         attempts: 1,
         last_error: "",
         created_at: "2026-05-06T10:00:00Z",
-        updated_at: "2026-05-06T10:00:00Z"
-      }
+        updated_at: "2026-05-06T10:00:00Z",
+      },
     ]);
 
     render(<NotificationDeliveryPage />);
@@ -51,8 +54,8 @@ describe("NotificationDeliveryPage", () => {
         attempts: 1,
         last_error: "timeout",
         created_at: "2026-05-06T10:00:00Z",
-        updated_at: "2026-05-06T10:01:00Z"
-      }
+        updated_at: "2026-05-06T10:01:00Z",
+      },
     ]);
     retryNotificationDelivery.mockResolvedValue({
       delivery_id: "del-2",
@@ -63,7 +66,7 @@ describe("NotificationDeliveryPage", () => {
       attempts: 2,
       last_error: "",
       created_at: "2026-05-06T10:00:00Z",
-      updated_at: "2026-05-06T10:01:30Z"
+      updated_at: "2026-05-06T10:01:30Z",
     });
 
     render(<NotificationDeliveryPage />);
@@ -71,7 +74,9 @@ describe("NotificationDeliveryPage", () => {
     const retryButton = await screen.findByRole("button", { name: "Retry" });
     await userEvent.click(retryButton);
 
-    await waitFor(() => expect(retryNotificationDelivery).toHaveBeenCalledWith("del-2"));
+    await waitFor(() =>
+      expect(retryNotificationDelivery).toHaveBeenCalledWith("del-2"),
+    );
     await waitFor(() => {
       const row = screen.getByText("del-2").closest("tr");
       expect(row).not.toBeNull();

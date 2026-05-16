@@ -70,6 +70,8 @@ Before each small task, define the goal, acceptance criteria, impact scope, test
 
 After each small task, add or update matching tests, inspect `git status` and `git diff --stat`, then create a local commit unless the user explicitly says not to commit.
 
+Before pushing committed work, run `act push` once to verify the GitHub Actions push workflow locally. Do not push if `act push` fails; either fix the workflow/code issue or document the blocker explicitly with the failed job and log excerpt.
+
 Reviewer subagents must check correctness, tests, 12-Factor compliance, clean-code limits, and unrelated diff churn before a task is accepted.
 
 ## Verification

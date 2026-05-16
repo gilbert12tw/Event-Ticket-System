@@ -1,9 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { archiveEvent, changeEventState, createEvent, duplicateEvent, employees, listAdminEvents, seedDemo, updateEvent } from "@/lib/api";
-import type { CreateEventRequest, EventSummary, UpdateEventRequest } from "@/lib/api";
-import { defaultEditEventForm, editFormFromEvent, employeeMatchesRule, errorMessage, splitTags, toISO } from "@/lib/formatting";
-import { defaultEventForm } from "@/lib/formatting";
+import {
+  archiveEvent,
+  changeEventState,
+  createEvent,
+  duplicateEvent,
+  employees,
+  listAdminEvents,
+  seedDemo,
+  updateEvent,
+} from "@/lib/api";
+import type {
+  CreateEventRequest,
+  EventSummary,
+  UpdateEventRequest,
+} from "@/lib/api";
+import {
+  defaultEditEventForm,
+  defaultEventForm,
+  editFormFromEvent,
+  employeeMatchesRule,
+  errorMessage,
+  splitTags,
+  toISO,
+} from "@/lib/formatting";
 import { Alert, Field, Kpi, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { AdminCreateResult } from "./admin-create-result";
@@ -15,10 +35,15 @@ export function AdminEventsPage() {
   const [adminEvents, setAdminEvents] = useState<EventSummary[]>([]);
   const [selectedEventID, setSelectedEventID] = useState("");
   const [editForm, setEditForm] = useState(() => defaultEditEventForm());
-  const [stateForm, setStateForm] = useState({ status: "published", reason: "admin state change" });
+  const [stateForm, setStateForm] = useState({
+    status: "published",
+    reason: "admin state change",
+  });
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const selectedAdminEvent = adminEvents.find((event) => event.event_id === selectedEventID) || adminEvents[0];
+  const selectedAdminEvent =
+    adminEvents.find((event) => event.event_id === selectedEventID) ||
+    adminEvents[0];
   const previewEmployees = useMemo(
     () =>
       employees.filter((employee) =>
@@ -26,27 +51,38 @@ export function AdminEventsPage() {
           department: form.department,
           site: form.site,
           min_grade: Number(form.min_grade),
-          employment_status: form.employment_status
-        })
+          employment_status: form.employment_status,
+        }),
       ),
-    [form.department, form.site, form.min_grade, form.employment_status]
+    [form.department, form.site, form.min_grade, form.employment_status],
   );
-  const capacityReady = form.capacity_type === "unlimited" || (Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0);
+  const capacityReady =
+    form.capacity_type === "unlimited" ||
+    (Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0);
   const startsAt = new Date(form.starts_at);
   const registrationStart = new Date(form.registration_start);
   const registrationClose = new Date(form.registration_close);
   const windowReady =
-    [startsAt, registrationStart, registrationClose].every((date) => !Number.isNaN(date.getTime())) &&
+    [startsAt, registrationStart, registrationClose].every(
+      (date) => !Number.isNaN(date.getTime()),
+    ) &&
     registrationStart <= registrationClose &&
     registrationClose <= startsAt;
   const publishChecks = [
-    { label: "基本資料完整", ok: Boolean(form.title.trim() && form.location.trim() && form.description.trim()) },
+    {
+      label: "基本資料完整",
+      ok: Boolean(
+        form.title.trim() && form.location.trim() && form.description.trim(),
+      ),
+    },
     { label: "容量可用", ok: capacityReady },
     { label: "報名期間有效", ok: windowReady },
     { label: "資格規則命中", ok: previewEmployees.length > 0 },
-    { label: "狀態可發布", ok: form.status === "published" }
+    { label: "狀態可發布", ok: form.status === "published" },
   ];
-  const canSubmit = publishChecks.filter((item) => item.label !== "資格規則命中").every((item) => item.ok);
+  const canSubmit = publishChecks
+    .filter((item) => item.label !== "資格規則命中")
+    .every((item) => item.ok);
 
   async function refreshAdminEvents(nextSelectedID = selectedEventID) {
     try {
@@ -54,10 +90,14 @@ export function AdminEventsPage() {
       setAdminEvents(rows);
       const nextSelected = nextSelectedID || rows[0]?.event_id || "";
       setSelectedEventID(nextSelected);
-      const nextEvent = rows.find((event) => event.event_id === nextSelected) || rows[0];
+      const nextEvent =
+        rows.find((event) => event.event_id === nextSelected) || rows[0];
       if (nextEvent) {
         setEditForm(editFormFromEvent(nextEvent));
-        setStateForm({ status: nextEvent.status, reason: "admin state change" });
+        setStateForm({
+          status: nextEvent.status,
+          reason: "admin state change",
+        });
       }
     } catch (error) {
       setMessage(errorMessage(error));
@@ -73,7 +113,9 @@ export function AdminEventsPage() {
     setMessage("");
     try {
       const result = await seedDemo();
-      setMessage(result.status === "seeded" ? "HR 示範員工已建立。" : result.status);
+      setMessage(
+        result.status === "seeded" ? "HR 示範員工已建立。" : result.status,
+      );
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -103,8 +145,8 @@ export function AdminEventsPage() {
           department: form.department.trim() || "*",
           site: form.site.trim() || "*",
           min_grade: Number(form.min_grade),
-          employment_status: form.employment_status.trim() || "active"
-        }
+          employment_status: form.employment_status.trim() || "active",
+        },
       };
       const result = await createEvent(body);
       setCreated(result);
@@ -138,7 +180,7 @@ export function AdminEventsPage() {
         category: editForm.category.trim(),
         tags: splitTags(editForm.tags),
         entry_method: editForm.entry_method.trim(),
-        visibility: editForm.visibility.trim()
+        visibility: editForm.visibility.trim(),
       };
       const updated = await updateEvent(selectedAdminEvent.event_id, body);
       setMessage("活動已更新並寫入 audit log。");
@@ -155,7 +197,11 @@ export function AdminEventsPage() {
     setBusy(true);
     setMessage("");
     try {
-      const updated = await changeEventState(selectedAdminEvent.event_id, stateForm.status, stateForm.reason);
+      const updated = await changeEventState(
+        selectedAdminEvent.event_id,
+        stateForm.status,
+        stateForm.reason,
+      );
       setMessage(`狀態已更新為 ${updated.status}。`);
       await refreshAdminEvents(updated.event_id);
     } catch (error) {
@@ -201,11 +247,17 @@ export function AdminEventsPage() {
         <div>
           <div className="eyebrow">Admin Console</div>
           <h2>活動主辦入口</h2>
-          <p>建立活動前先檢查容量、報名期間與資格命中人數；新增治理 API 支援列表、更新、狀態、複製與封存。</p>
+          <p>
+            建立活動前先檢查容量、報名期間與資格命中人數；新增治理 API
+            支援列表、更新、狀態、複製與封存。
+          </p>
         </div>
         <div className="context-kpis">
           <Kpi label="Demo 符合人數" value={previewEmployees.length} />
-          <Kpi label="容量" value={form.capacity_type === "unlimited" ? "不限" : form.capacity} />
+          <Kpi
+            label="容量"
+            value={form.capacity_type === "unlimited" ? "不限" : form.capacity}
+          />
           <Kpi label="管理活動" value={adminEvents.length} />
         </div>
       </div>
@@ -231,24 +283,47 @@ export function AdminEventsPage() {
         selectedEvent={selectedAdminEvent}
         stateForm={stateForm}
       />
-      <form className="panel span-8 form-grid" onSubmit={(event) => void submit(event)}>
+      <form
+        className="panel span-8 form-grid"
+        onSubmit={(event) => void submit(event)}
+      >
         <div className="section-heading full">
           <div>
             <h2>建立活動與資格規則</h2>
             <p>Phase 1 支援先搶先得、容量、防超賣與單一資格規則。</p>
           </div>
-          <button className="button ghost" type="button" onClick={() => void seed()} disabled={busy}>
+          <button
+            className="button ghost"
+            type="button"
+            onClick={() => void seed()}
+            disabled={busy}
+          >
             <Icon name="database" />
             Seed HR
           </button>
         </div>
         <fieldset className="form-section full">
           <legend>基本資料</legend>
-          <Field label="活動名稱" value={form.title} onChange={(value) => setForm({ ...form, title: value })} required />
-          <Field label="地點" value={form.location} onChange={(value) => setForm({ ...form, location: value })} required />
+          <Field
+            label="活動名稱"
+            value={form.title}
+            onChange={(value) => setForm({ ...form, title: value })}
+            required
+          />
+          <Field
+            label="地點"
+            value={form.location}
+            onChange={(value) => setForm({ ...form, location: value })}
+            required
+          />
           <label className="field">
             <span>活動城市</span>
-            <select value={form.event_city} onChange={(event) => setForm({ ...form, event_city: event.target.value })}>
+            <select
+              value={form.event_city}
+              onChange={(event) =>
+                setForm({ ...form, event_city: event.target.value })
+              }
+            >
               <option value="">（未設定）</option>
               <option value="Taipei">台北 (Taipei)</option>
               <option value="Hsinchu">新竹 (Hsinchu)</option>
@@ -256,28 +331,46 @@ export function AdminEventsPage() {
               <option value="Tainan">台南 (Tainan)</option>
               <option value="Kaohsiung">高雄 (Kaohsiung)</option>
             </select>
-            <small className="form-hint">設定後用於比對員工所在城市，不同城市將顯示跨城市提示（不阻擋報名）。</small>
+            <small className="form-hint">
+              設定後用於比對員工所在城市，不同城市將顯示跨城市提示（不阻擋報名）。
+            </small>
           </label>
           <label className="field full">
             <span>描述</span>
-            <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={4} />
+            <textarea
+              value={form.description}
+              onChange={(event) =>
+                setForm({ ...form, description: event.target.value })
+              }
+              rows={4}
+            />
           </label>
         </fieldset>
         <fieldset className="form-section full">
           <legend>容量與報名期間</legend>
-          <Field label="活動開始" type="datetime-local" value={form.starts_at} onChange={(value) => setForm({ ...form, starts_at: value })} required />
+          <Field
+            label="活動開始"
+            type="datetime-local"
+            value={form.starts_at}
+            onChange={(value) => setForm({ ...form, starts_at: value })}
+            required
+          />
           <Field
             label="報名開始"
             type="datetime-local"
             value={form.registration_start}
-            onChange={(value) => setForm({ ...form, registration_start: value })}
+            onChange={(value) =>
+              setForm({ ...form, registration_start: value })
+            }
             required
           />
           <Field
             label="報名截止"
             type="datetime-local"
             value={form.registration_close}
-            onChange={(value) => setForm({ ...form, registration_close: value })}
+            onChange={(value) =>
+              setForm({ ...form, registration_close: value })
+            }
             required
           />
           <label className="field">
@@ -286,7 +379,11 @@ export function AdminEventsPage() {
               value={form.capacity_type}
               onChange={(event) => {
                 const next = event.target.value as "limited" | "unlimited";
-                setForm({ ...form, capacity_type: next, capacity: next === "unlimited" ? "" : form.capacity || "1" });
+                setForm({
+                  ...form,
+                  capacity_type: next,
+                  capacity: next === "unlimited" ? "" : form.capacity || "1",
+                });
               }}
             >
               <option value="limited">limited（本人單張票）</option>
@@ -294,16 +391,38 @@ export function AdminEventsPage() {
             </select>
           </label>
           {form.capacity_type === "limited" ? (
-            <Field label="容量" type="number" value={form.capacity} onChange={(value) => setForm({ ...form, capacity: value })} required />
+            <Field
+              label="容量"
+              type="number"
+              value={form.capacity}
+              onChange={(value) => setForm({ ...form, capacity: value })}
+              required
+            />
           ) : (
-            <p className="form-hint full">unlimited 活動不設總名額，員工報名時可填寫攜帶家屬人數（上限 10）。</p>
+            <p className="form-hint full">
+              unlimited 活動不設總名額，員工報名時可填寫攜帶家屬人數（上限
+              10）。
+            </p>
           )}
         </fieldset>
         <fieldset className="form-section full">
           <legend>資格規則</legend>
-          <Field label="部門" value={form.department} onChange={(value) => setForm({ ...form, department: value })} />
-          <Field label="廠區" value={form.site} onChange={(value) => setForm({ ...form, site: value })} />
-          <Field label="最低職等" type="number" value={form.min_grade} onChange={(value) => setForm({ ...form, min_grade: value })} />
+          <Field
+            label="部門"
+            value={form.department}
+            onChange={(value) => setForm({ ...form, department: value })}
+          />
+          <Field
+            label="廠區"
+            value={form.site}
+            onChange={(value) => setForm({ ...form, site: value })}
+          />
+          <Field
+            label="最低職等"
+            type="number"
+            value={form.min_grade}
+            onChange={(value) => setForm({ ...form, min_grade: value })}
+          />
           <Field
             label="雇用狀態"
             value={form.employment_status}
@@ -311,7 +430,9 @@ export function AdminEventsPage() {
           />
         </fieldset>
         <div className="publish-check full" aria-live="polite">
-          <StatusBadge tone={previewEmployees.length > 0 ? "ok" : "warn"}>{previewEmployees.length > 0 ? "資格命中" : "0 人符合"}</StatusBadge>
+          <StatusBadge tone={previewEmployees.length > 0 ? "ok" : "warn"}>
+            {previewEmployees.length > 0 ? "資格命中" : "0 人符合"}
+          </StatusBadge>
           <span>
             {previewEmployees.length > 0
               ? `Demo HR 資料中符合：${previewEmployees.map((employee) => employee.employee_id).join(", ")}`
@@ -320,23 +441,42 @@ export function AdminEventsPage() {
         </div>
         <div className="readiness-grid full" aria-label="發布檢查">
           {publishChecks.map((item) => (
-            <div className={item.ok ? "readiness-item ok" : "readiness-item warn"} key={item.label}>
-              <StatusBadge tone={item.ok ? "ok" : "warn"}>{item.ok ? "OK" : "Check"}</StatusBadge>
+            <div
+              className={item.ok ? "readiness-item ok" : "readiness-item warn"}
+              key={item.label}
+            >
+              <StatusBadge tone={item.ok ? "ok" : "warn"}>
+                {item.ok ? "OK" : "Check"}
+              </StatusBadge>
               <span>{item.label}</span>
             </div>
           ))}
         </div>
-        {!windowReady && <Alert tone="warn">報名期間需早於活動開始，且報名開始不可晚於報名截止。</Alert>}
+        {!windowReady && (
+          <Alert tone="warn">
+            報名期間需早於活動開始，且報名開始不可晚於報名截止。
+          </Alert>
+        )}
         <div className="form-actions full">
-          <button className="button" type="submit" disabled={busy || !canSubmit}>
+          <button
+            className="button"
+            type="submit"
+            disabled={busy || !canSubmit}
+          >
             <Icon name="plus" />
             建立活動
           </button>
-          <button className="button secondary" type="button" onClick={() => setForm(defaultEventForm)}>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => setForm(defaultEventForm)}
+          >
             重設
           </button>
         </div>
-        {message && <Alert tone={message.includes("已") ? "ok" : "warn"}>{message}</Alert>}
+        {message && (
+          <Alert tone={message.includes("已") ? "ok" : "warn"}>{message}</Alert>
+        )}
       </form>
       <AdminCreateResult event={created} />
     </section>

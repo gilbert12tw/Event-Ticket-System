@@ -79,7 +79,7 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
 		return nil
 	}
