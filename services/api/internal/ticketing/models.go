@@ -23,9 +23,18 @@ const (
 	TicketExpired  = "expired"
 )
 
+type ProviderClaims struct {
+	Department       string
+	Site             string
+	City             string
+	Grade            int
+	EmploymentStatus string
+}
+
 type Actor struct {
-	ID   string
-	Role string
+	ID     string
+	Role   string
+	Claims *ProviderClaims
 }
 
 type Employee struct {

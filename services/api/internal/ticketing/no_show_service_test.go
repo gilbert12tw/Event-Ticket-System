@@ -28,7 +28,7 @@ func TestProcessNoShowsAppliesLimitedCooldownAndBlocksLimitedBookings(t *testing
 		StartsAt:          now.Add(-48 * time.Hour),
 		RegistrationStart: now.Add(-120 * time.Hour),
 		RegistrationClose: now.Add(-72 * time.Hour),
-		Rule:              RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestProcessNoShowsAppliesLimitedCooldownAndBlocksLimitedBookings(t *testing
 		StartsAt:          now.Add(48 * time.Hour),
 		RegistrationStart: now.Add(-time.Hour),
 		RegistrationClose: now.Add(24 * time.Hour),
-		Rule:              RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestProcessNoShowsAppliesLimitedCooldownAndBlocksLimitedBookings(t *testing
 		StartsAt:          now.Add(48 * time.Hour),
 		RegistrationStart: now.Add(-time.Hour),
 		RegistrationClose: now.Add(24 * time.Hour),
-		Rule:              RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestRecordNoShowSkipsSideEffectsWhenInsertIsDeduplicated(t *testing.T) {
 		StartsAt:          now.Add(-48 * time.Hour),
 		RegistrationStart: now.Add(-120 * time.Hour),
 		RegistrationClose: now.Add(-72 * time.Hour),
-		Rule:              RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "dedupe-no-show-book"})
@@ -147,7 +147,7 @@ func TestEmployeeCancellationCutoffAndAdminReason(t *testing.T) {
 		StartsAt:          now.Add(24 * time.Hour),
 		RegistrationStart: now.Add(-72 * time.Hour),
 		RegistrationClose: now.Add(-24 * time.Hour),
-		Rule:              RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	if err != nil {
 		t.Fatal(err)

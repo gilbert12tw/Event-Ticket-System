@@ -32,14 +32,16 @@ type authBootstrapResponse struct {
 }
 
 type mockProfilePayload struct {
-	ProfileID   string   `json:"profile_id"`
-	DisplayName string   `json:"display_name"`
-	JobTitle    *string  `json:"job_title"`
-	RoleClaims  []string `json:"role_claims"`
-	MappedRoles []string `json:"mapped_roles"`
-	Department  string   `json:"department"`
-	Site        string   `json:"site"`
-	City        string   `json:"city"`
+	ProfileID        string   `json:"profile_id"`
+	DisplayName      string   `json:"display_name"`
+	JobTitle         *string  `json:"job_title"`
+	RoleClaims       []string `json:"role_claims"`
+	MappedRoles      []string `json:"mapped_roles"`
+	Department       string   `json:"department"`
+	Site             string   `json:"site"`
+	City             string   `json:"city"`
+	Grade            int      `json:"grade"`
+	EmploymentStatus string   `json:"employment_status"`
 }
 
 type mockProviderTokenRequest struct {
@@ -54,67 +56,92 @@ type mockProviderTokenResponse struct {
 
 var mockProviderProfiles = []providerClaims{
 	{
-		EmployeeID:  "E1001",
-		DisplayName: "Ariel Chen",
-		JobTitle:    stringPointer("Software Engineer"),
-		RoleClaims:  []string{ticketing.RoleEmployee},
-		Department:  "Engineering",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "E1001",
+		DisplayName:      "Ariel Chen",
+		JobTitle:         stringPointer("Software Engineer"),
+		RoleClaims:       []string{ticketing.RoleEmployee},
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            6,
+		EmploymentStatus: "active",
 	},
 	{
-		EmployeeID:  "E1002",
-		DisplayName: "Ben Lin",
-		JobTitle:    stringPointer("Product Designer"),
-		RoleClaims:  []string{ticketing.RoleEmployee},
-		Department:  "Engineering",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "E1002",
+		DisplayName:      "Ben Lin",
+		JobTitle:         stringPointer("Product Designer"),
+		RoleClaims:       []string{ticketing.RoleEmployee},
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            5,
+		EmploymentStatus: "active",
 	},
 	{
-		EmployeeID:  "E2001",
-		DisplayName: "Carla Wu",
-		JobTitle:    stringPointer("Account Manager"),
-		RoleClaims:  []string{ticketing.RoleEmployee},
-		Department:  "Sales",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "E1003",
+		DisplayName:      "Tainan User",
+		JobTitle:         stringPointer("Field Engineer"),
+		RoleClaims:       []string{ticketing.RoleEmployee},
+		Department:       "Engineering",
+		Site:             "Tainan HQ",
+		City:             "Tainan",
+		Grade:            5,
+		EmploymentStatus: "active",
 	},
 	{
-		EmployeeID:  "admin-1",
-		DisplayName: "Admin One",
-		JobTitle:    stringPointer("Activity Owner"),
-		RoleClaims:  []string{ticketing.RoleActivityAdmin},
-		Department:  "Welfare Committee",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "E2001",
+		DisplayName:      "Carla Wu",
+		JobTitle:         stringPointer("Account Manager"),
+		RoleClaims:       []string{ticketing.RoleEmployee},
+		Department:       "Sales",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            4,
+		EmploymentStatus: "active",
 	},
 	{
-		EmployeeID:  "staff-1",
-		DisplayName: "Staff One",
-		JobTitle:    stringPointer("Check-in Staff"),
-		RoleClaims:  []string{ticketing.RoleCheckinStaff},
-		Department:  "Operations",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "admin-1",
+		DisplayName:      "Admin One",
+		JobTitle:         stringPointer("Activity Owner"),
+		RoleClaims:       []string{ticketing.RoleActivityAdmin},
+		Department:       "Welfare Committee",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            7,
+		EmploymentStatus: "active",
 	},
 	{
-		EmployeeID:  "hr-1",
-		DisplayName: "HR One",
-		JobTitle:    stringPointer("HR Partner"),
-		RoleClaims:  []string{ticketing.RoleHRAdmin},
-		Department:  "Human Resources",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "staff-1",
+		DisplayName:      "Staff One",
+		JobTitle:         stringPointer("Check-in Staff"),
+		RoleClaims:       []string{ticketing.RoleCheckinStaff},
+		Department:       "Operations",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            5,
+		EmploymentStatus: "active",
 	},
 	{
-		EmployeeID:  "system-1",
-		DisplayName: "System One",
-		JobTitle:    stringPointer("System Administrator"),
-		RoleClaims:  []string{ticketing.RoleSystemAdmin},
-		Department:  "IT",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
+		EmployeeID:       "hr-1",
+		DisplayName:      "HR One",
+		JobTitle:         stringPointer("HR Partner"),
+		RoleClaims:       []string{ticketing.RoleHRAdmin},
+		Department:       "Human Resources",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            6,
+		EmploymentStatus: "active",
+	},
+	{
+		EmployeeID:       "system-1",
+		DisplayName:      "System One",
+		JobTitle:         stringPointer("System Administrator"),
+		RoleClaims:       []string{ticketing.RoleSystemAdmin},
+		Department:       "IT",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            8,
+		EmploymentStatus: "active",
 	},
 }
 
@@ -259,14 +286,16 @@ func mockProfilePayloads() []mockProfilePayload {
 	for _, claims := range mockProviderProfiles {
 		mappedRoles := mappedProviderRoles(claims.RoleClaims)
 		profiles = append(profiles, mockProfilePayload{
-			ProfileID:   claims.EmployeeID,
-			DisplayName: claims.DisplayName,
-			JobTitle:    claims.JobTitle,
-			RoleClaims:  append([]string(nil), claims.RoleClaims...),
-			MappedRoles: append([]string(nil), mappedRoles...),
-			Department:  claims.Department,
-			Site:        claims.Site,
-			City:        claims.City,
+			ProfileID:        claims.EmployeeID,
+			DisplayName:      claims.DisplayName,
+			JobTitle:         claims.JobTitle,
+			RoleClaims:       append([]string(nil), claims.RoleClaims...),
+			MappedRoles:      append([]string(nil), mappedRoles...),
+			Department:       claims.Department,
+			Site:             claims.Site,
+			City:             claims.City,
+			Grade:            claims.Grade,
+			EmploymentStatus: claims.EmploymentStatus,
 		})
 	}
 	return profiles

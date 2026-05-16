@@ -242,6 +242,11 @@ jobs:
           go-version-file: services/api/go.mod
           cache: true
           cache-dependency-path: services/api/go.sum
+      - name: Restore Node path for local act runs
+        if: env.ACT == 'true'
+        run: |
+          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+          echo "$node_bin" >> "$GITHUB_PATH"
       - name: Run Go lint
         uses: golangci/golangci-lint-action@v9
         with:

@@ -45,9 +45,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const principalID = claims.employee_id;
   const eventStats = useMemo(
     () => ({
-      eligible: events.filter(
-        (event) => event.eligible && !event.no_show_cooldown?.active,
-      ).length,
+      eligible: events.filter((event) => canSubmitAttendeeAction(event)).length,
       confirmed: events.filter(
         (event) => event.current_user_status === "confirmed",
       ).length,
@@ -262,5 +260,5 @@ function cancellationResultCopy(event: EventSummary) {
   const ticketCopy = event.current_user_ticket
     ? "已核發票券會同步失效。"
     : "目前沒有已核發票券。";
-  return `報名已取消。${ticketCopy}名額與候補可能更新；是否能重新報名取決於目前資格、活動狀態與名額。`;
+  return `報名已取消。${ticketCopy}名額與候補可能更新；若需恢復或重新報名，請聯絡活動主辦。`;
 }

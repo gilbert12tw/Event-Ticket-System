@@ -148,7 +148,7 @@ export function EventListItem({
         <h3>{title}</h3>
         <p className="event-list-item-meta">{meta}</p>
         {description && (
-          <p className="event-list-item-description">{description}</p>
+          <div className="event-list-item-description">{description}</div>
         )}
       </div>
       <div className="event-list-item-actions">{actions}</div>

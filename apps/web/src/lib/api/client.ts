@@ -9,7 +9,7 @@ import type {
   BookingResponse,
   CheckinResponse,
   CreateEventRequest,
-  EligibilityCheckResult,
+  EligibilityDecision,
   EligibilityImpactReview,
   EligibilityPreviewRequest,
   EligibilityPreviewResponse,
@@ -217,7 +217,7 @@ export function getEvent(eventID: string) {
 }
 
 export function checkEligibility(eventID: string) {
-  return api<EligibilityCheckResult>(
+  return api<EligibilityDecision>(
     `/api/v1/events/${encodeURIComponent(eventID)}/eligibility`,
   );
 }

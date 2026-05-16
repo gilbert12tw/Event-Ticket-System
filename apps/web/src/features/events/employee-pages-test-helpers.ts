@@ -8,6 +8,8 @@ export const claims: AuthMeClaims = {
   department: "Engineering",
   site: "Taipei",
   city: "Taipei",
+  grade: 6,
+  employment_status: "active",
   claims_status: "complete",
 };
 

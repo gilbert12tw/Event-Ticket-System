@@ -13,6 +13,7 @@ export function defaultEventForm() {
     title: "台北家庭電影夜",
     description: "員工家庭電影活動，支援報名、候補與現場驗票。",
     location: "台北總部禮堂",
+    event_city: "Taipei",
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
     registration_close: localInputDate(48),
@@ -35,6 +36,7 @@ export function defaultEditEventForm() {
     title: "",
     description: "",
     location: "",
+    event_city: "",
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
     registration_close: localInputDate(48),
@@ -53,6 +55,7 @@ export function editFormFromEvent(event: EventSummary) {
     title: event.title || "",
     description: event.description || "",
     location: event.location || "",
+    event_city: event.event_city || "",
     starts_at: dateToLocalInput(event.starts_at),
     registration_start: dateToLocalInput(event.registration_start),
     registration_close: dateToLocalInput(event.registration_close),
@@ -154,6 +157,17 @@ export function eventStatusTone(
   return "info";
 }
 
+export function eventStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    archived: "已封存",
+    cancelled: "已取消",
+    closed: "已關閉",
+    draft: "草稿",
+    published: "已發布",
+  };
+  return labels[status] || status;
+}
+
 export function registrationTone(
   status: string,
 ): "ok" | "warn" | "fail" | "info" | "neutral" {
@@ -161,6 +175,24 @@ export function registrationTone(
   if (status === "waitlisted") return "warn";
   if (status === "rejected" || status === "cancelled") return "fail";
   return "info";
+}
+
+export function registrationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    cancelled: "已取消",
+    confirmed: "已確認",
+    rejected: "已拒絕",
+    waitlisted: "候補中",
+  };
+  return labels[status] || status;
+}
+
+export function capacityTypeLabel(type: EventSummary["capacity_type"]) {
+  const labels: Record<EventSummary["capacity_type"], string> = {
+    limited: "限量",
+    unlimited: "不限量",
+  };
+  return labels[type];
 }
 
 export function bookingActionLabel(event: EventSummary) {

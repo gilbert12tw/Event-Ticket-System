@@ -132,7 +132,14 @@ export function bookingResultFromResponse(
 export function bookingResultFromExistingEvent(
   event: EventSummary,
 ): BookingResultState | null {
-  if (event.current_user_ticket) {
+  if (event.current_user_status === "cancelled") {
+    return {
+      title: "報名已取消",
+      copy: "系統找到已取消的既有報名，未建立新的報名；若需恢復或重新報名，請聯絡活動主辦。",
+      tone: "warn",
+    };
+  }
+  if (event.current_user_ticket?.status === "active") {
     return {
       title: "你已經報名此活動",
       copy: "系統找到既有報名，未建立新的報名。入場時請開啟我的票券並出示二維碼。",
@@ -164,7 +171,14 @@ export function focusBookingResult(eventID: string) {
 }
 
 function duplicateBookingResult(response: BookingResponse): BookingResultState {
-  if (response.ticket) {
+  if (response.registration.status === "cancelled") {
+    return {
+      title: "報名已取消",
+      copy: "系統找到已取消的既有報名，未建立新的報名；若需恢復或重新報名，請聯絡活動主辦。",
+      tone: "warn",
+    };
+  }
+  if (response.ticket?.status === "active") {
     return {
       title: "你已經報名此活動",
       copy: "系統找到既有報名，未建立新的報名。入場時請開啟我的票券並出示二維碼。",

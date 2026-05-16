@@ -147,6 +147,11 @@
   line-height: 1.4;
 }
 
+.event-card-description-stack {
+  display: grid;
+  gap: 6px;
+}
+
 .event-list-item-actions {
   display: flex;
   width: min(220px, 100%);

@@ -94,7 +94,9 @@ export function CancellationControl({
             </div>
             <div>
               <dt>重新報名</dt>
-              <dd>是否能重新報名取決於目前資格、活動狀態與剩餘名額。</dd>
+              <dd>
+                取消後不能自行用前端重新報名；若需恢復或重新報名，請聯絡活動主辦。
+              </dd>
             </div>
           </dl>
           <AlertDialogFooter>

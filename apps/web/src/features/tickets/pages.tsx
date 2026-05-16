@@ -429,9 +429,7 @@ export function ticketEntryReadinessView(ticket: Ticket): {
       kind: "revoked",
       label: "不可入場",
       tone: "fail",
-      copy: ticket.revoked_reason
-        ? `此票券已撤銷，不能入場。原因：${ticket.revoked_reason}`
-        : "此票券已撤銷，不能入場。",
+      copy: "此票券已撤銷，不能入場。",
     };
   }
   return {

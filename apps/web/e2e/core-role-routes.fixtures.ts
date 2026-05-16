@@ -28,10 +28,14 @@ export const sampleEvent = {
   title: "第一階段企業午餐日",
   description: "內部示範活動",
   location: "台北總部多功能廳",
+  event_city: "Taipei",
+  event_site: "Taipei",
   starts_at: "2026-01-10T10:00:00Z",
   registration_start: "2026-01-01T10:00:00Z",
   registration_close: "2026-01-09T23:00:00Z",
+  capacity_type: "limited",
   capacity: 240,
+  allows_family: false,
   status: "published",
   allocation_mode: "first_come_first_served",
   created_by: "admin-1",
@@ -240,6 +244,8 @@ export function claimsFromSession(session: Session) {
     department: "Engineering",
     site: "Taipei",
     city: "Taipei",
+    grade: 6,
+    employment_status: "active",
     claims_status: "complete",
   };
 }
@@ -254,5 +260,7 @@ export function mockProfiles() {
       session.actor.role === "employee" ? "Engineering" : "Operations",
     site: "Taipei",
     city: "Taipei",
+    grade: session.actor.role === "employee" ? 6 : 5,
+    employment_status: "active",
   }));
 }

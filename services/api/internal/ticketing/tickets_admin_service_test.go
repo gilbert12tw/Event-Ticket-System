@@ -20,7 +20,7 @@ func TestGetTicketTokenVisibleOnlyToOwningEmployee(t *testing.T) {
 		Title:    "Token Visibility Event",
 		Capacity: 10,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 0, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 0, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	owner := Actor{ID: "E1001", Role: RoleEmployee}
@@ -66,7 +66,7 @@ func TestRevokeTicketWritesOutbox(t *testing.T) {
 		Title:    "Revocation Event",
 		Capacity: 10,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 0, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 0, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "revoke-ticket-1"})

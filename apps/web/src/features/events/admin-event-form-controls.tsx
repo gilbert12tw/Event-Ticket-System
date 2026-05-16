@@ -50,6 +50,21 @@ export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
           options={venueOptions}
           onChange={(location) => onChange({ ...form, location })}
         />
+        <SelectField
+          label="活動城市"
+          name="event-city"
+          value={form.event_city}
+          options={[
+            { value: "", label: "未設定" },
+            { value: "Taipei", label: "台北" },
+            { value: "Hsinchu", label: "新竹" },
+            { value: "Taichung", label: "台中" },
+            { value: "Tainan", label: "台南" },
+            { value: "Kaohsiung", label: "高雄" },
+          ]}
+          onChange={(event_city) => onChange({ ...form, event_city })}
+          hint="用於跨城市提醒，不會單獨阻擋報名。"
+        />
         <TextareaField
           className="full"
           label="描述"

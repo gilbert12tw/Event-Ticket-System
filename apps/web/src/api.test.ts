@@ -141,6 +141,8 @@ describe("api client", () => {
       department: "Engineering",
       site: "Taipei HQ",
       city: "Taipei",
+      grade: 6,
+      employment_status: "active",
       claims_status: "complete",
     });
 
@@ -167,7 +169,14 @@ describe("api client", () => {
     await listEvents();
     mockSuccess({ event_id: "evt/1" });
     await getEvent("evt/1");
-    mockSuccess({ event_id: "evt/1" });
+    mockSuccess({
+      event_id: "evt/1",
+      eligible: true,
+      can_book: true,
+      reasons: [],
+      warnings: [],
+      no_show_cooldown: { active: false },
+    });
     await checkEligibility("evt/1");
     mockSuccess({ event_id: "evt/1" });
     await bookEvent("evt/1", "book-1");
@@ -304,8 +313,15 @@ describe("api client", () => {
     await listEligibilityImpactReviews();
     mockSuccess({ review_id: "rev/1", status: "resolved" });
     await resolveEligibilityImpactReview("rev/1", { reason: "reviewed" });
-    mockSuccess({ event_id: "evt/1", eligible: true, reason: "" });
-    await checkEligibility("evt/1");
+    mockSuccess({
+      event_id: "evt/1",
+      eligible: true,
+      can_book: true,
+      reasons: [],
+      warnings: [],
+      no_show_cooldown: { active: false },
+    });
+    const eligibility = await checkEligibility("evt/1");
     mockSuccess({ run_id: "lot_1", status: "completed" });
     await runLottery("evt/1", { seed: "seed-1" });
     mockSuccess({ ticket_id: "tkt/1" });
@@ -337,6 +353,11 @@ describe("api client", () => {
       body: { reason: "reviewed" },
     });
     expect(fetchCall(4).path).toBe("/api/v1/events/evt%2F1/eligibility");
+    expect(eligibility).toMatchObject({
+      event_id: "evt/1",
+      can_book: true,
+      warnings: [],
+    });
     expect(fetchCall(5)).toMatchObject({
       path: "/api/v1/admin/events/evt%2F1/lottery-runs",
       body: { seed: "seed-1" },

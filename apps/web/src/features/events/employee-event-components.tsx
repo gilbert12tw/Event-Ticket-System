@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { navigate, ticketDetailPath } from "@/app/routes";
 import {
   Alert,
@@ -9,6 +9,7 @@ import {
 } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import type { EventSummary } from "@/lib/api";
+import { getEligibilityDecision } from "@/lib/api/contracts";
 import { formatDate } from "@/lib/formatting";
 import {
   departmentLabel,
@@ -17,7 +18,6 @@ import {
   registrationStatusView,
   siteLabel,
 } from "@/lib/ui/options";
-import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { CancellationControl } from "./employee-cancellation-control";
 import {
@@ -27,6 +27,7 @@ import {
   canSubmitAttendeeAction,
   eligibilityDecisionLabel,
 } from "./employee-event-state";
+import { EligibilityWarningList } from "./eligibility-warning";
 
 const maxFamilyCount = 10;
 
@@ -50,6 +51,12 @@ export function EmployeeEventCard({
   result?: ReactNode;
 }) {
   const action = attendeeActionState(event);
+  const eligibilityDecision = getEligibilityDecision(event);
+  const cooldown =
+    eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
+  const isEligible = eligibilityDecision
+    ? eligibilityDecision.eligible
+    : (event.eligible ?? false);
   const needsFamilySetup =
     action.kind !== "ticket" &&
     event.capacity_type === "unlimited" &&
@@ -71,14 +78,12 @@ export function EmployeeEventCard({
       meta={`${formatDate(event.starts_at)} · ${siteLabel(
         event.location || event.event_site,
       )}`}
-      description={action.recoveryCopy}
+      description={
+        <EventCardDescription event={event} copy={action.recoveryCopy} />
+      }
       badges={
         <>
-          <StatusBadge
-            tone={
-              event.eligible && !event.no_show_cooldown?.active ? "ok" : "fail"
-            }
-          >
+          <StatusBadge tone={isEligible && !cooldown?.active ? "ok" : "fail"}>
             {eligibilityLabel(event)}
           </StatusBadge>
           <StatusBadge tone={action.tone}>
@@ -161,6 +166,22 @@ export function EmployeeEventCard({
   );
 }
 
+function EventCardDescription({
+  copy,
+  event,
+}: {
+  copy: string;
+  event: EventSummary;
+}) {
+  const warnings = getEligibilityDecision(event)?.warnings ?? [];
+  return (
+    <div className="event-card-description-stack">
+      <span>{copy}</span>
+      <EligibilityWarningList warnings={warnings} />
+    </div>
+  );
+}
+
 function BlockedEventAction({ event }: { event: EventSummary }) {
   const action = attendeeActionState(event);
   return (
@@ -187,12 +208,19 @@ export function EventSummaryBlock({
 }) {
   const capacityMax =
     event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
-  const cooldown = event.no_show_cooldown;
+  const eligibilityDecision = getEligibilityDecision(event);
+  const cooldown =
+    eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
   const action = attendeeActionState(event);
+  const warnings = eligibilityDecision?.warnings ?? [];
+  const ineligibleReasons = eligibilityDecision?.reasons ?? [];
+  const isEligible = eligibilityDecision
+    ? eligibilityDecision.eligible
+    : event.eligible;
   return (
     <div className={compact ? "" : "summary-block"}>
       <div className="event-card-top">
-        <StatusBadge tone={event.eligible && !cooldown?.active ? "ok" : "fail"}>
+        <StatusBadge tone={isEligible && !cooldown?.active ? "ok" : "fail"}>
           {eligibilityLabel(event)}
         </StatusBadge>
         <StatusBadge
@@ -215,9 +243,7 @@ export function EventSummaryBlock({
       <p>{userFacingEventDescription(event.description)}</p>
       <div className="decision-strip" aria-label="活動可報名狀態">
         <div>
-          <StatusBadge
-            tone={event.eligible && !cooldown?.active ? "ok" : "fail"}
-          >
+          <StatusBadge tone={isEligible && !cooldown?.active ? "ok" : "fail"}>
             資格
           </StatusBadge>
           <span>{eligibilityDecisionLabel(event)}</span>
@@ -237,6 +263,17 @@ export function EventSummaryBlock({
           {formatDate(cooldown.until || "")}。
         </Alert>
       )}
+      {eligibilityDecision && !eligibilityDecision.eligible && (
+        <Alert tone="fail">
+          <strong>不符合資格：</strong>
+          <p>
+            {ineligibleReasons.length > 0
+              ? ineligibleReasons.join(", ")
+              : "目前不符合活動資格條件。"}
+          </p>
+        </Alert>
+      )}
+      <EligibilityWarningList warnings={warnings} />
       <dl className="meta-list">
         {!compact && (
           <div>

@@ -22,7 +22,7 @@ func (s *Service) ListAdminEvents(ctx context.Context, actor Actor) ([]EventSumm
 		if err := rows.Scan(&eventID); err != nil {
 			return nil, err
 		}
-		summary, err := s.GetEventSummary(ctx, eventID, "")
+		summary, err := s.GetEventSummary(ctx, actor, eventID, "")
 		if err != nil {
 			return nil, err
 		}
@@ -37,7 +37,7 @@ func (s *Service) GetEvent(ctx context.Context, actor Actor, eventID string, emp
 	} else if err := requireAnyRole(actor, RoleActivityAdmin, RoleHRAdmin, RoleCheckinStaff); err != nil {
 		return EventSummary{}, err
 	}
-	return s.GetEventSummary(ctx, eventID, employeeID)
+	return s.GetEventSummary(ctx, actor, eventID, employeeID)
 }
 
 func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, req UpdateEventRequest) (EventSummary, error) {
@@ -52,6 +52,11 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 
 	event, _, err := s.lockEventWithRule(ctx, tx, eventID)
 	if err != nil {
+		return EventSummary{}, err
+	}
+	var storedEventCity string
+	var storedEventSite string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(event_city, ''), COALESCE(event_site, '') FROM events WHERE event_id = $1`, eventID).Scan(&storedEventCity, &storedEventSite); err != nil {
 		return EventSummary{}, err
 	}
 	if event.Status == EventStatusArchived || !event.ArchivedAt.IsZero() {
@@ -69,11 +74,11 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	}
 	if req.Location != nil {
 		event.Location = *req.Location
-		if req.EventCity == nil && strings.TrimSpace(event.EventCity) == "" {
-			event.EventCity = event.Location
+		if req.EventCity == nil && strings.TrimSpace(storedEventCity) == "" {
+			event.EventCity = eventCityOrFallback("", event.Location)
 		}
-		if req.EventSite == nil && strings.TrimSpace(event.EventSite) == "" {
-			event.EventSite = event.Location
+		if req.EventSite == nil && strings.TrimSpace(storedEventSite) == "" {
+			event.EventSite = eventSiteOrFallback("", event.Location)
 		}
 	}
 	if req.EventCity != nil {
@@ -163,7 +168,7 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if err := tx.Commit(ctx); err != nil {
 		return EventSummary{}, err
 	}
-	return s.GetEventSummary(ctx, eventID, "")
+	return s.GetEventSummary(ctx, actor, eventID, "")
 }
 
 func (s *Service) ChangeEventState(ctx context.Context, actor Actor, eventID string, req ChangeEventStateRequest) (EventSummary, error) {
@@ -211,14 +216,14 @@ func (s *Service) ChangeEventState(ctx context.Context, actor Actor, eventID str
 	if err := tx.Commit(ctx); err != nil {
 		return EventSummary{}, err
 	}
-	return s.GetEventSummary(ctx, eventID, "")
+	return s.GetEventSummary(ctx, actor, eventID, "")
 }
 
 func (s *Service) DuplicateEvent(ctx context.Context, actor Actor, eventID string) (EventSummary, error) {
 	if err := requireRole(actor, RoleActivityAdmin); err != nil {
 		return EventSummary{}, err
 	}
-	source, err := s.GetEventSummary(ctx, eventID, "")
+	source, err := s.GetEventSummary(ctx, actor, eventID, "")
 	if err != nil {
 		return EventSummary{}, err
 	}

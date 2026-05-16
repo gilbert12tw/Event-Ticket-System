@@ -1,4 +1,5 @@
 import type { EventSummary } from "@/lib/api";
+import { getEligibilityDecision } from "@/lib/api/contracts";
 import { formatDate } from "@/lib/formatting";
 import {
   eligibilityReasonLabel,
@@ -23,6 +24,12 @@ export function attendeeActionState(event: EventSummary): AttendeeActionState {
   const registrationStart = Date.parse(event.registration_start);
   const registrationClose = Date.parse(event.registration_close);
   const ticket = event.current_user_ticket;
+  const eligibilityDecision = getEligibilityDecision(event);
+  const eligible = eligibilityDecision
+    ? eligibilityDecision.can_book
+    : (event.eligible ?? false);
+  const cooldown =
+    eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
 
   if (ticket?.status === "active") {
     return {
@@ -54,28 +61,39 @@ export function attendeeActionState(event: EventSummary): AttendeeActionState {
     };
   }
 
-  if (event.no_show_cooldown?.active) {
+  if (event.current_user_status === "cancelled") {
+    return {
+      kind: "blocked",
+      label: "已取消",
+      enabled: false,
+      tone: "neutral",
+      recoveryCopy: "報名已取消；若需恢復或重新報名，請聯絡活動主辦。",
+    };
+  }
+
+  if (cooldown?.active) {
     return {
       kind: "blocked",
       label: "暫停報名",
       enabled: false,
       tone: "warn",
       recoveryCopy: `缺席冷卻期間暫停限量活動報名，開放時間：${formatDate(
-        event.no_show_cooldown.until || "",
+        cooldown.until || "",
       )}。`,
     };
   }
 
-  if (!event.eligible) {
+  if (!eligible) {
+    const reason = eligibilityDecision?.reasons[0];
     return {
       kind: "blocked",
       label: "不符合資格",
       enabled: false,
       tone: "fail",
-      recoveryCopy: `你目前不符合資格：${eligibilityReasonLabel(
-        event.eligibility_reason,
-        event.eligible,
-      )}。`,
+      recoveryCopy: `你目前不符合資格：${
+        reason ||
+        eligibilityReasonLabel(event.eligibility_reason || "", eligible)
+      }。`,
     };
   }
 
@@ -146,7 +164,15 @@ export function canSubmitAttendeeAction(event: EventSummary) {
 }
 
 export function eligibilityDecisionLabel(event: EventSummary) {
-  return eligibilityReasonLabel(event.eligibility_reason, event.eligible);
+  const decision = getEligibilityDecision(event);
+  if (decision) {
+    if (decision.eligible) return "符合資格";
+    return decision.reasons[0] || "不可報名";
+  }
+  return eligibilityReasonLabel(
+    event.eligibility_reason || "",
+    event.eligible ?? false,
+  );
 }
 
 export function availabilityDecisionLabel(event: EventSummary) {

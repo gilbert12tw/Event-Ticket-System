@@ -152,6 +152,25 @@ describe("EmployeeTicketsPage", () => {
     expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
     expect(screen.queryByText("qr-secret")).not.toBeInTheDocument();
   });
+
+  it("shows revoked reason only in metadata, not duplicated in status copy", async () => {
+    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-revoked");
+    mockGetTicket.mockResolvedValue(
+      ticketFixture({
+        ticket_id: "T-revoked",
+        status: "revoked",
+        revoked_reason: "員工已取消報名",
+      }),
+    );
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    expect(await screen.findByText("票券詳細")).toBeInTheDocument();
+    expect(screen.getByText("此票券已撤銷，不能入場。")).toBeInTheDocument();
+    expect(screen.getByText("撤銷原因")).toBeInTheDocument();
+    expect(screen.getByText("員工已取消報名")).toBeInTheDocument();
+    expect(screen.queryByText(/原因：員工已取消報名/)).not.toBeInTheDocument();
+  });
 });
 
 function ticketFixture(overrides: Partial<Ticket> = {}): Ticket {

@@ -237,6 +237,84 @@ describe("EmployeeEventDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows duplicate cancelled booking as blocked recovery guidance", async () => {
+    const event = eventFixture({
+      current_user_status: "",
+      remaining_capacity: 3,
+    });
+    mockListEvents.mockResolvedValue([event]);
+    mockGetEvent.mockResolvedValue(event);
+    mockBookEvent.mockResolvedValue({
+      registration: {
+        registration_id: "R-cancelled-duplicate",
+        event_id: "evt-1",
+        employee_id: "E1001",
+        status: "cancelled",
+        idempotency_key: "book-evt-1-E1001",
+        created_at: "2026-05-16T10:00:00Z",
+      },
+      ticket: {
+        ticket_id: "T-revoked-duplicate",
+        registration_id: "R-cancelled-duplicate",
+        event_id: "evt-1",
+        employee_id: "E1001",
+        status: "revoked",
+        issued_at: "2026-05-16T10:00:00Z",
+        revoked_at: "2026-05-17T10:00:00Z",
+        revoked_reason: "registration cancelled",
+      },
+      remaining_capacity: 3,
+      message: "booking already cancelled",
+      duplicate: true,
+    });
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "立即報名" }),
+    );
+
+    expect(await screen.findByText("報名已取消")).toBeInTheDocument();
+    expect(screen.getByText(/未建立新的報名/)).toBeInTheDocument();
+    expect(screen.getAllByText(/請聯絡活動主辦/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("報名成功，票券已核發")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "查看票券" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "已取消" })).toBeDisabled();
+  });
+
+  it("does not show active ticket handoff for cancelled revoked tickets", async () => {
+    const event = eventFixture({
+      current_user_registration_id: "R-revoked",
+      current_user_status: "cancelled",
+      current_user_ticket: {
+        ticket_id: "T-revoked",
+        registration_id: "R-revoked",
+        event_id: "evt-1",
+        employee_id: "E1001",
+        status: "revoked",
+        issued_at: "2026-05-16T10:00:00Z",
+        revoked_at: "2026-05-17T10:00:00Z",
+        revoked_reason: "registration cancelled",
+      },
+    });
+    mockListEvents.mockResolvedValue([event]);
+    mockGetEvent.mockResolvedValue(event);
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    expect(
+      await screen.findByRole("button", { name: "已取消" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "查看這張票券" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not submit from event detail when the current user is already registered", async () => {
     const event = eventFixture({
       current_user_registration_id: "R-existing",
@@ -308,8 +386,6 @@ describe("EmployeeEventDetailPage", () => {
 
     expect(await screen.findByText("報名已取消")).toBeInTheDocument();
     expect(screen.getByText(/已核發票券會同步失效/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/是否能重新報名取決於目前資格/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/請聯絡活動主辦/)).toBeInTheDocument();
   });
 });
