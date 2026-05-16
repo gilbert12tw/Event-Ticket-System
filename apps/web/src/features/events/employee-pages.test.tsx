@@ -174,13 +174,8 @@ describe("EmployeeEventsPage", () => {
     // reason text appears in both badge and alert — check the alert specifically
     const alerts = screen.getAllByText(/department does not match/);
     expect(alerts.length).toBeGreaterThan(0);
-    const buttons = screen.getAllByRole("button");
-    const actionBtn = buttons.find(
-      (b) =>
-        !b.textContent?.toLowerCase().includes("refresh") &&
-        !b.textContent?.toLowerCase().includes("detail"),
-    );
-    if (actionBtn) expect(actionBtn).toBeDisabled();
+    const bookButton = screen.getByRole("button", { name: /報名/ });
+    expect(bookButton).toBeDisabled();
   });
 
   it("renders event without eligibility object without crashing", async () => {

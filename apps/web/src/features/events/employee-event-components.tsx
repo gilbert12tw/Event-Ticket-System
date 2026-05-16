@@ -2,6 +2,7 @@ import { navigate } from "@/app/routes";
 import { Alert, Kpi, ProgressMeter, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import type { EventSummary } from "@/lib/api";
+import { getEligibilityDecision } from "@/lib/api/contracts";
 import {
   bookingActionLabel,
   capacityTypeLabel,
@@ -11,6 +12,7 @@ import {
   registrationStatusLabel,
   registrationTone,
 } from "@/lib/formatting";
+import { EligibilityWarningList } from "./eligibility-warning";
 
 const maxFamilyCount = 10;
 
@@ -90,6 +92,9 @@ export function EventSummaryBlock({
   const capacityMax =
     event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
   const cooldown = event.no_show_cooldown;
+  const eligibilityDecision = getEligibilityDecision(event);
+  const warnings = eligibilityDecision?.warnings ?? [];
+  const ineligibleReasons = eligibilityDecision?.reasons ?? [];
   return (
     <div className={compact ? "" : "summary-block"}>
       <div className="event-card-top">
@@ -118,6 +123,17 @@ export function EventSummaryBlock({
           {formatDisplayDate(cooldown.until || "")}。
         </Alert>
       )}
+      {eligibilityDecision && !eligibilityDecision.eligible && (
+        <Alert tone="fail">
+          <strong>Not eligible:</strong>
+          <p>
+            {ineligibleReasons.length > 0
+              ? ineligibleReasons.join(", ")
+              : "Eligibility conditions are not met."}
+          </p>
+        </Alert>
+      )}
+      <EligibilityWarningList warnings={warnings} />
       <dl className="meta-list">
         {!compact && (
           <div>
@@ -250,9 +266,14 @@ export function CancellationControl({
 }
 
 export function canBook(event: EventSummary) {
+  const eligibilityDecision = getEligibilityDecision(event);
+  const isEligible = eligibilityDecision
+    ? eligibilityDecision.can_book
+    : event.eligible;
+  const cooldown = eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
   return (
-    event.eligible &&
-    !event.no_show_cooldown?.active &&
+    isEligible &&
+    !cooldown?.active &&
     event.current_user_status !== "confirmed" &&
     event.current_user_status !== "waitlisted"
   );
