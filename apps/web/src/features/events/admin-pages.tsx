@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { archiveEvent, changeEventState, createEvent, duplicateEvent, employees, listAdminEvents, seedDemo, updateEvent } from "@/lib/api";
 import type { CreateEventRequest, EventSummary, UpdateEventRequest } from "@/lib/api";
-import { navigate } from "@/app/routes";
-import { defaultEditEventForm, editFormFromEvent, employeeMatchesRule, errorMessage, eventStatusTone, splitTags, toISO } from "@/lib/formatting";
+import { defaultEditEventForm, editFormFromEvent, employeeMatchesRule, errorMessage, splitTags, toISO } from "@/lib/formatting";
 import { defaultEventForm } from "@/lib/formatting";
-import { Alert, EmptyState, Field, Kpi, StatusBadge } from "@/components/shared";
+import { Alert, Field, Kpi, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
+import { AdminCreateResult } from "./admin-create-result";
+import { AdminEventGovernancePanel } from "./admin-governance-panel";
 
 export function AdminEventsPage() {
   const [form, setForm] = useState(defaultEventForm);
@@ -208,155 +209,28 @@ export function AdminEventsPage() {
           <Kpi label="管理活動" value={adminEvents.length} />
         </div>
       </div>
-      <div className="panel span-12">
-        <div className="section-heading">
-          <div>
-            <h2>活動治理</h2>
-            <p>管理既有活動的可編輯欄位、狀態轉換、複製與封存，資格規則修改仍保留後端邊界。</p>
-          </div>
-          <button className="button secondary" type="button" onClick={() => void refreshAdminEvents()} disabled={busy}>
-            <Icon name="refresh" />
-            重新整理
-          </button>
-        </div>
-        <div className="governance-grid">
-          <div className="event-list compact-list">
-            {adminEvents.length === 0 && <EmptyState title="尚無管理活動" action="建立活動或執行 Demo Runbook 後會出現在這裡。" />}
-            {adminEvents.map((event) => (
-              <button
-                className={selectedAdminEvent?.event_id === event.event_id ? "event-row active" : "event-row"}
-                type="button"
-                key={event.event_id}
-                onClick={() => {
-                  setSelectedEventID(event.event_id);
-                  setEditForm(editFormFromEvent(event));
-                  setStateForm({ status: event.status, reason: "admin state change" });
-                }}
-              >
-                <span>
-                  <strong>{event.title}</strong>
-                  <small>{event.event_id}</small>
-                </span>
-                <StatusBadge tone={eventStatusTone(event.status)}>{event.status}</StatusBadge>
-              </button>
-            ))}
-          </div>
-          <form className="governance-editor" onSubmit={(event) => void saveSelected(event)}>
-            {!selectedAdminEvent && <EmptyState title="尚未選擇活動" action="選擇活動後即可編輯 Phase 1 可治理欄位。" />}
-            {selectedAdminEvent && (
-              <>
-                <div className="readiness-grid">
-                  <Kpi label="Confirmed" value={selectedAdminEvent.confirmed_count} />
-                  <Kpi label="Waitlist" value={selectedAdminEvent.waitlist_count} />
-                  <Kpi label="剩餘" value={selectedAdminEvent.capacity_type === "unlimited" ? "不限" : (selectedAdminEvent.remaining_capacity ?? 0)} />
-                  <Kpi label="Version" value={selectedAdminEvent.version || 1} />
-                </div>
-                <fieldset className="form-section full">
-                  <legend>可編輯欄位</legend>
-                  <Field label="活動名稱" value={editForm.title} onChange={(value) => setEditForm({ ...editForm, title: value })} required />
-                  <Field label="地點" value={editForm.location} onChange={(value) => setEditForm({ ...editForm, location: value })} required />
-                  <label className="field">
-                    <span>活動城市</span>
-                    <select value={editForm.event_city} onChange={(event) => setEditForm({ ...editForm, event_city: event.target.value })}>
-                      <option value="">（未設定）</option>
-                      <option value="Taipei">台北 (Taipei)</option>
-                      <option value="Hsinchu">新竹 (Hsinchu)</option>
-                      <option value="Taichung">台中 (Taichung)</option>
-                      <option value="Tainan">台南 (Tainan)</option>
-                      <option value="Kaohsiung">高雄 (Kaohsiung)</option>
-                    </select>
-                    <small className="form-hint">設定後用於比對員工所在城市，不同城市將顯示跨城市提示（不阻擋報名）。</small>
-                  </label>
-                  <Field
-                    label="活動開始"
-                    type="datetime-local"
-                    value={editForm.starts_at}
-                    onChange={(value) => setEditForm({ ...editForm, starts_at: value })}
-                    required
-                  />
-                  <Field
-                    label="報名開始"
-                    type="datetime-local"
-                    value={editForm.registration_start}
-                    onChange={(value) => setEditForm({ ...editForm, registration_start: value })}
-                    required
-                  />
-                  <Field
-                    label="報名截止"
-                    type="datetime-local"
-                    value={editForm.registration_close}
-                    onChange={(value) => setEditForm({ ...editForm, registration_close: value })}
-                    required
-                  />
-                  <label className="field">
-                    <span>票數類型</span>
-                    <select
-                      value={editForm.capacity_type}
-                      onChange={(event) => {
-                        const next = event.target.value as "limited" | "unlimited";
-                        setEditForm({ ...editForm, capacity_type: next, capacity: next === "unlimited" ? "" : editForm.capacity || "1" });
-                      }}
-                    >
-                      <option value="limited">limited（本人單張票）</option>
-                      <option value="unlimited">unlimited（不扣庫存，可帶家屬）</option>
-                    </select>
-                  </label>
-                  {editForm.capacity_type === "limited" && (
-                    <Field label="容量" type="number" value={editForm.capacity} onChange={(value) => setEditForm({ ...editForm, capacity: value })} required />
-                  )}
-                  <Field label="分類" value={editForm.category} onChange={(value) => setEditForm({ ...editForm, category: value })} />
-                  <Field label="Tags" value={editForm.tags} onChange={(value) => setEditForm({ ...editForm, tags: value })} />
-                  <Field label="入場方式" value={editForm.entry_method} onChange={(value) => setEditForm({ ...editForm, entry_method: value })} />
-                  <Field label="可見性" value={editForm.visibility} onChange={(value) => setEditForm({ ...editForm, visibility: value })} />
-                  <label className="field full">
-                    <span>描述</span>
-                    <textarea
-                      value={editForm.description}
-                      onChange={(event) => setEditForm({ ...editForm, description: event.target.value })}
-                      rows={3}
-                    />
-                  </label>
-                </fieldset>
-                <div className="state-tools full">
-                  <label className="field">
-                    <span>狀態</span>
-                    <select value={stateForm.status} onChange={(event) => setStateForm({ ...stateForm, status: event.target.value })}>
-                      <option value="draft">draft</option>
-                      <option value="published">published</option>
-                      <option value="closed">closed</option>
-                      <option value="cancelled">cancelled</option>
-                      <option value="archived">archived</option>
-                    </select>
-                  </label>
-                  <Field label="狀態原因" value={stateForm.reason} onChange={(value) => setStateForm({ ...stateForm, reason: value })} required />
-                  <button className="button secondary" type="button" onClick={() => void changeSelectedState()} disabled={busy || !stateForm.reason.trim()}>
-                    <Icon name="save" />
-                    更新狀態
-                  </button>
-                </div>
-                <div className="form-actions full">
-                  <button className="button" type="submit" disabled={busy}>
-                    <Icon name="save" />
-                    儲存活動
-                  </button>
-                  <button className="button secondary" type="button" onClick={() => void duplicateSelected()} disabled={busy}>
-                    <Icon name="copy" />
-                    複製
-                  </button>
-                  <button className="button danger" type="button" onClick={() => void archiveSelected()} disabled={busy}>
-                    <Icon name="trash" />
-                    封存
-                  </button>
-                  <button className="button ghost" type="button" onClick={() => navigate("/admin/registrations")}>
-                    <Icon name="users" />
-                    報名治理
-                  </button>
-                </div>
-              </>
-            )}
-          </form>
-        </div>
-      </div>
+      <AdminEventGovernancePanel
+        adminEvents={adminEvents}
+        busy={busy}
+        editForm={editForm}
+        onArchive={() => void archiveSelected()}
+        onChangeState={() => void changeSelectedState()}
+        onDuplicate={() => void duplicateSelected()}
+        onEditFormChange={setEditForm}
+        onRefresh={() => void refreshAdminEvents()}
+        onSave={saveSelected}
+        onSelect={(event) => {
+          setSelectedEventID(event.event_id);
+          setEditForm(editFormFromEvent(event));
+          setStateForm({
+            status: event.status,
+            reason: "admin state change",
+          });
+        }}
+        onStateFormChange={setStateForm}
+        selectedEvent={selectedAdminEvent}
+        stateForm={stateForm}
+      />
       <form className="panel span-8 form-grid" onSubmit={(event) => void submit(event)}>
         <div className="section-heading full">
           <div>
@@ -464,36 +338,7 @@ export function AdminEventsPage() {
         </div>
         {message && <Alert tone={message.includes("已") ? "ok" : "warn"}>{message}</Alert>}
       </form>
-      <div className="panel span-4">
-        <h2>建立結果</h2>
-        {!created && <EmptyState title="尚未建立活動" action="提交表單後會顯示活動 ID、容量與規則。" />}
-        {created && (
-          <div className="summary-block">
-            <StatusBadge tone="ok">{created.status}</StatusBadge>
-            <h3>{created.title}</h3>
-            <dl className="meta-list vertical">
-              <div>
-                <dt>Event ID</dt>
-                <dd>{created.event_id}</dd>
-              </div>
-              <div>
-                <dt>票數類型</dt>
-                <dd>{created.capacity_type}</dd>
-              </div>
-              <div>
-                <dt>容量</dt>
-                <dd>{created.capacity_type === "unlimited" ? "不限" : created.capacity}</dd>
-              </div>
-              <div>
-                <dt>規則</dt>
-                <dd>
-                  {created.rule.department} / {created.rule.site} / G{created.rule.min_grade}+
-                </dd>
-              </div>
-            </dl>
-          </div>
-        )}
-      </div>
+      <AdminCreateResult event={created} />
     </section>
   );
 }
