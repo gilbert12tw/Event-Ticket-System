@@ -8,11 +8,15 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 		return err
 	}
 	defer rollback(ctx, tx)
+	// Ensure a clean slate for demo data to prevent stale state from previous runs
+	if _, err := tx.Exec(ctx, "TRUNCATE employees CASCADE"); err != nil {
+		return err
+	}
 
 	employees := []Employee{
-		{EmployeeID: "E1001", FullName: "Ariel Chen", Department: "Engineering", Site: "Taipei", JobGrade: 6, EmploymentStatus: "active"},
-		{EmployeeID: "E1002", FullName: "Ben Lin", Department: "Engineering", Site: "Taipei", JobGrade: 5, EmploymentStatus: "active"},
-		{EmployeeID: "E2001", FullName: "Carla Wu", Department: "Sales", Site: "Taipei", JobGrade: 4, EmploymentStatus: "active"},
+		{EmployeeID: "E1001", FullName: "Ariel Chen", Department: "Engineering", Site: "Taipei HQ", JobGrade: 6, EmploymentStatus: "active"},
+		{EmployeeID: "E1002", FullName: "Ben Lin", Department: "Engineering", Site: "Taipei HQ", JobGrade: 5, EmploymentStatus: "active"},
+		{EmployeeID: "E2001", FullName: "Carla Wu", Department: "Sales", Site: "Taipei HQ", JobGrade: 4, EmploymentStatus: "active"},
 	}
 	for _, employee := range employees {
 		_, err := tx.Exec(ctx, `INSERT INTO employees (employee_id, full_name, department, site, job_grade, employment_status)

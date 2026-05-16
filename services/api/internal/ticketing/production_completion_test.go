@@ -20,7 +20,7 @@ func TestEventGovernancePersistsVersionsAuditsAndRejectsIllegalRollback(t *testi
 		Title:    "Governance Event",
 		Capacity: 10,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM event_versions WHERE event_id = $1`, event.EventID, 1)
@@ -79,25 +79,25 @@ func TestEventCapacityTypesValidateAndExposeSummaries(t *testing.T) {
 		Location: "Taipei HQ",
 		Capacity: 2,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, CapacityTypeLimited, legacy.CapacityType)
 	assert.Equal(t, 2, capacityValue(legacy.Capacity))
 	require.NotNil(t, legacy.RemainingCapacity)
 	assert.Equal(t, 2, *legacy.RemainingCapacity)
-	assert.Equal(t, "Taipei HQ", legacy.EventCity)
+	assert.Equal(t, "Taipei", legacy.EventCity)
 	assert.Equal(t, "Taipei HQ", legacy.EventSite)
 	assert.False(t, legacy.AllowsFamily)
 
 	unlimited, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:        "Unlimited Family",
-		EventCity:    "Taipei",
+		EventCity:    "Taipei HQ",
 		EventSite:    "HQ",
 		CapacityType: CapacityTypeUnlimited,
 		AllowsFamily: true,
 		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, CapacityTypeUnlimited, unlimited.CapacityType)
@@ -142,7 +142,7 @@ func TestCheckinStaffCanListEventsForOfflinePackageSelectionOnly(t *testing.T) {
 		Title:    "Offline Package Selection",
 		Capacity: 10,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 
@@ -205,7 +205,7 @@ func TestProviderRoleRBACMatrix(t *testing.T) {
 		Title:    "Provider RBAC Matrix",
 		Capacity: 10,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 
@@ -300,7 +300,7 @@ func TestEligibilityPreviewRequiresExistingEvent(t *testing.T) {
 	require.NoError(t, service.SeedDemoData(ctx))
 
 	_, err := service.PreviewEligibility(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, "missing-event", EligibilityPreviewRequest{
-		Rule: RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule: RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.Error(t, err, "expected missing event 404")
 	assert.Equal(t, 404, ErrorStatus(err))
@@ -331,7 +331,7 @@ func TestManualWaitlistPromotionNoopIsAudited(t *testing.T) {
 		Title:    "No Waitlist",
 		Capacity: 5,
 		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	result, err := service.PromoteWaitlist(ctx, admin, event.EventID)

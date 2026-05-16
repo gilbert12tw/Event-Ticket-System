@@ -38,6 +38,8 @@ func TestProviderBearerMeReturnsCompleteClaims(t *testing.T) {
 		`"department":"Engineering"`,
 		`"site":"Taipei HQ"`,
 		`"city":"Taipei"`,
+		`"grade":6`,
+		`"employment_status":"active"`,
 		`"claims_status":"complete"`,
 	)
 }
@@ -221,7 +223,7 @@ func TestProviderBearerRejectsInvalidClaims(t *testing.T) {
 			name: "missing required claim",
 			token: signProviderClaims(t, secret, func() providerClaims {
 				claims := validProviderClaims(ticketing.RoleEmployee)
-				claims.Department = ""
+				claims.EmploymentStatus = ""
 				return claims
 			}()),
 			status: http.StatusUnauthorized,
@@ -355,13 +357,15 @@ func providerTestSecret() string {
 
 func validProviderClaims(role string) providerClaims {
 	return providerClaims{
-		EmployeeID:  providerEmployeeIDForRole(role),
-		DisplayName: providerDisplayNameForRole(role),
-		RoleClaims:  []string{role},
-		Department:  "Engineering",
-		Site:        "Taipei HQ",
-		City:        "Taipei",
-		ExpiresAt:   time.Now().Add(time.Hour).Unix(),
+		EmployeeID:       providerEmployeeIDForRole(role),
+		DisplayName:      providerDisplayNameForRole(role),
+		RoleClaims:       []string{role},
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            6,
+		EmploymentStatus: "active",
+		ExpiresAt:        time.Now().Add(time.Hour).Unix(),
 	}
 }
 

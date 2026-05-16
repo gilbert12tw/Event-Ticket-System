@@ -76,8 +76,8 @@ func TestRunLotteryAllocatesDeterministicWinnersAndLeavesRemainingWaitlisted(t *
 	require.NoError(t, err)
 
 	extraEmployees := []Employee{
-		{EmployeeID: "E3001", FullName: "Dora Wang", Department: "Engineering", Site: "Taipei", JobGrade: 6, EmploymentStatus: "active"},
-		{EmployeeID: "E3002", FullName: "Eric Chen", Department: "Sales", Site: "Taipei", JobGrade: 4, EmploymentStatus: "active"},
+		{EmployeeID: "E3001", FullName: "Dora Wang", Department: "Engineering", Site: "Taipei HQ", JobGrade: 6, EmploymentStatus: "active"},
+		{EmployeeID: "E3002", FullName: "Eric Chen", Department: "Sales", Site: "Taipei HQ", JobGrade: 4, EmploymentStatus: "active"},
 	}
 	for _, employee := range extraEmployees {
 		_, err := service.db.Exec(ctx, `INSERT INTO employees (employee_id, full_name, department, site, job_grade, employment_status)

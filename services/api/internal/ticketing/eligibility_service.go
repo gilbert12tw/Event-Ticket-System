@@ -9,6 +9,139 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ErrMissingClaims is returned when provider/HR claims are absent or
+// incomplete. Callers must treat this as a safe degraded rejection (do not
+// mutate state) and must not log the raw claims.
+var ErrMissingClaims = errors.New("provider claims are missing or incomplete")
+
+// CheckEligibilityFromClaims evaluates employee eligibility using only the
+// provider/HR claims already present on actor.Claims. It does not query the
+// employees table for the employee's attributes, which means it is safe to call
+// on the hot path without a DB round-trip for attribute lookup.
+//
+// Cross-city mismatch produces a non-blocking EligibilityWarning; it never sets
+// Eligible or CanBook to false on its own.
+//
+// Returns ErrMissingClaims (a safe degraded rejection) when actor.Claims is nil
+// or any required field is empty, so callers never panic on missing claims.
+func (s *Service) CheckEligibilityFromClaims(
+	ctx context.Context,
+	actor Actor,
+	eventID string,
+) (EligibilityDecision, error) {
+	employee, err := employeeFromClaims(actor)
+	if err != nil {
+		return EligibilityDecision{}, err
+	}
+
+	// --- load event and its eligibility rule ---
+	event, err := s.loadEventWithRule(ctx, eventID)
+	if err != nil {
+		return EligibilityDecision{}, err
+	}
+
+	// --- evaluate rule against claims ---
+	// Re-use existing EvaluateEligibility but construct a synthetic Employee
+	// from claims so we avoid a DB round-trip for attribute lookup.
+	eligible, reason := EvaluateEligibility(employee, event.Rule)
+
+	var reasons []string
+	if !eligible {
+		reasons = append(reasons, reason)
+	}
+
+	// --- cross-city warning (non-blocking) ---
+	var warnings []EligibilityWarning
+	employeeCity := normalizeLocation(actor.Claims.City)
+	eventCity := normalizeLocation(event.EventCity)
+	if eventCity != "" && employeeCity != eventCity {
+		warnings = append(warnings, EligibilityWarning{
+			Code:         WarningCrossCity,
+			Message:      "This event is in " + eventCity + "; your registered city is " + employeeCity + ".",
+			EmployeeCity: employeeCity,
+			EventCity:    eventCity,
+		})
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return EligibilityDecision{}, err
+	}
+	defer rollback(ctx, tx)
+	until, active, err := s.activeNoShowCooldownTx(ctx, tx, actor.ID, s.now())
+	if err != nil {
+		return EligibilityDecision{}, err
+	}
+	_ = tx.Commit(ctx)
+
+	var cooldown NoShowCooldown
+	if active && event.CapacityType == CapacityTypeLimited {
+		cooldown = NoShowCooldown{
+			Active:    true,
+			AppliesTo: CapacityTypeLimited,
+			Until:     &until,
+			Reason:    "no_show_cooldown",
+		}
+	}
+
+	canBook := eligible && !cooldown.Active
+
+	return EligibilityDecision{
+		EventID:        eventID,
+		Eligible:       eligible,
+		CanBook:        canBook,
+		Reasons:        reasons,
+		Warnings:       warnings,
+		NoShowCooldown: cooldown,
+	}, nil
+}
+
+func employeeFromClaims(actor Actor) (Employee, error) {
+	if actor.ID == "" ||
+		actor.Claims == nil ||
+		strings.TrimSpace(actor.Claims.Department) == "" ||
+		strings.TrimSpace(actor.Claims.Site) == "" ||
+		strings.TrimSpace(actor.Claims.City) == "" ||
+		actor.Claims.Grade <= 0 ||
+		strings.TrimSpace(actor.Claims.EmploymentStatus) == "" {
+		return Employee{}, ErrMissingClaims
+	}
+	return Employee{
+		EmployeeID:       actor.ID,
+		Department:       strings.TrimSpace(actor.Claims.Department),
+		Site:             strings.TrimSpace(actor.Claims.Site),
+		JobGrade:         actor.Claims.Grade,
+		EmploymentStatus: strings.TrimSpace(actor.Claims.EmploymentStatus),
+	}, nil
+}
+
+type eventWithRule struct {
+	EventID      string
+	EventCity    string
+	CapacityType string
+	Rule         EligibilityRule
+}
+
+func (s *Service) loadEventWithRule(ctx context.Context, eventID string) (eventWithRule, error) {
+	var ev eventWithRule
+	err := s.db.QueryRow(ctx, `
+		SELECT e.event_id, COALESCE(e.event_city, ''), e.capacity_type,
+			   COALESCE(r.department, ''), COALESCE(r.site, ''),
+			   COALESCE(r.min_grade, 0), COALESCE(r.employment_status, '')
+		FROM events e
+		LEFT JOIN eligibility_rules r ON r.event_id = e.event_id
+		WHERE e.event_id = $1 AND e.archived_at IS NULL
+	`, eventID).Scan(
+		&ev.EventID, &ev.EventCity, &ev.CapacityType,
+		&ev.Rule.Department, &ev.Rule.Site,
+		&ev.Rule.MinGrade, &ev.Rule.EmploymentStatus,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ev, notFound("event not found")
+	}
+	return ev, err
+}
+
 func (s *Service) PreviewEligibility(ctx context.Context, actor Actor, eventID string, req EligibilityPreviewRequest) (EligibilityPreviewResponse, error) {
 	if err := requireRole(actor, RoleActivityAdmin); err != nil {
 		return EligibilityPreviewResponse{}, err
@@ -148,7 +281,7 @@ func (s *Service) ResolveEligibilityImpactReview(ctx context.Context, actor Acto
 	if err != nil {
 		return EligibilityImpactReview{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "eligibility_impact.resolved", "eligibility_impact_review", reviewID, map[string]interface{}{"event_id": review.EventID, "employee_id": review.EmployeeID}); err != nil {
+	if err := insertAudit(ctx, tx, auditID, actor, "eligibility_impact.resolved", "eligibility_impact_review", reviewID, map[string]interface{}{"event_id": review.EventID, "employee_ref": maskID(review.EmployeeID)}); err != nil {
 		return EligibilityImpactReview{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -259,4 +392,13 @@ func (s *Service) createEligibilityImpactReviewsTx(ctx context.Context, tx pgx.T
 		count++
 	}
 	return count, nil
+}
+
+// maskID returns the first 4 characters of id followed by "****" to
+// prevent full employee IDs from appearing in audit metadata.
+func maskID(id string) string {
+	if len(id) <= 4 {
+		return "****"
+	}
+	return id[:4] + "****"
 }
