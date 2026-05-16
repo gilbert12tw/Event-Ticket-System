@@ -82,7 +82,14 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err != nil {
 		return BookingResponse{}, err
 	}
-	eligible, reason := EvaluateEligibility(employee, rule)
+	eligibilityEmployee := employee
+	if actor.Claims != nil {
+		eligibilityEmployee, err = employeeFromClaims(actor)
+		if err != nil {
+			return BookingResponse{}, forbidden(ErrMissingClaims.Error())
+		}
+	}
+	eligible, reason := EvaluateEligibility(eligibilityEmployee, rule)
 	if !eligible {
 		return BookingResponse{}, forbidden(reason)
 	}

@@ -34,3 +34,30 @@ func TestEvaluateEligibilityNormalizedSite(t *testing.T) {
 
 	require.True(t, ok, "expected eligible with normalization, got reason %q", reason)
 }
+
+func TestEmployeeFromClaimsRequiresCompleteClaims(t *testing.T) {
+	_, err := employeeFromClaims(Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department: "Engineering",
+		Site:       "Taipei HQ",
+		City:       "Taipei",
+	}})
+
+	require.ErrorIs(t, err, ErrMissingClaims)
+}
+
+func TestEmployeeFromClaimsMapsGradeAndEmploymentStatus(t *testing.T) {
+	employee, err := employeeFromClaims(Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       " Engineering ",
+		Site:             " Taipei HQ ",
+		City:             "Taipei",
+		Grade:            5,
+		EmploymentStatus: " active ",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, "E1001", employee.EmployeeID)
+	assert.Equal(t, "Engineering", employee.Department)
+	assert.Equal(t, "Taipei HQ", employee.Site)
+	assert.Equal(t, 5, employee.JobGrade)
+	assert.Equal(t, "active", employee.EmploymentStatus)
+}

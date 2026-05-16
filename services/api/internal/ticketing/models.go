@@ -27,7 +27,7 @@ type ProviderClaims struct {
 	Department       string
 	Site             string
 	City             string
-	Grade            string
+	Grade            int
 	EmploymentStatus string
 }
 

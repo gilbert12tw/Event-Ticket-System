@@ -22,14 +22,16 @@ type ProviderVerifier struct {
 }
 
 type providerClaims struct {
-	EmployeeID  string   `json:"employee_id"`
-	DisplayName string   `json:"display_name"`
-	JobTitle    *string  `json:"job_title,omitempty"`
-	RoleClaims  []string `json:"role_claims"`
-	Department  string   `json:"department"`
-	Site        string   `json:"site"`
-	City        string   `json:"city"`
-	ExpiresAt   int64    `json:"exp"`
+	EmployeeID       string   `json:"employee_id"`
+	DisplayName      string   `json:"display_name"`
+	JobTitle         *string  `json:"job_title,omitempty"`
+	RoleClaims       []string `json:"role_claims"`
+	Department       string   `json:"department"`
+	Site             string   `json:"site"`
+	City             string   `json:"city"`
+	Grade            int      `json:"grade"`
+	EmploymentStatus string   `json:"employment_status"`
+	ExpiresAt        int64    `json:"exp"`
 }
 
 var errProviderRoleRejected = errors.New("provider role is not allowed")
@@ -64,9 +66,11 @@ func (v *ProviderVerifier) IdentityFromToken(token string) (authIdentity, error)
 			ID:   claims.EmployeeID,
 			Role: mappedRoles[0],
 			Claims: &ticketing.ProviderClaims{
-				Department: claims.Department,
-				Site:       claims.Site,
-				City:       claims.City,
+				Department:       claims.Department,
+				Site:             claims.Site,
+				City:             claims.City,
+				Grade:            claims.Grade,
+				EmploymentStatus: claims.EmploymentStatus,
 			},
 		},
 		Claims:    providerClaimsPayload(claims, mappedRoles),
@@ -123,6 +127,7 @@ func normalizeProviderClaims(claims providerClaims) providerClaims {
 	claims.Department = strings.TrimSpace(claims.Department)
 	claims.Site = strings.TrimSpace(claims.Site)
 	claims.City = strings.TrimSpace(claims.City)
+	claims.EmploymentStatus = strings.TrimSpace(claims.EmploymentStatus)
 	claims.RoleClaims = trimStringSlice(claims.RoleClaims)
 	if claims.JobTitle != nil {
 		jobTitle := strings.TrimSpace(*claims.JobTitle)
@@ -142,6 +147,8 @@ func validateProviderClaims(claims providerClaims, now time.Time) error {
 		claims.Department == "" ||
 		claims.Site == "" ||
 		claims.City == "" ||
+		claims.Grade <= 0 ||
+		claims.EmploymentStatus == "" ||
 		claims.ExpiresAt <= 0 {
 		return errors.New("provider claims are incomplete")
 	}

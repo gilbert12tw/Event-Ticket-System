@@ -29,12 +29,9 @@ func (s *Service) CheckEligibilityFromClaims(
 	actor Actor,
 	eventID string,
 ) (EligibilityDecision, error) {
-	// --- claims guard ---
-	if actor.Claims == nil ||
-		actor.Claims.Department == "" ||
-		actor.Claims.Site == "" ||
-		actor.Claims.City == "" {
-		return EligibilityDecision{}, ErrMissingClaims
+	employee, err := employeeFromClaims(actor)
+	if err != nil {
+		return EligibilityDecision{}, err
 	}
 
 	// --- load event and its eligibility rule ---
@@ -46,14 +43,7 @@ func (s *Service) CheckEligibilityFromClaims(
 	// --- evaluate rule against claims ---
 	// Re-use existing EvaluateEligibility but construct a synthetic Employee
 	// from claims so we avoid a DB round-trip for attribute lookup.
-	synthetic := Employee{
-		EmployeeID:       actor.ID,
-		Department:       actor.Claims.Department,
-		Site:             actor.Claims.Site,
-		JobGrade:         6, // assume senior grade for synthetic claim-based check
-		EmploymentStatus: "active",
-	}
-	eligible, reason := EvaluateEligibility(synthetic, event.Rule)
+	eligible, reason := EvaluateEligibility(employee, event.Rule)
 
 	var reasons []string
 	if !eligible {
@@ -62,12 +52,14 @@ func (s *Service) CheckEligibilityFromClaims(
 
 	// --- cross-city warning (non-blocking) ---
 	var warnings []EligibilityWarning
-	if event.EventCity != "" && actor.Claims.City != event.EventCity {
+	employeeCity := normalizeLocation(actor.Claims.City)
+	eventCity := normalizeLocation(event.EventCity)
+	if eventCity != "" && employeeCity != eventCity {
 		warnings = append(warnings, EligibilityWarning{
 			Code:         WarningCrossCity,
-			Message:      "This event is in " + event.EventCity + "; your registered city is " + actor.Claims.City + ".",
-			EmployeeCity: actor.Claims.City,
-			EventCity:    event.EventCity,
+			Message:      "This event is in " + eventCity + "; your registered city is " + employeeCity + ".",
+			EmployeeCity: employeeCity,
+			EventCity:    eventCity,
 		})
 	}
 
@@ -83,7 +75,7 @@ func (s *Service) CheckEligibilityFromClaims(
 	_ = tx.Commit(ctx)
 
 	var cooldown NoShowCooldown
-	if active {
+	if active && event.CapacityType == CapacityTypeLimited {
 		cooldown = NoShowCooldown{
 			Active:    true,
 			AppliesTo: CapacityTypeLimited,
@@ -104,23 +96,43 @@ func (s *Service) CheckEligibilityFromClaims(
 	}, nil
 }
 
+func employeeFromClaims(actor Actor) (Employee, error) {
+	if actor.ID == "" ||
+		actor.Claims == nil ||
+		strings.TrimSpace(actor.Claims.Department) == "" ||
+		strings.TrimSpace(actor.Claims.Site) == "" ||
+		strings.TrimSpace(actor.Claims.City) == "" ||
+		actor.Claims.Grade <= 0 ||
+		strings.TrimSpace(actor.Claims.EmploymentStatus) == "" {
+		return Employee{}, ErrMissingClaims
+	}
+	return Employee{
+		EmployeeID:       actor.ID,
+		Department:       strings.TrimSpace(actor.Claims.Department),
+		Site:             strings.TrimSpace(actor.Claims.Site),
+		JobGrade:         actor.Claims.Grade,
+		EmploymentStatus: strings.TrimSpace(actor.Claims.EmploymentStatus),
+	}, nil
+}
+
 type eventWithRule struct {
-	EventID   string
-	EventCity string
-	Rule      EligibilityRule
+	EventID      string
+	EventCity    string
+	CapacityType string
+	Rule         EligibilityRule
 }
 
 func (s *Service) loadEventWithRule(ctx context.Context, eventID string) (eventWithRule, error) {
 	var ev eventWithRule
 	err := s.db.QueryRow(ctx, `
-		SELECT e.event_id, COALESCE(e.event_city, ''),
+		SELECT e.event_id, COALESCE(e.event_city, ''), e.capacity_type,
 			   COALESCE(r.department, ''), COALESCE(r.site, ''),
 			   COALESCE(r.min_grade, 0), COALESCE(r.employment_status, '')
 		FROM events e
 		LEFT JOIN eligibility_rules r ON r.event_id = e.event_id
 		WHERE e.event_id = $1 AND e.archived_at IS NULL
 	`, eventID).Scan(
-		&ev.EventID, &ev.EventCity,
+		&ev.EventID, &ev.EventCity, &ev.CapacityType,
 		&ev.Rule.Department, &ev.Rule.Site,
 		&ev.Rule.MinGrade, &ev.Rule.EmploymentStatus,
 	)
