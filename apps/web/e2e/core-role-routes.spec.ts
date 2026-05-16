@@ -197,6 +197,8 @@ function claimsFromSession(session: Session) {
     department: "Engineering",
     site: "Taipei",
     city: "Taipei",
+    grade: 6,
+    employment_status: "active",
     claims_status: "complete",
   };
 }
@@ -211,6 +213,8 @@ function mockProfiles() {
       session.actor.role === "employee" ? "Engineering" : "Operations",
     site: "Taipei",
     city: "Taipei",
+    grade: session.actor.role === "employee" ? 6 : 5,
+    employment_status: "active",
   }));
 }
 

@@ -26,6 +26,8 @@ const claims: AuthMeClaims = {
   department: "Engineering",
   site: "Taipei",
   city: "Taipei",
+  grade: 6,
+  employment_status: "active",
   claims_status: "complete",
 };
 
@@ -81,6 +83,18 @@ describe("EmployeeEventsPage", () => {
         },
         registration_close: "2020-01-01T00:00:00Z",
         title: "冷卻活動",
+        eligibility: {
+          event_id: "evt-cooldown",
+          eligible: true,
+          can_book: false,
+          reasons: [],
+          warnings: [],
+          no_show_cooldown: {
+            active: true,
+            until: "2026-08-01T00:00:00Z",
+            reason: "no_show_cooldown",
+          },
+        },
       }),
     ]);
 
@@ -91,6 +105,83 @@ describe("EmployeeEventsPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /取消報名/ })).toBeDisabled();
     expect(screen.getByText(/自助取消已關閉/)).toBeInTheDocument();
+  });
+
+  it("renders cross-city warning and keeps booking button enabled when can_book=true", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        event_id: "evt-crosscity",
+        title: "Hsinchu Event",
+        event_city: "Hsinchu",
+        eligibility: {
+          event_id: "evt-crosscity",
+          eligible: true,
+          can_book: true,
+          reasons: [],
+          warnings: [
+            {
+              code: "cross_city",
+              message:
+                "This event is in Hsinchu; your registered city is Taipei.",
+              employee_city: "Taipei",
+              event_city: "Hsinchu",
+            },
+          ],
+          no_show_cooldown: { active: false },
+        },
+      }),
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText(/跨城市活動提醒/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/此活動位於 Hsinchu，你的登錄城市為 Taipei。/),
+    ).toBeInTheDocument();
+    const bookButton = screen.getByRole("button", { name: /報名/ });
+    expect(bookButton).not.toBeDisabled();
+  });
+
+  it("disables booking and shows reason when can_book=false (ineligible)", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        event_id: "evt-ineligible",
+        title: "Legal Event",
+        eligibility: {
+          event_id: "evt-ineligible",
+          eligible: false,
+          can_book: false,
+          reasons: ["department does not match"],
+          warnings: [],
+          no_show_cooldown: { active: false },
+        },
+      }),
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText(/不符合資格：/)).toBeInTheDocument();
+    // reason text appears in both badge and alert — check the alert specifically
+    const alerts = screen.getAllByText(/department does not match/);
+    expect(alerts.length).toBeGreaterThan(0);
+    const bookButton = screen.getByRole("button", { name: /報名/ });
+    expect(bookButton).toBeDisabled();
+  });
+
+  it("renders event without eligibility object without crashing", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        event_id: "evt-noelig",
+        title: "No Eligibility Event",
+        eligible: true,
+        eligibility_reason: "eligible",
+      }),
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    // Should render gracefully with fallback
+    expect(await screen.findByText("No Eligibility Event")).toBeInTheDocument();
   });
 });
 

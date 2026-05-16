@@ -131,6 +131,28 @@ export function AdminEventGovernancePanel({
                   }
                   required
                 />
+                <label className="field">
+                  <span>活動城市</span>
+                  <select
+                    value={editForm.event_city}
+                    onChange={(event) =>
+                      onEditFormChange({
+                        ...editForm,
+                        event_city: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="">（未設定）</option>
+                    <option value="Taipei">台北 (Taipei)</option>
+                    <option value="Hsinchu">新竹 (Hsinchu)</option>
+                    <option value="Taichung">台中 (Taichung)</option>
+                    <option value="Tainan">台南 (Tainan)</option>
+                    <option value="Kaohsiung">高雄 (Kaohsiung)</option>
+                  </select>
+                  <small className="form-hint">
+                    設定後用於比對員工所在城市，不同城市將顯示跨城市提示（不阻擋報名）。
+                  </small>
+                </label>
                 <Field
                   label="活動開始"
                   type="datetime-local"

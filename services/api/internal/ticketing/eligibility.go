@@ -17,6 +17,7 @@ func EvaluateEligibility(employee Employee, rule EligibilityRule) (bool, string)
 	if normalizedRuleSite != "" && normalizedRuleSite != "*" && normalizedEmployeeSite != normalizedRuleSite {
 		return false, fmt.Sprintf("site %s is not eligible", employee.Site)
 	}
+
 	if rule.MinGrade > 0 && employee.JobGrade < rule.MinGrade {
 		return false, fmt.Sprintf("job grade %d is below minimum %d", employee.JobGrade, rule.MinGrade)
 	}

@@ -133,6 +133,7 @@ export function AdminEventsPage() {
         title: form.title.trim(),
         description: form.description.trim(),
         location: form.location.trim(),
+        event_city: form.event_city.trim() || undefined,
         starts_at: toISO(form.starts_at),
         registration_start: toISO(form.registration_start),
         registration_close: toISO(form.registration_close),
@@ -169,6 +170,7 @@ export function AdminEventsPage() {
         title: editForm.title.trim(),
         description: editForm.description.trim(),
         location: editForm.location.trim(),
+        event_city: editForm.event_city.trim() || undefined,
         starts_at: toISO(editForm.starts_at),
         registration_start: toISO(editForm.registration_start),
         registration_close: toISO(editForm.registration_close),
@@ -314,6 +316,25 @@ export function AdminEventsPage() {
             onChange={(value) => setForm({ ...form, location: value })}
             required
           />
+          <label className="field">
+            <span>活動城市</span>
+            <select
+              value={form.event_city}
+              onChange={(event) =>
+                setForm({ ...form, event_city: event.target.value })
+              }
+            >
+              <option value="">（未設定）</option>
+              <option value="Taipei">台北 (Taipei)</option>
+              <option value="Hsinchu">新竹 (Hsinchu)</option>
+              <option value="Taichung">台中 (Taichung)</option>
+              <option value="Tainan">台南 (Tainan)</option>
+              <option value="Kaohsiung">高雄 (Kaohsiung)</option>
+            </select>
+            <small className="form-hint">
+              設定後用於比對員工所在城市，不同城市將顯示跨城市提示（不阻擋報名）。
+            </small>
+          </label>
           <label className="field full">
             <span>描述</span>
             <textarea

@@ -6,6 +6,7 @@ import {
   listEvents,
 } from "@/lib/api";
 import type { AuthMeClaims, EventSummary } from "@/lib/api";
+import { getEligibilityDecision } from "@/lib/api/contracts";
 import { bookingActionLabel, errorMessage } from "@/lib/formatting";
 import {
   Alert,
@@ -18,6 +19,14 @@ import {
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   canBook,
   CancellationControl,
   EmployeeEventCard,
@@ -26,6 +35,7 @@ import {
   messageTone,
   registrationIDFor,
 } from "./employee-event-components";
+import { formatEligibilityWarningMessage } from "./eligibility-warning";
 
 type NumberByEvent = Record<string, number>;
 type TextByEvent = Record<string, string>;
@@ -36,13 +46,17 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingCrossCity, setPendingCrossCity] = useState<EventSummary | null>(
+    null,
+  );
 
   const principalID = claims.employee_id;
   const eventStats = useMemo(
     () => ({
-      eligible: events.filter(
-        (event) => event.eligible && !event.no_show_cooldown?.active,
-      ).length,
+      eligible: events.filter((event) => {
+        const d = getEligibilityDecision(event);
+        return d ? d.can_book && !d.no_show_cooldown.active : false;
+      }).length,
       confirmed: events.filter(
         (event) => event.current_user_status === "confirmed",
       ).length,
@@ -90,6 +104,14 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
     } catch (error) {
       setMessage(errorMessage(error));
     }
+  }
+
+  async function requestBooking(event: EventSummary) {
+    if (needsCrossCityConfirm(event)) {
+      setPendingCrossCity(event);
+      return;
+    }
+    await book(event);
   }
 
   async function cancel(event: EventSummary) {
@@ -163,7 +185,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
                 event={event}
                 familyCount={familyCounts[event.event_id] ?? 0}
                 key={event.event_id}
-                onBook={() => void book(event)}
+                onBook={() => void requestBooking(event)}
                 onCancel={() => void cancel(event)}
                 onCancelReasonChange={(value) =>
                   setCancelReasons((current) => ({
@@ -182,6 +204,42 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
         </div>
       </div>
       <ProviderClaimsCard claims={claims} />
+      <Dialog
+        open={pendingCrossCity !== null}
+        onOpenChange={(open) => (!open ? setPendingCrossCity(null) : null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>跨城市報名確認</DialogTitle>
+            <DialogDescription>
+              {pendingCrossCity
+                ? crossCityWarningMessage(pendingCrossCity)
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setPendingCrossCity(null)}
+            >
+              取消
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => {
+                if (pendingCrossCity) {
+                  void book(pendingCrossCity);
+                }
+                setPendingCrossCity(null);
+              }}
+            >
+              確認報名
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -196,6 +254,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
   const [cancelReason, setCancelReason] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingCrossCity, setPendingCrossCity] = useState(false);
   const principalID = claims.employee_id;
 
   async function refresh(nextID = selectedID) {
@@ -228,8 +287,12 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
     await refresh(eventID);
   }
 
-  async function bookSelected() {
+  async function bookSelected(confirmCrossCity = false) {
     if (!detail) return;
+    if (!confirmCrossCity && needsCrossCityConfirm(detail)) {
+      setPendingCrossCity(true);
+      return;
+    }
     setMessage("");
     try {
       const nextFamilyCount =
@@ -346,6 +409,57 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
           </div>
         )}
       </div>
+      <Dialog
+        open={pendingCrossCity}
+        onOpenChange={(open) => (!open ? setPendingCrossCity(false) : null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>跨城市報名確認</DialogTitle>
+            <DialogDescription>
+              {detail ? crossCityWarningMessage(detail) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setPendingCrossCity(false)}
+            >
+              取消
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => {
+                setPendingCrossCity(false);
+                void bookSelected(true);
+              }}
+            >
+              確認報名
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
+}
+
+function needsCrossCityConfirm(event: EventSummary) {
+  const eligibility = getEligibilityDecision(event);
+  return (
+    eligibility?.warnings?.some((warning) => warning.code === "cross_city") ??
+    false
+  );
+}
+
+function crossCityWarningMessage(event: EventSummary) {
+  const eligibility = getEligibilityDecision(event);
+  const warning = eligibility?.warnings?.find(
+    (item) => item.code === "cross_city",
+  );
+  if (warning) return formatEligibilityWarningMessage(warning);
+  if (event.event_city)
+    return `此活動位於 ${event.event_city}，請確認後再報名。`;
+  return "此活動位於不同城市，請確認後再報名。";
 }
