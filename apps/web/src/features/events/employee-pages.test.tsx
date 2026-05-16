@@ -26,6 +26,8 @@ const claims: AuthMeClaims = {
   department: "Engineering",
   site: "Taipei",
   city: "Taipei",
+  grade: 6,
+  employment_status: "active",
   claims_status: "complete",
 };
 
@@ -132,24 +134,12 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
+    expect(await screen.findByText(/跨城市活動提醒/)).toBeInTheDocument();
     expect(
-      await screen.findByText(/Cross-city event notice/),
+      await screen.findByText(/此活動位於 Hsinchu，你的登錄城市為 Taipei。/),
     ).toBeInTheDocument();
-    expect(
-      await screen.findByText(
-        /This event is in Hsinchu; your registered city is Taipei/,
-      ),
-    ).toBeInTheDocument();
-    // booking button should still be enabled (not disabled due to warning alone)
-    // bookingActionLabel returns different text based on status; just verify button is not disabled
-    const buttons = screen.getAllByRole("button");
-    const bookBtn = buttons.find(
-      (b) =>
-        !b.textContent?.toLowerCase().includes("refresh") &&
-        !b.textContent?.toLowerCase().includes("detail") &&
-        !b.textContent?.toLowerCase().includes("cancel"),
-    );
-    if (bookBtn) expect(bookBtn).not.toBeDisabled();
+    const bookButton = screen.getByRole("button", { name: /報名/ });
+    expect(bookButton).not.toBeDisabled();
   });
 
   it("disables booking and shows reason when can_book=false (ineligible)", async () => {
@@ -170,7 +160,7 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText(/Not eligible:/)).toBeInTheDocument();
+    expect(await screen.findByText(/不符合資格：/)).toBeInTheDocument();
     // reason text appears in both badge and alert — check the alert specifically
     const alerts = screen.getAllByText(/department does not match/);
     expect(alerts.length).toBeGreaterThan(0);

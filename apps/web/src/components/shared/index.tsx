@@ -68,6 +68,14 @@ export function ProviderClaimsCard({ claims }: { claims: AuthMeClaims }) {
           <dd>{claims.job_title || "未提供"}</dd>
         </div>
         <div>
+          <dt>職等</dt>
+          <dd>G{claims.grade}</dd>
+        </div>
+        <div>
+          <dt>狀態</dt>
+          <dd>{claims.employment_status}</dd>
+        </div>
+        <div>
           <dt>城市</dt>
           <dd>{claims.city}</dd>
         </div>

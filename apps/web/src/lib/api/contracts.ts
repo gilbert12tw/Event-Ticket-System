@@ -26,6 +26,8 @@ export type AuthMeClaims = {
   department: string;
   site: string;
   city: string;
+  grade: number;
+  employment_status: string;
   claims_status: "complete" | "rejected";
 };
 
@@ -43,6 +45,8 @@ export type MockProfile = {
   department: string;
   site: string;
   city: string;
+  grade: number;
+  employment_status: string;
 };
 
 export type MockProviderToken = {

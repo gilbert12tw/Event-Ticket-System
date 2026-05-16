@@ -91,8 +91,9 @@ export function EventSummaryBlock({
 }) {
   const capacityMax =
     event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
-  const cooldown = event.no_show_cooldown;
   const eligibilityDecision = getEligibilityDecision(event);
+  const cooldown =
+    eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
   const warnings = eligibilityDecision?.warnings ?? [];
   const ineligibleReasons = eligibilityDecision?.reasons ?? [];
   return (
@@ -125,11 +126,11 @@ export function EventSummaryBlock({
       )}
       {eligibilityDecision && !eligibilityDecision.eligible && (
         <Alert tone="fail">
-          <strong>Not eligible:</strong>
+          <strong>不符合資格：</strong>
           <p>
             {ineligibleReasons.length > 0
               ? ineligibleReasons.join(", ")
-              : "Eligibility conditions are not met."}
+              : "目前不符合活動資格條件。"}
           </p>
         </Alert>
       )}
@@ -307,6 +308,11 @@ export function messageTone(message: string): "ok" | "warn" | "fail" | "info" {
 }
 
 function eligibilityLabel(event: EventSummary) {
+  const eligibilityDecision = getEligibilityDecision(event);
+  if (eligibilityDecision) {
+    if (eligibilityDecision.eligible) return "符合資格";
+    return eligibilityDecision.reasons[0] || "不可報名";
+  }
   const reason = (event.eligibility_reason ?? "").trim();
   if (!reason) return event.eligible ? "符合資格" : "不可報名";
   if (reason === "eligible") return "符合資格";

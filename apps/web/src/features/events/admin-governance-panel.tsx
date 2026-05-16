@@ -206,9 +206,6 @@ export function AdminEventGovernancePanel({
                     <option value="unlimited">
                       unlimited（不扣庫存，可帶家屬）
                     </option>
-                    <option value="unlimited">
-                      unlimited（不扣庫存，可帶家屬）
-                    </option>
                   </select>
                 </label>
                 {editForm.capacity_type === "limited" && (

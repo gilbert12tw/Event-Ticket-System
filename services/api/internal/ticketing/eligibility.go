@@ -12,7 +12,6 @@ func EvaluateEligibility(employee Employee, rule EligibilityRule) (bool, string)
 	if rule.Department != "" && rule.Department != "*" && employee.Department != rule.Department {
 		return false, fmt.Sprintf("department %s is not eligible", employee.Department)
 	}
-
 	normalizedEmployeeSite := normalizeLocation(employee.Site)
 	normalizedRuleSite := normalizeLocation(rule.Site)
 	if normalizedRuleSite != "" && normalizedRuleSite != "*" && normalizedEmployeeSite != normalizedRuleSite {
@@ -25,7 +24,7 @@ func EvaluateEligibility(employee Employee, rule EligibilityRule) (bool, string)
 	if rule.EmploymentStatus != "" && rule.EmploymentStatus != "*" && employee.EmploymentStatus != rule.EmploymentStatus {
 		return false, fmt.Sprintf("employment status %s is not eligible", employee.EmploymentStatus)
 	}
-	return true, "eligible"
+	return true, ""
 }
 
 func normalizeLocation(input string) string {

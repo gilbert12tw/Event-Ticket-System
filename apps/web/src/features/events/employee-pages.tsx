@@ -35,6 +35,7 @@ import {
   messageTone,
   registrationIDFor,
 } from "./employee-event-components";
+import { formatEligibilityWarningMessage } from "./eligibility-warning";
 
 type NumberByEvent = Record<string, number>;
 type TextByEvent = Record<string, string>;
@@ -209,7 +210,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cross-city confirmation</DialogTitle>
+            <DialogTitle>跨城市報名確認</DialogTitle>
             <DialogDescription>
               {pendingCrossCity
                 ? crossCityWarningMessage(pendingCrossCity)
@@ -222,7 +223,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
               type="button"
               onClick={() => setPendingCrossCity(null)}
             >
-              Cancel
+              取消
             </button>
             <button
               className="button"
@@ -234,7 +235,7 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
                 setPendingCrossCity(null);
               }}
             >
-              Confirm booking
+              確認報名
             </button>
           </DialogFooter>
         </DialogContent>
@@ -414,7 +415,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cross-city confirmation</DialogTitle>
+            <DialogTitle>跨城市報名確認</DialogTitle>
             <DialogDescription>
               {detail ? crossCityWarningMessage(detail) : ""}
             </DialogDescription>
@@ -425,7 +426,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
               type="button"
               onClick={() => setPendingCrossCity(false)}
             >
-              Cancel
+              取消
             </button>
             <button
               className="button"
@@ -435,7 +436,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
                 void bookSelected(true);
               }}
             >
-              Confirm booking
+              確認報名
             </button>
           </DialogFooter>
         </DialogContent>
@@ -457,8 +458,8 @@ function crossCityWarningMessage(event: EventSummary) {
   const warning = eligibility?.warnings?.find(
     (item) => item.code === "cross_city",
   );
-  if (warning?.message) return warning.message;
+  if (warning) return formatEligibilityWarningMessage(warning);
   if (event.event_city)
-    return `This event is in ${event.event_city}; please confirm before booking.`;
-  return "This event is in a different city; please confirm before booking.";
+    return `此活動位於 ${event.event_city}，請確認後再報名。`;
+  return "此活動位於不同城市，請確認後再報名。";
 }

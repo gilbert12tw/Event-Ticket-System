@@ -200,8 +200,15 @@ func (s *Service) GetEventSummary(ctx context.Context, actor Actor, eventID stri
 
 	if employeeID != "" {
 		if actor.ID == employeeID && actor.Claims != nil {
-			decision, _ := s.CheckEligibilityFromClaims(ctx, actor, eventID)
-			summary.Eligibility = decision
+			decision, err := s.CheckEligibilityFromClaims(ctx, actor, eventID)
+			if err != nil {
+				if !errors.Is(err, ErrMissingClaims) {
+					return EventSummary{}, err
+				}
+				summary.Eligibility.Reasons = []string{ErrMissingClaims.Error()}
+			} else {
+				summary.Eligibility = decision
+			}
 		} else {
 			employee, err := s.getEmployee(ctx, employeeID)
 			if err != nil {

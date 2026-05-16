@@ -92,7 +92,7 @@ func TestEventCapacityTypesValidateAndExposeSummaries(t *testing.T) {
 
 	unlimited, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:        "Unlimited Family",
-		EventCity:    "Taipei",
+		EventCity:    "Taipei HQ",
 		EventSite:    "HQ",
 		CapacityType: CapacityTypeUnlimited,
 		AllowsFamily: true,

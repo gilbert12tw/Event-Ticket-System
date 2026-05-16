@@ -140,6 +140,8 @@ describe("api client", () => {
       department: "Engineering",
       site: "Taipei HQ",
       city: "Taipei",
+      grade: 6,
+      employment_status: "active",
       claims_status: "complete",
     });
 

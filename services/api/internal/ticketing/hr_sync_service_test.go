@@ -39,7 +39,7 @@ func TestRunHRSyncCreatesBatchAndImpactReviews(t *testing.T) {
 	_, err = service.db.Exec(ctx, `
 		UPDATE eligibility_rules
 		SET department = $1, site = $2, min_grade = $3, employment_status = $4
-		WHERE event_id = $5`, "Engineering", "Taipei", 6, "active", event.EventID)
+		WHERE event_id = $5`, "Engineering", "Taipei HQ", 6, "active", event.EventID)
 	require.NoError(t, err)
 
 	batch, err := service.RunHRSync(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, HRSyncRequest{})
