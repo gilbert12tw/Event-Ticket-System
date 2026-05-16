@@ -285,7 +285,7 @@ export function messageTone(message: string): "ok" | "warn" | "fail" | "info" {
 }
 
 function eligibilityLabel(event: EventSummary) {
-  const reason = event.eligibility_reason.trim();
+  const reason = (event.eligibility_reason ?? "").trim();
   if (!reason) return event.eligible ? "符合資格" : "不可報名";
   if (reason === "eligible") return "符合資格";
   return reason;
