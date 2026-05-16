@@ -270,7 +270,8 @@ export function canBook(event: EventSummary) {
   const isEligible = eligibilityDecision
     ? eligibilityDecision.can_book
     : event.eligible;
-  const cooldown = eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
+  const cooldown =
+    eligibilityDecision?.no_show_cooldown ?? event.no_show_cooldown;
   return (
     isEligible &&
     !cooldown?.active &&
