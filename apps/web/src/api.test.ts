@@ -110,11 +110,12 @@ describe("api client", () => {
       }),
     );
 
-    const payload = entries[0]?.payload as {
+    expect(entries[0]?.requestBody).toBeNull();
+    const responseBody = entries[0]?.responseBody as {
       data: Array<{ signed_token: string; qr_payload: string }>;
     };
-    expect(payload.data[0].signed_token).toBe("[redacted ticket token]");
-    expect(payload.data[0].qr_payload).toBe("[redacted ticket token]");
+    expect(responseBody.data[0].signed_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data[0].qr_payload).toBe("[票券簽章已遮蔽]");
   });
 
   it("attaches provider bearer tokens from memory", async () => {
@@ -215,7 +216,7 @@ describe("api client", () => {
     });
   });
 
-  it("redacts provider token fields in API log payloads", async () => {
+  it("redacts provider token fields in API log response bodies", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         success: true,
@@ -232,11 +233,59 @@ describe("api client", () => {
 
     await mockProviderToken("E1001");
 
-    const payload = entries[0]?.payload as {
+    const responseBody = entries[0]?.responseBody as {
       data: { provider_token: string; nested: { token: string } };
     };
-    expect(payload.data.provider_token).toBe("[redacted provider token]");
-    expect(payload.data.nested.token).toBe("[redacted session]");
+    expect(responseBody.data.provider_token).toBe("[身分簽章已遮蔽]");
+    expect(responseBody.data.nested.token).toBe("[工作階段已遮蔽]");
+  });
+
+  it("logs redacted request and response bodies separately", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        data: {
+          batch_id: "off_1",
+          accepted: 1,
+          duplicate: 0,
+          conflict: 0,
+          results: [],
+          provider_token: "provider-token-secret",
+          signed_token: "ticket-secret",
+          qr_payload: "qr-secret",
+          nested: {
+            token: "nested-token-secret",
+          },
+        },
+        error: null,
+      }),
+    );
+
+    await syncOfflineCheckins({
+      batch_id: "off_1",
+      event_id: "evt/1",
+      device_id: "gate-1",
+      scans: [
+        { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
+      ],
+    });
+
+    const requestBody = entries[0]?.requestBody as {
+      scans: Array<{ signed_token: string }>;
+    };
+    const responseBody = entries[0]?.responseBody as {
+      data: {
+        provider_token: string;
+        signed_token: string;
+        qr_payload: string;
+        nested: { token: string };
+      };
+    };
+    expect(requestBody.scans[0].signed_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.provider_token).toBe("[身分簽章已遮蔽]");
+    expect(responseBody.data.signed_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.qr_payload).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.nested.token).toBe("[工作階段已遮蔽]");
   });
 
   it("calls production eligibility, lottery, ticket, report, and audit endpoints", async () => {

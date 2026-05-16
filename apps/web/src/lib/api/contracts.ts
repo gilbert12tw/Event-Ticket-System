@@ -194,6 +194,7 @@ export type BookingResponse = {
   ticket?: Ticket;
   remaining_capacity: number;
   message: string;
+  duplicate?: boolean;
 };
 
 export type RegistrationDetail = {
@@ -401,6 +402,7 @@ export type ApiLogEntry = {
   label: string;
   status: number | "ERR";
   ok: boolean;
-  payload: unknown;
+  requestBody: unknown;
+  responseBody: unknown;
   createdAt: string;
 };

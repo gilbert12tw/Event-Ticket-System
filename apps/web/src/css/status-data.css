@@ -1,0 +1,168 @@
+.kpi-row,
+.report-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kpi-row.four {
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.kpi {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-inset);
+}
+
+.kpi strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 1.32rem;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.progress-meter {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.progress-meter.compact {
+  min-width: 150px;
+  margin-top: 0;
+}
+
+.progress-meter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.progress-meter-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 760;
+  text-align: right;
+}
+
+.progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 780;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status-badge.ok {
+  border-color: var(--success-line);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.status-badge.warn {
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.status-badge.fail {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.status-badge.info {
+  border-color: var(--info-line);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.status-badge.neutral {
+  border-color: var(--line);
+  background: var(--surface-inset);
+  color: var(--muted);
+}
+
+.app-alert {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-weight: 650;
+  line-height: 1.42;
+}
+
+.app-alert.ok {
+  border-color: var(--success-line);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.app-alert.warn {
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.app-alert.fail {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.app-alert.info {
+  border-color: var(--info-line);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.empty-state {
+  display: grid;
+  gap: 5px;
+  padding: 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-inset);
+  color: var(--muted);
+}
+
+.empty-state strong {
+  color: var(--ink);
+}

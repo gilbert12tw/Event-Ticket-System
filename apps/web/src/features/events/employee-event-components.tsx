@@ -1,82 +1,180 @@
-import { navigate } from "@/app/routes";
-import { Alert, Kpi, ProgressMeter, StatusBadge } from "@/components/shared";
+import type { MouseEvent } from "react";
+import { navigate, ticketDetailPath } from "@/app/routes";
+import {
+  Alert,
+  EventListItem,
+  Field,
+  ProgressMeter,
+  StatusBadge,
+} from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import type { EventSummary } from "@/lib/api";
+import { formatDate } from "@/lib/formatting";
 import {
-  bookingActionLabel,
-  capacityTypeLabel,
-  eventStatusLabel,
-  eventStatusTone,
-  formatDate,
-  registrationStatusLabel,
-  registrationTone,
-} from "@/lib/formatting";
+  departmentLabel,
+  employmentStatusLabel,
+  eventStatusView,
+  registrationStatusView,
+  siteLabel,
+} from "@/lib/ui/options";
+import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { CancellationControl } from "./employee-cancellation-control";
+import {
+  attendeeActionState,
+  availabilityDecisionLabel,
+  bookingWindowLabel,
+  canSubmitAttendeeAction,
+  eligibilityDecisionLabel,
+} from "./employee-event-state";
 
 const maxFamilyCount = 10;
 
 export function EmployeeEventCard({
   cancelReason,
+  cancelBusy = false,
   event,
-  familyCount,
-  onBook,
+  mode,
   onCancel,
   onCancelReasonChange,
-  onFamilyCountChange,
+  pending = false,
+  result,
 }: {
-  cancelReason: string;
+  cancelReason?: string;
+  cancelBusy?: boolean;
   event: EventSummary;
-  familyCount: number;
-  onBook: () => void;
-  onCancel: () => void;
-  onCancelReasonChange: (value: string) => void;
-  onFamilyCountChange: (value: number) => void;
+  mode: "available" | "registered" | "unavailable";
+  onCancel?: () => void;
+  onCancelReasonChange?: (value: string) => void;
+  pending?: boolean;
+  result?: ReactNode;
 }) {
+  const action = attendeeActionState(event);
+  const needsFamilySetup =
+    action.kind !== "ticket" &&
+    event.capacity_type === "unlimited" &&
+    event.allows_family;
+  const canRunPrimary =
+    action.kind === "ticket" || canSubmitAttendeeAction(event);
+  const detailHref = `/user/events/detail?event_id=${encodeURIComponent(
+    event.event_id,
+  )}`;
+  const primaryHref =
+    action.kind === "ticket" && event.current_user_ticket
+      ? ticketDetailPath(event.current_user_ticket.ticket_id)
+      : action.kind === "ticket"
+        ? "/user/tickets"
+        : detailHref;
   return (
-    <article className="event-card">
-      <EventSummaryBlock event={event} compact />
-      <div className="event-action">
-        <Kpi
-          label="容量"
-          value={
-            event.capacity_type === "limited" ? (event.capacity ?? 0) : "不限"
-          }
-        />
-        <Kpi label="剩餘" value={event.remaining_capacity ?? "不限"} />
-        <Kpi label="候補" value={event.waitlist_count} />
-        <FamilyCountControl
-          event={event}
-          value={familyCount}
-          onChange={onFamilyCountChange}
-        />
-        <button
-          className="button"
-          type="button"
-          disabled={!canBook(event)}
-          onClick={onBook}
-        >
-          <Icon name="ticket" />
-          {bookingActionLabel(event)}
-        </button>
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() =>
-            navigate(
-              `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`,
-            )
-          }
-        >
-          <Icon name="audit" />
-          詳情
-        </button>
-        <CancellationControl
-          event={event}
-          reason={cancelReason}
-          onCancel={onCancel}
-          onReasonChange={onCancelReasonChange}
-        />
-      </div>
-    </article>
+    <EventListItem
+      title={event.title}
+      meta={`${formatDate(event.starts_at)} · ${siteLabel(
+        event.location || event.event_site,
+      )}`}
+      description={action.recoveryCopy}
+      badges={
+        <>
+          <StatusBadge
+            tone={
+              event.eligible && !event.no_show_cooldown?.active ? "ok" : "fail"
+            }
+          >
+            {eligibilityLabel(event)}
+          </StatusBadge>
+          <StatusBadge tone={action.tone}>
+            {capacitySummaryLabel(event)}
+          </StatusBadge>
+          <StatusBadge tone={eventStatusView(event.status).tone}>
+            {eventStatusView(event.status).label}
+          </StatusBadge>
+          {mode !== "available" && event.current_user_status && (
+            <StatusBadge
+              tone={registrationStatusView(event.current_user_status).tone}
+            >
+              {registrationStatusView(event.current_user_status).label}
+            </StatusBadge>
+          )}
+        </>
+      }
+      actions={
+        <>
+          {canRunPrimary && (
+            <Button asChild>
+              <a
+                aria-disabled={pending || undefined}
+                href={primaryHref}
+                onClick={(clickEvent) => {
+                  if (pending) {
+                    clickEvent.preventDefault();
+                    return;
+                  }
+                  if (shouldUseNativeNavigation(clickEvent)) return;
+                  clickEvent.preventDefault();
+                  navigate(primaryHref);
+                }}
+              >
+                <Icon name={needsFamilySetup ? "calendar" : "ticket"} />
+                {needsFamilySetup ? "設定同行人數" : action.label}
+              </a>
+            </Button>
+          )}
+          {!canRunPrimary && <BlockedEventAction event={event} />}
+          <Button asChild size="sm" variant="ghost">
+            <a
+              href={detailHref}
+              onClick={(clickEvent) => {
+                if (
+                  clickEvent.button !== 0 ||
+                  clickEvent.metaKey ||
+                  clickEvent.ctrlKey ||
+                  clickEvent.altKey ||
+                  clickEvent.shiftKey
+                ) {
+                  return;
+                }
+                clickEvent.preventDefault();
+                navigate(detailHref);
+              }}
+            >
+              詳情
+            </a>
+          </Button>
+          {result}
+          {mode === "registered" && onCancel && onCancelReasonChange && (
+            <CancellationControl
+              busy={cancelBusy}
+              event={event}
+              reason={cancelReason || ""}
+              onCancel={onCancel}
+              onReasonChange={onCancelReasonChange}
+            />
+          )}
+          {event.no_show_cooldown?.active && (
+            <Alert tone="warn">
+              限量活動因缺席冷卻期暫停報名，開放時間：
+              {formatDate(event.no_show_cooldown.until || "")}。
+            </Alert>
+          )}
+        </>
+      }
+    />
+  );
+}
+
+function BlockedEventAction({ event }: { event: EventSummary }) {
+  const action = attendeeActionState(event);
+  return (
+    <Button
+      aria-label={`${action.label}：${action.recoveryCopy}`}
+      className="blocked-action-button"
+      disabled
+      title={action.recoveryCopy}
+      type="button"
+      variant="outline"
+    >
+      <Icon name="ban" />
+      {action.label}
+    </Button>
   );
 }
 
@@ -90,6 +188,7 @@ export function EventSummaryBlock({
   const capacityMax =
     event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
   const cooldown = event.no_show_cooldown;
+  const action = attendeeActionState(event);
   return (
     <div className={compact ? "" : "summary-block"}>
       <div className="event-card-top">
@@ -99,49 +198,74 @@ export function EventSummaryBlock({
         <StatusBadge
           tone={event.capacity_type === "unlimited" ? "info" : "neutral"}
         >
-          {capacityTypeLabel(event.capacity_type)}
+          {event.capacity_type === "unlimited" ? "不限量" : "限量"}
         </StatusBadge>
-        <StatusBadge tone={eventStatusTone(event.status)}>
-          {eventStatusLabel(event.status)}
+        <StatusBadge tone={eventStatusView(event.status).tone}>
+          {eventStatusView(event.status).label}
         </StatusBadge>
         {event.current_user_status && (
-          <StatusBadge tone={registrationTone(event.current_user_status)}>
-            {registrationStatusLabel(event.current_user_status)}
+          <StatusBadge
+            tone={registrationStatusView(event.current_user_status).tone}
+          >
+            {registrationStatusView(event.current_user_status).label}
           </StatusBadge>
         )}
       </div>
       <h3>{event.title}</h3>
-      <p>{event.description || "此活動尚未填寫描述。"}</p>
+      <p>{userFacingEventDescription(event.description)}</p>
+      <div className="decision-strip" aria-label="活動可報名狀態">
+        <div>
+          <StatusBadge
+            tone={event.eligible && !cooldown?.active ? "ok" : "fail"}
+          >
+            資格
+          </StatusBadge>
+          <span>{eligibilityDecisionLabel(event)}</span>
+        </div>
+        <div>
+          <StatusBadge tone={action.tone}>名額</StatusBadge>
+          <span>{availabilityDecisionLabel(event)}</span>
+        </div>
+        <div>
+          <StatusBadge tone="neutral">報名期間</StatusBadge>
+          <span>{bookingWindowLabel(event)}</span>
+        </div>
+      </div>
       {cooldown?.active && (
         <Alert tone="warn">
-          限量活動報名因未報到冷卻而暫停，直到{" "}
-          {formatDisplayDate(cooldown.until || "")}。
+          限量活動因缺席冷卻期暫停報名，開放時間：
+          {formatDate(cooldown.until || "")}。
         </Alert>
       )}
       <dl className="meta-list">
         {!compact && (
           <div>
-            <dt>活動 ID</dt>
+            <dt>活動編號</dt>
             <dd>{event.event_id}</dd>
           </div>
         )}
         <div>
           <dt>地點</dt>
-          <dd>{event.location || event.event_site || "未設定"}</dd>
+          <dd>{siteLabel(event.location || event.event_site)}</dd>
         </div>
         <div>
           <dt>開始時間</dt>
-          <dd>{formatDisplayDate(event.starts_at)}</dd>
+          <dd>{formatDate(event.starts_at)}</dd>
+        </div>
+        <div>
+          <dt>報名開始</dt>
+          <dd>{formatDate(event.registration_start)}</dd>
         </div>
         <div>
           <dt>報名截止</dt>
-          <dd>{formatDisplayDate(event.registration_close)}</dd>
+          <dd>{formatDate(event.registration_close)}</dd>
         </div>
         <div>
           <dt>資格規則</dt>
           <dd>
-            {event.rule.department} / {event.rule.site} / G
-            {event.rule.min_grade}+
+            {departmentLabel(event.rule.department)} /{" "}
+            {siteLabel(event.rule.site)} / G{event.rule.min_grade}+ /{" "}
+            {employmentStatusLabel(event.rule.employment_status)}
           </dd>
         </div>
       </dl>
@@ -150,13 +274,25 @@ export function EventSummaryBlock({
           label="容量使用"
           value={event.confirmed_count}
           max={capacityMax}
-          helper={`${event.confirmed_count}/${capacityMax} 已確認，候補 ${event.waitlist_count}`}
+          helper={`${event.confirmed_count}/${capacityMax} 已報名，${event.waitlist_count} 候補`}
         />
       ) : (
         <p className="form-hint">
-          不限量活動：報名不會扣除庫存，也不會為同行人另發票券。
+          不限量活動不扣庫存，家屬人數請在詳情頁確認後再送出。
         </p>
       )}
+    </div>
+  );
+}
+
+export function WaitlistPolicy({ event }: { event: EventSummary }) {
+  if (event.capacity_type !== "limited") return null;
+  const full = (event.remaining_capacity ?? 0) <= 0;
+  if (!full && event.waitlist_count === 0) return null;
+  return (
+    <div className="helper-strip">
+      <StatusBadge tone={full ? "warn" : "info"}>候補政策</StatusBadge>
+      <span>{waitlistPolicyCopy(event)}</span>
     </div>
   );
 }
@@ -171,91 +307,33 @@ export function FamilyCountControl({
   value: number;
 }) {
   if (event.capacity_type === "limited") {
-    return <p className="form-hint">限量活動不開放同行人數。</p>;
+    return <p className="form-hint">限量活動不開放填寫家屬人數。</p>;
   }
   if (!event.allows_family) {
-    return <p className="form-hint">此不限量活動不開放同行人數。</p>;
+    return <p className="form-hint">此活動未開放攜帶家屬。</p>;
   }
   const boundedValue = Math.min(Math.max(value, 0), maxFamilyCount);
   return (
-    <label className="field compact">
-      <span>同行人數</span>
-      <input
-        aria-label={`同行人數：${event.title}`}
+    <div className="compact-field">
+      <Field
+        inputMode="numeric"
+        label="同行家屬"
         max={maxFamilyCount}
         min={0}
-        onChange={(input) =>
-          onChange(
-            Math.min(
-              Math.max(Number(input.target.value || 0), 0),
-              maxFamilyCount,
-            ),
-          )
-        }
+        name={`${event.event_id}-family-count`}
         type="number"
-        value={boundedValue}
+        value={String(boundedValue)}
+        onChange={(input) =>
+          onChange(Math.min(Math.max(Number(input || 0), 0), maxFamilyCount))
+        }
+        hint={`可填 0 到 ${maxFamilyCount} 人；人數會記錄在主要票券上。`}
       />
-      <small className="form-hint">
-        可填 0 到 {maxFamilyCount} 人；同行人數會記錄在你的主要票券。
-      </small>
-    </label>
-  );
-}
-
-export function CancellationControl({
-  event,
-  onCancel,
-  onReasonChange,
-  reason,
-}: {
-  event: EventSummary;
-  onCancel: () => void;
-  onReasonChange: (value: string) => void;
-  reason: string;
-}) {
-  const registrationID = registrationIDFor(event);
-  const booked =
-    event.current_user_status === "confirmed" ||
-    event.current_user_status === "waitlisted";
-  if (!booked) return <p className="form-hint">目前沒有可取消的報名。</p>;
-  const open = cancellationOpen(event);
-  return (
-    <div className="cancel-box">
-      <label className="field compact">
-        <span>取消原因</span>
-        <input
-          value={reason}
-          onChange={(input) => onReasonChange(input.target.value)}
-          placeholder="可選填原因"
-          disabled={!open}
-        />
-      </label>
-      <button
-        aria-label="取消報名"
-        className="button secondary"
-        type="button"
-        onClick={onCancel}
-        disabled={!open || !registrationID}
-      >
-        <Icon name="x" />
-        取消報名
-      </button>
-      <p className="form-hint">
-        {open
-          ? "報名開放期間可安全重試取消報名。"
-          : "自助取消已關閉，請聯絡活動管理員處理例外。"}
-      </p>
     </div>
   );
 }
 
 export function canBook(event: EventSummary) {
-  return (
-    event.eligible &&
-    !event.no_show_cooldown?.active &&
-    event.current_user_status !== "confirmed" &&
-    event.current_user_status !== "waitlisted"
-  );
+  return canSubmitAttendeeAction(event);
 }
 
 export function registrationIDFor(event: EventSummary) {
@@ -268,34 +346,68 @@ export function registrationIDFor(event: EventSummary) {
 
 export function messageTone(message: string): "ok" | "warn" | "fail" | "info" {
   const lower = message.toLowerCase();
-  if (lower.includes("cancelled") || lower.includes("confirmed")) return "ok";
+  if (
+    lower.includes("cancelled") ||
+    lower.includes("confirmed") ||
+    message.includes("成功") ||
+    message.includes("已取消") ||
+    message.includes("已報名")
+  )
+    return "ok";
   if (
     lower.includes("cooldown") ||
     lower.includes("closed") ||
-    lower.includes("waitlist")
+    lower.includes("waitlist") ||
+    message.includes("冷卻") ||
+    message.includes("已額滿") ||
+    message.includes("候補")
   )
     return "warn";
   if (
     lower.includes("error") ||
     lower.includes("failed") ||
-    lower.includes("not eligible")
+    lower.includes("not eligible") ||
+    message.includes("失敗") ||
+    message.includes("不符合")
   )
     return "fail";
   return "info";
 }
 
 function eligibilityLabel(event: EventSummary) {
-  const reason = event.eligibility_reason.trim();
-  if (!reason) return event.eligible ? "符合資格" : "不可報名";
-  if (reason === "eligible") return "符合資格";
-  return reason;
+  return eligibilityDecisionLabel(event);
 }
 
-function cancellationOpen(event: EventSummary) {
-  const close = Date.parse(event.registration_close);
-  return Number.isFinite(close) && close > Date.now();
+function capacitySummaryLabel(event: EventSummary) {
+  if (event.capacity_type === "unlimited") return "不限量";
+  const remaining = event.remaining_capacity ?? 0;
+  if (remaining > 0) return `${remaining} 席可報名`;
+  if (event.waitlist_count > 0) return "候補中";
+  return "已額滿";
 }
 
-function formatDisplayDate(value?: string | null) {
-  return value ? formatDate(value) : "未設定";
+function userFacingEventDescription(description?: string | null) {
+  const cleaned = (description || "")
+    .replace(/phase\s*1/gi, "")
+    .replace(/第一階段/g, "")
+    .replace(/示範/g, "流程")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "未提供活動描述。";
+}
+
+function waitlistPolicyCopy(event: EventSummary) {
+  const policy =
+    event.allocation_mode === "lottery" ? "抽籤或管理員釋出" : "先到先處理";
+  return `${policy}；目前不顯示候補順位，有名額釋出時會透過通知中心更新，保留期限依活動主辦政策處理。`;
+}
+
+function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
+  return (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.shiftKey
+  );
 }

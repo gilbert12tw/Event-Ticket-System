@@ -26,11 +26,14 @@ describe("TicketPanel", () => {
       employee_name: "Ariel Chen",
     };
 
-    render(<TicketPanel ticket={ticket} />);
+    const { container } = render(<TicketPanel ticket={ticket} />);
 
     expect(screen.getByText("台北家庭電影夜")).toBeInTheDocument();
     expect(screen.getByText("T-1")).toBeInTheDocument();
-    expect(screen.getByLabelText(/QR Code/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(
+      container.querySelector(".ticket-detail .qr-wrap"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
   });
 
@@ -58,7 +61,59 @@ describe("TicketPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("uses in-memory checkin handoff instead of localStorage", async () => {
+  it("renders unavailable tickets as a single non-QR state without repeated copy", () => {
+    const ticket: Ticket = {
+      ticket_id: "T-redeemed",
+      registration_id: "R-1",
+      event_id: "EVT-1",
+      employee_id: "E1001",
+      status: "redeemed",
+      signed_token: "signed-secret",
+      issued_at: "2026-05-06T10:00:00Z",
+      event_title: "台北家庭電影夜",
+    };
+
+    const { container } = render(<TicketPanel ticket={ticket} />);
+
+    expect(
+      container.querySelector(".ticket-panel.unavailable"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
+    expect(screen.getAllByText("此票券已核銷，不能再次入場。")).toHaveLength(1);
+    expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
+  });
+
+  it("renders active tickets without QR as a single pending state", () => {
+    const onRefresh = vi.fn();
+    const ticket: Ticket = {
+      ticket_id: "T-pending",
+      registration_id: "R-1",
+      event_id: "EVT-1",
+      employee_id: "E1001",
+      status: "active",
+      issued_at: "2026-05-06T10:00:00Z",
+      event_title: "台北家庭電影夜",
+    };
+
+    const { container } = render(
+      <TicketPanel ticket={ticket} onRefresh={onRefresh} />,
+    );
+
+    expect(
+      container.querySelector(".ticket-panel.unavailable"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        "二維碼尚未產生，請重新整理票券；若仍未出現，請聯絡活動主辦。",
+      ),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "重新整理票券" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps employees in their own workspace when opening event detail", async () => {
     const ticket: Ticket = {
       ticket_id: "T-2",
       registration_id: "R-2",
@@ -76,12 +131,12 @@ describe("TicketPanel", () => {
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
     render(<TicketPanel ticket={ticket} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "帶到驗票頁" }));
+    await userEvent.click(screen.getByRole("link", { name: "查看活動詳情" }));
 
     expect(pushStateSpy).toHaveBeenCalledWith(
-      { cetsCheckinToken: "signed-secret" },
+      {},
       "",
-      "/admin/checkin",
+      "/user/events/detail?event_id=EVT-2",
     );
     expect(setItemSpy).not.toHaveBeenCalled();
     pushStateSpy.mockRestore();

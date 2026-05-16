@@ -82,10 +82,6 @@ describe("OfflineCheckinBoundaryPage", () => {
         "gate-offline-1",
       ),
     );
-    await waitFor(() =>
-      expect(screen.getByText("batch-1")).toBeInTheDocument(),
-    );
-    await waitFor(() => expect(screen.getByText("sig-1")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText("hash-1")).toBeInTheDocument());
   });
 
@@ -156,11 +152,9 @@ describe("OfflineCheckinBoundaryPage", () => {
       ).toBeEnabled(),
     );
     await userEvent.click(screen.getByRole("button", { name: "下載離線名單" }));
-    await waitFor(() =>
-      expect(screen.getByText("batch-2")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("hash-1")).toBeInTheDocument());
 
-    const batchInput = screen.getByRole("textbox", { name: /scan batch/i });
+    const batchInput = screen.getByRole("textbox", { name: "掃描批次" });
     await userEvent.clear(batchInput);
     await userEvent.type(batchInput, "signed-token-abc\n");
     await userEvent.click(screen.getByRole("button", { name: "同步名單" }));
@@ -176,14 +170,15 @@ describe("OfflineCheckinBoundaryPage", () => {
         ],
       }),
     );
+    await userEvent.click(screen.getByRole("tab", { name: "3 同步結果" }));
     await waitFor(() => {
-      const syncPanel = screen.getByText("同步結果").closest(".panel");
+      const syncPanel = screen.getByRole("tabpanel").closest(".panel");
       expect(syncPanel).not.toBeNull();
       const tables = within(syncPanel as HTMLElement).getAllByRole("table");
-      expect(tables).toHaveLength(2);
-      const resultTable = tables[1];
+      expect(tables).toHaveLength(1);
+      const resultTable = tables[0];
       expect(within(resultTable).getByText("t1")).toBeInTheDocument();
-      expect(within(resultTable).getByText("accepted")).toBeInTheDocument();
+      expect(within(resultTable).getByText("驗票成功")).toBeInTheDocument();
     });
   });
 });

@@ -94,7 +94,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		if err != nil {
 			return BookingResponse{}, err
 		}
-		return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status)}, tx.Commit(ctx)
+		return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}, tx.Commit(ctx)
 	}
 
 	status := RegistrationConfirmed

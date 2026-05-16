@@ -1,0 +1,83 @@
+html {
+  min-width: 320px;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+summary {
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid oklch(0.62 0.078 250 / 0.46);
+  outline-offset: 2px;
+}
+
+[tabindex="-1"]:focus {
+  outline: 3px solid oklch(0.62 0.078 250 / 0.46);
+  outline-offset: 3px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  letter-spacing: 0;
+}
+
+h1 {
+  color: var(--ink);
+  font-size: 1.55rem;
+  font-weight: 760;
+  line-height: 1.16;
+}
+
+h2 {
+  color: var(--ink);
+  font-size: 1.03rem;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+h3 {
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 740;
+  line-height: 1.3;
+}
+
+p {
+  max-width: 75ch;
+  color: var(--muted);
+  line-break: anywhere;
+  line-height: 1.52;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}

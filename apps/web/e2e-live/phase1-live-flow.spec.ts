@@ -4,36 +4,30 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import {
+  admin,
+  api,
+  chooseComboboxOption,
+  collectBrowserErrors,
+  employee,
+  expectForbiddenRoute,
+  expectNoHorizontalOverflow,
+  expectRoute,
+  futureISO,
+  hr,
+  loginThroughUi,
+  mainHeading,
+  secondEmployee,
+  signedTokenFor,
+  staff,
+  type EventSummary,
+  type NotificationDelivery,
+  type Ticket,
+  waitForNotificationDelivery,
+} from "./support/live-flow-helpers";
 
-type Role =
-  | "employee"
-  | "activity_admin"
-  | "checkin_staff"
-  | "hr_admin"
-  | "system_admin";
-type Actor = { id: string; role: Role };
-type Envelope<T> = { success: boolean; data: T; error: string | null };
-type MockProviderToken = { provider_token: string; expires_at: string };
-type EventSummary = { event_id: string; title: string };
-type Ticket = {
-  ticket_id: string;
-  event_id: string;
-  employee_id: string;
-  status: string;
-  signed_token?: string;
-  event_title?: string;
-};
-type NotificationDelivery = { delivery_id: string; status: string };
-
-const admin: Actor = { id: "admin-1", role: "activity_admin" };
-const employee: Actor = { id: "E1001", role: "employee" };
-const secondEmployee: Actor = { id: "E1002", role: "employee" };
-const staff: Actor = { id: "staff-1", role: "checkin_staff" };
-const hr: Actor = { id: "hr-1", role: "hr_admin" };
-const providerTokens = new Map<string, string>();
-
-test.describe.serial("Phase 1 live production workflow", () => {
-  test("exercises Phase 1 through real UI workflows without route mocking", async ({
+test.describe.serial("第一階段實際產品流程", () => {
+  test("透過真實介面流程驗證第一階段，不使用路由模擬", async ({
     page,
     request,
   }) => {
@@ -41,13 +35,13 @@ test.describe.serial("Phase 1 live production workflow", () => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const event = await createLiveEvent(request, suffix);
 
-    await loginThroughUi(page, request, employee.id, "員工入口");
+    await loginThroughUi(page, request, employee.id, "活動探索");
     await expectEmployeeCanBrowseAndBook(page, event);
     await expectEmployeeDetailRoute(page, event);
-    await expectEmployeeTicketAndNotifications(page, event);
+    await expectEmployeeTicketAndNotifications(page, request, event);
     const onlineToken = await signedTokenFor(request, employee, event.event_id);
 
-    await loginThroughUi(page, request, secondEmployee.id, "員工入口");
+    await loginThroughUi(page, request, secondEmployee.id, "活動探索");
     await expectEmployeeCanBrowseAndBook(page, event);
     const offlineToken = await signedTokenFor(
       request,
@@ -55,34 +49,23 @@ test.describe.serial("Phase 1 live production workflow", () => {
       event.event_id,
     );
 
-    await loginThroughUi(page, request, staff.id, "驗票員入口");
+    await loginThroughUi(page, request, staff.id, "現場驗票");
     await expectOnlineCheckinAndDuplicate(page, onlineToken);
     await expectOfflineSyncWithNonEmptyScan(page, event, offlineToken);
     await expectForbiddenRoute(page, "/admin/events");
 
-    await loginThroughUi(page, request, hr.id, "活動主辦入口");
+    await loginThroughUi(page, request, hr.id, "人資報表");
     await expectReportsExportAndAuditFilters(page, event);
     const delivery = await waitForNotificationDelivery(page, request);
-    await expectNotificationDeliveryRoute(page, delivery);
 
-    await loginThroughUi(page, request, "system-1", "HR 報表入口");
-    await expectRoute(page, "/admin/audit", "稽核入口");
+    await loginThroughUi(page, request, "system-1", "人資報表");
+    await expectNotificationDeliveryRoute(page, delivery);
+    await expectRoute(page, "/admin/audit", "稽核查詢");
     await expectForbiddenRoute(page, "/admin/events");
 
     expect(browserErrors).toEqual([]);
   });
 });
-
-function collectBrowserErrors(page: Page) {
-  const errors: string[] = [];
-  page.on("console", (message) => {
-    const text = message.text();
-    if (message.type() === "error" && !/status of (401|403|409)/.test(text))
-      errors.push(text);
-  });
-  page.on("pageerror", (error) => errors.push(error.message));
-  return errors;
-}
 
 async function createLiveEvent(request: APIRequestContext, suffix: string) {
   await api<{ status: string }>(
@@ -93,9 +76,9 @@ async function createLiveEvent(request: APIRequestContext, suffix: string) {
     {},
   );
   return api<EventSummary>(request, admin, "POST", "/api/v1/admin/events", {
-    title: `Live Phase 1 UI Gate ${suffix}`,
-    description: "Compose-backed Playwright UI workflow event",
-    location: "Taipei HQ",
+    title: `實際介面驗證活動 ${suffix}`,
+    description: "容器環境中的介面流程驗證活動",
+    location: "台北總部",
     starts_at: futureISO(72),
     registration_start: futureISO(-1),
     registration_close: futureISO(48),
@@ -110,99 +93,97 @@ async function createLiveEvent(request: APIRequestContext, suffix: string) {
   });
 }
 
-async function loginThroughUi(
-  page: Page,
-  request: APIRequestContext,
-  principalID: string,
-  landingHeading: string,
-) {
-  const providerToken = await providerTokenFor(request, principalID);
-  await page.addInitScript((token) => {
-    (
-      globalThis as typeof globalThis & { __CETS_PROVIDER_TOKEN__?: string }
-    ).__CETS_PROVIDER_TOKEN__ = token;
-  }, providerToken);
-  await page.goto("/", { waitUntil: "networkidle" });
-  const loginHeading = page.getByRole("heading", {
-    name: "選擇一個模擬 provider profile",
-  });
-  if (await loginHeading.isVisible({ timeout: 1_000 }).catch(() => false)) {
-    await page.getByRole("button", { name: new RegExp(principalID) }).click();
-  } else if (
-    !(await page
-      .getByRole("heading", { name: landingHeading })
-      .isVisible({ timeout: 1_000 })
-      .catch(() => false))
-  ) {
-    await expect(
-      page.getByRole("button", { name: "切換 Profile" }).first(),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "切換 Profile" }).first().click();
-    await expect(loginHeading).toBeVisible();
-    await page.getByRole("button", { name: new RegExp(principalID) }).click();
-  }
-  await expect(
-    page.getByRole("heading", { name: landingHeading }),
-  ).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-}
-
 async function expectEmployeeCanBrowseAndBook(page: Page, event: EventSummary) {
-  await expectRoute(page, "/user/events", "員工入口");
+  await expectRoute(page, "/user/events", "活動探索");
   const card = page
-    .locator("article.event-card")
+    .locator("article.event-list-item")
     .filter({ hasText: event.title });
   await expect(card).toBeVisible();
   await expect(card.getByText("符合資格")).toBeVisible();
-  await card.getByRole("button", { name: "報名" }).click();
+  await card
+    .getByRole("link", { name: /立即報名|加入候補|設定同行人數/ })
+    .click();
+  await expect(mainHeading(page, "活動詳情")).toBeVisible();
+  await expect(mainHeading(page, event.title)).toBeVisible();
+  await page.getByRole("button", { name: /立即報名|加入候補/ }).click();
+  await expect(page.getByText(/報名成功，票券已核發|已加入候補/)).toBeVisible();
+  await expectRoute(page, "/user/events?tab=registered", "活動探索");
+  const registeredCard = page
+    .locator("article.event-list-item")
+    .filter({ hasText: event.title });
+  await expect(registeredCard).toBeVisible();
   await expect(
-    card.locator('[data-slot="badge"]').filter({ hasText: /^已確認$/ }),
+    registeredCard.locator('[data-slot="badge"]').filter({ hasText: "已報名" }),
   ).toBeVisible();
-  await expect(card.getByRole("button", { name: "已報名" })).toBeDisabled();
+  await expect(
+    registeredCard.getByRole("link", { name: "查看票券" }),
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 }
 
 async function expectEmployeeDetailRoute(page: Page, event: EventSummary) {
   await expectRoute(
     page,
-    `/user/events/${encodeURIComponent(event.event_id)}`,
-    "單一活動詳情",
+    `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`,
+    "活動詳情",
   );
-  await expect(page.getByRole("heading", { name: event.title })).toBeVisible();
+  await expect(mainHeading(page, event.title)).toBeVisible();
   await expect(
-    page.locator(".meta-list div").filter({ hasText: "活動 ID" }).locator("dd"),
+    page
+      .locator(".meta-list div")
+      .filter({ hasText: "活動編號" })
+      .locator("dd"),
   ).toHaveText(event.event_id);
 }
 
 async function expectEmployeeTicketAndNotifications(
   page: Page,
+  request: APIRequestContext,
   event: EventSummary,
 ) {
-  await expectRoute(page, "/user/tickets", "票券入口");
+  await expectRoute(page, "/user/tickets", "我的票券");
   await expect(
     page.locator(".ticket-row").filter({ hasText: event.title }),
   ).toBeVisible();
-  await expect(page.getByText("Signed token 已保留給驗票流程")).toBeVisible();
-  await expect(page.getByText("QR").first()).toBeVisible();
+  await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
+
+  const tickets = await api<Ticket[]>(
+    request,
+    employee,
+    "GET",
+    "/api/v1/me/tickets",
+  );
+  const ticket = tickets.find(
+    (candidate) => candidate.event_id === event.event_id,
+  );
+  expect(ticket?.ticket_id, `ticket for ${event.event_id}`).toBeTruthy();
+  const signedToken = ticket?.signed_token || "";
+  expect(signedToken, `ticket token for ${event.event_id}`).toBeTruthy();
+  await page.locator(".ticket-row").filter({ hasText: event.title }).click();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/user/tickets\\?ticket_id=${encodeURIComponent(ticket?.ticket_id || "")}$`,
+    ),
+  );
+  await expect(page.getByLabel("票券二維碼")).toBeVisible();
+  await expect(page.getByText(signedToken)).toHaveCount(0);
 
   await expectRoute(page, "/user/notifications", "通知中心");
-  await expect(page.getByText(event.title).first()).toBeVisible();
-  await expect(page.getByText("Registration").first()).toBeVisible();
-  await expect(page.getByText("Ticket").first()).toBeVisible();
+  await expectNotificationEntry(page, event.title, "報名");
+  await expectNotificationEntry(page, event.title, "票券");
 }
 
 async function expectOnlineCheckinAndDuplicate(page: Page, token: string) {
-  await expectRoute(page, "/admin/checkin", "驗票員入口");
-  await page.getByLabel("Signed token").fill(token);
-  await page.getByLabel("裝置 ID").fill("playwright-live-online");
+  await expectRoute(page, "/admin/checkin", "現場驗票");
+  await page.getByLabel("掃描或貼上票券").fill(token);
+  await chooseComboboxOption(page, "驗票裝置", "自訂裝置");
+  await page.getByLabel("自訂裝置代號").fill("playwright-live-online");
   await page.getByRole("button", { name: "送出驗票" }).click();
-  await expect(page.getByRole("heading", { name: "驗票成功" })).toBeVisible();
+  await expect(mainHeading(page, "驗票成功")).toBeVisible();
 
   await page.getByRole("button", { name: "送出驗票" }).click();
-  await expect(
-    page.getByRole("heading", { name: "重複掃描被拒絕" }),
-  ).toBeVisible();
-  await expect(page.getByText("duplicate")).toBeVisible();
+  await expect(mainHeading(page, "重複掃描被拒絕")).toBeVisible();
+  await expect(page.getByText("重複掃描").first()).toBeVisible();
   await expectNoHorizontalOverflow(page);
 }
 
@@ -211,24 +192,30 @@ async function expectOfflineSyncWithNonEmptyScan(
   event: EventSummary,
   token: string,
 ) {
-  await expectRoute(page, "/admin/checkin/offline", "離線名單");
-  await page.getByLabel("活動").selectOption({ label: event.title });
-  await page.getByLabel("裝置 ID").fill("playwright-live-offline");
+  await expectRoute(page, "/admin/checkin/offline", "離線驗票同步");
+  await chooseComboboxOption(page, "活動", event.title);
+  await chooseComboboxOption(page, "驗票裝置", "自訂裝置");
+  await page.getByLabel("自訂裝置代號").fill("playwright-live-offline");
   await page.getByRole("button", { name: "下載離線名單" }).click();
-  await expect(
-    page.getByText(/已下載 batch .*共 [1-9][0-9]* 張票券/),
-  ).toBeVisible();
   await expect(
     page.locator("table").filter({ hasText: secondEmployee.id }),
   ).toBeVisible();
 
-  await page.getByLabel("scan batch").fill(token);
+  await page.getByLabel("掃描批次").fill(token);
   await page.getByRole("button", { name: "同步名單" }).click();
-  await expect(page.getByText("已同步 1 筆掃描")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "3 同步結果" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(
-    page.locator(".kpi").filter({ hasText: "accepted" }).getByText("1"),
+    page.locator(".kpi").filter({ hasText: "成功" }).getByText("1"),
   ).toBeVisible();
-  await expect(page.getByText("accepted").first()).toBeVisible();
+  await expect(
+    page
+      .locator("tr")
+      .filter({ hasText: secondEmployee.id })
+      .filter({ hasText: "驗票成功" }),
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 }
 
@@ -236,20 +223,25 @@ async function expectReportsExportAndAuditFilters(
   page: Page,
   event: EventSummary,
 ) {
-  await expectRoute(page, "/admin/reports", "HR 報表入口");
-  await expect(page.getByText(event.title).first()).toBeVisible();
-  await page.getByPlaceholder("搜尋活動或 event id").fill(event.title);
-  await expect(page.getByText(event.title).first()).toBeVisible();
-  await page.getByRole("button", { name: "匯出 CSV" }).click();
-  await expect(page.getByText(/Export exp_/)).toBeVisible();
+  await expectRoute(page, "/admin/reports", "人資報表");
+  await expectReportEntry(page, event.title);
+  await page.getByPlaceholder("搜尋活動或活動編號").fill(event.title);
+  await expectReportEntry(page, event.title);
+  await page.getByRole("button", { name: "匯出完整參與報表" }).click();
+  await page.getByRole("tab", { name: "匯出狀態" }).click();
+  await expect(
+    page.locator(".export-detail dd").filter({ hasText: /^exp_/ }),
+  ).toBeVisible();
   await expect(page.getByText(/exports\/exp_.*\.csv/)).toBeVisible();
 
-  await expectRoute(page, "/admin/audit", "稽核入口");
-  await page.getByLabel("Action").fill("report.export.requested");
-  await page.getByLabel("Role").selectOption("hr_admin");
-  await page.getByRole("button", { name: "套用 server filters" }).click();
+  await expectRoute(page, "/admin/audit", "稽核查詢");
+  await page.getByLabel("操作").click();
+  await page.getByRole("option", { name: "報表匯出" }).click();
+  await page.getByLabel("角色").click();
+  await page.getByRole("option", { name: "人資管理員" }).click();
+  await page.getByRole("button", { name: "套用篩選" }).click();
   const auditRow = page
-    .getByRole("row", { name: /report\.export\.requested.*hr_admin/ })
+    .getByRole("row", { name: /報表匯出請求.*人資管理員/ })
     .first();
   await expect(auditRow).toBeVisible();
   await auditRow.getByRole("button", { name: "檢視" }).click();
@@ -257,158 +249,80 @@ async function expectReportsExportAndAuditFilters(
   await expectNoHorizontalOverflow(page);
 }
 
+async function expectReportEntry(page: Page, eventTitle: string) {
+  const mobileCard = page
+    .locator("main .mobile-summary-card")
+    .filter({ hasText: eventTitle })
+    .first();
+  if (await mobileCard.isVisible({ timeout: 500 }).catch(() => false)) {
+    await expect(mobileCard).toBeVisible();
+    return;
+  }
+  await expect(
+    page.locator("main tr").filter({ hasText: eventTitle }).first(),
+  ).toBeVisible();
+}
+
 async function expectNotificationDeliveryRoute(
   page: Page,
   delivery: NotificationDelivery,
 ) {
-  await expectRoute(page, "/admin/notifications", "Delivery log");
+  await expectRoute(page, "/admin/notifications", "通知投遞");
   await page
-    .getByRole("combobox", { exact: true, name: "狀態" })
-    .selectOption("all");
+    .getByRole("group", { name: "投遞狀態" })
+    .getByRole("button", { name: /^全部/ })
+    .click();
   await page.getByRole("button", { name: "重新整理" }).click();
+  await expectDeliveryEntry(page, delivery.delivery_id, "已送達");
+  await expect(page.getByRole("heading", { name: "投遞紀錄" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+}
+
+async function expectDeliveryEntry(
+  page: Page,
+  deliveryID: string,
+  statusLabel: string,
+) {
+  const mobileCard = page
+    .locator("main .mobile-summary-card")
+    .filter({ hasText: deliveryID })
+    .first();
+  if (await mobileCard.isVisible({ timeout: 500 }).catch(() => false)) {
+    await expect(mobileCard).toBeVisible();
+    await expect(
+      mobileCard.getByText(statusLabel, { exact: true }),
+    ).toBeVisible();
+    return;
+  }
   const deliveryRow = page
     .locator("tr")
-    .filter({ hasText: delivery.delivery_id })
+    .filter({ hasText: deliveryID })
     .first();
   await expect(deliveryRow).toBeVisible();
-  await expect(deliveryRow.getByText(delivery.status)).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Delivery log" }),
+    deliveryRow.getByText(statusLabel, { exact: true }),
   ).toBeVisible();
-  await expectNoHorizontalOverflow(page);
 }
 
-async function expectForbiddenRoute(page: Page, path: string) {
-  await page.goto(path, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { name: "權限不足" })).toBeVisible();
-  await expect(page.getByText("目前登入角色無法進入")).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-}
-
-async function expectRoute(page: Page, path: string, heading: string) {
-  await page.goto(path, { waitUntil: "networkidle" });
-  await expect(
-    page.locator("main").getByRole("heading", { name: heading }).first(),
-  ).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-}
-
-async function expectNoHorizontalOverflow(page: Page) {
-  const overflow = await page.evaluate(() =>
-    Math.ceil(document.documentElement.scrollWidth - window.innerWidth),
-  );
-  expect(overflow, "no horizontal overflow").toBeLessThanOrEqual(1);
-}
-
-async function signedTokenFor(
-  request: APIRequestContext,
-  actor: Actor,
-  eventID: string,
-) {
-  const tickets = await api<Ticket[]>(
-    request,
-    actor,
-    "GET",
-    "/api/v1/me/tickets",
-  );
-  const ticket = tickets.find((candidate) => candidate.event_id === eventID);
-  expect(
-    ticket?.signed_token,
-    `ticket token for ${actor.id} on ${eventID}`,
-  ).toBeTruthy();
-  return ticket?.signed_token || "";
-}
-
-async function waitForNotificationDelivery(
+async function expectNotificationEntry(
   page: Page,
-  request: APIRequestContext,
+  eventTitle: string,
+  kind: string,
 ) {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const deliveries = await api<NotificationDelivery[]>(
-      request,
-      hr,
-      "GET",
-      "/api/v1/admin/notifications/deliveries",
-    );
-    const visible =
-      deliveries.find(
-        (delivery) =>
-          delivery.status !== "failed" && delivery.status !== "dead_letter",
-      ) || deliveries[0];
-    if (visible) return visible;
-    await page.waitForTimeout(1_000);
+  const mobileCard = page
+    .locator("main .mobile-summary-card")
+    .filter({ hasText: eventTitle })
+    .filter({ hasText: kind })
+    .first();
+  if (await mobileCard.isVisible({ timeout: 500 }).catch(() => false)) {
+    await expect(mobileCard).toBeVisible();
+    return;
   }
-  throw new Error(
-    "notification delivery worker did not create a visible delivery",
-  );
-}
-
-async function api<T>(
-  request: APIRequestContext,
-  actor: Actor,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const response = await rawApi(request, actor, method, path, body);
-  const text = await response.text();
-  expect(response.ok(), `${method} ${path} failed: ${text}`).toBe(true);
-  const payload = JSON.parse(text) as Envelope<T>;
-  expect(
-    payload.success,
-    `${method} ${path} envelope error: ${payload.error}`,
-  ).toBe(true);
-  return payload.data;
-}
-
-async function rawApi(
-  request: APIRequestContext,
-  actor: Actor,
-  method: string,
-  path: string,
-  body?: unknown,
-) {
-  const providerToken = await providerTokenFor(request, actor.id);
-  return request.fetch(path, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${providerToken}`,
-    },
-    data: body,
-  });
-}
-
-async function providerTokenFor(request: APIRequestContext, profileID: string) {
-  const cached = providerTokens.get(profileID);
-  if (cached) return cached;
-
-  const response = await request.post("/api/v1/auth/mock-provider-token", {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    data: {
-      profile_id: profileID,
-    },
-  });
-  const text = await response.text();
-  expect(
-    response.ok(),
-    `POST /api/v1/auth/mock-provider-token failed for ${profileID}: ${text}`,
-  ).toBe(true);
-  const payload = JSON.parse(text) as Envelope<MockProviderToken>;
-  expect(
-    payload.success,
-    `mock provider token envelope failed for ${profileID}: ${payload.error}`,
-  ).toBe(true);
-  expect(
-    payload.data.provider_token,
-    `mock provider token missing for ${profileID}`,
-  ).toBeTruthy();
-  providerTokens.set(profileID, payload.data.provider_token);
-  return payload.data.provider_token;
-}
-
-function futureISO(hours: number) {
-  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  await expect(
+    page
+      .locator("main tr")
+      .filter({ hasText: eventTitle })
+      .filter({ hasText: kind })
+      .first(),
+  ).toBeVisible();
 }

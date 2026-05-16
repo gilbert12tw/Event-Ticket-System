@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { MouseEvent } from "react";
 import {
   authBootstrap,
   clearProviderToken,
@@ -20,14 +21,9 @@ import {
 } from "@/app/routes";
 import type { RouteKey } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
-import { Alert } from "@/components/shared";
-import {
-  ApiActivity,
-  Header,
-  LoadingScreen,
-  StatusPanel,
-  WorkspaceSwitch,
-} from "@/components/layout";
+import { Alert, DebugChromeGate } from "@/components/shared";
+import { LoadingScreen, StatusPanel } from "@/components/layout";
+import { AuthenticatedShell } from "@/components/layout/shell";
 import { MockProfileSelector } from "@/features/auth/MockProfileSelector";
 import {
   AdminEventsPage,
@@ -48,7 +44,9 @@ import { HrReportsPage } from "@/features/reporting/pages";
 import { HrSyncSettingsPage } from "@/features/hr-settings/pages";
 import { AdminAuditPage } from "@/features/audit/pages";
 import { DemoRunbookPage } from "@/features/demo-runbook/pages";
-import { Icon } from "@/components/shared/icon";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { isDebugChromeEnabled, setDebugChromeQuery } from "@/lib/ui/debug";
 
 function App() {
   const [route, setRoute] = useState<RouteKey>(currentRoute);
@@ -60,6 +58,7 @@ function App() {
   const [apiLog, setApiLog] = useState<ApiLogEntry[]>([]);
   const [health, setHealth] = useState<"checking" | "ok" | "down">("checking");
   const [ready, setReady] = useState<"checking" | "ok" | "down">("checking");
+  const [debugChrome, setDebugChrome] = useState(isDebugChromeEnabled);
   const canUseDemo = Boolean(auth && mockProfilesEnabled);
   const demoRouteBlocked = auth ? route === "admin-demo" && !canUseDemo : false;
   const unauthorizedRoute = auth
@@ -75,12 +74,16 @@ function App() {
   ).filter(
     (item) =>
       auth &&
+      item.key !== "user-event-detail" &&
       canAccessRoute(item.key, auth.actor.role) &&
       (item.key !== "admin-demo" || canUseDemo),
   );
 
   useEffect(() => {
-    const onRoute = () => setRoute(currentRoute());
+    const onRoute = () => {
+      setRoute(currentRoute());
+      setDebugChrome(isDebugChromeEnabled());
+    };
     window.addEventListener("popstate", onRoute);
     return () => window.removeEventListener("popstate", onRoute);
   }, []);
@@ -166,6 +169,11 @@ function App() {
     navigate(routePath("user-events"));
   }
 
+  function handleDebugToggle(enabled: boolean) {
+    setDebugChromeQuery(enabled);
+    setDebugChrome(isDebugChromeEnabled());
+  }
+
   if (authLoading) {
     return <LoadingScreen />;
   }
@@ -174,121 +182,92 @@ function App() {
     if (mockProfilesEnabled) {
       return (
         <MockProfileSelector
+          debugChromeEnabled={debugChrome}
           health={health}
           ready={ready}
           message={authMessage}
           profiles={mockProfiles}
+          onToggleDebugChrome={handleDebugToggle}
           onSelect={(profileID) => void handleMockProfile(profileID)}
         />
       );
     }
     return (
-      <AuthRequiredState health={health} ready={ready} message={authMessage} />
+      <AuthRequiredState
+        debugChrome={debugChrome}
+        health={health}
+        ready={ready}
+        message={authMessage}
+      />
     );
   }
 
   return (
-    <div className={`app-shell ${activeWorkspace}-workspace`}>
-      <aside className="sidebar" aria-label="主要導覽">
-        <div className="brand-block">
-          <div className="brand-mark" aria-hidden="true">
-            C
-          </div>
-          <div>
-            <div className="brand-title">企業活動票務</div>
-            <div className="brand-subtitle">Phase 1 MVP</div>
-          </div>
-        </div>
-        <WorkspaceSwitch active={activeWorkspace} role={auth.actor.role} />
-        <nav className="nav-list">
-          <div className="nav-group-label">
-            {activeWorkspace === "user" ? "User Workspace" : "Admin Console"}
-          </div>
-          {navRoutes.map((item) => (
-            <a
-              className={
-                item.key === safeRoute ? "nav-link active" : "nav-link"
-              }
-              href={item.path}
-              key={item.key}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate(item.path);
-              }}
-            >
-              <span className="nav-icon" aria-hidden="true">
-                <Icon name={item.icon} />
-              </span>
-              <span className="nav-copy">
-                <strong>{item.label}</strong>
-                <small>{item.eyebrow}</small>
-              </span>
-            </a>
-          ))}
-        </nav>
-        <StatusPanel health={health} ready={ready} />
-      </aside>
-
-      <main className="workspace">
-        <Header
-          route={safeRoute}
-          session={auth}
-          mockProfilesEnabled={mockProfilesEnabled}
-          onSwitchProfile={
-            mockProfilesEnabled ? handleSwitchProfile : undefined
-          }
+    <AuthenticatedShell
+      activeRoute={activeRoute}
+      activeWorkspace={activeWorkspace}
+      apiLog={apiLog}
+      debugChromeEnabled={debugChrome}
+      health={health}
+      mockProfilesEnabled={mockProfilesEnabled}
+      navRoutes={navRoutes}
+      onClearApiLog={() => setApiLog([])}
+      onSwitchProfile={
+        debugChrome && mockProfilesEnabled ? handleSwitchProfile : undefined
+      }
+      onToggleDebugChrome={handleDebugToggle}
+      ready={ready}
+      safeRoute={safeRoute}
+      session={auth}
+    >
+      {authMessage && <Alert tone="warn">{authMessage}</Alert>}
+      {unauthorizedRoute ? (
+        <UnauthorizedState
+          requestedRoute={route}
+          fallbackRoute={safeRoute}
+          onReturn={() => navigate(routePath(safeRoute))}
         />
-        {authMessage && <Alert tone="warn">{authMessage}</Alert>}
-        {unauthorizedRoute ? (
-          <UnauthorizedState
-            requestedRoute={route}
-            fallbackRoute={safeRoute}
-            onReturn={() => navigate(routePath(safeRoute))}
-          />
-        ) : (
-          <>
-            {safeRoute === "user-events" && (
-              <EmployeeEventsPage claims={auth.claims} />
-            )}
-            {safeRoute === "user-event-detail" && (
-              <EmployeeEventDetailPage claims={auth.claims} />
-            )}
-            {safeRoute === "user-tickets" && (
-              <EmployeeTicketsPage claims={auth.claims} />
-            )}
-            {safeRoute === "user-notifications" && <UserNotificationsPage />}
-            {safeRoute === "admin-events" && <AdminEventsPage />}
-            {safeRoute === "admin-registrations" && <AdminRegistrationsPage />}
-            {safeRoute === "admin-notifications" && (
-              <NotificationDeliveryPage />
-            )}
-            {safeRoute === "admin-checkin" && <CheckinPage />}
-            {safeRoute === "admin-offline-checkin" && (
-              <OfflineCheckinBoundaryPage />
-            )}
-            {safeRoute === "admin-reports" && <HrReportsPage />}
-            {safeRoute === "admin-hr-settings" && <HrSyncSettingsPage />}
-            {safeRoute === "admin-audit" && <AdminAuditPage />}
-            {safeRoute === "admin-demo" && canUseDemo && (
-              <DemoRunbookPage
-                session={auth}
-                onSessionChange={(next) => setAuth(next)}
-              />
-            )}
-          </>
-        )}
-      </main>
-
-      <ApiActivity entries={apiLog} onClear={() => setApiLog([])} />
-    </div>
+      ) : (
+        <>
+          {safeRoute === "user-events" && (
+            <EmployeeEventsPage claims={auth.claims} />
+          )}
+          {safeRoute === "user-event-detail" && (
+            <EmployeeEventDetailPage claims={auth.claims} />
+          )}
+          {safeRoute === "user-tickets" && (
+            <EmployeeTicketsPage claims={auth.claims} />
+          )}
+          {safeRoute === "user-notifications" && <UserNotificationsPage />}
+          {safeRoute === "admin-events" && <AdminEventsPage />}
+          {safeRoute === "admin-registrations" && <AdminRegistrationsPage />}
+          {safeRoute === "admin-notifications" && <NotificationDeliveryPage />}
+          {safeRoute === "admin-checkin" && <CheckinPage />}
+          {safeRoute === "admin-offline-checkin" && (
+            <OfflineCheckinBoundaryPage />
+          )}
+          {safeRoute === "admin-reports" && <HrReportsPage />}
+          {safeRoute === "admin-hr-settings" && <HrSyncSettingsPage />}
+          {safeRoute === "admin-audit" && <AdminAuditPage />}
+          {safeRoute === "admin-demo" && canUseDemo && (
+            <DemoRunbookPage
+              session={auth}
+              onSessionChange={(next) => setAuth(next)}
+            />
+          )}
+        </>
+      )}
+    </AuthenticatedShell>
   );
 }
 
 function AuthRequiredState({
+  debugChrome,
   health,
   ready,
   message,
 }: {
+  debugChrome: boolean;
   health: string;
   ready: string;
   message: string;
@@ -302,18 +281,19 @@ function AuthRequiredState({
           </div>
           <div>
             <div className="brand-title">企業活動票務</div>
-            <div className="brand-subtitle">Enterprise SSO</div>
+            <div className="brand-subtitle">企業單一登入</div>
           </div>
         </div>
         <div>
-          <div className="eyebrow">Provider Claims Required</div>
-          <h1>需要企業 SSO 身分</h1>
+          <div className="eyebrow">需要身分宣告</div>
+          <h1>需要企業單一登入身分</h1>
           <p>
-            請從企業身分提供者進入工作台，系統會使用 provider claims
-            載入角色與員工屬性。
+            請從企業身分提供者進入工作台，系統會使用身分宣告載入角色與員工屬性。
           </p>
         </div>
-        <StatusPanel health={health} ready={ready} />
+        <DebugChromeGate enabled={debugChrome}>
+          <StatusPanel health={health} ready={ready} />
+        </DebugChromeGate>
         {message && <Alert tone="warn">{message}</Alert>}
       </section>
     </main>
@@ -335,21 +315,42 @@ function UnauthorizedState({
     routes.find((candidate) => candidate.key === fallbackRoute) || routes[0];
 
   return (
-    <section className="panel span-12">
-      <div className="section-heading">
-        <div>
-          <h2>權限不足</h2>
-          <p>目前登入角色無法進入「{requested.label}」。</p>
+    <Card asChild className="panel span-12">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>權限不足</h2>
+            <p>目前登入角色無法進入「{requested.label}」。</p>
+          </div>
         </div>
-      </div>
-      <Alert tone="warn">
-        請切換到你的可存取頁面，或使用對應角色的帳號重新登入。建議先回到「
-        {fallback.label}」繼續操作。
-      </Alert>
-      <button className="button" type="button" onClick={onReturn}>
-        返回預設頁面
-      </button>
-    </section>
+        <Alert tone="warn">
+          請切換到你的可存取頁面，或使用對應角色的帳號重新登入。建議先回到「
+          {fallback.label}」繼續操作。
+        </Alert>
+        <Button asChild>
+          <a
+            href={routePath(fallbackRoute)}
+            onClick={(event) => {
+              if (shouldUseNativeNavigation(event)) return;
+              event.preventDefault();
+              onReturn();
+            }}
+          >
+            返回預設頁面
+          </a>
+        </Button>
+      </section>
+    </Card>
+  );
+}
+
+function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
+  return (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.shiftKey
   );
 }
 

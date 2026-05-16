@@ -97,6 +97,7 @@ function currentProviderToken() {
 
 async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method || "GET";
+  const requestBody = options.body ?? null;
   try {
     const response = await fetch(path, {
       ...options,
@@ -114,24 +115,27 @@ async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
           error: await response.text(),
         } satisfies ApiEnvelope<T>);
 
-    logApi(`${method} ${path}`, response.status, response.ok, envelope);
+    logApi(
+      `${method} ${path}`,
+      response.status,
+      response.ok,
+      requestBody,
+      envelope,
+    );
     if (!response.ok) {
       throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
     }
     return envelope.data;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    logApi(`${method} ${path}`, "ERR", false, {
+    logApi(`${method} ${path}`, "ERR", false, requestBody, {
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }
 }
 
-async function apiList<T>(
-  path: string,
-  options: RequestOptions = {},
-): Promise<T[]> {
+async function apiList<T>(path: string, options: RequestOptions = {}) {
   return (await api<T[] | null>(path, options)) ?? [];
 }
 
@@ -139,14 +143,16 @@ function logApi(
   label: string,
   status: number | "ERR",
   ok: boolean,
-  payload: unknown,
+  requestBody: unknown,
+  responseBody: unknown,
 ) {
   observer?.({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     label,
     status,
     ok,
-    payload: redact(payload),
+    requestBody: redact(requestBody),
+    responseBody: redact(responseBody),
     createdAt: new Date().toISOString(),
   });
 }
@@ -163,13 +169,10 @@ export function authSessionFromClaims(claims: AuthMeClaims): AuthSession {
   };
 }
 
-export function me(): Promise<AuthSession> {
-  return api<AuthMeClaims>("/api/v1/auth/me").then(authSessionFromClaims);
-}
+export const me = (): Promise<AuthSession> =>
+  api<AuthMeClaims>("/api/v1/auth/me").then(authSessionFromClaims);
 
-export function authBootstrap() {
-  return api<AuthBootstrap>("/api/v1/auth/bootstrap");
-}
+export const authBootstrap = () => api<AuthBootstrap>("/api/v1/auth/bootstrap");
 
 export function mockProviderToken(profileID: string) {
   return api<MockProviderToken>("/api/v1/auth/mock-provider-token", {
@@ -188,9 +191,7 @@ export async function selectMockProfile(
   return me();
 }
 
-export function clearProviderToken() {
-  setProviderToken(null);
-}
+export const clearProviderToken = () => setProviderToken(null);
 
 export function seedDemo() {
   return api<{ status: string }>("/api/v1/admin/seed-demo", {
@@ -206,13 +207,10 @@ export function createEvent(body: CreateEventRequest) {
   });
 }
 
-export function listAdminEvents() {
-  return apiList<EventSummary>("/api/v1/admin/events");
-}
+export const listAdminEvents = () =>
+  apiList<EventSummary>("/api/v1/admin/events");
 
-export function listEvents() {
-  return apiList<EventSummary>("/api/v1/events");
-}
+export const listEvents = () => apiList<EventSummary>("/api/v1/events");
 
 export function getEvent(eventID: string) {
   return api<EventSummary>(`/api/v1/events/${encodeURIComponent(eventID)}`);
@@ -390,9 +388,7 @@ export function runLottery(eventID: string, body: LotteryRunRequest) {
   );
 }
 
-export function listTickets() {
-  return apiList<Ticket>("/api/v1/me/tickets");
-}
+export const listTickets = () => apiList<Ticket>("/api/v1/me/tickets");
 
 export function getTicket(ticketID: string) {
   return api<Ticket>(`/api/v1/tickets/${encodeURIComponent(ticketID)}`);
@@ -463,9 +459,7 @@ export function retryNotificationDelivery(deliveryID: string) {
   );
 }
 
-export function reports() {
-  return apiList<ReportRow>("/api/v1/admin/reports");
-}
+export const reports = () => apiList<ReportRow>("/api/v1/admin/reports");
 
 export function createReportExport(body: ReportExportRequest) {
   return api<ReportExport>("/api/v1/admin/reports/exports", {
@@ -492,6 +486,5 @@ export function auditLogs(filters: AuditLogFilters = {}) {
   );
 }
 
-export function readiness(path: "/healthz" | "/readyz") {
-  return api<{ status: string }>(path);
-}
+export const readiness = (path: "/healthz" | "/readyz") =>
+  api<{ status: string }>(path);

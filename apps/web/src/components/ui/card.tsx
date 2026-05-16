@@ -1,14 +1,20 @@
 import * as React from "react";
+import { Slot } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
 function Card({
+  asChild = false,
   className,
   size = "default",
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & {
+  asChild?: boolean;
+  size?: "default" | "sm";
+}) {
+  const Comp = asChild ? Slot.Root : "div";
   return (
-    <div
+    <Comp
       data-slot="card"
       data-size={size}
       className={cn(

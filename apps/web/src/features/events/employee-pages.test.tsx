@@ -1,8 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bookEvent, cancelMyRegistration, listEvents } from "@/lib/api";
-import type { AuthMeClaims, EventSummary } from "@/lib/api";
 import { EmployeeEventsPage } from "./employee-pages";
+import { claims, eventFixture } from "./employee-pages-test-helpers";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -10,6 +11,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     bookEvent: vi.fn(),
     cancelMyRegistration: vi.fn(),
+    getEvent: vi.fn(),
     listEvents: vi.fn(),
   };
 });
@@ -18,25 +20,15 @@ const mockListEvents = vi.mocked(listEvents);
 const mockBookEvent = vi.mocked(bookEvent);
 const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
 
-const claims: AuthMeClaims = {
-  employee_id: "E1001",
-  display_name: "Ariel Chen",
-  role_claims: ["employee"],
-  mapped_roles: ["employee"],
-  department: "Engineering",
-  site: "Taipei",
-  city: "Taipei",
-  claims_status: "complete",
-};
-
 describe("EmployeeEventsPage", () => {
   beforeEach(() => {
     mockListEvents.mockReset();
     mockBookEvent.mockReset();
     mockCancelMyRegistration.mockReset();
+    window.history.replaceState({}, "", "/user/events");
   });
 
-  it("shows bounded family count only for unlimited events", async () => {
+  it("renders a compact formal event list without debug identity panels", async () => {
     mockListEvents.mockResolvedValue([
       eventFixture({
         event_id: "evt-limited",
@@ -44,10 +36,11 @@ describe("EmployeeEventsPage", () => {
         capacity_type: "limited",
         capacity: 5,
         remaining_capacity: 3,
+        current_user_status: "cancelled",
       }),
       eventFixture({
         event_id: "evt-unlimited",
-        title: "家庭日",
+        title: "不限量活動",
         capacity_type: "unlimited",
         capacity: null,
         remaining_capacity: null,
@@ -57,14 +50,15 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findAllByText("符合資格")).toHaveLength(2);
-    expect(
-      await screen.findByText("限量活動不開放同行人數。"),
-    ).toBeInTheDocument();
-    const familyInput = await screen.findByRole("spinbutton", {
-      name: "同行人數：家庭日",
-    });
-    expect(familyInput).toHaveAttribute("max", "10");
+    expect(await screen.findByText("活動列表")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "可報名 2" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "我的報名 0" })).toBeInTheDocument();
+    expect(screen.getAllByText("符合資格").length).toBeGreaterThan(0);
+    expect(screen.queryByText("員工入口")).not.toBeInTheDocument();
+    expect(screen.queryByText("身分宣告")).not.toBeInTheDocument();
+    expect(screen.queryByText("資格規則")).not.toBeInTheDocument();
+    expect(screen.queryByText("已取消")).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 
   it("shows cooldown feedback and disables self-cancel after registration close", async () => {
@@ -80,52 +74,91 @@ describe("EmployeeEventsPage", () => {
           reason: "no_show_cooldown",
         },
         registration_close: "2020-01-01T00:00:00Z",
-        title: "冷卻活動",
+        title: "冷卻期活動",
       }),
     ]);
 
     render(<EmployeeEventsPage claims={claims} />);
 
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "我的報名 1" }),
+    );
     expect(
-      await screen.findByText(/限量活動報名因未報到冷卻而暫停/),
+      await screen.findByText(/限量活動因缺席冷卻期暫停報名/),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /取消報名/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /已報名/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消報名" })).toBeDisabled();
     expect(screen.getByText(/自助取消已關閉/)).toBeInTheDocument();
   });
-});
 
-function eventFixture(overrides: Partial<EventSummary> = {}): EventSummary {
-  return {
-    event_id: "evt-1",
-    title: "Event",
-    description: "A company event",
-    location: "Taipei HQ",
-    event_city: "Taipei",
-    event_site: "Taipei",
-    starts_at: "2026-06-01T10:00:00Z",
-    registration_start: "2026-05-01T10:00:00Z",
-    registration_close: "2026-05-31T10:00:00Z",
-    capacity_type: "limited",
-    capacity: 10,
-    allows_family: false,
-    status: "published",
-    allocation_mode: "fcfs",
-    created_by: "admin-1",
-    created_at: "2026-05-01T00:00:00Z",
-    updated_at: "2026-05-01T00:00:00Z",
-    rule: {
-      department: "Engineering",
-      site: "Taipei",
-      min_grade: 5,
-      employment_status: "active",
-    },
-    eligible: true,
-    eligibility_reason: "eligible",
-    confirmed_count: 1,
-    waitlist_count: 0,
-    remaining_capacity: 9,
-    current_user_status: "",
-    no_show_cooldown: { active: false },
-    ...overrides,
-  };
-}
+  it("shows a disabled blocker action for unavailable event rows", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        eligible: false,
+        eligibility_reason: "department Sales is not eligible",
+        event_id: "evt-blocked",
+        title: "不可報名活動",
+      }),
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "不可報名 1" }),
+    );
+
+    const blockedAction = await screen.findByRole("button", {
+      name: /不符合資格/,
+    });
+    expect(blockedAction).toBeDisabled();
+    expect(blockedAction).toHaveAttribute(
+      "title",
+      expect.stringContaining("不符合資格"),
+    );
+    expect(screen.getByRole("link", { name: "詳情" })).toBeInTheDocument();
+  });
+
+  it("opens event detail from list booking actions instead of submitting", async () => {
+    const event = eventFixture({
+      event_id: "evt-open",
+      title: "開放報名活動",
+      remaining_capacity: 2,
+    });
+    mockListEvents.mockResolvedValue([event]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    await userEvent.click(
+      await screen.findByRole("link", { name: "立即報名" }),
+    );
+
+    expect(mockBookEvent).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/user/events/detail");
+    expect(window.location.search).toBe("?event_id=evt-open");
+  });
+
+  it("dismisses cancellation confirmation without calling the API", async () => {
+    mockListEvents.mockResolvedValue([
+      eventFixture({
+        current_user_registration_id: "R-keep",
+        current_user_status: "confirmed",
+        title: "保留報名活動",
+      }),
+    ]);
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "我的報名 1" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "取消報名" }),
+    );
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "保留報名" }));
+
+    expect(mockCancelMyRegistration).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+});

@@ -50,6 +50,7 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, RegistrationConfirmed, first.Registration.Status)
 	require.NotNil(t, first.Ticket)
+	assert.False(t, first.Duplicate)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'booking.confirmed' AND aggregate_id = $1`, first.Registration.RegistrationID, 1)
 	var rawTicketCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM tickets WHERE signed_token <> '' OR qr_payload <> ''`).Scan(&rawTicketCount))
@@ -68,11 +69,13 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	assert.Equal(t, first.Registration.RegistrationID, retry.Registration.RegistrationID)
 	require.NotNil(t, retry.Ticket)
 	assert.Equal(t, first.Ticket.TicketID, retry.Ticket.TicketID)
+	assert.True(t, retry.Duplicate)
 	employeeRetry, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "idem-1-different"})
 	require.NoError(t, err)
 	assert.Equal(t, first.Registration.RegistrationID, employeeRetry.Registration.RegistrationID)
 	require.NotNil(t, employeeRetry.Ticket)
 	assert.Equal(t, first.Ticket.TicketID, employeeRetry.Ticket.TicketID)
+	assert.True(t, employeeRetry.Duplicate)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND employee_id = 'E1001'`, event.EventID, 1)
 
 	second, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "idem-2"})

@@ -5,17 +5,13 @@ export function redact(value: unknown): unknown {
   for (const [key, raw] of Object.entries(value)) {
     if (key === "provider_token") {
       output[key] =
-        typeof raw === "string" && raw.length > 0
-          ? "[redacted provider token]"
-          : raw;
+        typeof raw === "string" && raw.length > 0 ? "[身分簽章已遮蔽]" : raw;
     } else if (key === "signed_token" || key === "qr_payload") {
       output[key] =
-        typeof raw === "string" && raw.length > 0
-          ? "[redacted ticket token]"
-          : raw;
+        typeof raw === "string" && raw.length > 0 ? "[票券簽章已遮蔽]" : raw;
     } else if (key === "cets_session" || key === "session" || key === "token") {
       output[key] =
-        typeof raw === "string" && raw.length > 0 ? "[redacted session]" : raw;
+        typeof raw === "string" && raw.length > 0 ? "[工作階段已遮蔽]" : raw;
     } else {
       output[key] = redact(raw);
     }

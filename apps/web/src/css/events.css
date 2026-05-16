@@ -1,0 +1,244 @@
+.event-list,
+.list-stack,
+.step-list,
+.skeleton-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.governance-grid,
+.governance-editor {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--ink);
+  text-align: left;
+}
+
+.event-row.active {
+  border-color: var(--accent-line);
+  background: var(--accent-wash);
+}
+
+.event-row span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.event-row-task {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.event-row-task > [data-slot="button"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  justify-content: stretch;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+}
+
+.event-row strong,
+.event-row small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-row small {
+  color: var(--muted);
+}
+
+.state-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  min-width: 0;
+  align-items: end;
+}
+
+.event-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.event-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.event-list-panel {
+  align-content: start;
+}
+
+.event-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(148px, max-content);
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.event-list-item:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.event-list-item-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.event-list-item-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.event-list-item h3 {
+  margin: 0;
+}
+
+.event-list-item-meta,
+.event-list-item-description {
+  max-width: 75ch;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.event-list-item-actions {
+  display: flex;
+  width: min(220px, 100%);
+  flex-direction: column;
+  gap: 8px;
+  justify-self: end;
+}
+
+.event-list-item-actions > [data-slot="button"] {
+  width: 100%;
+}
+
+.event-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.event-card h3 {
+  margin-bottom: 6px;
+}
+
+.decision-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.decision-strip > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.decision-strip span:last-child {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 720;
+  overflow-wrap: anywhere;
+}
+
+.event-action {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.cancel-box {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.cancellation-confirmation-list {
+  gap: 8px;
+  margin-top: 0;
+}
+
+.meta-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.meta-list.vertical {
+  grid-template-columns: 1fr;
+}
+
+.ticket-meta-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.meta-list div {
+  min-width: 0;
+}
+
+.meta-list dt {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 740;
+}
+
+.meta-list dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}

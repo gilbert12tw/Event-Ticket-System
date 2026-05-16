@@ -1,41 +1,46 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  bookEvent,
-  cancelMyRegistration,
-  getEvent,
-  listEvents,
-} from "@/lib/api";
+import type { ReactNode } from "react";
+import { cancelMyRegistration, listEvents } from "@/lib/api";
 import type { AuthMeClaims, EventSummary } from "@/lib/api";
-import { bookingActionLabel, errorMessage } from "@/lib/formatting";
+import { errorMessage } from "@/lib/formatting";
 import {
   Alert,
+  CompactStatsBar,
   EmptyState,
-  IdentityCard,
-  Kpi,
-  ProviderClaimsCard,
   SkeletonRows,
 } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
-import { TicketPanel } from "@/features/tickets/pages";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUrlTab } from "@/hooks/use-url-tab";
 import {
-  canBook,
-  CancellationControl,
   EmployeeEventCard,
-  EventSummaryBlock,
-  FamilyCountControl,
   messageTone,
   registrationIDFor,
 } from "./employee-event-components";
+import { localizedMessage } from "@/lib/ui/options";
+import { type BookingResultState } from "./employee-booking-result";
+import { canSubmitAttendeeAction } from "./employee-event-state";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
-type NumberByEvent = Record<string, number>;
 type TextByEvent = Record<string, string>;
+type EmployeeEventTab = "available" | "registered" | "unavailable";
+const employeeEventTabs = ["available", "registered", "unavailable"] as const;
 
 export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
   const [events, setEvents] = useState<EventSummary[]>([]);
-  const [familyCounts, setFamilyCounts] = useState<NumberByEvent>({});
   const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingActionID, setPendingActionID] = useState("");
+  const [bookingResults, setBookingResults] = useState<
+    Record<string, BookingResultState>
+  >({});
+  const [activeTab, setActiveTab] = useUrlTab<EmployeeEventTab>(
+    "tab",
+    employeeEventTabs,
+    "available",
+  );
 
   const principalID = claims.employee_id;
   const eventStats = useMemo(
@@ -56,7 +61,18 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
     }),
     [events],
   );
-
+  const availableEvents = events.filter((event) =>
+    canSubmitAttendeeAction(event),
+  );
+  const registeredEvents = events.filter(
+    (event) =>
+      event.current_user_status === "confirmed" ||
+      event.current_user_status === "waitlisted",
+  );
+  const unavailableEvents = events.filter(
+    (event) =>
+      !availableEvents.includes(event) && !registeredEvents.includes(event),
+  );
   async function refresh() {
     setLoading(true);
     setMessage("");
@@ -73,279 +89,178 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
     void refresh();
   }, [principalID]);
 
-  async function book(event: EventSummary) {
-    setMessage("");
-    try {
-      const familyCount =
-        event.capacity_type === "unlimited"
-          ? (familyCounts[event.event_id] ?? 0)
-          : 0;
-      const result = await bookEvent(
-        event.event_id,
-        `book-${event.event_id}-${principalID}`,
-        familyCount,
-      );
-      setMessage(result.message);
-      await refresh();
-    } catch (error) {
-      setMessage(errorMessage(error));
-    }
-  }
-
   async function cancel(event: EventSummary) {
     const registrationID = registrationIDFor(event);
     if (!registrationID) return;
     const reason =
-      (cancelReasons[event.event_id] || "").trim() || "員工取消報名";
+      (cancelReasons[event.event_id] || "").trim() || "employee cancellation";
     setMessage("");
+    setPendingActionID(`cancel-${event.event_id}`);
     try {
       const result = await cancelMyRegistration(
         registrationID,
         reason,
         `cancel-${registrationID}-${principalID}`,
       );
-      setMessage(result.message);
+      setMessage(localizedMessage(result.message));
+      setBookingResults((current) => ({
+        ...current,
+        [event.event_id]: {
+          title: "報名已取消",
+          copy: cancellationResultCopy(event),
+          tone: "ok",
+        },
+      }));
       await refresh();
     } catch (error) {
       setMessage(errorMessage(error));
+    } finally {
+      setPendingActionID("");
     }
   }
 
   return (
     <section className="content-grid">
-      <div className="panel span-12 workspace-context user-context">
-        <div>
-          <div className="eyebrow">User Workspace</div>
-          <h2>員工入口</h2>
-          <p>
-            查看可報名活動、追蹤候補狀態，並在報名開放期間安全取消既有報名。
-          </p>
-        </div>
-        <IdentityCard claims={claims} />
-        <div className="context-kpis">
-          <Kpi label="可報名" value={eventStats.eligible} />
-          <Kpi label="已確認" value={eventStats.confirmed} />
-          <Kpi label="候補中" value={eventStats.waitlisted} />
-          <Kpi label="剩餘名額" value={eventStats.openSeats} />
-        </div>
-      </div>
-      <div className="panel span-8">
+      <Card className="panel span-12 focused-tabs event-list-panel">
         <div className="section-heading">
           <div>
-            <h2>可報名活動</h2>
-            <p>
-              限量活動會核發本人票券；不限量活動可將同行人數記錄在同一筆報名。
-            </p>
+            <h2>活動列表</h2>
+            <p>先看可報名活動；完整資格與容量細節保留在活動詳情。</p>
           </div>
-          <button
-            className="button secondary"
+          <Button
+            variant="outline"
             type="button"
             onClick={refresh}
             disabled={loading}
           >
             <Icon name="refresh" />
             重新整理
-          </button>
+          </Button>
         </div>
+        <CompactStatsBar
+          items={[
+            { label: "符合資格", value: eventStats.eligible },
+            { label: "已報名", value: eventStats.confirmed },
+            { label: "候補中", value: eventStats.waitlisted },
+            { label: "剩餘名額", value: eventStats.openSeats },
+          ]}
+        />
         {message && <Alert tone={messageTone(message)}>{message}</Alert>}
-        <div className="event-list" aria-busy={loading}>
-          {loading && <SkeletonRows rows={3} />}
-          {!loading && events.length === 0 && (
-            <EmptyState
-              title="目前沒有已發布活動"
-              action="請活動管理員先發布活動。"
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as EmployeeEventTab)}
+          className="event-tabs"
+        >
+          <TabsList>
+            <TabsTrigger value="available">
+              可報名 {availableEvents.length}
+            </TabsTrigger>
+            <TabsTrigger value="registered">
+              我的報名 {registeredEvents.length}
+            </TabsTrigger>
+            <TabsTrigger value="unavailable">
+              不可報名 {unavailableEvents.length}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="available">
+            <EventListState
+              loading={loading}
+              rows={availableEvents}
+              emptyTitle={
+                events.length === 0 ? "尚無活動" : "目前沒有可報名活動"
+              }
+              emptyAction={
+                events.length === 0
+                  ? "請活動主辦先發布活動。"
+                  : "已報名、候補或不符合資格的活動已移到其他分頁。"
+              }
+              render={(event) => (
+                <EmployeeEventCard
+                  event={event}
+                  key={event.event_id}
+                  mode="available"
+                />
+              )}
             />
-          )}
-          {!loading &&
-            events.map((event) => (
-              <EmployeeEventCard
-                cancelReason={cancelReasons[event.event_id] || ""}
-                event={event}
-                familyCount={familyCounts[event.event_id] ?? 0}
-                key={event.event_id}
-                onBook={() => void book(event)}
-                onCancel={() => void cancel(event)}
-                onCancelReasonChange={(value) =>
-                  setCancelReasons((current) => ({
-                    ...current,
-                    [event.event_id]: value,
-                  }))
-                }
-                onFamilyCountChange={(value) =>
-                  setFamilyCounts((current) => ({
-                    ...current,
-                    [event.event_id]: value,
-                  }))
-                }
-              />
-            ))}
-        </div>
-      </div>
-      <ProviderClaimsCard claims={claims} />
+          </TabsContent>
+          <TabsContent value="registered">
+            <EventListState
+              loading={loading}
+              rows={registeredEvents}
+              emptyTitle="尚無報名紀錄"
+              emptyAction="完成報名或加入候補後，會出現在這裡。"
+              render={(event) => (
+                <EmployeeEventCard
+                  cancelReason={cancelReasons[event.event_id] || ""}
+                  event={event}
+                  key={event.event_id}
+                  mode="registered"
+                  onCancel={() => void cancel(event)}
+                  cancelBusy={pendingActionID === `cancel-${event.event_id}`}
+                  onCancelReasonChange={(value) =>
+                    setCancelReasons((current) => ({
+                      ...current,
+                      [event.event_id]: value,
+                    }))
+                  }
+                  result={
+                    bookingResults[event.event_id] && (
+                      <div
+                        className={`booking-result ${bookingResults[event.event_id].tone}`}
+                        role="status"
+                      >
+                        <p>{bookingResults[event.event_id].copy}</p>
+                      </div>
+                    )
+                  }
+                />
+              )}
+            />
+          </TabsContent>
+          <TabsContent value="unavailable">
+            <EventListState
+              loading={loading}
+              rows={unavailableEvents}
+              emptyTitle="沒有不可報名活動"
+              emptyAction="目前所有活動都可報名，或已在我的報名中。"
+              render={(event) => (
+                <EmployeeEventCard
+                  event={event}
+                  key={event.event_id}
+                  mode="unavailable"
+                />
+              )}
+            />
+          </TabsContent>
+        </Tabs>
+      </Card>
     </section>
   );
 }
 
-export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
-  const [events, setEvents] = useState<EventSummary[]>([]);
-  const [selectedID, setSelectedID] = useState(
-    () => new URLSearchParams(window.location.search).get("event_id") || "",
-  );
-  const [detail, setDetail] = useState<EventSummary | null>(null);
-  const [familyCount, setFamilyCount] = useState(0);
-  const [cancelReason, setCancelReason] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const principalID = claims.employee_id;
-
-  async function refresh(nextID = selectedID) {
-    setBusy(true);
-    setMessage("");
-    try {
-      const rows = await listEvents();
-      setEvents(rows);
-      const eventID = nextID || rows[0]?.event_id || "";
-      setSelectedID(eventID);
-      setDetail(eventID ? await getEvent(eventID) : null);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
+function EventListState({
+  emptyAction,
+  emptyTitle,
+  loading,
+  render,
+  rows,
+}: {
+  emptyAction: string;
+  emptyTitle: string;
+  loading: boolean;
+  render: (event: EventSummary) => ReactNode;
+  rows: EventSummary[];
+}) {
+  if (loading) return <SkeletonRows rows={3} />;
+  if (rows.length === 0) {
+    return <EmptyState title={emptyTitle} action={emptyAction} />;
   }
+  return <div className="event-list">{rows.map(render)}</div>;
+}
 
-  useEffect(() => {
-    void refresh();
-  }, [principalID]);
-
-  async function selectEvent(eventID: string) {
-    setSelectedID(eventID);
-    window.history.replaceState(
-      {},
-      "",
-      `/user/events/detail${eventID ? `?event_id=${encodeURIComponent(eventID)}` : ""}`,
-    );
-    await refresh(eventID);
-  }
-
-  async function bookSelected() {
-    if (!detail) return;
-    setMessage("");
-    try {
-      const nextFamilyCount =
-        detail.capacity_type === "unlimited" ? familyCount : 0;
-      const result = await bookEvent(
-        detail.event_id,
-        `book-${detail.event_id}-${principalID}`,
-        nextFamilyCount,
-      );
-      setMessage(result.message);
-      await refresh(detail.event_id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    }
-  }
-
-  async function cancelSelected() {
-    if (!detail) return;
-    const registrationID = registrationIDFor(detail);
-    if (!registrationID) return;
-    setMessage("");
-    try {
-      const result = await cancelMyRegistration(
-        registrationID,
-        cancelReason.trim() || "員工取消報名",
-        `cancel-${registrationID}-${principalID}`,
-      );
-      setMessage(result.message);
-      await refresh(detail.event_id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    }
-  }
-
-  return (
-    <section className="content-grid">
-      <div className="panel span-12 workspace-context user-context">
-        <div>
-          <div className="eyebrow">User Workspace</div>
-          <h2>單一活動詳情</h2>
-          <p>在同一筆活動資料中確認資格、同行人數上限、取消狀態與票券交付。</p>
-        </div>
-        <label className="field compact">
-          <span>活動</span>
-          <select
-            value={selectedID}
-            onChange={(event) => void selectEvent(event.target.value)}
-            disabled={busy}
-          >
-            <option value="">選擇活動</option>
-            {events.map((event) => (
-              <option value={event.event_id} key={event.event_id}>
-                {event.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="panel span-8">
-        <div className="section-heading">
-          <div>
-            <h2>活動與報名狀態</h2>
-            <p>報名或取消前會重新檢查身分資料與活動規則。</p>
-          </div>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => void refresh()}
-            disabled={busy || !selectedID}
-          >
-            <Icon name="refresh" />
-            重新整理
-          </button>
-        </div>
-        {message && <Alert tone={messageTone(message)}>{message}</Alert>}
-        {!detail && (
-          <EmptyState
-            title="尚未選擇活動"
-            action="選擇活動後會顯示報名狀態。"
-          />
-        )}
-        {detail && <EventSummaryBlock event={detail} />}
-      </div>
-      <div className="panel span-4">
-        <h2>報名決策</h2>
-        {!detail && (
-          <EmptyState title="等待活動" action="選擇活動後會顯示可執行動作。" />
-        )}
-        {detail && (
-          <div className="summary-block">
-            <FamilyCountControl
-              event={detail}
-              value={familyCount}
-              onChange={setFamilyCount}
-            />
-            <button
-              className="button full-width"
-              type="button"
-              onClick={() => void bookSelected()}
-              disabled={!canBook(detail)}
-            >
-              <Icon name="ticket" />
-              {bookingActionLabel(detail)}
-            </button>
-            <CancellationControl
-              event={detail}
-              reason={cancelReason}
-              onCancel={() => void cancelSelected()}
-              onReasonChange={setCancelReason}
-            />
-            {detail.current_user_ticket && (
-              <TicketPanel compact ticket={detail.current_user_ticket} />
-            )}
-          </div>
-        )}
-      </div>
-    </section>
-  );
+function cancellationResultCopy(event: EventSummary) {
+  const ticketCopy = event.current_user_ticket
+    ? "已核發票券會同步失效。"
+    : "目前沒有已核發票券。";
+  return `報名已取消。${ticketCopy}名額與候補可能更新；是否能重新報名取決於目前資格、活動狀態與名額。`;
 }

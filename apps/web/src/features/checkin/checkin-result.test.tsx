@@ -18,7 +18,9 @@ describe("CheckinResult", () => {
     render(<CheckinResult result={result} />);
 
     expect(screen.getByRole("status")).toHaveClass("ok");
-    expect(screen.getByText("驗票成功")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "驗票成功" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("T-1")).toBeInTheDocument();
   });
 
@@ -40,5 +42,25 @@ describe("CheckinResult", () => {
     expect(screen.getByRole("status")).toHaveClass("warn");
     expect(screen.getByText("重複掃描被拒絕")).toBeInTheDocument();
     expect(screen.getByText("gate-1")).toBeInTheDocument();
+  });
+
+  it("renders rejected check-in as failure, not success", () => {
+    const result: CheckinResponse = {
+      checkin_id: "",
+      ticket_id: "T-bad",
+      event_id: "EVT-1",
+      employee_id: "E1001",
+      status: "rejected",
+      scanned_at: "2026-05-06T10:05:00Z",
+      conflict_reason: "invalid ticket token",
+      duplicate: false,
+    };
+
+    render(<CheckinResult result={result} />);
+
+    expect(screen.getByRole("status")).toHaveClass("fail");
+    expect(screen.getByText("驗票失敗，票券不可入場")).toBeInTheDocument();
+    expect(screen.queryByText("驗票成功")).not.toBeInTheDocument();
+    expect(screen.getByText("票券簽章碼無效。")).toBeInTheDocument();
   });
 });

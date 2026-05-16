@@ -38,9 +38,11 @@ describe("NotificationDeliveryPage", () => {
 
     render(<NotificationDeliveryPage />);
 
-    await waitFor(() => expect(screen.getByText("del-1")).toBeInTheDocument());
-    expect(screen.getByText("E1001")).toBeInTheDocument();
-    expect(screen.getByText("email")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getAllByText("del-1").length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText("E1001").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("電子郵件").length).toBeGreaterThan(0);
   });
 
   it("retries a failed delivery and refreshes the row", async () => {
@@ -71,17 +73,23 @@ describe("NotificationDeliveryPage", () => {
 
     render(<NotificationDeliveryPage />);
 
-    const retryButton = await screen.findByRole("button", { name: "Retry" });
-    await userEvent.click(retryButton);
+    const retryButtons = await screen.findAllByRole("button", {
+      name: "重試第 2 次",
+    });
+    await userEvent.click(retryButtons[0]);
+    await userEvent.click(screen.getByRole("button", { name: "確認重試" }));
 
     await waitFor(() =>
       expect(retryNotificationDelivery).toHaveBeenCalledWith("del-2"),
     );
     await waitFor(() => {
-      const row = screen.getByText("del-2").closest("tr");
+      const row = screen
+        .getAllByText("del-2")
+        .find((element) => element.closest("tr"))
+        ?.closest("tr");
       expect(row).not.toBeNull();
       const scoped = within(row as HTMLTableRowElement);
-      expect(scoped.getByText("pending")).toBeInTheDocument();
+      expect(scoped.getByText("待處理")).toBeInTheDocument();
     });
     expect(screen.getByText("已重試投遞 del-2。")).toBeInTheDocument();
   });

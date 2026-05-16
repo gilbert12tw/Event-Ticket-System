@@ -60,14 +60,14 @@ describe("App", () => {
       expect(screen.getByText("權限不足")).toBeInTheDocument(),
     );
     expect(
-      screen.getByRole("heading", { name: "現場驗票" }),
-    ).toBeInTheDocument();
+      screen.getAllByRole("heading", { name: "現場驗票" }).length,
+    ).toBeGreaterThan(0);
     expect(
-      screen.getByRole("button", { name: "返回預設頁面" }),
+      screen.getByRole("link", { name: "返回預設頁面" }),
     ).toBeInTheDocument();
   });
 
-  it("shows SSO required state when provider auth fails and local demo is disabled", async () => {
+  it("shows single sign-on required state when provider auth fails and local demo is disabled", async () => {
     mockMe.mockRejectedValueOnce(new Error("authentication required"));
     mockAuthBootstrap.mockResolvedValueOnce({
       mock_profiles_enabled: false,
@@ -79,12 +79,10 @@ describe("App", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "需要企業 SSO 身分" }),
+        screen.getByRole("heading", { name: "需要企業單一登入身分" }),
       ).toBeInTheDocument(),
     );
-    expect(
-      screen.queryByLabelText("Mock provider profiles"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("本機身分清單")).not.toBeInTheDocument();
   });
 
   it("shows mock profile selector when bootstrap allows it", async () => {
@@ -108,12 +106,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(
-        screen.getByLabelText("Mock provider profiles"),
-      ).toBeInTheDocument(),
+      expect(screen.getByLabelText("本機身分清單")).toBeInTheDocument(),
     );
     expect(
-      screen.getByRole("heading", { name: "選擇一個模擬 provider profile" }),
+      screen.getByRole("heading", { name: "選擇一個本機身分" }),
     ).toBeInTheDocument();
   });
 });

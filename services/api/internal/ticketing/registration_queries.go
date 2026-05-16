@@ -35,7 +35,7 @@ func (s *Service) findRegistrationByIdempotencyKey(ctx context.Context, tx pgx.T
 	if err != nil {
 		return BookingResponse{}, false, err
 	}
-	return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status)}, true, nil
+	return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}, true, nil
 }
 
 func (s *Service) remainingForResponseTx(ctx context.Context, tx pgx.Tx, event Event) (int, error) {
