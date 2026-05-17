@@ -61,8 +61,28 @@ describe("OfflineCheckinBoundaryPage", () => {
       package_signature: "sig-1",
       ticket_count: 2,
       tickets: [
-        { ticket_id: "t1", employee_id: "E1001", token_hash: "hash-1" },
-        { ticket_id: "t2", employee_id: "E1002", token_hash: "hash-2" },
+        {
+          ticket_id: "t1",
+          employee_id: "E1001",
+          token_hash: "hash-1",
+          holder: {
+            display_name: "Ariel Chen",
+            department: "Engineering",
+            city: "Taipei",
+          },
+          family_count: 0,
+        },
+        {
+          ticket_id: "t2",
+          employee_id: "E1002",
+          token_hash: "hash-2",
+          holder: {
+            display_name: "Ben Lin",
+            department: "Engineering",
+            city: "Taipei",
+          },
+          family_count: 1,
+        },
       ],
     });
 
@@ -82,7 +102,11 @@ describe("OfflineCheckinBoundaryPage", () => {
         "gate-offline-1",
       ),
     );
-    await waitFor(() => expect(screen.getByText("hash-1")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Ariel Chen")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/E1001/)).toBeInTheDocument();
+    expect(screen.queryByText("hash-1")).not.toBeInTheDocument();
   });
 
   it("submits a scan batch and renders summary", async () => {
@@ -123,7 +147,17 @@ describe("OfflineCheckinBoundaryPage", () => {
       package_signature: "sig-2",
       ticket_count: 1,
       tickets: [
-        { ticket_id: "t1", employee_id: "E1001", token_hash: "hash-1" },
+        {
+          ticket_id: "t1",
+          employee_id: "E1001",
+          token_hash: "hash-1",
+          holder: {
+            display_name: "Ariel Chen",
+            department: "Engineering",
+            city: "Taipei",
+          },
+          family_count: 0,
+        },
       ],
     });
     syncOfflineCheckins.mockResolvedValue({
@@ -140,6 +174,12 @@ describe("OfflineCheckinBoundaryPage", () => {
           status: "accepted",
           scanned_at: "2026-05-06T10:10:00Z",
           duplicate: false,
+          holder: {
+            display_name: "Ariel Chen",
+            department: "Engineering",
+            city: "Taipei",
+          },
+          family_count: 0,
         },
       ],
     });
@@ -152,7 +192,9 @@ describe("OfflineCheckinBoundaryPage", () => {
       ).toBeEnabled(),
     );
     await userEvent.click(screen.getByRole("button", { name: "下載離線名單" }));
-    await waitFor(() => expect(screen.getByText("hash-1")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Ariel Chen")).toBeInTheDocument(),
+    );
 
     const batchInput = screen.getByRole("textbox", { name: "掃描批次" });
     await userEvent.clear(batchInput);
@@ -178,6 +220,7 @@ describe("OfflineCheckinBoundaryPage", () => {
       expect(tables).toHaveLength(1);
       const resultTable = tables[0];
       expect(within(resultTable).getByText("t1")).toBeInTheDocument();
+      expect(within(resultTable).getByText(/E1001/)).toBeInTheDocument();
       expect(within(resultTable).getByText("驗票成功")).toBeInTheDocument();
     });
   });

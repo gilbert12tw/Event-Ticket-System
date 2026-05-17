@@ -29,6 +29,7 @@ type authIdentity struct {
 type authBootstrapResponse struct {
 	MockProfilesEnabled bool                 `json:"mock_profiles_enabled"`
 	MockProfiles        []mockProfilePayload `json:"mock_profiles"`
+	DebugChromeEnabled  bool                 `json:"debug_chrome_enabled"`
 }
 
 type mockProfilePayload struct {
@@ -169,7 +170,10 @@ func handleMe(provider *ProviderVerifier) http.HandlerFunc {
 
 func handleAuthBootstrap(appEnv string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		response := authBootstrapResponse{MockProfiles: []mockProfilePayload{}}
+		response := authBootstrapResponse{
+			MockProfiles:       []mockProfilePayload{},
+			DebugChromeEnabled: debugChromeEnabled(appEnv),
+		}
 		if mockProfilesEnabled(appEnv) {
 			response.MockProfilesEnabled = true
 			response.MockProfiles = mockProfilePayloads()
@@ -239,6 +243,10 @@ func actorFromRequest(r *http.Request) ticketing.Actor {
 }
 
 func mockProfilesEnabled(appEnv string) bool {
+	return debugChromeEnabled(appEnv)
+}
+
+func debugChromeEnabled(appEnv string) bool {
 	switch strings.ToLower(strings.TrimSpace(appEnv)) {
 	case "local", "demo", "test":
 		return true

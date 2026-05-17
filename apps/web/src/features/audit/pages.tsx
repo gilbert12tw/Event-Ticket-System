@@ -1,17 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { auditLogs } from "@/lib/api";
 import type { AuditLog, AuditLogFilters } from "@/lib/api";
-import {
-  errorMessage,
-  formatDate,
-  normalizeAuditFilters,
-} from "@/lib/formatting";
+import { errorMessage, normalizeAuditFilters } from "@/lib/formatting";
 import {
   Alert,
   CompactStatsBar,
   EmptyState,
   Field,
-  ResponsiveTable,
   SelectField,
   StatusBadge,
 } from "@/components/shared";
@@ -29,6 +24,12 @@ import {
   entityTypeLabel,
   roleViewLabel,
 } from "@/lib/ui/options";
+import { AuditRowsTable } from "./audit-rows-table";
+import {
+  auditCursorFromRow,
+  readAuditUrlState,
+  replaceAuditUrl,
+} from "./url-state";
 
 type AuditPreset = "all" | "conflicts" | "event" | "ticket" | "checkin";
 const auditPresets = [
@@ -40,9 +41,13 @@ const auditPresets = [
 ] as const;
 
 export function AdminAuditPage() {
+  const [initialUrlState] = useState(readAuditUrlState);
   const [auditRows, setAuditRows] = useState<AuditLog[]>([]);
-  const [filters, setFilters] = useState<AuditLogFilters>({ limit: "50" });
-  const [selectedID, setSelectedID] = useState("");
+  const [filters, setFilters] = useState<AuditLogFilters>(
+    initialUrlState.filters,
+  );
+  const [selectedID, setSelectedID] = useState(initialUrlState.selectedID);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [activePreset, setActivePreset] = useUrlTab<AuditPreset>(
     "tab",
@@ -50,12 +55,22 @@ export function AdminAuditPage() {
     "all",
   );
 
-  async function refresh() {
+  async function refresh(
+    nextFilters = filters,
+    nextPreset = activePreset,
+    nextSelectedID = selectedID,
+  ) {
     setMessage("");
     try {
-      const rows = await auditLogs(normalizeAuditFilters(filters));
+      const normalized = normalizeAuditFilters(nextFilters);
+      const rows = await auditLogs(normalized);
       setAuditRows(rows);
-      setSelectedID((current) => current || rows[0]?.audit_id || "");
+      const selected =
+        rows.find((row) => row.audit_id === nextSelectedID)?.audit_id ||
+        rows[0]?.audit_id ||
+        "";
+      setSelectedID(selected);
+      replaceAuditUrl(nextFilters, nextPreset, selected);
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -81,8 +96,40 @@ export function AdminAuditPage() {
     [presetRows],
   );
   const activeFilterCount = Object.entries(filters).filter(
-    ([key, value]) => key !== "limit" && Boolean(value),
+    ([key, value]) => key !== "limit" && key !== "cursor" && Boolean(value),
   ).length;
+  const nextCursor = auditRows.at(-1)
+    ? auditCursorFromRow(auditRows[auditRows.length - 1])
+    : "";
+
+  function applyFilters(nextFilters: AuditLogFilters) {
+    setFilters(nextFilters);
+    void refresh(nextFilters, activePreset, "");
+  }
+
+  function selectAuditRow(auditID: string) {
+    setSelectedID(auditID);
+    replaceAuditUrl(filters, activePreset, auditID);
+  }
+
+  function changePreset(nextPreset: AuditPreset) {
+    setActivePreset(nextPreset);
+    replaceAuditUrl(filters, nextPreset, selectedID);
+  }
+
+  function goToNextCursorPage() {
+    if (!nextCursor) return;
+    const nextFilters = { ...filters, cursor: nextCursor };
+    setCursorStack((stack) => [...stack, filters.cursor || ""]);
+    applyFilters(nextFilters);
+  }
+
+  function goToPreviousCursorPage() {
+    const previousCursor = cursorStack.at(-1);
+    const nextFilters = { ...filters, cursor: previousCursor || undefined };
+    setCursorStack((stack) => stack.slice(0, -1));
+    applyFilters(nextFilters);
+  }
 
   return (
     <section className="content-grid">
@@ -90,7 +137,8 @@ export function AdminAuditPage() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void refresh();
+            setCursorStack([]);
+            applyFilters({ ...filters, cursor: undefined });
           }}
         >
           <div className="toolbar">
@@ -127,7 +175,10 @@ export function AdminAuditPage() {
             <Button
               variant="outline"
               type="button"
-              onClick={() => setFilters({ limit: "50" })}
+              onClick={() => {
+                setCursorStack([]);
+                applyFilters({ limit: "50" });
+              }}
             >
               重設
             </Button>
@@ -169,9 +220,9 @@ export function AdminAuditPage() {
         </form>
       </Card>
       <Tabs
-        className="panel span-8 focused-tabs"
+        className="panel span-8 focused-tabs audit-list-panel"
         value={activePreset}
-        onValueChange={(value) => setActivePreset(value as AuditPreset)}
+        onValueChange={(value) => changePreset(value as AuditPreset)}
       >
         <div className="section-heading">
           <div>
@@ -198,9 +249,14 @@ export function AdminAuditPage() {
         />
         <TabsContent value={activePreset}>
           <AuditRowsTable
+            cursor={filters.cursor || ""}
+            hasPreviousCursor={cursorStack.length > 0}
+            nextCursor={nextCursor}
+            onNextCursor={goToNextCursorPage}
+            onPreviousCursor={goToPreviousCursorPage}
             rows={presetRows}
             selectedID={selected?.audit_id || ""}
-            onSelect={setSelectedID}
+            onSelect={selectAuditRow}
           />
         </TabsContent>
       </Tabs>
@@ -230,7 +286,7 @@ export function AdminAuditPage() {
             <dl className="meta-list audit-detail">
               <div>
                 <dt>稽核編號</dt>
-                <dd>{selected.audit_id}</dd>
+                <dd className="mono-cell id-cell">{selected.audit_id}</dd>
               </div>
               <div>
                 <dt>執行者</dt>
@@ -245,7 +301,9 @@ export function AdminAuditPage() {
                 <dt>物件</dt>
                 <dd>
                   {entityTypeLabel(selected.entity_type)}
-                  <span className="table-muted">{selected.entity_id}</span>
+                  <span className="table-muted mono-cell">
+                    {selected.entity_id}
+                  </span>
                 </dd>
               </div>
               <div className="full">
@@ -259,69 +317,6 @@ export function AdminAuditPage() {
         </aside>
       </Card>
     </section>
-  );
-}
-
-function AuditRowsTable({
-  onSelect,
-  rows,
-  selectedID,
-}: {
-  onSelect: (auditID: string) => void;
-  rows: AuditLog[];
-  selectedID: string;
-}) {
-  if (rows.length === 0) {
-    return (
-      <EmptyState title="沒有稽核紀錄" action="調整分頁或進階篩選條件。" />
-    );
-  }
-  return (
-    <ResponsiveTable>
-      <thead>
-        <tr>
-          <th>時間</th>
-          <th>操作</th>
-          <th>執行者</th>
-          <th>物件</th>
-          <th>明細</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr
-            className={selectedID === row.audit_id ? "selected-row" : ""}
-            aria-selected={selectedID === row.audit_id}
-            key={row.audit_id}
-          >
-            <td>{formatDate(row.created_at)}</td>
-            <td>
-              <StatusBadge tone={auditActionView(row.action).tone}>
-                {auditActionView(row.action).label}
-              </StatusBadge>
-            </td>
-            <td>
-              {row.actor_id}
-              <span className="table-muted">{roleViewLabel(row.role)}</span>
-            </td>
-            <td>
-              {entityTypeLabel(row.entity_type)}
-              <span className="table-muted">{row.entity_id}</span>
-            </td>
-            <td>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => onSelect(row.audit_id)}
-              >
-                檢視
-              </Button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </ResponsiveTable>
   );
 }
 

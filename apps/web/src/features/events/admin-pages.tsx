@@ -36,11 +36,7 @@ import {
   AdminEventStatusTab,
 } from "./admin-event-crud-panels";
 import { AdminEventDangerTab } from "./admin-event-danger-panel";
-import {
-  adminEventTabs,
-  matchingEmployeesForEvent,
-  type AdminEventTab,
-} from "./admin-event-crud-types";
+import { adminEventTabs, type AdminEventTab } from "./admin-event-crud-types";
 import { AdminCreateResult } from "./admin-create-result";
 
 export function AdminEventsPage() {
@@ -74,10 +70,6 @@ export function AdminEventsPage() {
         }),
       ),
     [form.department, form.employment_status, form.min_grade, form.site],
-  );
-  const selectedMatches = useMemo(
-    () => matchingEmployeesForEvent(employees, selectedAdminEvent),
-    [selectedAdminEvent],
   );
   const capacityReady =
     form.capacity_type === "unlimited" ||
@@ -323,7 +315,7 @@ export function AdminEventsPage() {
         <TabsContent value="eligibility">
           <AdminEventEligibilityTab
             selectedEvent={selectedAdminEvent}
-            matchingEmployees={selectedMatches}
+            onSaved={(eventID) => void refreshAdminEvents(eventID)}
           />
         </TabsContent>
         <TabsContent value="danger">

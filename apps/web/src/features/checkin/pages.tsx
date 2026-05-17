@@ -64,9 +64,13 @@ export function CheckinPage() {
           event_id: "",
           employee_id: "未知",
           status: "rejected",
+          reason_code: "invalid_ticket",
           scanned_at: new Date().toISOString(),
           conflict_reason: "invalid_ticket",
+          rejection_message: errorMessage(error),
           duplicate: false,
+          holder: null,
+          family_count: 0,
         });
       }
       setMessage(errorMessage(error));
@@ -87,7 +91,7 @@ export function CheckinPage() {
 
   const total = rows.reduce(
     (acc, row) => ({
-      capacity: acc.capacity + row.capacity,
+      capacity: acc.capacity + (row.capacity ?? 0),
       checkedIn: acc.checkedIn + row.checkin_count,
     }),
     { capacity: 0, checkedIn: 0 },

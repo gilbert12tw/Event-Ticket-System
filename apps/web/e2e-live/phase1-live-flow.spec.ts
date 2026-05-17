@@ -241,10 +241,21 @@ async function expectReportsExportAndAuditFilters(
   await page.getByRole("option", { name: "人資管理員" }).click();
   await page.getByRole("button", { name: "套用篩選" }).click();
   const auditRow = page
-    .getByRole("row", { name: /報表匯出請求.*人資管理員/ })
+    .locator("main tr.interactive-row")
+    .filter({ hasText: "報表匯出請求" })
+    .filter({ hasText: "人資管理員" })
     .first();
-  await expect(auditRow).toBeVisible();
-  await auditRow.getByRole("button", { name: "檢視" }).click();
+  if (await auditRow.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await auditRow.click();
+  } else {
+    const auditCard = page
+      .locator(".audit-mobile-card")
+      .filter({ hasText: "報表匯出請求" })
+      .filter({ hasText: "人資管理員" })
+      .first();
+    await expect(auditCard).toBeVisible();
+    await auditCard.getByRole("button", { name: "檢視稽核明細" }).click();
+  }
   await expect(page.getByText("report_type").first()).toBeVisible();
   await expectNoHorizontalOverflow(page);
 }

@@ -185,7 +185,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
 
   return (
     <section className="content-grid">
-      <Card className="panel span-8">
+      <Card className="panel span-8 event-detail-check-panel">
         <div className="section-heading">
           <div>
             <h2>報名前檢查</h2>
@@ -225,8 +225,11 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
         )}
         {detail && <EventSummaryBlock event={detail} />}
       </Card>
-      <Card className="panel span-4">
+      <Card className="panel span-4 event-primary-action-panel">
         <h2>主要操作</h2>
+        {detail && (
+          <p className="form-hint event-action-context">{detail.title}</p>
+        )}
         {!detail && (
           <EmptyState
             title="尚未選擇活動"

@@ -34,6 +34,7 @@ export type AuthMeClaims = {
 export type AuthBootstrap = {
   mock_profiles_enabled: boolean;
   mock_profiles: MockProfile[];
+  debug_chrome_enabled: boolean;
 };
 
 export type MockProfile = {
@@ -273,17 +274,29 @@ export type CheckinResponse = {
   event_id: string;
   employee_id: string;
   status: string;
+  reason_code?: string;
   scanned_at: string;
   first_scanned_at?: string;
   first_scanned_by?: string;
   conflict_reason?: string;
+  rejection_message?: string;
   duplicate: boolean;
+  holder?: TicketHolder | null;
+  family_count: number;
+};
+
+export type TicketHolder = {
+  display_name: string;
+  department: string;
+  city: string;
 };
 
 export type OfflineTicket = {
   ticket_id: string;
   employee_id: string;
   token_hash: string;
+  holder: TicketHolder;
+  family_count: number;
 };
 
 export type OfflineCheckinPackage = {
@@ -346,12 +359,17 @@ export type NotificationDelivery = {
 export type ReportRow = {
   event_id: string;
   title: string;
-  capacity: number;
+  capacity_type: CapacityType;
+  capacity: number | null;
   confirmed_count: number;
   waitlist_count: number;
+  employee_count: number;
+  family_count: number;
+  total_attendee_count: number;
   ticket_count: number;
   checkin_count: number;
-  remaining_capacity: number;
+  remaining_capacity: number | null;
+  city_distribution: Record<string, number>;
   starts_at: string;
 };
 

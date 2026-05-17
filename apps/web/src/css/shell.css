@@ -282,6 +282,65 @@
   opacity: 0.72;
 }
 
+.debug-tools-trigger {
+  color: var(--muted);
+  font-size: 0.8rem;
+  opacity: 0.78;
+}
+
+.debug-tools-trigger[aria-pressed="true"] {
+  border-color: var(--line);
+  background: var(--surface-inset);
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+.debug-tools-sheet {
+  width: min(420px, calc(100vw - 32px));
+  background: var(--surface);
+}
+
+.debug-tools-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 16px 16px;
+  overflow: auto;
+}
+
+.debug-tools-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-inset);
+}
+
+.debug-tools-card div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.debug-tools-card strong {
+  color: var(--ink);
+}
+
+.debug-tools-card span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.debug-tools-sheet .status-panel,
+.debug-tools-sheet .api-panel.sheet {
+  margin: 0;
+}
+
 .debug-toggle[aria-pressed="true"] {
   border-color: var(--line);
   background: var(--surface-inset);

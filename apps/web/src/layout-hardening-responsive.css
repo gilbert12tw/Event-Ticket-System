@@ -79,6 +79,20 @@
     justify-self: stretch;
   }
 
+  .event-status-workspace,
+  .event-status-tools,
+  .event-status-audit-strip {
+    max-width: none;
+  }
+
+  .create-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .create-workspace > .span-4 {
+    grid-column: 1 / -1;
+  }
+
   .split-grid {
     grid-template-columns: 1fr;
   }
@@ -152,10 +166,15 @@
   .header-actions,
   .section-heading > .toolbar,
   .toolbar,
-  .segmented-filter {
+  .segmented-filter,
+  .report-controls {
     width: 100%;
     flex-basis: 100%;
     justify-content: flex-start;
+  }
+
+  .report-controls {
+    grid-template-columns: 1fr;
   }
 
   .compact-selector {
@@ -204,7 +223,8 @@
   .row-actions,
   .form-actions,
   .status-selectors,
-  .segmented-filter {
+  .segmented-filter,
+  .report-controls {
     display: grid;
     grid-template-columns: 1fr;
   }
@@ -222,6 +242,43 @@
 
   .event-action {
     grid-template-columns: 1fr;
+  }
+
+  .event-primary-action-panel {
+    order: -1;
+  }
+
+  .event-status-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .event-row-task {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .event-row-task > .row-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .event-row-task > .row-actions [data-slot="button"] {
+    width: 100%;
+  }
+
+  .audit-mobile-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-mobile-card > .meta-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-mobile-card > [data-slot="button"] {
+    grid-column: 1;
+    grid-row: auto;
+    width: 100%;
   }
 
   .metadata-list div {

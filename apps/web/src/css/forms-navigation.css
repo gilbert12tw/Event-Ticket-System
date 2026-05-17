@@ -235,9 +235,45 @@
   gap: 14px;
 }
 
+.create-workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  align-items: start;
+}
+
+.create-workspace > .form-grid {
+  width: 100%;
+  min-width: 0;
+}
+
+.create-workspace > .span-4 {
+  grid-column: auto;
+}
+
+.report-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.report-filter-toolbar {
+  justify-content: flex-start;
+}
+
+.report-filter-toolbar [data-slot="field"] {
+  flex: 0 1 280px;
+}
+
+.report-tabs-list {
+  width: auto !important;
+  min-width: 260px;
+}
+
 .focused-tabs [data-slot="tabs-list"],
 .event-tabs [data-slot="tabs-list"] {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   min-height: 42px;
   justify-content: flex-start;
   gap: 4px;

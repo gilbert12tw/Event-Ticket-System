@@ -7,8 +7,10 @@ import {
   createEvent,
   duplicateEvent,
   listAdminEvents,
+  previewEligibility,
   seedDemo,
   updateEvent,
+  updateEligibility,
 } from "@/lib/api";
 import type { EventSummary } from "@/lib/api";
 import { AdminEventsPage } from "./admin-pages";
@@ -22,8 +24,10 @@ vi.mock("@/lib/api", async () => {
     createEvent: vi.fn(),
     duplicateEvent: vi.fn(),
     listAdminEvents: vi.fn(),
+    previewEligibility: vi.fn(),
     seedDemo: vi.fn(),
     updateEvent: vi.fn(),
+    updateEligibility: vi.fn(),
   };
 });
 
@@ -44,10 +48,20 @@ describe("AdminEventsPage CRUD tabs", () => {
     vi.mocked(archiveEvent).mockResolvedValue(
       eventFixture({ status: "archived" }),
     );
+    vi.mocked(previewEligibility).mockResolvedValue({
+      event_id: "evt-1",
+      match_count: 2,
+      zero_match: false,
+    });
+    vi.mocked(updateEligibility).mockResolvedValue({
+      event_id: "evt-1",
+      match_count: 2,
+      zero_match: false,
+    });
   });
 
   it("keeps list, edit, status, eligibility, and danger work in separate tabs", async () => {
-    render(<AdminEventsPage />);
+    const { container } = render(<AdminEventsPage />);
 
     expect(
       await screen.findByRole("tab", { name: "活動清單" }),
@@ -77,6 +91,8 @@ describe("AdminEventsPage CRUD tabs", () => {
     expect(
       screen.getByRole("button", { name: "更新狀態" }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("發布狀態摘要")).toBeInTheDocument();
+    expect(container.querySelector(".event-status-workspace .kpi")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "儲存活動" }),
     ).not.toBeInTheDocument();
@@ -107,6 +123,56 @@ describe("AdminEventsPage CRUD tabs", () => {
     expect(
       screen.getByRole("button", { name: "封存活動" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the create form and result panel in one explicit workspace", async () => {
+    const { container } = render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+
+    const workspace = container.querySelector(".create-workspace");
+    expect(workspace).not.toBeNull();
+    expect(workspace?.querySelector(".form-grid")).not.toBeNull();
+    expect(workspace?.querySelector(".panel")).not.toBeNull();
+  });
+
+  it("requires explicit confirmation before saving a zero-match eligibility rule", async () => {
+    vi.mocked(previewEligibility).mockResolvedValueOnce({
+      event_id: "evt-1",
+      match_count: 0,
+      zero_match: true,
+    });
+    vi.mocked(updateEligibility).mockResolvedValueOnce({
+      event_id: "evt-1",
+      match_count: 0,
+      zero_match: true,
+    });
+
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "資格預覽" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Preview Impact" }),
+    );
+
+    expect(await screen.findByText(/命中 0 人/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save Rule Version" }),
+    ).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByLabelText("我確認此規則可以儲存為 0 人命中版本"),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save Rule Version" }),
+    );
+
+    await waitFor(() =>
+      expect(updateEligibility).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ allow_zero_match: true }),
+      ),
+    );
   });
 });
 

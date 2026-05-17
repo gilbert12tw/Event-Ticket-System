@@ -4,7 +4,6 @@ import type { ApiLogEntry, AuthSession } from "@/lib/api";
 import type { NavItem, RouteKey, WorkspaceKey } from "@/app/routes";
 import { navigate } from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
-import { isDebugChromeAvailable } from "@/lib/ui/debug";
 import { DebugToggle } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
@@ -28,6 +27,7 @@ type AuthenticatedShellProps = {
   activeWorkspace: WorkspaceKey;
   apiLog: ApiLogEntry[];
   children: ReactNode;
+  debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
   health: string;
   mockProfilesEnabled: boolean;
@@ -51,6 +51,7 @@ export function AuthenticatedShell({
   activeWorkspace,
   apiLog,
   children,
+  debugChromeAvailable,
   debugChromeEnabled,
   health,
   mockProfilesEnabled,
@@ -73,16 +74,14 @@ export function AuthenticatedShell({
       </a>
       <DesktopSidebar
         activeWorkspace={activeWorkspace}
-        debugChromeEnabled={debugChromeEnabled}
-        health={health}
         navRoutes={navRoutes}
-        ready={ready}
         route={safeRoute}
         session={session}
       />
       <MobileTopBar
         activeRoute={activeRoute}
         apiLog={apiLog}
+        debugChromeAvailable={debugChromeAvailable}
         debugChromeEnabled={debugChromeEnabled}
         health={health}
         mockProfilesEnabled={mockProfilesEnabled}
@@ -100,38 +99,34 @@ export function AuthenticatedShell({
         tabIndex={-1}
       >
         <Header
+          apiLog={apiLog}
           route={safeRoute}
           session={session}
+          debugChromeAvailable={debugChromeAvailable}
           debugChromeEnabled={debugChromeEnabled}
+          health={health}
           mockProfilesEnabled={mockProfilesEnabled}
+          onClearApiLog={onClearApiLog}
           onToggleDebugChrome={onToggleDebugChrome}
           onSwitchProfile={onSwitchProfile}
+          ready={ready}
         />
         {children}
       </main>
 
       <MobileTabBar navRoutes={navRoutes} route={safeRoute} />
-      {debugChromeEnabled && (
-        <ApiActivity entries={apiLog} mode="floating" onClear={onClearApiLog} />
-      )}
     </div>
   );
 }
 
 function DesktopSidebar({
   activeWorkspace,
-  debugChromeEnabled,
-  health,
   navRoutes,
-  ready,
   route,
   session,
 }: {
   activeWorkspace: WorkspaceKey;
-  debugChromeEnabled: boolean;
-  health: string;
   navRoutes: NavItem[];
-  ready: string;
   route: RouteKey;
   session: AuthSession;
 }) {
@@ -147,7 +142,6 @@ function DesktopSidebar({
           <DesktopNavLink item={item} key={item.key} route={route} />
         ))}
       </nav>
-      {debugChromeEnabled && <StatusPanel health={health} ready={ready} />}
     </aside>
   );
 }
@@ -155,6 +149,7 @@ function DesktopSidebar({
 function MobileTopBar({
   activeRoute,
   apiLog,
+  debugChromeAvailable,
   debugChromeEnabled,
   health,
   mockProfilesEnabled,
@@ -166,6 +161,7 @@ function MobileTopBar({
 }: {
   activeRoute: NavItem;
   apiLog: ApiLogEntry[];
+  debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
   health: string;
   mockProfilesEnabled: boolean;
@@ -212,7 +208,7 @@ function MobileTopBar({
               {session.actor.id} · {roleLabel(session.actor.role)}
             </span>
           </div>
-          {isDebugChromeAvailable() && (
+          {debugChromeAvailable && (
             <DebugToggle
               enabled={debugChromeEnabled}
               onToggle={onToggleDebugChrome}

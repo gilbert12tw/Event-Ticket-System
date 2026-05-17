@@ -262,6 +262,10 @@ describe("api client", () => {
           provider_token: "provider-token-secret",
           signed_token: "ticket-secret",
           qr_payload: "qr-secret",
+          qr_token: "qr-token-secret",
+          token_hash: "hash-secret",
+          signed_token_hash: "signed-hash-secret",
+          package_signature: "package-signature-secret",
           nested: {
             token: "nested-token-secret",
           },
@@ -274,6 +278,7 @@ describe("api client", () => {
       batch_id: "off_1",
       event_id: "evt/1",
       device_id: "gate-1",
+      package_signature: "package-signature-secret",
       scans: [
         { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
       ],
@@ -287,6 +292,10 @@ describe("api client", () => {
         provider_token: string;
         signed_token: string;
         qr_payload: string;
+        qr_token: string;
+        token_hash: string;
+        signed_token_hash: string;
+        package_signature: string;
         nested: { token: string };
       };
     };
@@ -294,6 +303,16 @@ describe("api client", () => {
     expect(responseBody.data.provider_token).toBe("[身分簽章已遮蔽]");
     expect(responseBody.data.signed_token).toBe("[票券簽章已遮蔽]");
     expect(responseBody.data.qr_payload).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.qr_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.token_hash).toMatch(
+      /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
+    );
+    expect(responseBody.data.signed_token_hash).toMatch(
+      /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
+    );
+    expect(responseBody.data.package_signature).toMatch(
+      /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
+    );
     expect(responseBody.data.nested.token).toBe("[工作階段已遮蔽]");
   });
 
@@ -386,6 +405,7 @@ describe("api client", () => {
       batch_id: "off_1",
       event_id: "evt/1",
       device_id: "gate-1",
+      package_signature: "package-signature",
       scans: [
         { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
       ],
@@ -422,6 +442,7 @@ describe("api client", () => {
         batch_id: "off_1",
         event_id: "evt/1",
         device_id: "gate-1",
+        package_signature: "package-signature",
         scans: [
           { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
         ],

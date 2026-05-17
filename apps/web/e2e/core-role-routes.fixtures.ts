@@ -96,12 +96,17 @@ export const reportRows = [
   {
     event_id: "evt-cets-001",
     title: "第一階段企業午餐日",
+    capacity_type: "limited",
     capacity: 240,
     confirmed_count: 12,
     waitlist_count: 0,
+    employee_count: 12,
+    family_count: 0,
+    total_attendee_count: 12,
     ticket_count: 12,
     checkin_count: 8,
     remaining_capacity: 228,
+    city_distribution: { Taipei: 12 },
     starts_at: "2026-01-10T10:00:00Z",
   },
 ];

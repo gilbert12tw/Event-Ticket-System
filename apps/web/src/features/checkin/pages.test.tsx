@@ -78,6 +78,12 @@ describe("CheckinPage", () => {
       status: "accepted",
       scanned_at: "2026-05-16T10:00:00Z",
       duplicate: false,
+      holder: {
+        display_name: "Ariel Chen",
+        department: "Engineering",
+        city: "Taipei",
+      },
+      family_count: 0,
     });
 
     render(<CheckinPage />);

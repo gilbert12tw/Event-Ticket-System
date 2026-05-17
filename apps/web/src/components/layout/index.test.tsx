@@ -1,10 +1,66 @@
 import userEvent from "@testing-library/user-event";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ApiLogEntry } from "@/lib/api";
+import type { ApiLogEntry, AuthSession } from "@/lib/api";
+import { routes } from "@/app/routes";
 import { ApiActivity, WorkspaceSwitch } from ".";
+import { AuthenticatedShell } from "./shell";
 
 describe("layout components", () => {
+  it("keeps desktop debug tools in one header entry", () => {
+    const activeRoute = routes.find((route) => route.key === "admin-reports");
+    const session: AuthSession = {
+      actor: {
+        id: "hr-1",
+        role: "hr_admin",
+      },
+      claims: {
+        employee_id: "hr-1",
+        display_name: "HR One",
+        role_claims: ["hr_admin"],
+        mapped_roles: ["hr_admin"],
+        department: "Human Resources",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 6,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      expires_at: "2026-05-17T12:00:00Z",
+      source: "provider",
+    };
+
+    if (!activeRoute) throw new Error("missing admin reports route");
+
+    render(
+      <AuthenticatedShell
+        activeRoute={activeRoute}
+        activeWorkspace="admin"
+        apiLog={[]}
+        debugChromeAvailable
+        debugChromeEnabled
+        health="ok"
+        mockProfilesEnabled
+        navRoutes={[activeRoute]}
+        onClearApiLog={vi.fn()}
+        onSwitchProfile={vi.fn()}
+        onToggleDebugChrome={vi.fn()}
+        ready="ok"
+        safeRoute="admin-reports"
+        session={session}
+      >
+        <div>Report content</div>
+      </AuthenticatedShell>,
+    );
+
+    expect(screen.getAllByRole("button", { name: "Debug" })).toHaveLength(1);
+    expect(
+      within(screen.getByLabelText("主要導覽")).queryByRole("button", {
+        name: "Debug",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides the workspace switch when the role has only one workspace", () => {
     const { rerender } = render(
       <WorkspaceSwitch active="user" role="employee" />,

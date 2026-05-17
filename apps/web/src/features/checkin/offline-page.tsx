@@ -31,6 +31,7 @@ import {
   devicePresetOptions,
   localizedMessage,
 } from "@/lib/ui/options";
+import { fingerprint } from "@/lib/api/redaction";
 
 type OfflineTab = "package" | "scan" | "results";
 const offlineTabs = ["package", "scan", "results"] as const;
@@ -310,8 +311,10 @@ function OfflinePackageStep({
               <dd>{formatDate(packageSummary.valid_until)}</dd>
             </div>
             <div>
-              <dt>名單簽章</dt>
-              <dd className="mono-cell">{packageSummary.package_signature}</dd>
+              <dt>名單簽章指紋</dt>
+              <dd className="mono-cell">
+                #{fingerprint(packageSummary.package_signature)}
+              </dd>
             </div>
             <div>
               <dt>可同步票券</dt>
@@ -394,16 +397,29 @@ function OfflineScanStep({
           <thead>
             <tr>
               <th>票券</th>
-              <th>員工</th>
-              <th>簽章雜湊</th>
+              <th>持票人</th>
+              <th>同行</th>
+              <th>簽章指紋</th>
             </tr>
           </thead>
           <tbody>
             {packageSummary.tickets.map((ticket) => (
               <tr key={ticket.ticket_id}>
                 <td className="mono-cell">{ticket.ticket_id}</td>
-                <td>{ticket.employee_id}</td>
-                <td className="mono-cell">{ticket.token_hash}</td>
+                <td>
+                  {ticket.holder?.display_name || ticket.employee_id}
+                  <span className="table-muted">
+                    {[
+                      ticket.employee_id,
+                      ticket.holder?.department,
+                      ticket.holder?.city,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ") || ticket.employee_id}
+                  </span>
+                </td>
+                <td>{ticket.family_count} 人</td>
+                <td className="mono-cell">#{fingerprint(ticket.token_hash)}</td>
               </tr>
             ))}
           </tbody>
@@ -432,7 +448,7 @@ function OfflineResultStep({
           <thead>
             <tr>
               <th>票券</th>
-              <th>員工</th>
+              <th>持票人</th>
               <th>狀態</th>
               <th>原因</th>
               <th>掃描時間</th>
@@ -446,13 +462,23 @@ function OfflineResultStep({
                   key={`${result.checkin_id || result.ticket_id || result.scanned_at}-${result.status}`}
                 >
                   <td className="mono-cell">{result.ticket_id}</td>
-                  <td>{result.employee_id}</td>
+                  <td>
+                    {result.holder?.display_name || result.employee_id}
+                    <span className="table-muted">
+                      {result.employee_id} · 家屬 {result.family_count ?? 0} 人
+                    </span>
+                  </td>
                   <td>
                     <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                   </td>
                   <td>
-                    {result.conflict_reason
-                      ? localizedMessage(result.conflict_reason)
+                    {result.reason_code || result.conflict_reason
+                      ? localizedMessage(
+                          result.rejection_message ||
+                            result.reason_code ||
+                            result.conflict_reason ||
+                            "",
+                        )
                       : "—"}
                   </td>
                   <td>{formatDate(result.scanned_at)}</td>

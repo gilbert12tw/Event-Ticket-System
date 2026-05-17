@@ -13,14 +13,16 @@ import {
 } from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
 import { Icon } from "@/components/shared/icon";
-import {
-  AppPageHeader,
-  DebugToggle,
-  SkeletonRows,
-  StatusBadge,
-} from "@/components/shared";
+import { AppPageHeader, SkeletonRows, StatusBadge } from "@/components/shared";
 import { Button } from "@/components/ui/button";
-import { isDebugChromeAvailable } from "@/lib/ui/debug";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 export function WorkspaceSwitch({
   active,
@@ -77,19 +79,29 @@ export function WorkspaceSwitch({
 }
 
 export function Header({
+  apiLog,
+  debugChromeAvailable,
   debugChromeEnabled,
+  health,
   route,
   session,
   mockProfilesEnabled,
+  onClearApiLog,
   onSwitchProfile,
   onToggleDebugChrome,
+  ready,
 }: {
+  apiLog: ApiLogEntry[];
+  debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
+  health: string;
   route: RouteKey;
   session: AuthSession;
   mockProfilesEnabled?: boolean;
+  onClearApiLog: () => void;
   onSwitchProfile?: () => void;
   onToggleDebugChrome: (enabled: boolean) => void;
+  ready: string;
 }) {
   const item = routes.find((candidate) => candidate.key === route) || routes[0];
   const displayName = session.claims.display_name || session.actor.id;
@@ -107,17 +119,91 @@ export function Header({
         </div>
       }
       utilities={
-        <>
-          {isDebugChromeAvailable() && (
-            <DebugToggle
-              enabled={debugChromeEnabled}
-              onToggle={onToggleDebugChrome}
-            />
-          )}
+        debugChromeAvailable && (
+          <DebugToolsSheet
+            apiLog={apiLog}
+            debugChromeEnabled={debugChromeEnabled}
+            health={health}
+            ready={ready}
+            session={session}
+            mockProfilesEnabled={mockProfilesEnabled}
+            onClearApiLog={onClearApiLog}
+            onSwitchProfile={onSwitchProfile}
+            onToggleDebugChrome={onToggleDebugChrome}
+          />
+        )
+      }
+    />
+  );
+}
+
+function DebugToolsSheet({
+  apiLog,
+  debugChromeEnabled,
+  health,
+  mockProfilesEnabled,
+  onClearApiLog,
+  onSwitchProfile,
+  onToggleDebugChrome,
+  ready,
+  session,
+}: {
+  apiLog: ApiLogEntry[];
+  debugChromeEnabled: boolean;
+  health: string;
+  mockProfilesEnabled?: boolean;
+  onClearApiLog: () => void;
+  onSwitchProfile?: () => void;
+  onToggleDebugChrome: (enabled: boolean) => void;
+  ready: string;
+  session: AuthSession;
+}) {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button
+          aria-pressed={debugChromeEnabled}
+          className="debug-tools-trigger"
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <Icon name="settings" />
+          Debug
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="debug-tools-sheet">
+        <SheetHeader>
+          <SheetTitle>Debug tools</SheetTitle>
+          <SheetDescription>
+            本機身分、服務狀態與介接紀錄集中在此管理。
+          </SheetDescription>
+        </SheetHeader>
+        <div className="debug-tools-body">
+          <section className="debug-tools-card" aria-label="Debug 模式">
+            <div>
+              <strong>Debug chrome</strong>
+              <span>
+                {debugChromeEnabled
+                  ? "已顯示服務狀態與介接紀錄。"
+                  : "啟用後才顯示本機除錯資訊。"}
+              </span>
+            </div>
+            <Button
+              aria-pressed={debugChromeEnabled}
+              size="sm"
+              type="button"
+              variant={debugChromeEnabled ? "outline" : "default"}
+              onClick={() => onToggleDebugChrome(!debugChromeEnabled)}
+            >
+              {debugChromeEnabled ? "停用 Debug" : "啟用 Debug"}
+            </Button>
+          </section>
+
           {debugChromeEnabled &&
             mockProfilesEnabled &&
             canAccessRoute("admin-demo", session.actor.role) && (
-              <Button asChild variant="ghost" size="sm">
+              <Button asChild variant="outline">
                 <a
                   href={routePath("admin-demo")}
                   onClick={(event) => {
@@ -131,20 +217,31 @@ export function Header({
                 </a>
               </Button>
             )}
+
           {debugChromeEnabled && mockProfilesEnabled && onSwitchProfile && (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={onSwitchProfile}
-            >
+            <Button variant="outline" type="button" onClick={onSwitchProfile}>
               <Icon name="logout" />
               切換身分
             </Button>
           )}
-        </>
-      }
-    />
+
+          {debugChromeEnabled ? (
+            <>
+              <StatusPanel health={health} ready={ready} />
+              <ApiActivity
+                entries={apiLog}
+                mode="sheet"
+                onClear={onClearApiLog}
+              />
+            </>
+          ) : (
+            <p className="form-hint">
+              Debug 關閉時，正式工作區不顯示介接紀錄或服務狀態。
+            </p>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

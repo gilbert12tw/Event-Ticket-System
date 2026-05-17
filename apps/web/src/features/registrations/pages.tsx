@@ -37,11 +37,18 @@ import {
   ticketStatusView,
 } from "@/lib/ui/options";
 import { GovernanceActionButton } from "./governance-action-button";
+import { AllocationTab } from "./allocation-tab";
 
-type RegistrationTab = "registrations" | "waitlist" | "tickets" | "history";
+type RegistrationTab =
+  | "registrations"
+  | "waitlist"
+  | "allocation"
+  | "tickets"
+  | "history";
 const registrationTabs = [
   "registrations",
   "waitlist",
+  "allocation",
   "tickets",
   "history",
 ] as const;
@@ -193,6 +200,7 @@ export function AdminRegistrationsPage() {
             <TabsList>
               <TabsTrigger value="registrations">報名名單</TabsTrigger>
               <TabsTrigger value="waitlist">候補名單</TabsTrigger>
+              <TabsTrigger value="allocation">配票抽籤</TabsTrigger>
               <TabsTrigger value="tickets">票券狀態</TabsTrigger>
               <TabsTrigger value="history">取消/撤銷紀錄</TabsTrigger>
             </TabsList>
@@ -262,6 +270,15 @@ export function AdminRegistrationsPage() {
                 }
               />
             )}
+          />
+        </TabsContent>
+        <TabsContent value="allocation">
+          <AllocationTab
+            busy={busy}
+            confirmedCount={confirmedRows.length}
+            event={selectedEvent}
+            waitlistCount={waitlistRows.length}
+            onAllocated={() => void refresh(eventID)}
           />
         </TabsContent>
         <TabsContent value="tickets">

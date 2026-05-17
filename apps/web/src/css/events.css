@@ -77,6 +77,38 @@
   align-items: end;
 }
 
+.event-status-workspace {
+  display: grid;
+  max-width: 980px;
+  gap: 14px;
+}
+
+.event-status-workspace .section-heading {
+  margin-bottom: 0;
+}
+
+.event-status-workspace .compact-stats-bar {
+  margin: 0;
+}
+
+.event-status-tools {
+  grid-template-columns: minmax(170px, 220px) minmax(260px, 1fr) auto;
+  max-width: 900px;
+}
+
+.event-status-audit-strip {
+  max-width: 900px;
+}
+
+.event-primary-action-panel {
+  align-self: start;
+}
+
+.event-action-context {
+  margin: 4px 0 12px;
+  overflow-wrap: anywhere;
+}
+
 .event-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 168px;

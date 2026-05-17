@@ -9,9 +9,9 @@ import {
 import { StatusPanel } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { departmentLabel, siteLabel } from "@/lib/ui/options";
-import { isDebugChromeAvailable } from "@/lib/ui/debug";
 
 export function MockProfileSelector({
+  debugChromeAvailable,
   debugChromeEnabled,
   health,
   ready,
@@ -20,6 +20,7 @@ export function MockProfileSelector({
   profiles,
   onSelect,
 }: {
+  debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
   health: string;
   ready: string;
@@ -51,7 +52,7 @@ export function MockProfileSelector({
               此入口只在本機環境可用；選擇後會由系統簽發臨時身分簽章，產品工作台仍使用身分宣告。
             </p>
           </div>
-          {isDebugChromeAvailable() && (
+          {debugChromeAvailable && (
             <DebugToggle
               enabled={debugChromeEnabled}
               onToggle={onToggleDebugChrome}

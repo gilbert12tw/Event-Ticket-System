@@ -44,6 +44,59 @@
   margin-top: 0;
 }
 
+.report-table .table-scroll {
+  background: var(--surface);
+}
+
+.report-table table {
+  table-layout: fixed;
+}
+
+.report-col-activity {
+  width: 28%;
+}
+
+.report-col-kind {
+  width: 74px;
+}
+
+.report-col-number {
+  width: 58px;
+}
+
+.report-col-rate {
+  width: 122px;
+}
+
+.report-col-city {
+  width: 160px;
+}
+
+.report-event-cell span {
+  display: block;
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.number-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table .progress-meter.compact {
+  min-width: 94px;
+}
+
+.report-table .progress-meter-head {
+  gap: 6px;
+}
+
+.report-table .progress-track {
+  height: 6px;
+}
+
 .progress-meter-head {
   display: flex;
   align-items: center;

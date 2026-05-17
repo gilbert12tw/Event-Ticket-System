@@ -342,6 +342,12 @@
     gap: 10px;
   }
 
+  .audit-list-panel .mobile-table-cards {
+    max-height: min(62dvh, 620px);
+    overflow: auto;
+    padding-right: 2px;
+  }
+
   .mobile-summary-card {
     display: grid;
     gap: 10px;

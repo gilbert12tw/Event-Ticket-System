@@ -73,6 +73,8 @@ export function Field({
 }) {
   const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-field`;
   const descriptionID = `${fieldID}-hint`;
+  const autoCompleteValue = autoComplete ?? "off";
+  const controlName = name ?? fieldID;
   return (
     <UiField className={className} data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={fieldID}>
@@ -80,12 +82,12 @@ export function Field({
         {required && <em aria-label="必填"> *</em>}
       </FieldLabel>
       <Input
-        autoComplete={autoComplete}
+        autoComplete={autoCompleteValue}
         id={fieldID}
         inputMode={inputMode}
         max={max}
         min={min}
-        name={name}
+        name={controlName}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         type={type}
@@ -132,6 +134,8 @@ export function TextareaField({
 }) {
   const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-textarea`;
   const descriptionID = `${fieldID}-hint`;
+  const autoCompleteValue = autoComplete ?? "off";
+  const controlName = name ?? fieldID;
   return (
     <UiField className={className} data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={fieldID}>
@@ -139,9 +143,9 @@ export function TextareaField({
         {required && <em aria-label="必填"> *</em>}
       </FieldLabel>
       <Textarea
-        autoComplete={autoComplete}
+        autoComplete={autoCompleteValue}
         id={fieldID}
-        name={name}
+        name={controlName}
         rows={rows}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -186,6 +190,10 @@ export function SelectField({
   const triggerValue = value === "" ? emptyValue : value;
   const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-select`;
   const descriptionID = `${fieldID}-hint`;
+  const controlName = name ?? fieldID;
+  const selectedOption = options.find(
+    (option) => (option.value || emptyValue) === triggerValue,
+  );
   return (
     <UiField className={className} data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={fieldID}>
@@ -193,30 +201,31 @@ export function SelectField({
         {required && <em aria-label="必填"> *</em>}
       </FieldLabel>
       <Select
+        name={controlName}
+        required={required}
         value={triggerValue}
         onValueChange={(next) => onChange(next === emptyValue ? "" : next)}
       >
         <SelectTrigger
           className="w-full"
           id={fieldID}
-          name={name}
+          name={controlName}
           aria-label={label}
           aria-invalid={invalid || undefined}
           aria-describedby={hint ? descriptionID : undefined}
         >
-          <SelectValue />
+          <SelectValue placeholder={selectedOption?.label || label} />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
             {options.map((option) => (
               <SelectItem
                 key={option.value || emptyValue}
+                helper={option.helper}
+                textValue={option.label}
                 value={option.value || emptyValue}
               >
-                <span className="select-option-copy">
-                  <span>{option.label}</span>
-                  {option.helper && <small>{option.helper}</small>}
-                </span>
+                {option.label}
               </SelectItem>
             ))}
           </SelectGroup>

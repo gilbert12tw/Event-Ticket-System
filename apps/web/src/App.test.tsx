@@ -51,6 +51,7 @@ describe("App", () => {
     mockAuthBootstrap.mockResolvedValue({
       mock_profiles_enabled: false,
       mock_profiles: [],
+      debug_chrome_enabled: false,
     });
     mockReadiness.mockResolvedValue({});
 
@@ -74,6 +75,7 @@ describe("App", () => {
     mockAuthBootstrap.mockResolvedValueOnce({
       mock_profiles_enabled: false,
       mock_profiles: [],
+      debug_chrome_enabled: false,
     });
     mockReadiness.mockResolvedValue({});
 
@@ -104,6 +106,7 @@ describe("App", () => {
           employment_status: "active",
         },
       ],
+      debug_chrome_enabled: true,
     });
     mockReadiness.mockResolvedValue({});
 

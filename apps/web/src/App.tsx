@@ -8,7 +8,12 @@ import {
   selectMockProfile,
   setApiObserver,
 } from "@/lib/api";
-import type { ApiLogEntry, AuthSession, MockProfile } from "@/lib/api";
+import type {
+  ApiLogEntry,
+  AuthBootstrap,
+  AuthSession,
+  MockProfile,
+} from "@/lib/api";
 import {
   adminRoutes,
   canAccessRoute,
@@ -21,7 +26,7 @@ import {
 } from "@/app/routes";
 import type { RouteKey } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
-import { Alert, DebugChromeGate } from "@/components/shared";
+import { Alert, DebugChromeGate, DebugToggle } from "@/components/shared";
 import { LoadingScreen, StatusPanel } from "@/components/layout";
 import { AuthenticatedShell } from "@/components/layout/shell";
 import { MockProfileSelector } from "@/features/auth/MockProfileSelector";
@@ -58,6 +63,7 @@ function App() {
   const [apiLog, setApiLog] = useState<ApiLogEntry[]>([]);
   const [health, setHealth] = useState<"checking" | "ok" | "down">("checking");
   const [ready, setReady] = useState<"checking" | "ok" | "down">("checking");
+  const [debugChromeAvailable, setDebugChromeAvailable] = useState(false);
   const [debugChrome, setDebugChrome] = useState(isDebugChromeEnabled);
   const canUseDemo = Boolean(auth && mockProfilesEnabled);
   const demoRouteBlocked = auth ? route === "admin-demo" && !canUseDemo : false;
@@ -82,11 +88,11 @@ function App() {
   useEffect(() => {
     const onRoute = () => {
       setRoute(currentRoute());
-      setDebugChrome(isDebugChromeEnabled());
+      setDebugChrome(isDebugChromeEnabled(debugChromeAvailable));
     };
     window.addEventListener("popstate", onRoute);
     return () => window.removeEventListener("popstate", onRoute);
-  }, []);
+  }, [debugChromeAvailable]);
 
   useEffect(() => {
     setApiObserver((entry) => {
@@ -105,12 +111,14 @@ function App() {
         try {
           const bootstrap = await authBootstrap();
           if (!active) return;
-          setMockProfilesEnabled(bootstrap.mock_profiles_enabled);
-          setMockProfiles(bootstrap.mock_profiles);
+          applyBootstrap(bootstrap);
         } catch {
           if (!active) return;
           setMockProfilesEnabled(false);
           setMockProfiles([]);
+          setDebugChromeAvailable(false);
+          setDebugChrome(false);
+          setDebugChromeQuery(false);
         }
         setAuthMessage("");
       } catch {
@@ -119,12 +127,14 @@ function App() {
         try {
           const bootstrap = await authBootstrap();
           if (!active) return;
-          setMockProfilesEnabled(bootstrap.mock_profiles_enabled);
-          setMockProfiles(bootstrap.mock_profiles);
+          applyBootstrap(bootstrap);
         } catch (error) {
           if (!active) return;
           setMockProfilesEnabled(false);
           setMockProfiles([]);
+          setDebugChromeAvailable(false);
+          setDebugChrome(false);
+          setDebugChromeQuery(false);
           setAuthMessage(errorMessage(error));
         }
       } finally {
@@ -170,8 +180,18 @@ function App() {
   }
 
   function handleDebugToggle(enabled: boolean) {
-    setDebugChromeQuery(enabled);
-    setDebugChrome(isDebugChromeEnabled());
+    const nextEnabled = debugChromeAvailable && enabled;
+    setDebugChromeQuery(nextEnabled);
+    setDebugChrome(isDebugChromeEnabled(debugChromeAvailable));
+  }
+
+  function applyBootstrap(bootstrap: AuthBootstrap) {
+    const available = Boolean(bootstrap.debug_chrome_enabled);
+    setMockProfilesEnabled(bootstrap.mock_profiles_enabled);
+    setMockProfiles(bootstrap.mock_profiles);
+    setDebugChromeAvailable(available);
+    if (!available) setDebugChromeQuery(false);
+    setDebugChrome(isDebugChromeEnabled(available));
   }
 
   if (authLoading) {
@@ -182,6 +202,7 @@ function App() {
     if (mockProfilesEnabled) {
       return (
         <MockProfileSelector
+          debugChromeAvailable={debugChromeAvailable}
           debugChromeEnabled={debugChrome}
           health={health}
           ready={ready}
@@ -195,9 +216,11 @@ function App() {
     return (
       <AuthRequiredState
         debugChrome={debugChrome}
+        debugChromeAvailable={debugChromeAvailable}
         health={health}
         ready={ready}
         message={authMessage}
+        onToggleDebugChrome={handleDebugToggle}
       />
     );
   }
@@ -207,6 +230,7 @@ function App() {
       activeRoute={activeRoute}
       activeWorkspace={activeWorkspace}
       apiLog={apiLog}
+      debugChromeAvailable={debugChromeAvailable}
       debugChromeEnabled={debugChrome}
       health={health}
       mockProfilesEnabled={mockProfilesEnabled}
@@ -263,14 +287,18 @@ function App() {
 
 function AuthRequiredState({
   debugChrome,
+  debugChromeAvailable,
   health,
   ready,
   message,
+  onToggleDebugChrome,
 }: {
   debugChrome: boolean;
+  debugChromeAvailable: boolean;
   health: string;
   ready: string;
   message: string;
+  onToggleDebugChrome: (enabled: boolean) => void;
 }) {
   return (
     <main className="login-shell">
@@ -291,6 +319,9 @@ function AuthRequiredState({
             請從企業身分提供者進入工作台，系統會使用身分宣告載入角色與員工屬性。
           </p>
         </div>
+        {debugChromeAvailable && (
+          <DebugToggle enabled={debugChrome} onToggle={onToggleDebugChrome} />
+        )}
         <DebugChromeGate enabled={debugChrome}>
           <StatusPanel health={health} ready={ready} />
         </DebugChromeGate>

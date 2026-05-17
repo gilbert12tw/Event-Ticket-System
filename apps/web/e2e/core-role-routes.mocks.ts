@@ -116,6 +116,7 @@ export async function ensureSessionRoutes(
         json: envelope({
           mock_profiles_enabled: Boolean(options.mockProfiles),
           mock_profiles: mockProfiles(),
+          debug_chrome_enabled: true,
         }),
       });
     }
@@ -176,7 +177,66 @@ export async function ensureSessionRoutes(
       /^\/api\/v1\/admin\/events\/[^/]+\/registrations$/.test(pathName) &&
       method === "GET"
     ) {
-      return route.fulfill({ json: envelope([]) });
+      return route.fulfill({
+        json: envelope([
+          {
+            registration_id: "reg-001",
+            event_id: "evt-cets-001",
+            employee_id: "E1001",
+            employee_name: "陳雅莉",
+            status: "confirmed",
+            idempotency_key: "book-evt-cets-001-E1001",
+            family_count: 0,
+            created_at: "2026-01-02T09:00:00Z",
+            ticket: sampleTickets[0],
+          },
+        ]),
+      });
+    }
+
+    if (
+      /^\/api\/v1\/admin\/events\/[^/]+\/eligibility\/preview$/.test(
+        pathName,
+      ) &&
+      method === "POST"
+    ) {
+      return route.fulfill({
+        json: envelope({
+          event_id: "evt-cets-001",
+          match_count: body?.rule ? 2 : 0,
+          zero_match: false,
+        }),
+      });
+    }
+
+    if (
+      /^\/api\/v1\/admin\/events\/[^/]+\/eligibility$/.test(pathName) &&
+      method === "PUT"
+    ) {
+      return route.fulfill({
+        json: envelope({
+          event_id: "evt-cets-001",
+          match_count: 2,
+          zero_match: false,
+        }),
+      });
+    }
+
+    if (
+      /^\/api\/v1\/admin\/events\/[^/]+\/lottery-runs$/.test(pathName) &&
+      method === "POST"
+    ) {
+      return route.fulfill({
+        json: envelope({
+          run_id: "lottery-001",
+          event_id: "evt-cets-001",
+          seed: String(body.seed || "seed"),
+          status: "completed",
+          winner_count: 1,
+          created_by: currentSession.actor.id,
+          created_at: "2026-01-04T10:00:00Z",
+        }),
+      });
     }
 
     if (
@@ -223,7 +283,24 @@ export async function ensureSessionRoutes(
     }
 
     if (pathName === "/api/v1/checkins" && method === "POST") {
-      return route.fulfill({ json: envelope({}) });
+      return route.fulfill({
+        json: envelope({
+          checkin_id: "checkin-001",
+          ticket_id: "ticket-001",
+          event_id: "evt-cets-001",
+          employee_id: "E1001",
+          status: "accepted",
+          reason_code: "accepted",
+          scanned_at: "2026-01-10T10:10:00Z",
+          duplicate: false,
+          holder: {
+            display_name: "陳雅莉",
+            department: "Engineering",
+            city: "Taipei",
+          },
+          family_count: 0,
+        }),
+      });
     }
 
     if (
@@ -243,6 +320,12 @@ export async function ensureSessionRoutes(
               ticket_id: "ticket-001",
               employee_id: "E1001",
               token_hash: "hash-001",
+              holder: {
+                display_name: "陳雅莉",
+                department: "Engineering",
+                city: "Taipei",
+              },
+              family_count: 0,
             },
           ],
         }),

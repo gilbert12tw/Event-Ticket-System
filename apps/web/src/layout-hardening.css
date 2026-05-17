@@ -72,14 +72,9 @@
   flex: 0 0 auto;
 }
 
-.event-row-button,
-.workspace [data-slot="select-trigger"] {
+.event-row-button {
   min-height: 44px !important;
   height: auto !important;
-  white-space: normal;
-}
-
-.workspace [data-slot="select-trigger"] [data-slot="select-value"] {
   white-space: normal;
 }
 

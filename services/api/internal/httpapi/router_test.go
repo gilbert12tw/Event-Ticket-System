@@ -254,8 +254,9 @@ func TestReactSourceKeepsPhase1UIContracts(t *testing.T) {
 		"稽核查詢",
 		"ApiActivity",
 		"已遮蔽",
-		"key === \"signed_token\"",
-		"key === \"qr_payload\"",
+		"ticketSignatureKeys",
+		"\"signed_token\"",
+		"\"qr_payload\"",
 		"contentType.includes(\"application/json\")",
 		"await response.text()",
 	}

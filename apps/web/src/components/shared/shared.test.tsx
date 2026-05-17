@@ -13,6 +13,7 @@ import {
   SelectField,
   SkeletonRows,
   StatusBadge,
+  TextareaField,
 } from ".";
 import { Button } from "@/components/ui/button";
 
@@ -33,6 +34,7 @@ describe("shared product components", () => {
     const input = screen.getByLabelText("員工編號");
     expect(input).toHaveAttribute("id", "employee-id");
     expect(input).toHaveAttribute("name", "employee_id");
+    expect(input).toHaveAttribute("autocomplete", "off");
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(input).toHaveAccessibleDescription("必須使用公司員工編號。");
   });
@@ -43,7 +45,7 @@ describe("shared product components", () => {
         id="report-type"
         label="報表模板"
         name="report_type"
-        value=""
+        value="participation"
         onChange={() => undefined}
         hint="請選擇匯出模板。"
         options={[
@@ -61,9 +63,55 @@ describe("shared product components", () => {
     expect(trigger).toHaveAttribute("id", "report-type");
     expect(trigger).toHaveAttribute("name", "report_type");
     expect(trigger).toHaveAccessibleDescription("請選擇匯出模板。");
+    expect(trigger).toHaveTextContent("參與報表");
+    expect(trigger).not.toHaveTextContent("適合人資週會。");
 
     await userEvent.click(trigger);
-    expect(await screen.findByText("適合人資週會。")).toBeInTheDocument();
+    const helper = await screen.findByText("適合人資週會。");
+    expect(helper).toBeInTheDocument();
+    expect(helper.closest("[data-slot='select-item']")).toHaveClass(
+      "not-data-[variant=destructive]:hover:**:text-accent-foreground",
+      "data-[highlighted]:text-accent-foreground",
+    );
+  });
+
+  it("derives stable form names when operational controls omit name", () => {
+    render(
+      <>
+        <Field
+          id="state-reason"
+          label="狀態原因"
+          value=""
+          onChange={() => undefined}
+        />
+        <TextareaField
+          id="audit-note"
+          label="稽核備註"
+          value=""
+          onChange={() => undefined}
+        />
+        <SelectField
+          id="audit-role"
+          label="角色"
+          value=""
+          onChange={() => undefined}
+          options={[{ value: "", label: "所有角色" }]}
+        />
+      </>,
+    );
+
+    expect(screen.getByLabelText("狀態原因")).toHaveAttribute(
+      "name",
+      "state-reason",
+    );
+    expect(screen.getByLabelText("稽核備註")).toHaveAttribute(
+      "name",
+      "audit-note",
+    );
+    expect(screen.getByRole("combobox", { name: "角色" })).toHaveAttribute(
+      "name",
+      "audit-role",
+    );
   });
 
   it("maps badges and alerts to the shared semantic tone classes", () => {
