@@ -2,6 +2,7 @@ package ticketing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -55,6 +56,37 @@ func TestDeliveryMessageForOutboxFallsBackWithoutActivityContext(t *testing.T) {
 	assert.Contains(t, message.Body, "registration.no_show_recorded")
 	assert.NotContains(t, message.Body, "Activity:")
 	assert.NotContains(t, message.Body, "Starts at:")
+}
+
+func TestDeliveryMessageForOutboxIncludesCrossCityActivityCity(t *testing.T) {
+	message := deliveryMessageForOutbox("booking.confirmed", "E1001", map[string]interface{}{
+		"warning_code":  string(WarningCrossCity),
+		"event_city":    "Taipei",
+		"employee_city": "Hsinchu",
+		"full_name":     "Ariel Chen",
+		"email":         "ariel@example.com",
+		"signed_token":  "raw-token",
+		"qr_payload":    "raw-qr",
+	})
+
+	assert.Contains(t, message.Body, "This activity is in Taipei")
+	assert.NotContains(t, message.Body, "Hsinchu")
+	assert.NotContains(t, message.Body, "Ariel Chen")
+	assert.NotContains(t, message.Body, "ariel@example.com")
+	assert.NotContains(t, message.Body, "raw-token")
+	assert.NotContains(t, message.Body, "raw-qr")
+}
+
+func TestDeliveryMessageForOutboxOmitsCrossCityWordingWhenContextIncomplete(t *testing.T) {
+	noWarning := deliveryMessageForOutbox("booking.confirmed", "E1001", map[string]interface{}{
+		"event_city": "Taipei",
+	})
+	missingCity := deliveryMessageForOutbox("booking.confirmed", "E1001", map[string]interface{}{
+		"warning_code": string(WarningCrossCity),
+	})
+
+	assert.NotContains(t, noWarning.Body, "This activity is in")
+	assert.NotContains(t, missingCity.Body, "This activity is in")
 }
 
 func TestSMTPNotificationSenderReturnsCanceledContext(t *testing.T) {
@@ -229,6 +261,89 @@ func TestProcessOutboxOnceMarksDeadLetterAtMaxAttempts(t *testing.T) {
 	assertWorkerOutboxStatus(t, service, ctx, "out-email-dead-letter", "dead_letter", 3)
 }
 
+func TestBookingOutboxPayloadIncludesOnlyRedactedCrossCityContext(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, service.SeedDemoData(ctx))
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:     "Cross City Notification",
+		Location:  "Taipei HQ",
+		EventCity: "Taipei",
+		Capacity:  2,
+		Status:    EventStatusPublished,
+		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Hsinchu",
+		Grade:            6,
+		EmploymentStatus: "active",
+	}}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "cross-city-notification"})
+	require.NoError(t, err)
+
+	payloadText := workerOutboxPayload(t, service, ctx, booking.Registration.RegistrationID, "booking.confirmed")
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(payloadText), &payload))
+	assert.Equal(t, string(WarningCrossCity), payload["warning_code"])
+	assert.Equal(t, "Taipei", payload["event_city"])
+	assert.NotContains(t, payload, "employee_city")
+	assert.NotContains(t, payloadText, "Hsinchu")
+	assert.NotContains(t, payloadText, "Ariel Chen")
+	assert.NotContains(t, payloadText, "@")
+	assert.NotContains(t, payloadText, "signed_token")
+	assert.NotContains(t, payloadText, "qr_payload")
+
+	sender := &recordingNotificationSender{}
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, sender.messages, 1)
+	assert.Contains(t, sender.messages[0].Body, "This activity is in Taipei")
+	assert.NotContains(t, sender.messages[0].Body, "Hsinchu")
+}
+
+func TestBookingOutboxPayloadOmitsCrossCityContextForSameCity(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, service.SeedDemoData(ctx))
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:     "Same City Notification",
+		Location:  "Taipei HQ",
+		EventCity: "Taipei",
+		Capacity:  2,
+		Status:    EventStatusPublished,
+		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            6,
+		EmploymentStatus: "active",
+	}}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "same-city-notification"})
+	require.NoError(t, err)
+
+	payloadText := workerOutboxPayload(t, service, ctx, booking.Registration.RegistrationID, "booking.confirmed")
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(payloadText), &payload))
+	assert.NotContains(t, payload, "warning_code")
+	assert.NotContains(t, payload, "event_city")
+
+	sender := &recordingNotificationSender{}
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, sender.messages, 1)
+	assert.NotContains(t, sender.messages[0].Body, "This activity is in")
+}
+
 func seedWorkerEmployee(t *testing.T, service *Service, ctx context.Context) {
 	t.Helper()
 	require.NoError(t, service.SeedDemoData(ctx))
@@ -269,6 +384,14 @@ func workerDeliveryStatuses(t *testing.T, service *Service, ctx context.Context,
 	}
 	require.NoError(t, rows.Err())
 	return statuses
+}
+
+func workerOutboxPayload(t *testing.T, service *Service, ctx context.Context, aggregateID string, eventType string) string {
+	t.Helper()
+	var payload string
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT payload::text FROM outbox_events WHERE aggregate_id = $1 AND event_type = $2`, aggregateID, eventType).
+		Scan(&payload))
+	return payload
 }
 
 func assertWorkerOutboxStatus(t *testing.T, service *Service, ctx context.Context, outboxID string, wantStatus string, wantAttempts int) {
