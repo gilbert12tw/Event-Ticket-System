@@ -31,10 +31,30 @@ func TestDeliveryAddressForEmployeeNormalizesLocalMailbox(t *testing.T) {
 }
 
 func TestDeliveryMessageForOutboxContainsEventType(t *testing.T) {
-	message := deliveryMessageForOutbox("booking.confirmed", "E1001")
+	message := deliveryMessageForOutbox("booking.confirmed", "E1001", nil)
 	assert.Equal(t, "e1001@cets.local", message.To)
 	assert.Equal(t, "CETS update: booking.confirmed", message.Subject)
 	assert.NotEmpty(t, message.Body, "expected message body")
+}
+
+func TestDeliveryMessageForOutboxIncludesActivityContext(t *testing.T) {
+	message := deliveryMessageForOutbox("registration.cancelled", "E1001", map[string]interface{}{
+		"event_title": "Factory Family Day",
+		"starts_at":   "2026-05-19T10:00:00Z",
+	})
+
+	assert.Contains(t, message.Body, "Factory Family Day")
+	assert.Contains(t, message.Body, "2026-05-19T10:00:00Z")
+}
+
+func TestDeliveryMessageForOutboxFallsBackWithoutActivityContext(t *testing.T) {
+	message := deliveryMessageForOutbox("registration.no_show_recorded", "E1001", map[string]interface{}{
+		"employee_id": "E1001",
+	})
+
+	assert.Contains(t, message.Body, "registration.no_show_recorded")
+	assert.NotContains(t, message.Body, "Activity:")
+	assert.NotContains(t, message.Body, "Starts at:")
 }
 
 func TestSMTPNotificationSenderReturnsCanceledContext(t *testing.T) {
@@ -112,6 +132,29 @@ func TestProcessOutboxOnceProcessesConfiguredBatch(t *testing.T) {
 	assertWorkerOutboxStatus(t, service, ctx, "out-batch-1", "published", 1)
 	assertWorkerOutboxStatus(t, service, ctx, "out-batch-2", "published", 1)
 	assertWorkerOutboxStatus(t, service, ctx, "out-batch-3", "published", 1)
+}
+
+func TestProcessOutboxOnceSendsGovernanceEventContext(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	seedWorkerEmployee(t, service, ctx)
+	insertWorkerOutboxPayload(t, service, ctx, "out-governance-context", "registration.cancelled", "pending", 0, `{
+		"employee_id":"E1001",
+		"event_id":"evt-context",
+		"event_title":"Cancellation Drill",
+		"starts_at":"2026-05-19T10:00:00Z"
+	}`)
+	sender := &recordingNotificationSender{}
+
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, sender.messages, 1)
+	assert.Contains(t, sender.messages[0].Body, "Cancellation Drill")
+	assert.Contains(t, sender.messages[0].Body, "2026-05-19T10:00:00Z")
+	assertWorkerOutboxStatus(t, service, ctx, "out-governance-context", "published", 1)
 }
 
 func TestProcessOutboxOnceClaimsStaleProcessingOutbox(t *testing.T) {
@@ -193,10 +236,15 @@ func seedWorkerEmployee(t *testing.T, service *Service, ctx context.Context) {
 
 func insertWorkerOutbox(t *testing.T, service *Service, ctx context.Context, outboxID string, status string, attempts int) {
 	t.Helper()
+	insertWorkerOutboxPayload(t, service, ctx, outboxID, "booking.confirmed", status, attempts, `{"employee_id":"E1001"}`)
+}
+
+func insertWorkerOutboxPayload(t *testing.T, service *Service, ctx context.Context, outboxID string, eventType string, status string, attempts int, payload string) {
+	t.Helper()
 	_, err := service.db.Exec(ctx, `INSERT INTO outbox_events
 		(outbox_id, aggregate_id, event_type, payload, publish_status, attempts, available_at)
-		VALUES ($1,$2,'booking.confirmed',$3::jsonb,$4,$5,now() - interval '1 minute')`,
-		outboxID, outboxID+"-aggregate", `{"employee_id":"E1001"}`, status, attempts)
+		VALUES ($1,$2,$3,$4::jsonb,$5,$6,now() - interval '1 minute')`,
+		outboxID, outboxID+"-aggregate", eventType, payload, status, attempts)
 	require.NoError(t, err)
 }
 

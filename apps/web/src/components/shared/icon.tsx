@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  ArrowRight,
   Ban,
   BarChart3,
   Bell,
@@ -27,6 +28,7 @@ import type { IconName } from "@/app/routes";
 
 const iconComponents: Record<IconName, LucideIcon> = {
   activity: Activity,
+  arrowRight: ArrowRight,
   audit: FileSearch,
   ban: Ban,
   bell: Bell,

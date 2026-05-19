@@ -285,5 +285,8 @@ func (s *Service) CheckEligibility(
 	eventID string,
 	_ string, // employeeID arg retained for interface compat; ignored — use actor.Claims
 ) (EligibilityDecision, error) {
+	if err := requireRole(actor, RoleEmployee); err != nil {
+		return EligibilityDecision{}, err
+	}
 	return s.CheckEligibilityFromClaims(ctx, actor, eventID)
 }

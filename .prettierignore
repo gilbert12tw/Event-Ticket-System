@@ -9,5 +9,6 @@ apps/web/coverage/**
 apps/web/playwright-report/**
 apps/web/playwright-live-report/**
 apps/web/test-results/**
+apps/web/src/components/ui/sidebar.tsx
 services/api/internal/httpapi/static/assets/**
 pnpm-lock.yaml

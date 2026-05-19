@@ -24,10 +24,20 @@ import {
   splitTags,
   toISO,
 } from "@/lib/formatting";
-import { Alert, Field, Kpi, StatusBadge } from "@/components/shared";
-import { Icon } from "@/components/shared/icon";
+import { Alert, CompactStatsBar } from "@/components/shared";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUrlTab } from "@/hooks/use-url-tab";
+import { localizedMessage } from "@/lib/ui/options";
+import {
+  AdminEventCreateTab,
+  AdminEventEditTab,
+  AdminEventEligibilityTab,
+  AdminEventListTab,
+  AdminEventStatusTab,
+} from "./admin-event-crud-panels";
+import { AdminEventDangerTab } from "./admin-event-danger-panel";
+import { adminEventTabs, type AdminEventTab } from "./admin-event-crud-types";
 import { AdminCreateResult } from "./admin-create-result";
-import { AdminEventGovernancePanel } from "./admin-governance-panel";
 
 export function AdminEventsPage() {
   const [form, setForm] = useState(defaultEventForm);
@@ -37,8 +47,13 @@ export function AdminEventsPage() {
   const [editForm, setEditForm] = useState(() => defaultEditEventForm());
   const [stateForm, setStateForm] = useState({
     status: "published",
-    reason: "admin state change",
+    reason: "",
   });
+  const [activeTab, setActiveTab] = useUrlTab<AdminEventTab>(
+    "tab",
+    adminEventTabs,
+    initialTab(),
+  );
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const selectedAdminEvent =
@@ -54,20 +69,21 @@ export function AdminEventsPage() {
           employment_status: form.employment_status,
         }),
       ),
-    [form.department, form.site, form.min_grade, form.employment_status],
+    [form.department, form.employment_status, form.min_grade, form.site],
   );
   const capacityReady =
     form.capacity_type === "unlimited" ||
     (Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0);
-  const startsAt = new Date(form.starts_at);
-  const registrationStart = new Date(form.registration_start);
-  const registrationClose = new Date(form.registration_close);
-  const windowReady =
-    [startsAt, registrationStart, registrationClose].every(
-      (date) => !Number.isNaN(date.getTime()),
-    ) &&
-    registrationStart <= registrationClose &&
-    registrationClose <= startsAt;
+  const createWindowReady = windowReady(
+    form.starts_at,
+    form.registration_start,
+    form.registration_close,
+  );
+  const editWindowReady = windowReady(
+    editForm.starts_at,
+    editForm.registration_start,
+    editForm.registration_close,
+  );
   const publishChecks = [
     {
       label: "基本資料完整",
@@ -76,46 +92,52 @@ export function AdminEventsPage() {
       ),
     },
     { label: "容量可用", ok: capacityReady },
-    { label: "報名期間有效", ok: windowReady },
+    { label: "報名期間有效", ok: createWindowReady },
     { label: "資格規則命中", ok: previewEmployees.length > 0 },
-    { label: "狀態可發布", ok: form.status === "published" },
+    {
+      label: "建立意圖明確",
+      ok: form.status === "published" || form.status === "draft",
+    },
   ];
-  const canSubmit = publishChecks
-    .filter((item) => item.label !== "資格規則命中")
-    .every((item) => item.ok);
+  const zeroAudiencePublishBlocked =
+    form.status === "published" && previewEmployees.length === 0;
+  const canSubmit =
+    publishChecks
+      .filter((item) => item.label !== "資格規則命中")
+      .every((item) => item.ok) && !zeroAudiencePublishBlocked;
+
+  useEffect(() => {
+    void refreshAdminEvents();
+  }, []);
 
   async function refreshAdminEvents(nextSelectedID = selectedEventID) {
     try {
       const rows = await listAdminEvents();
       setAdminEvents(rows);
-      const nextSelected = nextSelectedID || rows[0]?.event_id || "";
-      setSelectedEventID(nextSelected);
-      const nextEvent =
-        rows.find((event) => event.event_id === nextSelected) || rows[0];
-      if (nextEvent) {
-        setEditForm(editFormFromEvent(nextEvent));
-        setStateForm({
-          status: nextEvent.status,
-          reason: "admin state change",
-        });
-      }
+      applySelectedEvent(rows, nextSelectedID || rows[0]?.event_id || "");
     } catch (error) {
       setMessage(errorMessage(error));
     }
   }
 
-  useEffect(() => {
-    void refreshAdminEvents();
-  }, []);
+  function applySelectedEvent(rows: EventSummary[], eventID: string) {
+    const nextEvent =
+      rows.find((event) => event.event_id === eventID) || rows[0];
+    setSelectedEventID(nextEvent?.event_id || "");
+    if (!nextEvent) return;
+    setEditForm(editFormFromEvent(nextEvent));
+    setStateForm({
+      status: nextEvent.status,
+      reason: "",
+    });
+  }
 
   async function seed() {
     setBusy(true);
     setMessage("");
     try {
       const result = await seedDemo();
-      setMessage(
-        result.status === "seeded" ? "HR 示範員工已建立。" : result.status,
-      );
+      setMessage(localizedMessage(result.status));
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -128,29 +150,10 @@ export function AdminEventsPage() {
     setBusy(true);
     setMessage("");
     try {
-      const unlimited = form.capacity_type === "unlimited";
-      const body: CreateEventRequest = {
-        title: form.title.trim(),
-        description: form.description.trim(),
-        location: form.location.trim(),
-        event_city: form.event_city.trim() || undefined,
-        starts_at: toISO(form.starts_at),
-        registration_start: toISO(form.registration_start),
-        registration_close: toISO(form.registration_close),
-        capacity_type: form.capacity_type,
-        capacity: unlimited ? null : Number(form.capacity),
-        allows_family: unlimited,
-        status: form.status,
-        rule: {
-          department: form.department.trim() || "*",
-          site: form.site.trim() || "*",
-          min_grade: Number(form.min_grade),
-          employment_status: form.employment_status.trim() || "active",
-        },
-      };
-      const result = await createEvent(body);
+      const result = await createEvent(createBody(form));
       setCreated(result);
-      setMessage("活動已建立並寫入 audit log。");
+      setMessage("活動已建立並寫入稽核紀錄。");
+      setActiveTab("list");
       await refreshAdminEvents(result.event_id);
     } catch (error) {
       setMessage(errorMessage(error));
@@ -165,25 +168,11 @@ export function AdminEventsPage() {
     setBusy(true);
     setMessage("");
     try {
-      const unlimited = editForm.capacity_type === "unlimited";
-      const body: UpdateEventRequest = {
-        title: editForm.title.trim(),
-        description: editForm.description.trim(),
-        location: editForm.location.trim(),
-        event_city: editForm.event_city.trim() || undefined,
-        starts_at: toISO(editForm.starts_at),
-        registration_start: toISO(editForm.registration_start),
-        registration_close: toISO(editForm.registration_close),
-        capacity_type: editForm.capacity_type,
-        capacity: unlimited ? null : Number(editForm.capacity),
-        allows_family: unlimited,
-        category: editForm.category.trim(),
-        tags: splitTags(editForm.tags),
-        entry_method: editForm.entry_method.trim(),
-        visibility: editForm.visibility.trim(),
-      };
-      const updated = await updateEvent(selectedAdminEvent.event_id, body);
-      setMessage("活動已更新並寫入 audit log。");
+      const updated = await updateEvent(
+        selectedAdminEvent.event_id,
+        updateBody(editForm),
+      );
+      setMessage("活動已更新並寫入稽核紀錄。");
       await refreshAdminEvents(updated.event_id);
     } catch (error) {
       setMessage(errorMessage(error));
@@ -243,242 +232,172 @@ export function AdminEventsPage() {
 
   return (
     <section className="content-grid">
-      <div className="panel span-12 workspace-context admin-context">
-        <div>
-          <div className="eyebrow">Admin Console</div>
-          <h2>活動主辦入口</h2>
-          <p>
-            建立活動前先檢查容量、報名期間與資格命中人數；新增治理 API
-            支援列表、更新、狀態、複製與封存。
-          </p>
-        </div>
-        <div className="context-kpis">
-          <Kpi label="Demo 符合人數" value={previewEmployees.length} />
-          <Kpi
-            label="容量"
-            value={form.capacity_type === "unlimited" ? "不限" : form.capacity}
-          />
-          <Kpi label="管理活動" value={adminEvents.length} />
-        </div>
-      </div>
-      <AdminEventGovernancePanel
-        adminEvents={adminEvents}
-        busy={busy}
-        editForm={editForm}
-        onArchive={() => void archiveSelected()}
-        onChangeState={() => void changeSelectedState()}
-        onDuplicate={() => void duplicateSelected()}
-        onEditFormChange={setEditForm}
-        onRefresh={() => void refreshAdminEvents()}
-        onSave={saveSelected}
-        onSelect={(event) => {
-          setSelectedEventID(event.event_id);
-          setEditForm(editFormFromEvent(event));
-          setStateForm({
-            status: event.status,
-            reason: "admin state change",
-          });
-        }}
-        onStateFormChange={setStateForm}
-        selectedEvent={selectedAdminEvent}
-        stateForm={stateForm}
-      />
-      <form
-        className="panel span-8 form-grid"
-        onSubmit={(event) => void submit(event)}
+      {message && (
+        <Alert tone={message.includes("已") ? "ok" : "warn"}>{message}</Alert>
+      )}
+      <Tabs
+        className="panel span-12 focused-tabs"
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as AdminEventTab)}
       >
-        <div className="section-heading full">
+        <div className="section-heading">
           <div>
-            <h2>建立活動與資格規則</h2>
-            <p>Phase 1 支援先搶先得、容量、防超賣與單一資格規則。</p>
+            <h2>活動設定工作區</h2>
+            <p>每個分頁只服務一個任務，重要分頁會保存在網址查詢參數。</p>
           </div>
-          <button
-            className="button ghost"
-            type="button"
-            onClick={() => void seed()}
-            disabled={busy}
-          >
-            <Icon name="database" />
-            Seed HR
-          </button>
+          <TabsList>
+            <TabsTrigger value="list">活動清單</TabsTrigger>
+            <TabsTrigger value="create">建立活動</TabsTrigger>
+            <TabsTrigger value="edit">編輯活動</TabsTrigger>
+            <TabsTrigger value="status">發布狀態</TabsTrigger>
+            <TabsTrigger value="eligibility">資格預覽</TabsTrigger>
+            <TabsTrigger value="danger">危險操作</TabsTrigger>
+          </TabsList>
         </div>
-        <fieldset className="form-section full">
-          <legend>基本資料</legend>
-          <Field
-            label="活動名稱"
-            value={form.title}
-            onChange={(value) => setForm({ ...form, title: value })}
-            required
-          />
-          <Field
-            label="地點"
-            value={form.location}
-            onChange={(value) => setForm({ ...form, location: value })}
-            required
-          />
-          <label className="field">
-            <span>活動城市</span>
-            <select
-              value={form.event_city}
-              onChange={(event) =>
-                setForm({ ...form, event_city: event.target.value })
-              }
-            >
-              <option value="">（未設定）</option>
-              <option value="Taipei">台北 (Taipei)</option>
-              <option value="Hsinchu">新竹 (Hsinchu)</option>
-              <option value="Taichung">台中 (Taichung)</option>
-              <option value="Tainan">台南 (Tainan)</option>
-              <option value="Kaohsiung">高雄 (Kaohsiung)</option>
-            </select>
-            <small className="form-hint">
-              設定後用於比對員工所在城市，不同城市將顯示跨城市提示（不阻擋報名）。
-            </small>
-          </label>
-          <label className="field full">
-            <span>描述</span>
-            <textarea
-              value={form.description}
-              onChange={(event) =>
-                setForm({ ...form, description: event.target.value })
-              }
-              rows={4}
-            />
-          </label>
-        </fieldset>
-        <fieldset className="form-section full">
-          <legend>容量與報名期間</legend>
-          <Field
-            label="活動開始"
-            type="datetime-local"
-            value={form.starts_at}
-            onChange={(value) => setForm({ ...form, starts_at: value })}
-            required
-          />
-          <Field
-            label="報名開始"
-            type="datetime-local"
-            value={form.registration_start}
-            onChange={(value) =>
-              setForm({ ...form, registration_start: value })
+        <CompactStatsBar
+          items={[
+            { label: "符合資格預覽", value: previewEmployees.length },
+            { label: "管理活動", value: adminEvents.length },
+          ]}
+          label="活動設定摘要"
+        />
+        <TabsContent value="list">
+          <AdminEventListTab
+            events={adminEvents}
+            busy={busy}
+            selectedEvent={selectedAdminEvent}
+            onRefresh={() => void refreshAdminEvents()}
+            onSelect={(event) =>
+              applySelectedEvent(adminEvents, event.event_id)
             }
-            required
+            onTabChange={setActiveTab}
           />
-          <Field
-            label="報名截止"
-            type="datetime-local"
-            value={form.registration_close}
-            onChange={(value) =>
-              setForm({ ...form, registration_close: value })
-            }
-            required
-          />
-          <label className="field">
-            <span>票數類型</span>
-            <select
-              value={form.capacity_type}
-              onChange={(event) => {
-                const next = event.target.value as "limited" | "unlimited";
-                setForm({
-                  ...form,
-                  capacity_type: next,
-                  capacity: next === "unlimited" ? "" : form.capacity || "1",
-                });
-              }}
-            >
-              <option value="limited">limited（本人單張票）</option>
-              <option value="unlimited">unlimited（不扣庫存，可帶家屬）</option>
-            </select>
-          </label>
-          {form.capacity_type === "limited" ? (
-            <Field
-              label="容量"
-              type="number"
-              value={form.capacity}
-              onChange={(value) => setForm({ ...form, capacity: value })}
-              required
+        </TabsContent>
+        <TabsContent value="create">
+          <div className="create-workspace">
+            <AdminEventCreateTab
+              busy={busy}
+              canSubmit={canSubmit}
+              capacityReady={capacityReady}
+              form={form}
+              message=""
+              previewEmployees={previewEmployees}
+              publishChecks={publishChecks}
+              zeroAudiencePublishBlocked={zeroAudiencePublishBlocked}
+              windowReady={createWindowReady}
+              onFormChange={setForm}
+              onReset={() => setForm(defaultEventForm())}
+              onSeed={() => void seed()}
+              onSubmit={submit}
             />
-          ) : (
-            <p className="form-hint full">
-              unlimited 活動不設總名額，員工報名時可填寫攜帶家屬人數（上限
-              10）。
-            </p>
-          )}
-        </fieldset>
-        <fieldset className="form-section full">
-          <legend>資格規則</legend>
-          <Field
-            label="部門"
-            value={form.department}
-            onChange={(value) => setForm({ ...form, department: value })}
+            <AdminCreateResult event={created} />
+          </div>
+        </TabsContent>
+        <TabsContent value="edit">
+          <AdminEventEditTab
+            busy={busy}
+            editForm={editForm}
+            selectedEvent={selectedAdminEvent}
+            windowReady={editWindowReady}
+            onEditFormChange={setEditForm}
+            onSave={saveSelected}
           />
-          <Field
-            label="廠區"
-            value={form.site}
-            onChange={(value) => setForm({ ...form, site: value })}
+        </TabsContent>
+        <TabsContent value="status">
+          <AdminEventStatusTab
+            busy={busy}
+            selectedEvent={selectedAdminEvent}
+            stateForm={stateForm}
+            onChangeState={() => void changeSelectedState()}
+            onStateFormChange={setStateForm}
           />
-          <Field
-            label="最低職等"
-            type="number"
-            value={form.min_grade}
-            onChange={(value) => setForm({ ...form, min_grade: value })}
+        </TabsContent>
+        <TabsContent value="eligibility">
+          <AdminEventEligibilityTab
+            selectedEvent={selectedAdminEvent}
+            onSaved={(eventID) => void refreshAdminEvents(eventID)}
           />
-          <Field
-            label="雇用狀態"
-            value={form.employment_status}
-            onChange={(value) => setForm({ ...form, employment_status: value })}
+        </TabsContent>
+        <TabsContent value="danger">
+          <AdminEventDangerTab
+            busy={busy}
+            selectedEvent={selectedAdminEvent}
+            onArchive={() => void archiveSelected()}
+            onDuplicate={() => void duplicateSelected()}
           />
-        </fieldset>
-        <div className="publish-check full" aria-live="polite">
-          <StatusBadge tone={previewEmployees.length > 0 ? "ok" : "warn"}>
-            {previewEmployees.length > 0 ? "資格命中" : "0 人符合"}
-          </StatusBadge>
-          <span>
-            {previewEmployees.length > 0
-              ? `Demo HR 資料中符合：${previewEmployees.map((employee) => employee.employee_id).join(", ")}`
-              : "目前資格設定沒有符合的 demo 員工，發布前請確認條件。"}
-          </span>
-        </div>
-        <div className="readiness-grid full" aria-label="發布檢查">
-          {publishChecks.map((item) => (
-            <div
-              className={item.ok ? "readiness-item ok" : "readiness-item warn"}
-              key={item.label}
-            >
-              <StatusBadge tone={item.ok ? "ok" : "warn"}>
-                {item.ok ? "OK" : "Check"}
-              </StatusBadge>
-              <span>{item.label}</span>
-            </div>
-          ))}
-        </div>
-        {!windowReady && (
-          <Alert tone="warn">
-            報名期間需早於活動開始，且報名開始不可晚於報名截止。
-          </Alert>
-        )}
-        <div className="form-actions full">
-          <button
-            className="button"
-            type="submit"
-            disabled={busy || !canSubmit}
-          >
-            <Icon name="plus" />
-            建立活動
-          </button>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => setForm(defaultEventForm)}
-          >
-            重設
-          </button>
-        </div>
-        {message && (
-          <Alert tone={message.includes("已") ? "ok" : "warn"}>{message}</Alert>
-        )}
-      </form>
-      <AdminCreateResult event={created} />
+        </TabsContent>
+      </Tabs>
     </section>
   );
+}
+
+function createBody(
+  form: ReturnType<typeof defaultEventForm>,
+): CreateEventRequest {
+  const unlimited = form.capacity_type === "unlimited";
+  return {
+    title: form.title.trim(),
+    description: form.description.trim(),
+    location: form.location.trim(),
+    event_city: form.event_city.trim() || undefined,
+    starts_at: toISO(form.starts_at),
+    registration_start: toISO(form.registration_start),
+    registration_close: toISO(form.registration_close),
+    capacity_type: form.capacity_type,
+    capacity: unlimited ? null : Number(form.capacity),
+    allows_family: unlimited,
+    status: form.status,
+    category: form.category.trim(),
+    tags: splitTags(form.tags),
+    entry_method: form.entry_method.trim(),
+    visibility: form.visibility.trim(),
+    rule: {
+      department: form.department.trim() || "*",
+      site: form.site.trim() || "*",
+      min_grade: Number(form.min_grade),
+      employment_status: form.employment_status.trim() || "active",
+    },
+  };
+}
+
+function updateBody(
+  editForm: ReturnType<typeof defaultEditEventForm>,
+): UpdateEventRequest {
+  const unlimited = editForm.capacity_type === "unlimited";
+  return {
+    title: editForm.title.trim(),
+    description: editForm.description.trim(),
+    location: editForm.location.trim(),
+    event_city: editForm.event_city.trim() || undefined,
+    starts_at: toISO(editForm.starts_at),
+    registration_start: toISO(editForm.registration_start),
+    registration_close: toISO(editForm.registration_close),
+    capacity_type: editForm.capacity_type,
+    capacity: unlimited ? null : Number(editForm.capacity),
+    allows_family: unlimited,
+    category: editForm.category.trim(),
+    tags: splitTags(editForm.tags),
+    entry_method: editForm.entry_method.trim(),
+    visibility: editForm.visibility.trim(),
+  };
+}
+
+function windowReady(starts: string, start: string, close: string) {
+  const startsAt = new Date(starts);
+  const registrationStart = new Date(start);
+  const registrationClose = new Date(close);
+  return (
+    [startsAt, registrationStart, registrationClose].every(
+      (date) => !Number.isNaN(date.getTime()),
+    ) &&
+    registrationStart <= registrationClose &&
+    registrationClose <= startsAt
+  );
+}
+
+function initialTab(): AdminEventTab {
+  if (window.location.pathname.includes("/new")) return "create";
+  if (window.location.pathname.includes("/edit")) return "edit";
+  if (window.location.pathname.includes("/eligibility")) return "eligibility";
+  return "list";
 }

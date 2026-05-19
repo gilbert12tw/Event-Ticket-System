@@ -80,6 +80,10 @@ BookingResult:
         - string
         - "null"
       format: uuid
+    duplicate:
+      type: boolean
+      default: false
+      description: True when the request resolved to an existing booking instead of creating a new registration.
     family_count:
       type: integer
       minimum: 0

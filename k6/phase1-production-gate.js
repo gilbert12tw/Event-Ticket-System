@@ -114,11 +114,11 @@ export async function browserGate() {
   const page = await browser.newPage();
   try {
     await loginInBrowser(page, "E1001");
-    await expectRoute(page, "/user/tickets", "票券入口");
+    await expectRoute(page, "/user/tickets", "我的票券");
     await loginInBrowser(page, "staff-1");
-    await expectRoute(page, "/admin/checkin", "驗票員入口");
+    await expectRoute(page, "/admin/checkin", "現場驗票");
     await loginInBrowser(page, "hr-1");
-    await expectRoute(page, "/admin/audit", "稽核入口");
+    await expectRoute(page, "/admin/audit", "稽核紀錄");
   } finally {
     await page.close();
   }

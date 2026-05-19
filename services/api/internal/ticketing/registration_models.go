@@ -43,4 +43,5 @@ type BookingResponse struct {
 	Ticket            *Ticket      `json:"ticket,omitempty"`
 	RemainingCapacity int          `json:"remaining_capacity"`
 	Message           string       `json:"message"`
+	Duplicate         bool         `json:"duplicate,omitempty"`
 }

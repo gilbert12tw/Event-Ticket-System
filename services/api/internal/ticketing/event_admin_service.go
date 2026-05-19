@@ -54,6 +54,11 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if err != nil {
 		return EventSummary{}, err
 	}
+	var storedEventCity string
+	var storedEventSite string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(event_city, ''), COALESCE(event_site, '') FROM events WHERE event_id = $1`, eventID).Scan(&storedEventCity, &storedEventSite); err != nil {
+		return EventSummary{}, err
+	}
 	if event.Status == EventStatusArchived || !event.ArchivedAt.IsZero() {
 		return EventSummary{}, conflict("archived events cannot be edited")
 	}
@@ -69,11 +74,11 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	}
 	if req.Location != nil {
 		event.Location = *req.Location
-		if req.EventCity == nil && strings.TrimSpace(event.EventCity) == "" {
-			event.EventCity = event.Location
+		if req.EventCity == nil && strings.TrimSpace(storedEventCity) == "" {
+			event.EventCity = eventCityOrFallback("", event.Location)
 		}
-		if req.EventSite == nil && strings.TrimSpace(event.EventSite) == "" {
-			event.EventSite = event.Location
+		if req.EventSite == nil && strings.TrimSpace(storedEventSite) == "" {
+			event.EventSite = eventSiteOrFallback("", event.Location)
 		}
 	}
 	if req.EventCity != nil {

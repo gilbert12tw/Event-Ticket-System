@@ -110,11 +110,12 @@ describe("api client", () => {
       }),
     );
 
-    const payload = entries[0]?.payload as {
+    expect(entries[0]?.requestBody).toBeNull();
+    const responseBody = entries[0]?.responseBody as {
       data: Array<{ signed_token: string; qr_payload: string }>;
     };
-    expect(payload.data[0].signed_token).toBe("[redacted ticket token]");
-    expect(payload.data[0].qr_payload).toBe("[redacted ticket token]");
+    expect(responseBody.data[0].signed_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data[0].qr_payload).toBe("[票券簽章已遮蔽]");
   });
 
   it("attaches provider bearer tokens from memory", async () => {
@@ -168,7 +169,14 @@ describe("api client", () => {
     await listEvents();
     mockSuccess({ event_id: "evt/1" });
     await getEvent("evt/1");
-    mockSuccess({ event_id: "evt/1" });
+    mockSuccess({
+      event_id: "evt/1",
+      eligible: true,
+      can_book: true,
+      reasons: [],
+      warnings: [],
+      no_show_cooldown: { active: false },
+    });
     await checkEligibility("evt/1");
     mockSuccess({ event_id: "evt/1" });
     await bookEvent("evt/1", "book-1");
@@ -217,7 +225,7 @@ describe("api client", () => {
     });
   });
 
-  it("redacts provider token fields in API log payloads", async () => {
+  it("redacts provider token fields in API log response bodies", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         success: true,
@@ -234,11 +242,78 @@ describe("api client", () => {
 
     await mockProviderToken("E1001");
 
-    const payload = entries[0]?.payload as {
+    const responseBody = entries[0]?.responseBody as {
       data: { provider_token: string; nested: { token: string } };
     };
-    expect(payload.data.provider_token).toBe("[redacted provider token]");
-    expect(payload.data.nested.token).toBe("[redacted session]");
+    expect(responseBody.data.provider_token).toBe("[身分簽章已遮蔽]");
+    expect(responseBody.data.nested.token).toBe("[工作階段已遮蔽]");
+  });
+
+  it("logs redacted request and response bodies separately", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        data: {
+          batch_id: "off_1",
+          accepted: 1,
+          duplicate: 0,
+          conflict: 0,
+          results: [],
+          provider_token: "provider-token-secret",
+          signed_token: "ticket-secret",
+          qr_payload: "qr-secret",
+          qr_token: "qr-token-secret",
+          token_hash: "hash-secret",
+          signed_token_hash: "signed-hash-secret",
+          package_signature: "package-signature-secret",
+          nested: {
+            token: "nested-token-secret",
+          },
+        },
+        error: null,
+      }),
+    );
+
+    await syncOfflineCheckins({
+      batch_id: "off_1",
+      event_id: "evt/1",
+      device_id: "gate-1",
+      package_signature: "package-signature-secret",
+      scans: [
+        { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
+      ],
+    });
+
+    const requestBody = entries[0]?.requestBody as {
+      scans: Array<{ signed_token: string }>;
+    };
+    const responseBody = entries[0]?.responseBody as {
+      data: {
+        provider_token: string;
+        signed_token: string;
+        qr_payload: string;
+        qr_token: string;
+        token_hash: string;
+        signed_token_hash: string;
+        package_signature: string;
+        nested: { token: string };
+      };
+    };
+    expect(requestBody.scans[0].signed_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.provider_token).toBe("[身分簽章已遮蔽]");
+    expect(responseBody.data.signed_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.qr_payload).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.qr_token).toBe("[票券簽章已遮蔽]");
+    expect(responseBody.data.token_hash).toMatch(
+      /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
+    );
+    expect(responseBody.data.signed_token_hash).toMatch(
+      /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
+    );
+    expect(responseBody.data.package_signature).toMatch(
+      /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
+    );
+    expect(responseBody.data.nested.token).toBe("[工作階段已遮蔽]");
   });
 
   it("calls production eligibility, lottery, ticket, report, and audit endpoints", async () => {
@@ -257,8 +332,15 @@ describe("api client", () => {
     await listEligibilityImpactReviews();
     mockSuccess({ review_id: "rev/1", status: "resolved" });
     await resolveEligibilityImpactReview("rev/1", { reason: "reviewed" });
-    mockSuccess({ event_id: "evt/1", eligible: true, reason: "" });
-    await checkEligibility("evt/1");
+    mockSuccess({
+      event_id: "evt/1",
+      eligible: true,
+      can_book: true,
+      reasons: [],
+      warnings: [],
+      no_show_cooldown: { active: false },
+    });
+    const eligibility = await checkEligibility("evt/1");
     mockSuccess({ run_id: "lot_1", status: "completed" });
     await runLottery("evt/1", { seed: "seed-1" });
     mockSuccess({ ticket_id: "tkt/1" });
@@ -290,6 +372,11 @@ describe("api client", () => {
       body: { reason: "reviewed" },
     });
     expect(fetchCall(4).path).toBe("/api/v1/events/evt%2F1/eligibility");
+    expect(eligibility).toMatchObject({
+      event_id: "evt/1",
+      can_book: true,
+      warnings: [],
+    });
     expect(fetchCall(5)).toMatchObject({
       path: "/api/v1/admin/events/evt%2F1/lottery-runs",
       body: { seed: "seed-1" },
@@ -318,6 +405,7 @@ describe("api client", () => {
       batch_id: "off_1",
       event_id: "evt/1",
       device_id: "gate-1",
+      package_signature: "package-signature",
       scans: [
         { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
       ],
@@ -354,6 +442,7 @@ describe("api client", () => {
         batch_id: "off_1",
         event_id: "evt/1",
         device_id: "gate-1",
+        package_signature: "package-signature",
         scans: [
           { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
         ],

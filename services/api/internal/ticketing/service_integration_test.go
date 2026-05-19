@@ -50,6 +50,7 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, RegistrationConfirmed, first.Registration.Status)
 	require.NotNil(t, first.Ticket)
+	assert.False(t, first.Duplicate)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'booking.confirmed' AND aggregate_id = $1`, first.Registration.RegistrationID, 1)
 	var rawTicketCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM tickets WHERE signed_token <> '' OR qr_payload <> ''`).Scan(&rawTicketCount))
@@ -68,11 +69,13 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	assert.Equal(t, first.Registration.RegistrationID, retry.Registration.RegistrationID)
 	require.NotNil(t, retry.Ticket)
 	assert.Equal(t, first.Ticket.TicketID, retry.Ticket.TicketID)
+	assert.True(t, retry.Duplicate)
 	employeeRetry, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "idem-1-different"})
 	require.NoError(t, err)
 	assert.Equal(t, first.Registration.RegistrationID, employeeRetry.Registration.RegistrationID)
 	require.NotNil(t, employeeRetry.Ticket)
 	assert.Equal(t, first.Ticket.TicketID, employeeRetry.Ticket.TicketID)
+	assert.True(t, employeeRetry.Duplicate)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND employee_id = 'E1001'`, event.EventID, 1)
 
 	second, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "idem-2"})
@@ -153,6 +156,10 @@ func TestServiceEligibilityAndBookingUseProviderClaims(t *testing.T) {
 	assert.False(t, decision.Eligible)
 	assert.Contains(t, decision.Reasons, "job grade 4 is below minimum 6")
 
+	_, err = service.CheckEligibility(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin, Claims: lowGradeActor.Claims}, event.EventID, "")
+	require.Error(t, err)
+	assert.Equal(t, 403, ErrorStatus(err))
+
 	_, err = service.Book(ctx, lowGradeActor, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "claims-low-grade"})
 	require.Error(t, err)
 	assert.Equal(t, 403, ErrorStatus(err))
@@ -177,6 +184,77 @@ func TestServiceEligibilityAndBookingUseProviderClaims(t *testing.T) {
 	booking, err := service.Book(ctx, crossCityActor, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "claims-eligible"})
 	require.NoError(t, err)
 	assert.Equal(t, RegistrationConfirmed, booking.Registration.Status)
+}
+
+func TestServiceEligibilityFallsBackToLocationCityForLegacyEvents(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:    "Legacy City Fallback",
+		Location: "Hsinchu Auditorium",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `UPDATE events SET event_city = '' WHERE event_id = $1`, event.EventID)
+	require.NoError(t, err)
+
+	decision, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            6,
+		EmploymentStatus: "active",
+	}}, event.EventID, "")
+	require.NoError(t, err)
+	assert.True(t, decision.Eligible)
+	require.Len(t, decision.Warnings, 1)
+	assert.Equal(t, WarningCrossCity, decision.Warnings[0].Code)
+	assert.Equal(t, "Hsinchu", decision.Warnings[0].EventCity)
+	assert.Equal(t, "Taipei", decision.Warnings[0].EmployeeCity)
+}
+
+func TestServiceUpdateEventRecomputesLegacyCityWhenLocationChanges(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Legacy Location Edit",
+		Location: "Taipei HQ",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `UPDATE events SET event_city = '', event_site = '' WHERE event_id = $1`, event.EventID)
+	require.NoError(t, err)
+
+	nextLocation := "Hsinchu Auditorium"
+	updated, err := service.UpdateEvent(ctx, admin, event.EventID, UpdateEventRequest{
+		Location: &nextLocation,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Hsinchu Auditorium", updated.Location)
+	assert.Equal(t, "Hsinchu", updated.EventCity)
+	assert.Equal(t, "Hsinchu Auditorium", updated.EventSite)
+
+	decision, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Taipei",
+		Grade:            6,
+		EmploymentStatus: "active",
+	}}, event.EventID, "")
+	require.NoError(t, err)
+	require.Len(t, decision.Warnings, 1)
+	assert.Equal(t, "Hsinchu", decision.Warnings[0].EventCity)
 }
 
 func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {

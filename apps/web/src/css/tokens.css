@@ -1,0 +1,76 @@
+:root {
+  color-scheme: light;
+  --bg: oklch(0.958 0.007 238);
+  --surface: oklch(0.985 0.004 238);
+  --surface-raised: oklch(0.972 0.005 238);
+  --surface-inset: oklch(0.938 0.008 238);
+  --surface-muted: oklch(0.904 0.01 238);
+  --sidebar: oklch(0.948 0.007 238);
+  --ink: oklch(0.3 0.022 245);
+  --ink-soft: oklch(0.4 0.026 245);
+  --muted: oklch(0.5 0.025 245);
+  --muted-2: oklch(0.62 0.022 245);
+  --line: oklch(0.84 0.014 238);
+  --line-strong: oklch(0.73 0.018 240);
+  --accent: oklch(0.44 0.078 250);
+  --accent-strong: oklch(0.35 0.084 252);
+  --accent-text: oklch(0.972 0.006 245);
+  --accent-wash: oklch(0.912 0.019 250);
+  --accent-line: oklch(0.72 0.038 250);
+  --success: oklch(0.39 0.078 153);
+  --success-bg: oklch(0.925 0.023 153);
+  --success-line: oklch(0.74 0.044 153);
+  --warn: oklch(0.48 0.086 78);
+  --warn-bg: oklch(0.936 0.032 82);
+  --warn-line: oklch(0.76 0.054 78);
+  --danger: oklch(0.46 0.096 28);
+  --danger-bg: oklch(0.935 0.028 28);
+  --danger-line: oklch(0.76 0.052 28);
+  --info: oklch(0.41 0.072 250);
+  --info-bg: oklch(0.918 0.02 250);
+  --info-line: oklch(0.74 0.04 250);
+  --shadow: 0 18px 45px oklch(0.3 0.022 245 / 0.07);
+  --shadow-soft: 0 8px 22px oklch(0.3 0.022 245 / 0.045);
+  --radius: 0.625rem;
+  --radius-sm: 7px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-text);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--ink);
+  --muted-foreground: var(--muted);
+  --accent-foreground: var(--accent-text);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--accent);
+  --chart-1: var(--accent);
+  --chart-2: var(--success);
+  --chart-3: var(--warn);
+  --chart-4: var(--danger);
+  --chart-5: var(--muted);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-text);
+  --sidebar-accent: var(--surface-raised);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+}

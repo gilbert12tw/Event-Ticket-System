@@ -17,9 +17,12 @@ import { Kpi } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { TicketPanel } from "@/features/tickets/pages";
 import { setDemoCheckinToken } from "@/features/checkin/checkin-token";
+import { localizedMessage } from "@/lib/ui/options";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 const demoSteps = [
-  ["seed", "建立 HR 示範員工"],
+  ["seed", "載入起始員工"],
   ["event", "建立已發布活動"],
   ["browse", "員工瀏覽資格"],
   ["book", "第一位合格員工報名"],
@@ -28,7 +31,7 @@ const demoSteps = [
   ["ticket", "顯示電子票券"],
   ["checkin", "完成首次驗票"],
   ["duplicate", "拒絕重複掃描"],
-  ["report", "檢視報表與 audit"],
+  ["report", "檢視報表與稽核"],
 ] as const;
 
 export function DemoRunbookPage({
@@ -70,12 +73,12 @@ export function DemoRunbookPage({
       await seedDemo();
       mark("seed", "done", "E1001、E1002、E2001 已建立。");
 
-      startStep("event", "建立容量 1 的示範活動");
+      startStep("event", "建立容量 1 的檢查活動");
       await runAs("admin-1");
       const event = await createEvent({
         title: `台北家庭電影夜 ${unique}`,
-        description: "Phase 1 先搶先得、候補與驗票示範。",
-        location: "Taipei HQ Auditorium",
+        description: "先搶先得、候補與驗票流程檢查。",
+        location: "台北總部禮堂",
         starts_at: futureISO(72),
         registration_start: futureISO(-1),
         registration_close: futureISO(48),
@@ -105,12 +108,12 @@ export function DemoRunbookPage({
       startStep("book", "送出第一筆報名");
       await runAs("E1001");
       const booking = await bookEvent(event.event_id, `book-${unique}-E1001`);
-      mark("book", "done", booking.message);
+      mark("book", "done", localizedMessage(booking.message));
 
       startStep("waitlist", "送出第二筆報名");
       await runAs("E1002");
       const waitlist = await bookEvent(event.event_id, `book-${unique}-E1002`);
-      mark("waitlist", "done", waitlist.message);
+      mark("waitlist", "done", localizedMessage(waitlist.message));
 
       startStep("reject", "確認不合格員工被拒絕");
       await runAs("E2001");
@@ -133,13 +136,13 @@ export function DemoRunbookPage({
       startStep("checkin", "首次核銷");
       await runAs("staff-1");
       const accepted = await checkIn(activeTicket.signed_token, "gate-1");
-      mark("checkin", "done", `accepted at ${formatDate(accepted.scanned_at)}`);
+      mark("checkin", "done", `驗票成功：${formatDate(accepted.scanned_at)}`);
 
       startStep("duplicate", "重複掃描");
       await runAs("staff-1");
       try {
         await checkIn(activeTicket.signed_token, "gate-1");
-        mark("duplicate", "fail", "預期的 duplicate rejection 沒有發生。");
+        mark("duplicate", "fail", "預期的重複掃描拒絕沒有發生。");
       } catch (error) {
         mark("duplicate", "done", errorMessage(error));
       }
@@ -154,7 +157,7 @@ export function DemoRunbookPage({
       mark(
         "report",
         "done",
-        `${nextReports.length} rows, ${nextAudits.length} audit records.`,
+        `${nextReports.length} 筆報表，${nextAudits.length} 筆稽核紀錄。`,
       );
     } catch (error) {
       if (currentStep) mark(currentStep, "fail", errorMessage(error));
@@ -170,31 +173,16 @@ export function DemoRunbookPage({
 
   return (
     <section className="content-grid">
-      <div className="panel span-12 workspace-context admin-context">
-        <div>
-          <div className="eyebrow">Admin Console</div>
-          <h2>Demo Runbook</h2>
-          <p>
-            保留 AC-9 驗證入口，從 admin console
-            一次跑完活動建立、報名、候補、驗票、報表與 audit。
-          </p>
-        </div>
-        <button
-          className="button"
-          type="button"
-          onClick={() => void runDemo()}
-          disabled={busy}
-        >
-          <Icon name="play" />
-          {busy ? "執行中" : "Run full demo"}
-        </button>
-      </div>
-      <div className="panel span-5">
+      <Card className="panel span-5">
         <div className="section-heading">
           <div>
-            <h2>驗證 Runbook</h2>
-            <p>一鍵跑完 Phase 1 MVP acceptance flow，保留 demo 可驗證性。</p>
+            <h2>驗證流程</h2>
+            <p>一鍵跑完端到端檢查流程，確認主要操作仍可完成。</p>
           </div>
+          <Button type="button" onClick={() => void runDemo()} disabled={busy}>
+            <Icon name="play" />
+            {busy ? "執行中" : "執行流程檢查"}
+          </Button>
         </div>
         <div className="step-list">
           {demoSteps.map(([id, label], index) => (
@@ -207,17 +195,17 @@ export function DemoRunbookPage({
             </div>
           ))}
         </div>
-      </div>
-      <div className="panel span-7">
+      </Card>
+      <Card className="panel span-7">
         <TicketPanel ticket={ticket || undefined} />
         {reportRows.length > 0 && (
           <div className="report-strip">
-            <Kpi label="Confirmed" value={reportRows[0].confirmed_count} />
-            <Kpi label="Waitlist" value={reportRows[0].waitlist_count} />
-            <Kpi label="Checked in" value={reportRows[0].checkin_count} />
+            <Kpi label="已報名" value={reportRows[0].confirmed_count} />
+            <Kpi label="候補" value={reportRows[0].waitlist_count} />
+            <Kpi label="已入場" value={reportRows[0].checkin_count} />
           </div>
         )}
-      </div>
+      </Card>
     </section>
   );
 }
@@ -226,7 +214,7 @@ function initialSteps() {
   return Object.fromEntries(
     demoSteps.map(([id]) => [
       id,
-      { state: "pending" as StepState, hint: "Pending" },
+      { state: "pending" as StepState, hint: "待執行" },
     ]),
   );
 }

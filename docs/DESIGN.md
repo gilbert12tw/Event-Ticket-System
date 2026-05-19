@@ -1,12 +1,15 @@
 # Design System: Corporate Event Ticketing
+
 **Project ID:** local-phase1-react-spa
 
 ## 1. Visual Theme & Atmosphere
+
 The product is a precise internal operations console for corporate event ticketing. The physical scene is an activity admin or HR user working under normal office lighting on a laptop, while check-in staff use the same product on a tablet at an event entrance with people waiting. This forces a light, high-clarity theme with strong hierarchy, compact controls, and readable status signals.
 
 The desired lane is a mature Linear + Stripe inspired product surface: calm structure, crisp borders, restrained color, dense forms and tables, and confidence through behavior. It must not feel like a pale grey card pile. Use visual weight, section topology, sticky navigation, row density, and state vocabulary to separate primary work from supporting verification.
 
 ## 2. Color Palette & Roles
+
 The palette stays restrained and cool, but avoids near-black blocks and near-white glare. Chroma steps are intentionally lower than the previous pass so navigation, status, and login surfaces read as one product system instead of separate visual temperatures.
 
 - **Operations Canvas** (`oklch(0.958 0.007 238)`): Cool tinted app background that separates the workspace from panels without glare.
@@ -26,23 +29,35 @@ The palette stays restrained and cool, but avoids near-black blocks and near-whi
 - **Red Wash** (`oklch(0.935 0.028 28)`): Error backgrounds.
 
 ## 3. Typography Rules
+
 Use `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. Typography is product-grade, not editorial: compact headings, strong label weight, and predictable type sizes. Body copy stays under 75ch where it is explanatory; tables and dense metadata can be wider. Letter spacing is always `0`.
 
 ## 4. Component Stylings
-* **Shell:** Desktop uses a persistent left navigation, a bounded central workspace, and a quiet API activity rail. Under 1240px the API rail moves below content. Under 900px the shell becomes a stacked product workspace with horizontal-safe navigation.
-* **Navigation:** Active route uses a filled wash, a clear icon container, and enough contrast to survive scanning. User and Admin areas stay visually distinct through labels and context blocks, not separate apps.
-* **Buttons:** 7px radius, stable height, Lucide icons, visible focus rings, and consistent disabled treatment. Primary actions use Operations Blue. Secondary actions use neutral surfaces. Icon-only buttons require an accessible label on the button.
-* **Panels and Rows:** Avoid same-weight card piles. Use panels for bounded tools, rows for repeated event and ticket items, and full-width context bands for workspace state. Do not nest decorative cards.
-* **Forms:** Group fields by intent, keep labels visible, mark required fields, and place readiness or helper strips near the action they affect. Date, number, select, and textarea controls retain native behavior.
-* **Tables:** Dense rows, sticky-feeling header hierarchy, clear hover state, selected row state, and horizontal overflow inside `.table-scroll` only.
-* **Status Vocabulary:** Badges pair text with semantic tints for OK, warning, fail, info, and neutral. Alerts use the same tone system and live regions.
-* **Ticket QR:** QR is a stable square with a stronger frame and adjacent operational metadata. Raw signed tokens never appear in ordinary UI or API activity.
-* **Check-in Result:** Success and duplicate states must be visually distinct at a glance, with the duplicate path showing first redemption metadata.
+
+- **Shell:** Desktop uses a persistent left navigation, a bounded central workspace, and a quiet API activity rail. Under 1240px the API rail moves below content. Under 900px the shell becomes a stacked product workspace with horizontal-safe navigation.
+- **Navigation:** Active route uses a filled wash, a clear icon container, and enough contrast to survive scanning. User and Admin areas stay visually distinct through labels and context blocks, not separate apps.
+- **Buttons:** 7px radius, stable height, Lucide icons, visible focus rings, and consistent disabled treatment. Primary actions use Operations Blue. Secondary actions use neutral surfaces. Icon-only buttons require an accessible label on the button.
+- **Panels and Rows:** Avoid same-weight card piles. Use panels for bounded tools, rows for repeated event and ticket items, and full-width context bands for workspace state. Do not nest decorative cards.
+- **Forms:** Group fields by intent, keep labels visible, mark required fields, and place readiness or helper strips near the action they affect. Date, number, select, and textarea controls retain native behavior.
+- **Tables:** Dense rows, sticky-feeling header hierarchy, clear hover state, selected row state, and horizontal overflow inside `.table-scroll` only.
+- **Status Vocabulary:** Badges pair text with semantic tints for OK, warning, fail, info, and neutral. Alerts use the same tone system and live regions.
+- **Ticket QR:** QR is a stable square with a stronger frame and adjacent operational metadata. Raw signed tokens never appear in ordinary UI or API activity.
+- **Check-in Result:** Success and duplicate states must be visually distinct at a glance, with the duplicate path showing first redemption metadata.
+
+### Canonical Controls & Surfaces
+
+`apps/web` uses installed shadcn primitives as the base vocabulary. Feature code should use app shared composites instead of raw component classes: `Field`, `TextareaField`, `SelectField`, `Alert`, `StatusBadge`, `EmptyState`, `Kpi`, `ResponsiveTable`, and `DangerZonePanel`. These wrappers preserve product-specific names while delegating control semantics, keyboard focus, labels, and ARIA behavior to shadcn primitives.
+
+Use `Button` for all ordinary actions and choose variants by intent: default for primary workflow advancement, outline for secondary utility, ghost for quiet navigation, and destructive for high-risk actions. Use `Card` or a shared surface wrapper for bounded panels and context bands. Direct `.button`, `.field`, `.alert`, and feature-local table primitives are not part of the design system. Tables should enter through `ResponsiveTable` so horizontal overflow remains confined to the table region.
+
+The semantic tokens in `src/styles.css` map shadcn variables to the operations palette: primary is Operations Blue, muted and secondary are calm utility surfaces, destructive is Conflict Red, card is Command Surface, and ring is the shared focus color. New pages should extend this token vocabulary, not introduce parallel neutral, black, or decorative palettes.
 
 ## 5. Layout Principles
+
 The app should scan from role context to current task to operational proof. Page headers expose route purpose and control signals. Context bands summarize identity, capacity, attendance, or eligibility before the user reaches forms and tables. The main content grid uses 12 columns on desktop, collapses cleanly at tablet size, and keeps fixed-format elements such as QR codes, KPIs, icon buttons, and step numbers stable.
 
 ## 6. Production Page Standards
+
 - **Local SSO:** Login is a real access surface, not a marketing hero. It shows app readiness, role groups, and the cookie security note with restrained hierarchy.
 - **Employee Events:** Eligibility, capacity, booking state, and action availability must be visible on each event row.
 - **Employee Tickets:** Ticket selection and QR display must preserve token redaction while making the check-in handoff obvious.

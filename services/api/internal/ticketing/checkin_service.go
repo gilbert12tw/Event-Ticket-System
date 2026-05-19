@@ -279,13 +279,18 @@ func insertCheckinRejectionAuditTx(ctx context.Context, tx pgx.Tx, actor Actor, 
 	if err != nil {
 		return err
 	}
-	metadata := map[string]interface{}{
-		"event_id":  eventID,
+	metadata, err := eventContextMetadataTx(ctx, tx, eventID)
+	if err != nil {
+		return err
+	}
+	metadata = mergeMetadata(metadata, map[string]interface{}{
 		"device_id": deviceID,
 		"reason":    reason,
-	}
+	})
 	if detail != "" {
-		metadata["detail"] = detail
+		if reason == "event_mismatch" {
+			metadata["requested_event_id"] = detail
+		}
 	}
 	return insertAudit(ctx, tx, auditID, actor, "checkin.rejected", entityType, entityID, metadata)
 }

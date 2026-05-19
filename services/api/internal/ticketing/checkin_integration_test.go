@@ -2,8 +2,12 @@ package ticketing
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServiceRejectsTamperedCheckinToken(t *testing.T) {
@@ -119,6 +123,19 @@ func TestServicePersistsHolderMismatchRejectionWithoutRedeeming(t *testing.T) {
 		t.Fatalf("holder mismatch rejection count = %d, want 1", rejectionCount)
 	}
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM checkin_records WHERE ticket_id = $1`, booking.Ticket.TicketID, 0)
+	logs, err := service.AuditLogs(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, AuditLogQuery{Action: "checkin.rejected", EntityID: booking.Ticket.TicketID})
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	metadata := map[string]interface{}{}
+	require.NoError(t, json.Unmarshal([]byte(logs[0].Metadata), &metadata))
+	assert.Equal(t, event.EventID, metadata["event_id"])
+	assert.Equal(t, "Holder Mismatch", metadata["event_title"])
+	assert.Equal(t, "gate-holder", metadata["device_id"])
+	assert.Equal(t, "holder_mismatch", metadata["reason"])
+	assert.NotContains(t, logs[0].Metadata, "photo ID does not match ticket holder")
+	assert.NotContains(t, logs[0].Metadata, "Ariel Chen")
+	assert.NotContains(t, logs[0].Metadata, booking.Ticket.SignedToken)
+	assert.NotContains(t, logs[0].Metadata, booking.Ticket.QRPayload)
 
 	accepted, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: booking.Ticket.SignedToken, EventID: event.EventID, DeviceID: "gate-holder"})
 	if err != nil {
@@ -127,6 +144,40 @@ func TestServicePersistsHolderMismatchRejectionWithoutRedeeming(t *testing.T) {
 	if accepted.Status != "accepted" {
 		t.Fatalf("accepted response = %+v", accepted)
 	}
+}
+
+func TestCheckinTransferRejectionAuditOmitsFreeTextDetail(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Transfer Rejection",
+		Capacity: 1,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	tx, err := service.db.Begin(ctx)
+	require.NoError(t, err)
+	defer rollback(ctx, tx)
+	require.NoError(t, insertCheckinRejectionAuditTx(ctx, tx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, "", event.EventID, "gate-transfer", "transfer_rejected", "Ariel Chen e1001@example.com raw.token.value"))
+	require.NoError(t, tx.Commit(ctx))
+
+	logs, err := service.AuditLogs(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, AuditLogQuery{Action: "checkin.rejected", EntityID: "gate-transfer"})
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	metadata := map[string]interface{}{}
+	require.NoError(t, json.Unmarshal([]byte(logs[0].Metadata), &metadata))
+	assert.Equal(t, event.EventID, metadata["event_id"])
+	assert.Equal(t, "Transfer Rejection", metadata["event_title"])
+	assert.Equal(t, "gate-transfer", metadata["device_id"])
+	assert.Equal(t, "transfer_rejected", metadata["reason"])
+	assert.NotContains(t, logs[0].Metadata, "Ariel Chen")
+	assert.NotContains(t, logs[0].Metadata, "e1001@example.com")
+	assert.NotContains(t, logs[0].Metadata, "raw.token.value")
 }
 
 func TestServiceExpiresTicketDuringCheckin(t *testing.T) {

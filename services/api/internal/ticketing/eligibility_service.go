@@ -118,6 +118,7 @@ func employeeFromClaims(actor Actor) (Employee, error) {
 type eventWithRule struct {
 	EventID      string
 	EventCity    string
+	Location     string
 	CapacityType string
 	Rule         EligibilityRule
 }
@@ -125,21 +126,25 @@ type eventWithRule struct {
 func (s *Service) loadEventWithRule(ctx context.Context, eventID string) (eventWithRule, error) {
 	var ev eventWithRule
 	err := s.db.QueryRow(ctx, `
-		SELECT e.event_id, COALESCE(e.event_city, ''), e.capacity_type,
+		SELECT e.event_id, COALESCE(e.event_city, ''), e.location, e.capacity_type,
 			   COALESCE(r.department, ''), COALESCE(r.site, ''),
 			   COALESCE(r.min_grade, 0), COALESCE(r.employment_status, '')
 		FROM events e
 		LEFT JOIN eligibility_rules r ON r.event_id = e.event_id
 		WHERE e.event_id = $1 AND e.archived_at IS NULL
 	`, eventID).Scan(
-		&ev.EventID, &ev.EventCity, &ev.CapacityType,
+		&ev.EventID, &ev.EventCity, &ev.Location, &ev.CapacityType,
 		&ev.Rule.Department, &ev.Rule.Site,
 		&ev.Rule.MinGrade, &ev.Rule.EmploymentStatus,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ev, notFound("event not found")
 	}
-	return ev, err
+	if err != nil {
+		return ev, err
+	}
+	ev.EventCity = eventCityOrFallback(ev.EventCity, ev.Location)
+	return ev, nil
 }
 
 func (s *Service) PreviewEligibility(ctx context.Context, actor Actor, eventID string, req EligibilityPreviewRequest) (EligibilityPreviewResponse, error) {

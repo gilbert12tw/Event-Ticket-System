@@ -296,8 +296,10 @@ func TestAuthBootstrapReportsMockProfiles(t *testing.T) {
 		appEnv string
 		want   []string
 	}{
-		{appEnv: "test", want: []string{`"mock_profiles_enabled":true`, `"profile_id":"E1001"`, `"profile_id":"admin-1"`}},
-		{appEnv: "production", want: []string{`"mock_profiles_enabled":false`, `"mock_profiles":[]`}},
+		{appEnv: "test", want: []string{`"mock_profiles_enabled":true`, `"debug_chrome_enabled":true`, `"profile_id":"E1001"`, `"profile_id":"admin-1"`}},
+		{appEnv: "local", want: []string{`"mock_profiles_enabled":true`, `"debug_chrome_enabled":true`, `"profile_id":"E1001"`}},
+		{appEnv: "demo", want: []string{`"mock_profiles_enabled":true`, `"debug_chrome_enabled":true`, `"profile_id":"E1001"`}},
+		{appEnv: "production", want: []string{`"mock_profiles_enabled":false`, `"debug_chrome_enabled":false`, `"mock_profiles":[]`}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.appEnv, func(t *testing.T) {

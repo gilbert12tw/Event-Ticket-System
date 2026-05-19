@@ -1,33 +1,76 @@
 import { useEffect, useMemo, useState } from "react";
 import { auditLogs } from "@/lib/api";
 import type { AuditLog, AuditLogFilters } from "@/lib/api";
-import {
-  errorMessage,
-  formatDate,
-  normalizeAuditFilters,
-} from "@/lib/formatting";
+import { errorMessage, normalizeAuditFilters } from "@/lib/formatting";
 import {
   Alert,
+  CompactStatsBar,
   EmptyState,
   Field,
-  Kpi,
-  ResponsiveTable,
+  SelectField,
   StatusBadge,
 } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUrlTab } from "@/hooks/use-url-tab";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  auditActionView,
+  auditActionOptions,
+  auditEntityTypeOptions,
+  auditLimitOptions,
+  auditRoleOptions,
+  entityTypeLabel,
+  roleViewLabel,
+} from "@/lib/ui/options";
+import { AuditRowsTable } from "./audit-rows-table";
+import {
+  auditCursorFromRow,
+  readAuditUrlState,
+  replaceAuditUrl,
+} from "./url-state";
+
+type AuditPreset = "all" | "conflicts" | "event" | "ticket" | "checkin";
+const auditPresets = [
+  "all",
+  "conflicts",
+  "event",
+  "ticket",
+  "checkin",
+] as const;
 
 export function AdminAuditPage() {
+  const [initialUrlState] = useState(readAuditUrlState);
   const [auditRows, setAuditRows] = useState<AuditLog[]>([]);
-  const [filters, setFilters] = useState<AuditLogFilters>({ limit: "50" });
-  const [selectedID, setSelectedID] = useState("");
+  const [filters, setFilters] = useState<AuditLogFilters>(
+    initialUrlState.filters,
+  );
+  const [selectedID, setSelectedID] = useState(initialUrlState.selectedID);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  const [activePreset, setActivePreset] = useUrlTab<AuditPreset>(
+    "tab",
+    auditPresets,
+    "all",
+  );
 
-  async function refresh() {
+  async function refresh(
+    nextFilters = filters,
+    nextPreset = activePreset,
+    nextSelectedID = selectedID,
+  ) {
     setMessage("");
     try {
-      const rows = await auditLogs(normalizeAuditFilters(filters));
+      const normalized = normalizeAuditFilters(nextFilters);
+      const rows = await auditLogs(normalized);
       setAuditRows(rows);
-      setSelectedID((current) => current || rows[0]?.audit_id || "");
+      const selected =
+        rows.find((row) => row.audit_id === nextSelectedID)?.audit_id ||
+        rows[0]?.audit_id ||
+        "";
+      setSelectedID(selected);
+      replaceAuditUrl(nextFilters, nextPreset, selected);
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -37,231 +80,274 @@ export function AdminAuditPage() {
     void refresh();
   }, []);
 
+  const presetRows = auditRows.filter((row) =>
+    auditPresetMatches(row, activePreset),
+  );
   const selected =
-    auditRows.find((row) => row.audit_id === selectedID) || auditRows[0];
+    presetRows.find((row) => row.audit_id === selectedID) || presetRows[0];
   const auditStats = useMemo(
     () => ({
-      total: auditRows.length,
-      conflicts: auditRows.filter((row) => row.action.includes("conflict"))
+      total: presetRows.length,
+      conflicts: presetRows.filter((row) => row.action.includes("conflict"))
         .length,
-      events: auditRows.filter((row) => row.entity_type === "event").length,
-      tickets: auditRows.filter((row) => row.entity_type === "ticket").length,
+      events: presetRows.filter((row) => row.entity_type === "event").length,
+      tickets: presetRows.filter((row) => row.entity_type === "ticket").length,
     }),
-    [auditRows],
+    [presetRows],
   );
+  const activeFilterCount = Object.entries(filters).filter(
+    ([key, value]) => key !== "limit" && key !== "cursor" && Boolean(value),
+  ).length;
+  const nextCursor = auditRows.at(-1)
+    ? auditCursorFromRow(auditRows[auditRows.length - 1])
+    : "";
+
+  function applyFilters(nextFilters: AuditLogFilters) {
+    setFilters(nextFilters);
+    void refresh(nextFilters, activePreset, "");
+  }
+
+  function selectAuditRow(auditID: string) {
+    setSelectedID(auditID);
+    replaceAuditUrl(filters, activePreset, auditID);
+  }
+
+  function changePreset(nextPreset: AuditPreset) {
+    setActivePreset(nextPreset);
+    replaceAuditUrl(filters, nextPreset, selectedID);
+  }
+
+  function goToNextCursorPage() {
+    if (!nextCursor) return;
+    const nextFilters = { ...filters, cursor: nextCursor };
+    setCursorStack((stack) => [...stack, filters.cursor || ""]);
+    applyFilters(nextFilters);
+  }
+
+  function goToPreviousCursorPage() {
+    const previousCursor = cursorStack.at(-1);
+    const nextFilters = { ...filters, cursor: previousCursor || undefined };
+    setCursorStack((stack) => stack.slice(0, -1));
+    applyFilters(nextFilters);
+  }
 
   return (
     <section className="content-grid">
-      <div className="panel span-12 workspace-context admin-context">
-        <div>
-          <div className="eyebrow">Admin Console</div>
-          <h2>稽核入口</h2>
-          <p>
-            透過後端 query params 篩選 actor、role、action、entity、時間區間與
-            limit，避免只靠前端文字過濾。
-          </p>
-        </div>
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => void refresh()}
+      <Card asChild className="panel span-12 audit-filter-panel">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setCursorStack([]);
+            applyFilters({ ...filters, cursor: undefined });
+          }}
         >
-          <Icon name="refresh" />
-          查詢
-        </button>
-      </div>
-      <form
-        className="panel span-12 form-grid"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void refresh();
-        }}
+          <div className="toolbar">
+            <SelectField
+              label="角色"
+              value={filters.role || ""}
+              options={auditRoleOptions}
+              onChange={(value) => setFilters({ ...filters, role: value })}
+            />
+            <SelectField
+              label="操作"
+              value={filters.action || ""}
+              options={auditActionOptions}
+              onChange={(value) => setFilters({ ...filters, action: value })}
+            />
+            <SelectField
+              label="物件"
+              value={filters.entity_type || ""}
+              options={auditEntityTypeOptions}
+              onChange={(value) =>
+                setFilters({ ...filters, entity_type: value })
+              }
+            />
+            <SelectField
+              label="筆數"
+              value={filters.limit || "50"}
+              options={auditLimitOptions}
+              onChange={(value) => setFilters({ ...filters, limit: value })}
+            />
+            <Button type="submit">
+              <Icon name="audit" />
+              套用篩選
+            </Button>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                setCursorStack([]);
+                applyFilters({ limit: "50" });
+              }}
+            >
+              重設
+            </Button>
+          </div>
+          <details className="advanced-filter">
+            <summary>
+              進階篩選
+              <span>{activeFilterCount} 個條件</span>
+            </summary>
+            <div className="form-grid mt-14">
+              <Field
+                label="執行者編號"
+                value={filters.actor_id || ""}
+                onChange={(value) =>
+                  setFilters({ ...filters, actor_id: value })
+                }
+              />
+              <Field
+                label="物件編號"
+                value={filters.entity_id || ""}
+                onChange={(value) =>
+                  setFilters({ ...filters, entity_id: value })
+                }
+              />
+              <Field
+                label="起始時間"
+                type="datetime-local"
+                value={filters.from || ""}
+                onChange={(value) => setFilters({ ...filters, from: value })}
+              />
+              <Field
+                label="結束時間"
+                type="datetime-local"
+                value={filters.to || ""}
+                onChange={(value) => setFilters({ ...filters, to: value })}
+              />
+            </div>
+          </details>
+        </form>
+      </Card>
+      <Tabs
+        className="panel span-8 focused-tabs audit-list-panel"
+        value={activePreset}
+        onValueChange={(value) => changePreset(value as AuditPreset)}
       >
-        <Field
-          label="Actor ID"
-          value={filters.actor_id || ""}
-          onChange={(value) => setFilters({ ...filters, actor_id: value })}
-        />
-        <label className="field">
-          <span>Role</span>
-          <select
-            value={filters.role || ""}
-            onChange={(event) =>
-              setFilters({ ...filters, role: event.target.value })
-            }
-          >
-            <option value="">any</option>
-            <option value="employee">employee</option>
-            <option value="activity_admin">activity_admin</option>
-            <option value="checkin_staff">checkin_staff</option>
-            <option value="hr_admin">hr_admin</option>
-            <option value="system_admin">system_admin</option>
-          </select>
-        </label>
-        <Field
-          label="Action"
-          value={filters.action || ""}
-          onChange={(value) => setFilters({ ...filters, action: value })}
-        />
-        <Field
-          label="Entity type"
-          value={filters.entity_type || ""}
-          onChange={(value) => setFilters({ ...filters, entity_type: value })}
-        />
-        <Field
-          label="Entity ID"
-          value={filters.entity_id || ""}
-          onChange={(value) => setFilters({ ...filters, entity_id: value })}
-        />
-        <Field
-          label="From"
-          type="datetime-local"
-          value={filters.from || ""}
-          onChange={(value) => setFilters({ ...filters, from: value })}
-        />
-        <Field
-          label="To"
-          type="datetime-local"
-          value={filters.to || ""}
-          onChange={(value) => setFilters({ ...filters, to: value })}
-        />
-        <Field
-          label="Limit"
-          type="number"
-          value={filters.limit || "50"}
-          onChange={(value) => setFilters({ ...filters, limit: value })}
-        />
-        <div className="form-actions full">
-          <button className="button" type="submit">
-            <Icon name="audit" />
-            套用 server filters
-          </button>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => setFilters({ limit: "50" })}
-          >
-            重設
-          </button>
-        </div>
-      </form>
-      <div className="panel span-12">
         <div className="section-heading">
           <div>
-            <h2>Audit log</h2>
-            <p>敏感操作依時間倒序顯示，metadata 保留在下方 detail drawer。</p>
+            <h2>稽核紀錄</h2>
+            <p>先用事件類型分頁聚焦，再選取單列查看中繼資料。</p>
           </div>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => void refresh()}
-          >
-            <Icon name="refresh" />
-            重新整理
-          </button>
+          <TabsList>
+            <TabsTrigger value="all">全部</TabsTrigger>
+            <TabsTrigger value="conflicts">衝突</TabsTrigger>
+            <TabsTrigger value="event">活動</TabsTrigger>
+            <TabsTrigger value="ticket">票券</TabsTrigger>
+            <TabsTrigger value="checkin">驗票</TabsTrigger>
+          </TabsList>
         </div>
         {message && <Alert tone="warn">{message}</Alert>}
-        <div className="kpi-row four">
-          <Kpi label="Audit records" value={auditStats.total} />
-          <Kpi label="Conflicts" value={auditStats.conflicts} />
-          <Kpi label="Events" value={auditStats.events} />
-          <Kpi label="Tickets" value={auditStats.tickets} />
-        </div>
-        <ResponsiveTable>
-          <thead>
-            <tr>
-              <th>時間</th>
-              <th>Action</th>
-              <th>Actor</th>
-              <th>Entity</th>
-              <th>Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {auditRows.map((row) => (
-              <tr
-                className={
-                  selected?.audit_id === row.audit_id ? "selected-row" : ""
-                }
-                key={row.audit_id}
-              >
-                <td>{formatDate(row.created_at)}</td>
-                <td>
-                  <StatusBadge
-                    tone={row.action.includes("conflict") ? "warn" : "info"}
-                  >
-                    {row.action}
-                  </StatusBadge>
-                </td>
-                <td>
-                  {row.actor_id}
-                  <span className="table-muted">{row.role}</span>
-                </td>
-                <td>
-                  {row.entity_type}
-                  <span className="table-muted">{row.entity_id}</span>
-                </td>
-                <td>
-                  <button
-                    className="button secondary compact-button"
-                    type="button"
-                    onClick={() => setSelectedID(row.audit_id)}
-                  >
-                    檢視
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </ResponsiveTable>
-      </div>
-      <aside className="panel span-12 audit-drawer" aria-live="polite">
-        <div className="section-heading">
-          <div>
-            <h2>Metadata detail drawer</h2>
-            <p>保留原始 metadata 文字，方便 demo 驗證與稽核追蹤。</p>
-          </div>
-          {selected && (
-            <StatusBadge
-              tone={selected.action.includes("conflict") ? "warn" : "info"}
-            >
-              {selected.action}
-            </StatusBadge>
-          )}
-        </div>
-        {!selected && (
-          <EmptyState
-            title="沒有 audit log"
-            action="執行 Demo Runbook 或建立活動後會出現稽核紀錄。"
+        <CompactStatsBar
+          items={[
+            { label: "稽核筆數", value: auditStats.total },
+            { label: "衝突", value: auditStats.conflicts },
+            { label: "活動", value: auditStats.events },
+            { label: "票券", value: auditStats.tickets },
+          ]}
+          label="稽核摘要"
+        />
+        <TabsContent value={activePreset}>
+          <AuditRowsTable
+            cursor={filters.cursor || ""}
+            hasPreviousCursor={cursorStack.length > 0}
+            nextCursor={nextCursor}
+            onNextCursor={goToNextCursorPage}
+            onPreviousCursor={goToPreviousCursorPage}
+            rows={presetRows}
+            selectedID={selected?.audit_id || ""}
+            onSelect={selectAuditRow}
           />
-        )}
-        {selected && (
-          <dl className="meta-list audit-detail">
+        </TabsContent>
+      </Tabs>
+      <Card asChild className="panel span-4 audit-drawer">
+        <aside
+          aria-live="polite"
+          aria-label={selected ? `稽核明細 ${selected.audit_id}` : "稽核明細"}
+        >
+          <div className="section-heading">
             <div>
-              <dt>Audit ID</dt>
-              <dd>{selected.audit_id}</dd>
+              <h2>中繼資料明細</h2>
+              <p>選取一列後，在此檢查稽核中繼資料。</p>
             </div>
-            <div>
-              <dt>Actor</dt>
-              <dd>
-                {selected.actor_id}
-                <span className="table-muted">{selected.role}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>Entity</dt>
-              <dd>
-                {selected.entity_type}
-                <span className="table-muted">{selected.entity_id}</span>
-              </dd>
-            </div>
-            <div className="full">
-              <dt>Metadata</dt>
-              <dd className="mono-cell">{selected.metadata}</dd>
-            </div>
-          </dl>
-        )}
-      </aside>
+            {selected && (
+              <StatusBadge tone={auditActionView(selected.action).tone}>
+                {auditActionView(selected.action).label}
+              </StatusBadge>
+            )}
+          </div>
+          {!selected && (
+            <EmptyState
+              title="沒有稽核紀錄"
+              action="完成活動、報名、驗票或匯出操作後會出現稽核紀錄。"
+            />
+          )}
+          {selected && (
+            <dl className="meta-list audit-detail">
+              <div>
+                <dt>稽核編號</dt>
+                <dd className="mono-cell id-cell">{selected.audit_id}</dd>
+              </div>
+              <div>
+                <dt>執行者</dt>
+                <dd>
+                  {selected.actor_id}
+                  <span className="table-muted">
+                    {roleViewLabel(selected.role)}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>物件</dt>
+                <dd>
+                  {entityTypeLabel(selected.entity_type)}
+                  <span className="table-muted mono-cell">
+                    {selected.entity_id}
+                  </span>
+                </dd>
+              </div>
+              <div className="full">
+                <dt>稽核中繼資料，敏感值已由系統遮蔽</dt>
+                <dd>
+                  <AuditMetadata metadata={selected.metadata} />
+                </dd>
+              </div>
+            </dl>
+          )}
+        </aside>
+      </Card>
     </section>
   );
+}
+
+function auditPresetMatches(row: AuditLog, preset: AuditPreset) {
+  if (preset === "all") return true;
+  if (preset === "conflicts") return row.action.includes("conflict");
+  return row.entity_type === preset;
+}
+
+function AuditMetadata({ metadata }: { metadata: string }) {
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return <span className="mono-cell">{metadata}</span>;
+    }
+    return (
+      <dl className="metadata-list">
+        {Object.entries(parsed).map(([key, value]) => (
+          <div key={key}>
+            <dt>{key}</dt>
+            <dd className="mono-cell">{String(value)}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  } catch {
+    return (
+      <div className="summary-block">
+        <span className="form-hint">無法解析中繼資料，顯示原始遮蔽內容。</span>
+        <span className="mono-cell">{metadata}</span>
+      </div>
+    );
+  }
 }

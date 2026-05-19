@@ -29,19 +29,23 @@ describe("HrSyncSettingsPage", () => {
         employee_id: "E1001",
         ticket_id: "tk-1",
         status: "open",
-        reason: "employee departed",
+        reason: "員工離職",
         created_at: "2026-05-06T10:00:00Z",
       },
     ]);
 
     render(<HrSyncSettingsPage />);
 
-    await waitFor(() => expect(screen.getByText("rev-1")).toBeInTheDocument());
-    expect(screen.getByText("employee departed")).toBeInTheDocument();
-    const row = screen.getByText("rev-1").closest("tr");
+    await waitFor(() =>
+      expect(screen.getAllByText("rev-1")[0]).toBeInTheDocument(),
+    );
+    const row = screen.getAllByText("rev-1")[0].closest("tr");
     expect(row).not.toBeNull();
     expect(
-      within(row as HTMLTableRowElement).getByText("open"),
+      within(row as HTMLTableRowElement).getByText("員工離職"),
+    ).toBeInTheDocument();
+    expect(
+      within(row as HTMLTableRowElement).getByText("待處理"),
     ).toBeInTheDocument();
   });
 
@@ -53,7 +57,7 @@ describe("HrSyncSettingsPage", () => {
         employee_id: "E1002",
         ticket_id: "tk-2",
         status: "open",
-        reason: "eligibility mismatch",
+        reason: "資格不一致",
         created_at: "2026-05-06T10:02:00Z",
       },
     ]);
@@ -63,26 +67,33 @@ describe("HrSyncSettingsPage", () => {
       employee_id: "E1002",
       ticket_id: "tk-2",
       status: "resolved",
-      reason: "approved by HR",
+      reason: "人資已確認",
       created_at: "2026-05-06T10:02:00Z",
       resolved_at: "2026-05-06T10:03:00Z",
     });
 
     render(<HrSyncSettingsPage />);
 
+    const templateSelect = await screen.findByRole("combobox", {
+      name: "處置模板",
+    });
+    await userEvent.click(templateSelect);
+    await userEvent.click(
+      await screen.findByRole("option", { name: "自訂處置原因" }),
+    );
     const reasonInput = await screen.findByRole("textbox", {
-      name: /resolve reason/i,
+      name: "自訂處置原因",
     });
     await userEvent.clear(reasonInput);
-    await userEvent.type(reasonInput, "approved by HR");
-    await userEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    await userEvent.type(reasonInput, "人資已確認");
+    await userEvent.click(screen.getByRole("button", { name: "標記已處理" }));
 
     await waitFor(() =>
       expect(resolveEligibilityImpactReview).toHaveBeenCalledWith("rev-2", {
-        reason: "approved by HR",
+        reason: "人資已確認",
       }),
     );
-    expect(screen.getByText("已解析 review rev-2。")).toBeInTheDocument();
+    expect(screen.getByText("已處理影響項目 rev-2。")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.queryByText("目前沒有影響項目")).toBeInTheDocument(),
     );

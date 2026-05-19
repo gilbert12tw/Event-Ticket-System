@@ -7,6 +7,7 @@ import {
   defaultRouteForRole,
   routeKeyForPath,
   routePath,
+  ticketDetailPath,
   userRoutes,
 } from "./routes";
 
@@ -20,11 +21,24 @@ describe("route guards", () => {
 
   it("resolves default routes and paths per role", () => {
     expect(defaultRouteForRole("checkin_staff")).toBe("admin-checkin");
-    expect(defaultAdminRouteForRole("hr_admin")).toBe("admin-events");
+    expect(defaultAdminRouteForRole("hr_admin")).toBe("admin-reports");
     expect(defaultAdminRouteForRole("system_admin")).toBe("admin-reports");
     expect(canAccessRoute("admin-audit", "system_admin")).toBe(true);
     expect(canAccessRoute("admin-events", "system_admin")).toBe(false);
-    expect(routePath("admin-demo")).toBe("/admin/demo");
+    expect(routePath("admin-demo")).toBe("/admin/flow-check");
+  });
+
+  it("keeps each role inside the expected route matrix", () => {
+    expect(canAccessRoute("user-tickets", "employee")).toBe(true);
+    expect(canAccessRoute("admin-events", "employee")).toBe(false);
+    expect(canAccessRoute("admin-events", "activity_admin")).toBe(true);
+    expect(canAccessRoute("admin-checkin", "activity_admin")).toBe(false);
+    expect(canAccessRoute("admin-checkin", "checkin_staff")).toBe(true);
+    expect(canAccessRoute("admin-reports", "checkin_staff")).toBe(false);
+    expect(canAccessRoute("admin-reports", "hr_admin")).toBe(true);
+    expect(canAccessRoute("admin-events", "hr_admin")).toBe(false);
+    expect(canAccessRoute("admin-notifications", "system_admin")).toBe(true);
+    expect(canAccessRoute("admin-events", "system_admin")).toBe(false);
   });
 
   it("maps production deep links onto existing flat route keys", () => {
@@ -49,6 +63,13 @@ describe("route guards", () => {
 
   it("uses canonical /admin/checkin/offline for offline check-in route path", () => {
     expect(routePath("admin-offline-checkin")).toBe("/admin/checkin/offline");
+  });
+
+  it("builds ticket detail query paths without adding a separate route key", () => {
+    expect(ticketDetailPath("ticket/1")).toBe(
+      "/user/tickets?ticket_id=ticket%2F1",
+    );
+    expect(routeKeyForPath("/user/tickets")).toBe("user-tickets");
   });
 
   it("preserves the event id from dynamic deep links for existing pages", () => {

@@ -35,6 +35,7 @@ func TestUnlimitedEventBookingConfirmsAndPersistsFamilyCount(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, first.Registration.RegistrationID, retry.Registration.RegistrationID)
 	assert.Equal(t, 3, retry.Registration.FamilyCount)
+	assert.True(t, retry.Duplicate)
 
 	second, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "unl-2", FamilyCount: 0})
 	require.NoError(t, err)

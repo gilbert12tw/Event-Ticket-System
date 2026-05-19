@@ -6,12 +6,13 @@ import {
   type EventSummary,
   type Role,
 } from "@/lib/api";
+import { localizedMessage, roleViewLabel } from "@/lib/ui/options";
 
 export function defaultEventForm() {
   return {
-    title: "Taipei family movie night",
-    description: "Phase 1 demonstration for booking, waitlist, and check-in.",
-    location: "Taipei HQ Auditorium",
+    title: "台北家庭電影夜",
+    description: "員工家庭電影活動，支援報名、候補與現場驗票。",
+    location: "台北總部禮堂",
     event_city: "Taipei",
     starts_at: localInputDate(72),
     registration_start: localInputDate(-1),
@@ -23,6 +24,10 @@ export function defaultEventForm() {
     site: "Taipei",
     min_grade: "5",
     employment_status: "active",
+    category: "family",
+    tags: "家庭活動, 台北",
+    entry_method: "qr",
+    visibility: "eligible",
   };
 }
 
@@ -131,7 +136,7 @@ export function normalizeAuditFilters(
 }
 
 export function formatDate(value?: string) {
-  if (!value) return "Not set";
+  if (!value) return "未設定";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-TW", {
@@ -154,6 +159,7 @@ export function eventStatusTone(
 
 export function eventStatusLabel(status: string) {
   const labels: Record<string, string> = {
+    archived: "已封存",
     cancelled: "已取消",
     closed: "已關閉",
     draft: "草稿",
@@ -197,18 +203,13 @@ export function bookingActionLabel(event: EventSummary) {
 }
 
 export function roleLabel(role: Role) {
-  const labels: Record<Role, string> = {
-    employee: "Employee",
-    activity_admin: "Activity Admin",
-    checkin_staff: "Check-in Staff",
-    hr_admin: "HR Admin",
-    system_admin: "System Admin",
-  };
-  return labels[role];
+  return roleViewLabel(role);
 }
 
 export function errorMessage(error: unknown) {
-  if (error instanceof ApiError) return error.response.error || error.message;
-  if (error instanceof Error) return error.message;
-  return String(error);
+  if (error instanceof ApiError) {
+    return localizedMessage(error.response.error || error.message);
+  }
+  if (error instanceof Error) return localizedMessage(error.message);
+  return localizedMessage(String(error));
 }

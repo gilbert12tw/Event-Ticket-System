@@ -127,19 +127,26 @@ func (s *Service) recordNoShow(ctx context.Context, actor Actor, registrationID 
 	if err != nil {
 		return false, false, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "registration.no_show_recorded", "registration", registrationID, map[string]interface{}{
+	eventContext, err := eventContextMetadataTx(ctx, tx, eventID)
+	if err != nil {
+		return false, false, err
+	}
+	noShowMetadata := mergeMetadata(eventContext, map[string]interface{}{
+		"registration_id": registrationID,
 		"event_id":        eventID,
 		"cooldown_until":  cooldownUntil,
 		"cooldown_status": status,
-	}); err != nil {
+	})
+	if err := insertAudit(ctx, tx, auditID, actor, "registration.no_show_recorded", "registration", registrationID, noShowMetadata); err != nil {
 		return false, false, err
 	}
-	if err := insertOutbox(ctx, tx, "registration.no_show_recorded", registrationID, map[string]interface{}{
+	noShowPayload := mergeMetadata(eventContext, map[string]interface{}{
 		"registration_id": registrationID,
-		"event_id":        eventID,
 		"employee_id":     employeeID,
 		"cooldown_until":  cooldownUntil,
-	}); err != nil {
+		"cooldown_status": status,
+	})
+	if err := insertOutbox(ctx, tx, "registration.no_show_recorded", registrationID, noShowPayload); err != nil {
 		return false, false, err
 	}
 	return true, appliesCooldown, tx.Commit(ctx)

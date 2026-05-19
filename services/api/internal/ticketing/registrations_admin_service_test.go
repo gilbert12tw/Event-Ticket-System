@@ -55,6 +55,44 @@ func TestCancelRegistrationPromotesWaitlistInSingleTransaction(t *testing.T) {
 	assert.Equal(t, 1, promotedOutboxCount)
 }
 
+func TestCancelRegistrationWritesSafeGovernanceMetadata(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Governance Cancellation",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "metadata-cancel-book"})
+	require.NoError(t, err)
+
+	_, err = service.CancelRegistration(ctx, admin, event.EventID, booking.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "metadata-cancel",
+		Reason:         "capacity governance review",
+	})
+	require.NoError(t, err)
+
+	audit := readJSONMap(t, service, ctx, `SELECT metadata::text FROM audit_logs WHERE action = 'registration.cancelled' AND entity_id = $1`, booking.Registration.RegistrationID)
+	assert.Equal(t, event.EventID, audit["event_id"])
+	assert.Equal(t, "Governance Cancellation", audit["event_title"])
+	assert.Equal(t, booking.Registration.RegistrationID, audit["registration_id"])
+	assert.Equal(t, "capacity governance review", audit["reason"])
+	assertNoSensitiveJSONValues(t, audit, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
+
+	payload := readJSONMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, booking.Registration.RegistrationID)
+	assert.Equal(t, event.EventID, payload["event_id"])
+	assert.Equal(t, "Governance Cancellation", payload["event_title"])
+	assert.Equal(t, "E1001", payload["employee_id"])
+	assert.NotEmpty(t, payload["starts_at"])
+	assertNoSensitiveJSONValues(t, payload, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
+}
+
 func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
