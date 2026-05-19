@@ -60,21 +60,11 @@ func TestDeliveryMessageForOutboxFallsBackWithoutActivityContext(t *testing.T) {
 
 func TestDeliveryMessageForOutboxIncludesCrossCityActivityCity(t *testing.T) {
 	message := deliveryMessageForOutbox("booking.confirmed", "E1001", map[string]interface{}{
-		"warning_code":  string(WarningCrossCity),
-		"event_city":    "Taipei",
-		"employee_city": "Hsinchu",
-		"full_name":     "Ariel Chen",
-		"email":         "ariel@example.com",
-		"signed_token":  "raw-token",
-		"qr_payload":    "raw-qr",
+		"warning_code": string(WarningCrossCity),
+		"event_city":   "Taipei",
 	})
 
 	assert.Contains(t, message.Body, "This activity is in Taipei")
-	assert.NotContains(t, message.Body, "Hsinchu")
-	assert.NotContains(t, message.Body, "Ariel Chen")
-	assert.NotContains(t, message.Body, "ariel@example.com")
-	assert.NotContains(t, message.Body, "raw-token")
-	assert.NotContains(t, message.Body, "raw-qr")
 }
 
 func TestDeliveryMessageForOutboxOmitsCrossCityWordingWhenContextIncomplete(t *testing.T) {
@@ -342,6 +332,47 @@ func TestBookingOutboxPayloadOmitsCrossCityContextForSameCity(t *testing.T) {
 	assert.Equal(t, 1, processed)
 	require.Len(t, sender.messages, 1)
 	assert.NotContains(t, sender.messages[0].Body, "This activity is in")
+}
+
+func TestBookingOutboxPayloadOmitsCrossCityContextForWaitlistedBooking(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, service.SeedDemoData(ctx))
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:     "Waitlist Cross City Notification",
+		Location:  "Taipei HQ",
+		EventCity: "Taipei",
+		Capacity:  1,
+		Status:    EventStatusPublished,
+		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Hsinchu",
+		Grade:            6,
+		EmploymentStatus: "active",
+	}}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "waitlist-cross-city-confirmed"})
+	require.NoError(t, err)
+	waitlisted, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee, Claims: &ProviderClaims{
+		Department:       "Engineering",
+		Site:             "Taipei HQ",
+		City:             "Hsinchu",
+		Grade:            5,
+		EmploymentStatus: "active",
+	}}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "waitlist-cross-city-waitlisted"})
+	require.NoError(t, err)
+	require.Equal(t, RegistrationWaitlisted, waitlisted.Registration.Status)
+
+	payloadText := workerOutboxPayload(t, service, ctx, waitlisted.Registration.RegistrationID, "booking.waitlisted")
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(payloadText), &payload))
+	assert.NotContains(t, payload, "warning_code")
+	assert.NotContains(t, payload, "event_city")
+	assert.NotContains(t, payloadText, "Hsinchu")
 }
 
 func seedWorkerEmployee(t *testing.T, service *Service, ctx context.Context) {

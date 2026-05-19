@@ -8,7 +8,9 @@ func bookingNotificationPayload(reg Registration, event Event, actor Actor) map[
 		"capacity_type":   event.CapacityType,
 		"family_count":    reg.FamilyCount,
 	}
-	addCrossCityNotificationContext(payload, event, actor)
+	if reg.Status == RegistrationConfirmed {
+		addCrossCityNotificationContext(payload, event, actor)
+	}
 	return payload
 }
 
