@@ -37,8 +37,10 @@
 | Phase | 架構選擇 | 容量目標 | 重點 |
 | --- | --- | --- | --- |
 | Phase 1 production | Docker Compose + modular monolith + PostgreSQL；Redis / MinIO / Mailhog 作為 attached backing services；same-binary worker 消費 PostgreSQL outbox | 約 36 App RPS、5 Booking TPS、320 concurrent users | 防超賣、離線驗票邊界、通知重試、報表匯出、Playwright/k6 production gate。 |
-| Phase 2 成長期 | 拆出 Registration、Notification、Reporting 等 hot-path / slow I/O 模組；可引入 Kafka 或 managed queue | 約 270 App RPS、35 Booking TPS、2,400 concurrent users | 尖峰報名削峰、通知重試、CQRS read model、報表與 OLTP 隔離。 |
-| Phase 3 高流量 | 強化 Ticket / Check-in、offline sync、資料分區、跨 AZ HA；評估 Kubernetes 或等價 container platform | 約 1,000 App RPS、120 Booking TPS、10,000 concurrent users | 多入口驗票、高可用、DB failover、分區與營運成熟度。 |
+| Phase 2 成長期 (process-first) | 保留 Phase 1 modular monolith；以同一 Go binary 拆分 process：`app` (HTTP) + 多個 same-binary worker process by kind (`notification`、`projection`、`compensation`、`reservation_compensation`)；Redis 作為 booking pre-admission gate；PostgreSQL 仍是 booking / ticket / check-in / audit 的 final truth；Reporting 由 outbox-derived projection 提供 read model | 約 270 App RPS、35 Booking TPS、2,400 concurrent users | 尖峰報名削峰 (Redis pre-admission + idempotency)、worker kind isolation、reporting read model + freshness contract、ops 控制平面；Registration / Notification / Reporting 是否獨立部署為 deferred decision-gate，需 `docs/specs/phase2-scale-hardening.md` §2 證據才能升級。 |
+| Phase 3 高流量 | 強化 Ticket / Check-in、offline sync、資料分區、跨 AZ HA；評估 container platform 等更重的營運模式 | 約 1,000 App RPS、120 Booking TPS、10,000 concurrent users | 多入口驗票、高可用、DB failover、分區與營運成熟度。 |
+
+> Phase 2 預設仍是 “one codebase, process-first evolution”。Kafka、Kubernetes、service mesh、cross-region HA、完整微服務在 Phase 2 一律視為 deferred decision-gate topics — 不列為 Phase 2 必交付，docs guard (`TestPhase2DocsDoNotClaimDeferredInfraIsRequired`) 會在 docs 出現「Phase 2 已完成 / 已導入 / 已落地」等語言時失敗。Phase 2 acceptance matrix 與 non-goals 詳見 `docs/specs/phase2-scale-hardening.md`；hot-path / async / reporting / ops 子規格見 `docs/specs/phase2-ws{1,2,3,4,5}-*.md`。
 
 ---
 
@@ -521,17 +523,55 @@ Phase 1 product authentication is provider-claims based. Protected APIs and `/ap
 
 ## 15. Phase 2/3 Evolution
 
-### 15.1 Phase 2: Split Hot Paths
+### 15.1 Phase 2: Process-First Scale Hardening
 
-當 Phase 1 modular monolith 已完成核心流程，且壓測或實際使用顯示瓶頸集中在特定模組時，再拆出獨立部署單位。
+Phase 2 預設仍是 Phase 1 modular monolith；scale lever 是 **process model**，不是「拆服務」。Registration、Notification、Reporting 是否要獨立部署，是 evidence-gated decision，不是 Phase 2 預設交付。
 
-| 拆分候選 | 拆分原因 | Tradeoff |
+#### 15.1.1 Process 拓樸 (baseline)
+
+| Process | Binary | Role | 規模觸發 |
+| --- | --- | --- | --- |
+| `app` | 同一 Go binary (`cets serve`) | HTTP API + React SPA + admin ops endpoints | App RPS / latency 觸發水平加 process |
+| Worker — `notification` | 同一 Go binary (`cets worker`) with `WORKER_KINDS=notification` | 消費 outbox 通知事件、SMTP/in-app delivery、retry、dead-letter | 通知 backlog / SMTP 延遲 |
+| Worker — `projection` | 同一 binary，`WORKER_KINDS=projection` | 消費 outbox 並更新 reporting read model | Reporting freshness lag |
+| Worker — `compensation` | 同一 binary，`WORKER_KINDS=compensation` | Side-effect 補償 (報表匯出失敗重試、停滯任務再起) | Dead-letter / 補償 backlog |
+| Worker — `reservation_compensation` | 同一 binary，`WORKER_KINDS=reservation_compensation` | 回收逾時 Redis reservation、修補 ghost reservation | Redis reservation TTL 過期積壓 |
+
+所有 worker 共用同一 binary，不是新部署單位；kind 切分由 env 決定。詳見 `docs/specs/phase2-ws4-async-notification.md` (envelope v2、worker kind split、retry / dead-letter / replay)。
+
+#### 15.1.2 Hot-Path 加固 — Redis pre-admission gate (WS3)
+
+| 元件 | 角色 | 真相邊界 |
 | --- | --- | --- |
-| Registration Service | 報名與配票是尖峰寫入熱點，需要獨立 scale-out，降低 DB hot-row lock contention。 | 需要更嚴格的 tracing、outbox、補償與服務間契約。 |
-| Notification Service | Email / 站內通知依賴外部 I/O，若同步處理會拖慢報名。 | 通知變成 eventual consistency，需要 retry 與 dead-letter。 |
-| Reporting Service | 報表聚合會掃描大量資料，可能影響 OLTP。 | 需要 read model / analytics store，資料可能延遲。 |
+| Redis Lua reservation | Pre-admission：尖峰時段在進入 DB transaction 前 atomic `CHECK → DECR → SET TTL`；失敗者立即被 shed，不打到 DB row lock。 | **Pre-admission only。Redis reservation 成功 ≠ booking 成功。** |
+| `reservation_compensation` worker | TTL 過期 / DB rollback / Redis crash 後回收 Redis counter，避免 ghost reservation 累積。 | 不修改 booking 結果。 |
+| PostgreSQL booking transaction | Final truth：仍重做 eligibility、event state、capacity、booking window、idempotency check，並寫入 registration / ticket / audit / outbox。 | **PostgreSQL 為 booking、ticket、check-in、audit 的唯一 source of truth。** |
 
-Phase 2 可以評估 Kafka 或 managed queue，但目標是處理吞吐、重試、事件保留與消費者隔離，不是為了技術展示而導入。
+詳見 `docs/specs/phase2-ws3-registration-hot-path.md` (reservation spec、TTL + 補償、contention reduction、Redis-outage / TTL-expiry / DB-rollback 回歸測試)。
+
+#### 15.1.3 Reporting read model (WS5)
+
+| 元件 | 性質 | 邊界 |
+| --- | --- | --- |
+| Outbox envelope v2 (versioned events) | 來源 | 由 business transaction 與 business data 同 commit。 |
+| Reporting projection 表 | Derived、disposable、rebuildable | Schema 為 denormalized read-only；可從 outbox replay 完整重建。 |
+| `projection` worker | 從 outbox 投影到 projection 表 | Idempotent；envelope v2 提供 `idempotency_key`、`schema_version`、`partition_key`。 |
+| Reports API / export | 從 projection 讀，回傳 freshness meta (`as_of`、`source`、`lag_seconds`、`degraded`) | **Reporting read model 不得用於 booking、eligibility、ticket redemption、check-in、authorization、audit 真相。** |
+
+詳見 `docs/specs/phase2-ws5-reporting-ops.md` 與 `docs/specs/phase2-ws1-contracts-release.md` §6 (read model spec、projection schema、rebuild process、freshness contract、ops UI、check-in cache decision gate)。
+
+#### 15.1.4 Deferred decision-gate topics (NOT Phase 2 deliverables)
+
+下列項目在 Phase 2 一律保留為 deferred decision-gate，需獨立 spec / 量測證據才能升級為實作 issue。docs guard 會在 Phase 2 docs 把它們寫成「已完成 / 已導入 / 已落地 / 已實作」時失敗。
+
+- Registration / Notification / Reporting 拆成獨立部署服務 (Phase 2 process-first 已透過 worker kind split 滿足 isolation；拆服務需 `docs/specs/phase2-scale-hardening.md` §2 / §4 對應的 baseline evidence)。
+- Kafka 或其他外部 message broker (Phase 2 仍使用 PostgreSQL transactional outbox 作為 async boundary)。
+- Kubernetes 或等價 container platform。
+- Service mesh。
+- Cross-region HA / multi-region active-active。
+- 完整微服務 / full microservices 架構。
+
+12-Factor 不退化：Phase 2 process / worker kind 切分仍透過 env config (`WORKER_KINDS`、`DATABASE_URL`、`REDIS_URL`、`OBJECT_STORAGE_*`、`MAILER_*`) 注入，backing services 仍以 attached resource 對接 (PostgreSQL / Redis / MinIO / Mailhog)，所有 process logs 仍寫 stdout / stderr，process 仍是 stateless (狀態放 PostgreSQL / Redis / object storage)，migration / seed / replay / rebuild / reservation reconcile 仍以同一 binary 的 one-off admin process 執行。
 
 ### 15.2 Phase 3: HA, Offline Check-in and Container Platform
 
