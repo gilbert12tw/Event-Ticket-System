@@ -34,7 +34,9 @@ describe("TicketPanel", () => {
     expect(screen.getByText("台北家庭電影夜")).toBeInTheDocument();
     expect(screen.getByText("不可轉讓")).toBeInTheDocument();
     expect(screen.getByText("同行人數")).toBeInTheDocument();
-    expect(screen.getByText("僅供入場人數核對，非可轉讓票券。")).toBeInTheDocument();
+    expect(
+      screen.getByText("僅供入場人數核對，非可轉讓票券。"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Engineering")).toBeInTheDocument();
     expect(screen.getByText("T-1")).toBeInTheDocument();
     expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();

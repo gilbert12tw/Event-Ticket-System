@@ -1,6 +1,11 @@
 import type { CheckinResponse, OfflineCheckinSyncResponse } from "@/lib/api";
 import { formatDate } from "@/lib/formatting";
-import { EmptyState, Kpi, ResponsiveTable, StatusBadge } from "@/components/shared";
+import {
+  EmptyState,
+  Kpi,
+  ResponsiveTable,
+  StatusBadge,
+} from "@/components/shared";
 import { checkinStatusView, localizedMessage } from "@/lib/ui/options";
 
 export function OfflineResultStep({
@@ -78,6 +83,9 @@ function checkinHolderSummary(result: CheckinResponse) {
 function checkinReasonLabel(result: CheckinResponse) {
   if (!result.reason_code && !result.conflict_reason) return "-";
   return localizedMessage(
-    result.rejection_message || result.reason_code || result.conflict_reason || "",
+    result.rejection_message ||
+      result.reason_code ||
+      result.conflict_reason ||
+      "",
   );
 }

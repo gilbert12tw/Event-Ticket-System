@@ -33,7 +33,9 @@ describe("CheckinResult", () => {
     expect(screen.getByText("台北家庭電影夜")).toBeInTheDocument();
     expect(screen.getByText("EVT-1")).toBeInTheDocument();
     expect(screen.getByText("2 人")).toBeInTheDocument();
-    expect(screen.getByText("隨持票員工入場，非轉讓票券。")).toBeInTheDocument();
+    expect(
+      screen.getByText("隨持票員工入場，非轉讓票券。"),
+    ).toBeInTheDocument();
     expect(screen.getByText("T-1")).toBeInTheDocument();
   });
 

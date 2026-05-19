@@ -349,7 +349,9 @@ export function TicketPanel({
             <dt>同行人數</dt>
             <dd>
               {ticket.family_count ?? 0} 人
-              <span className="table-muted">僅供入場人數核對，非可轉讓票券。</span>
+              <span className="table-muted">
+                僅供入場人數核對，非可轉讓票券。
+              </span>
             </dd>
           </div>
           <div>
