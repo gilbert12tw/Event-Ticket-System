@@ -38,13 +38,14 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 	var ticket Ticket
 	err = tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
 			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
-			e.full_name, e.department, e.site
+			ev.title, e.full_name, e.department, e.site
 		FROM tickets t
 		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN events ev ON ev.event_id = t.event_id
 		JOIN employees e ON e.employee_id = t.employee_id
 		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash).
 		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber,
-			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if auditErr := insertCheckinRejectionAuditTx(ctx, tx, actor, "", claims.EventID, req.DeviceID, "ticket_not_found", ""); auditErr != nil {
 			return CheckinResponse{}, auditErr
@@ -68,6 +69,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		return CheckinResponse{
 			TicketID:         ticket.TicketID,
 			EventID:          ticket.EventID,
+			EventTitle:       ticket.EventTitle,
 			EmployeeID:       ticket.EmployeeID,
 			Status:           "rejected",
 			ReasonCode:       "ticket_token_claims_mismatch",
@@ -88,6 +90,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		return CheckinResponse{
 			TicketID:         ticket.TicketID,
 			EventID:          ticket.EventID,
+			EventTitle:       ticket.EventTitle,
 			EmployeeID:       ticket.EmployeeID,
 			Status:           "rejected",
 			ReasonCode:       "event_mismatch",
@@ -108,6 +111,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		return CheckinResponse{
 			TicketID:         ticket.TicketID,
 			EventID:          ticket.EventID,
+			EventTitle:       ticket.EventTitle,
 			EmployeeID:       ticket.EmployeeID,
 			Status:           "rejected",
 			ReasonCode:       "holder_mismatch",
@@ -159,6 +163,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		return CheckinResponse{
 			TicketID:         ticket.TicketID,
 			EventID:          ticket.EventID,
+			EventTitle:       ticket.EventTitle,
 			EmployeeID:       ticket.EmployeeID,
 			Status:           "rejected",
 			ReasonCode:       reason,
@@ -182,6 +187,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		return CheckinResponse{
 			TicketID:         ticket.TicketID,
 			EventID:          ticket.EventID,
+			EventTitle:       ticket.EventTitle,
 			EmployeeID:       ticket.EmployeeID,
 			Status:           "rejected",
 			ReasonCode:       "expired_ticket",
@@ -229,6 +235,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		CheckinID:   checkinID,
 		TicketID:    ticket.TicketID,
 		EventID:     ticket.EventID,
+		EventTitle:  ticket.EventTitle,
 		EmployeeID:  ticket.EmployeeID,
 		Status:      "accepted",
 		ReasonCode:  "accepted",

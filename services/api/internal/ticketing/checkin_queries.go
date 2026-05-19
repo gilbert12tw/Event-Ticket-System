@@ -9,14 +9,15 @@ import (
 
 func (s *Service) findCheckinByTicketTx(ctx context.Context, tx pgx.Tx, ticketID string) (CheckinResponse, bool, error) {
 	var response CheckinResponse
-	err := tx.QueryRow(ctx, `SELECT c.checkin_id, c.ticket_id, t.event_id, t.employee_id, c.status, c.scanned_at, c.staff_id,
+	err := tx.QueryRow(ctx, `SELECT c.checkin_id, c.ticket_id, t.event_id, ev.title, t.employee_id, c.status, c.scanned_at, c.staff_id,
 			r.family_count, e.full_name, e.department, e.site
 		FROM checkin_records c
 		JOIN tickets t ON t.ticket_id = c.ticket_id
+		JOIN events ev ON ev.event_id = t.event_id
 		JOIN registrations r ON r.registration_id = t.registration_id
 		JOIN employees e ON e.employee_id = t.employee_id
 		WHERE c.ticket_id = $1`, ticketID).
-		Scan(&response.CheckinID, &response.TicketID, &response.EventID, &response.EmployeeID, &response.Status, &response.ScannedAt, &response.FirstScannedBy,
+		Scan(&response.CheckinID, &response.TicketID, &response.EventID, &response.EventTitle, &response.EmployeeID, &response.Status, &response.ScannedAt, &response.FirstScannedBy,
 			&response.FamilyCount, &response.Holder.DisplayName, &response.Holder.Department, &response.Holder.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CheckinResponse{}, false, nil

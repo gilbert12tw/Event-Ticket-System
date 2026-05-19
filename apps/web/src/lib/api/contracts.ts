@@ -225,7 +225,10 @@ export type Ticket = {
   event_location?: string;
   event_starts_at?: string;
   employee_name?: string;
+  department?: string;
+  city?: string;
   family_count?: number;
+  non_transferable?: boolean;
 };
 
 export type BookingResponse = {
@@ -272,6 +275,7 @@ export type CheckinResponse = {
   checkin_id: string;
   ticket_id: string;
   event_id: string;
+  event_title?: string;
   employee_id: string;
   status: string;
   reason_code?: string;

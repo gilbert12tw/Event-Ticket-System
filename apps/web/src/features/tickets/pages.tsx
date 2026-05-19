@@ -321,6 +321,10 @@ export function TicketPanel({
             </Button>
           )}
         </div>
+        <div className="ticket-nontransferable" role="note">
+          <StatusBadge tone="warn">不可轉讓</StatusBadge>
+          <span>此票券綁定持票員工本人，入場時驗票員會核對持票人身份。</span>
+        </div>
         {canShowQr && (
           <div className="qr-wrap">
             <TicketQrCode token={qrToken} />
@@ -329,7 +333,24 @@ export function TicketPanel({
         <dl className="meta-list ticket-meta-list">
           <div>
             <dt>持票人</dt>
-            <dd>{ticket.employee_name || ticket.employee_id}</dd>
+            <dd>
+              {ticket.employee_name || ticket.employee_id}
+              <span className="table-muted">{ticket.employee_id}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>部門 / 城市</dt>
+            <dd>
+              {ticket.department || "未提供"}
+              <span className="table-muted">{ticket.city || "未提供"}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>同行人數</dt>
+            <dd>
+              {ticket.family_count ?? 0} 人
+              <span className="table-muted">僅供入場人數核對，非可轉讓票券。</span>
+            </dd>
           </div>
           <div>
             <dt>地點</dt>
@@ -395,12 +416,29 @@ function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
 }
 
 export function ticketEntryReadinessView(ticket: Ticket): {
-  kind: "entry-ready" | "qr-pending" | "redeemed" | "revoked" | "unavailable";
+  kind:
+    | "entry-ready"
+    | "not-open"
+    | "qr-pending"
+    | "redeemed"
+    | "revoked"
+    | "unavailable";
   label: string;
   tone: "ok" | "warn" | "fail" | "neutral" | "info";
   copy: string;
 } {
   if (ticket.status === "active") {
+    if (
+      ticket.event_starts_at &&
+      new Date(ticket.event_starts_at) > new Date()
+    ) {
+      return {
+        kind: "not-open",
+        label: "尚未開放入場",
+        tone: "info",
+        copy: "活動尚未開始，請於開始時間到場後再出示二維碼驗票。",
+      };
+    }
     if (ticket.qr_payload || ticket.signed_token) {
       return {
         kind: "entry-ready",

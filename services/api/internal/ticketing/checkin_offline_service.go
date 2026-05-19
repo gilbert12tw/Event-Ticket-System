@@ -189,13 +189,14 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 	var ticket Ticket
 	err = tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
 			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
-			e.full_name, e.department, e.site
+			ev.title, e.full_name, e.department, e.site
 		FROM tickets t
 		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN events ev ON ev.event_id = t.event_id
 		JOIN employees e ON e.employee_id = t.employee_id
 		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash).
 		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber,
-			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
 		result := conflictResultFromClaims(req, claims, scan.ScannedAt, offlineConflictNotFound)
 		if err := s.insertOfflineScanTx(ctx, tx, req, "", offlineScanStatusConflict, scan.ScannedAt, tokenHash, result.ConflictReason); err != nil {
@@ -223,6 +224,7 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 	result := CheckinResponse{
 		TicketID:    ticket.TicketID,
 		EventID:     ticket.EventID,
+		EventTitle:  ticket.EventTitle,
 		EmployeeID:  ticket.EmployeeID,
 		Status:      offlineScanStatusAccepted,
 		ReasonCode:  "accepted",
@@ -305,6 +307,7 @@ func (s *Service) recordKnownOfflineConflict(ctx context.Context, tx pgx.Tx, act
 	result := CheckinResponse{
 		TicketID:       ticket.TicketID,
 		EventID:        ticket.EventID,
+		EventTitle:     ticket.EventTitle,
 		EmployeeID:     ticket.EmployeeID,
 		Status:         offlineScanStatusConflict,
 		ReasonCode:     "offline_conflict",
