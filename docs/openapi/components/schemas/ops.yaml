@@ -1,0 +1,295 @@
+WorkerKind:
+  type: string
+  description: "Phase 2 same-binary worker process kind. Source: docs/specs/phase2-ws4-async-notification.md §6 and docs/specs/phase2-ws3-registration-hot-path.md §7."
+  enum:
+    - notification
+    - projection
+    - compensation
+    - export
+    - reservation_compensation
+CapacityPressureRow:
+  type: object
+  required:
+    - event_id
+    - capacity_type
+    - remaining_capacity
+    - reservation_count
+    - rate_limit_drop_per_min
+    - idempotency_replay_per_min
+  properties:
+    event_id:
+      type: string
+      format: uuid
+    capacity_type:
+      "$ref": "./common.yaml#/CapacityType"
+    remaining_capacity:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    reservation_count:
+      type: integer
+      minimum: 0
+    rate_limit_drop_per_min:
+      type: integer
+      minimum: 0
+    idempotency_replay_per_min:
+      type: integer
+      minimum: 0
+CapacityPressure:
+  type: object
+  required:
+    - events
+  properties:
+    events:
+      type: array
+      items:
+        "$ref": "#/CapacityPressureRow"
+CapacityPressureResponse:
+  description: "Derived snapshot of hot-event pressure. Read-only; never used as booking commit authority. Per docs/specs/phase2-ws3-registration-hot-path.md §6."
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/CapacityPressure"
+QueueStatusRow:
+  type: object
+  required:
+    - name
+    - pending
+    - in_flight
+    - dead_letter
+    - p95_age_seconds
+  properties:
+    name:
+      "$ref": "#/WorkerKind"
+    pending:
+      type: integer
+      minimum: 0
+    in_flight:
+      type: integer
+      minimum: 0
+    dead_letter:
+      type: integer
+      minimum: 0
+    p95_age_seconds:
+      type: integer
+      minimum: 0
+    last_processed_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+QueueStatus:
+  type: object
+  required:
+    - queues
+  properties:
+    queues:
+      type: array
+      items:
+        "$ref": "#/QueueStatusRow"
+QueueStatusResponse:
+  description: "Per-worker-kind queue health feed. Consumed by ops UI (WS5). Per docs/specs/phase2-ws4-async-notification.md §6."
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/QueueStatus"
+QueueReplayRequest:
+  type: object
+  required:
+    - from
+    - to
+    - dry_run
+  additionalProperties: false
+  properties:
+    from:
+      type: string
+      format: date-time
+    to:
+      type: string
+      format: date-time
+    event_types:
+      type: array
+      items:
+        type: string
+    dry_run:
+      type: boolean
+QueueReplayResult:
+  type: object
+  required:
+    - kind
+    - from
+    - to
+    - dry_run
+    - affected_count
+  properties:
+    kind:
+      "$ref": "#/WorkerKind"
+    from:
+      type: string
+      format: date-time
+    to:
+      type: string
+      format: date-time
+    dry_run:
+      type: boolean
+    affected_count:
+      type: integer
+      minimum: 0
+    enqueued_count:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    audit_id:
+      type:
+        - string
+        - "null"
+      format: uuid
+QueueReplayResponse:
+  description: "Replay outcome. dry_run=true returns affected_count only; dry_run=false also returns enqueued_count and audit_id."
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/QueueReplayResult"
+NotificationDeliveryAdminRow:
+  type: object
+  required:
+    - delivery_id
+    - worker_kind
+    - event_type
+    - status
+    - retry_count
+    - created_at
+  properties:
+    delivery_id:
+      type: string
+      format: uuid
+    worker_kind:
+      "$ref": "#/WorkerKind"
+    event_type:
+      type: string
+    status:
+      "$ref": "./common.yaml#/NotificationDeliveryStatus"
+    retry_count:
+      type: integer
+      minimum: 0
+    last_error:
+      type:
+        - string
+        - "null"
+    recipient_redacted:
+      type:
+        - string
+        - "null"
+    created_at:
+      type: string
+      format: date-time
+    last_attempt_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+    dead_letter_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+NotificationDeliveriesAdmin:
+  type: object
+  required:
+    - deliveries
+  properties:
+    deliveries:
+      type: array
+      items:
+        "$ref": "#/NotificationDeliveryAdminRow"
+    next_cursor:
+      type:
+        - string
+        - "null"
+NotificationDeliveriesAdminResponse:
+  description: "Phase 2 ops view of notification deliveries: redacted, queue-annotated, dead-letter-aware. Intentionally separate from Phase 1 NotificationDeliveryListResponse, which has different field shape and audience."
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/NotificationDeliveriesAdmin"
+ReportFreshnessProjection:
+  type: object
+  required:
+    - name
+    - last_applied
+    - lag_seconds
+    - degraded
+  properties:
+    name:
+      type: string
+    last_applied:
+      type: string
+      format: date-time
+    lag_seconds:
+      type: integer
+      minimum: 0
+    degraded:
+      type: boolean
+    rebuild_in_progress:
+      type: boolean
+    rebuild_started_at:
+      type:
+        - string
+        - "null"
+      format: date-time
+ReportFreshness:
+  type: object
+  required:
+    - projections
+  properties:
+    projections:
+      type: array
+      items:
+        "$ref": "#/ReportFreshnessProjection"
+ReportFreshnessResponse:
+  description: "Per-projection freshness signal. Consumed by ops UI; reports degraded state inline via the meta envelope."
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/ReportFreshness"
+OpsDashboard:
+  type: object
+  required:
+    - capacity_pressure
+    - queues
+    - reports_freshness
+  properties:
+    capacity_pressure:
+      "$ref": "#/CapacityPressure"
+    queues:
+      "$ref": "#/QueueStatus"
+    reports_freshness:
+      "$ref": "#/ReportFreshness"
+    dead_letter_recent:
+      type: array
+      items:
+        "$ref": "#/NotificationDeliveryAdminRow"
+    replay_recent:
+      type: array
+      items:
+        "$ref": "#/QueueReplayResult"
+OpsDashboardResponse:
+  description: "Aggregated ops control-plane view. activity_admin sees a read subset (payload-level redaction enforced server-side); hr_admin sees the full payload."
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/OpsDashboard"

@@ -46,7 +46,13 @@ EXPECTED_OPERATIONS = {
   "/admin/reports" => %w[get],
   "/admin/reports/exports" => %w[post],
   "/admin/reports/exports/{export_id}" => %w[get],
-  "/admin/audit-logs" => %w[get]
+  "/admin/audit-logs" => %w[get],
+  "/admin/ops/capacity-pressure" => %w[get],
+  "/admin/ops/queues" => %w[get],
+  "/admin/ops/queues/{kind}/replay" => %w[post],
+  "/admin/ops/notification-deliveries" => %w[get],
+  "/admin/ops/report-freshness" => %w[get],
+  "/admin/ops/dashboard" => %w[get]
 }.freeze
 
 PUBLIC_OPERATIONS = [
@@ -87,7 +93,13 @@ EXPECTED_REQUIRED_ROLES = {
   ["get", "/admin/reports"] => %w[hr_admin system_admin],
   ["post", "/admin/reports/exports"] => %w[hr_admin system_admin],
   ["get", "/admin/reports/exports/{export_id}"] => %w[hr_admin system_admin],
-  ["get", "/admin/audit-logs"] => %w[hr_admin system_admin]
+  ["get", "/admin/audit-logs"] => %w[hr_admin system_admin],
+  ["get", "/admin/ops/capacity-pressure"] => %w[activity_admin hr_admin system_admin],
+  ["get", "/admin/ops/queues"] => %w[hr_admin system_admin],
+  ["post", "/admin/ops/queues/{kind}/replay"] => %w[hr_admin],
+  ["get", "/admin/ops/notification-deliveries"] => %w[activity_admin hr_admin system_admin],
+  ["get", "/admin/ops/report-freshness"] => %w[hr_admin system_admin],
+  ["get", "/admin/ops/dashboard"] => %w[activity_admin hr_admin system_admin]
 }.freeze
 
 @documents = {}
@@ -292,6 +304,34 @@ fail_contract("CreateEventRequest must expose capacity_type") unless event_creat
 fail_contract("CreateEventRequest must expose allows_family") unless event_create.dig("properties", "allows_family")
 fail_contract("CreateEventRequest must expose allocation_mode") unless event_create.dig("properties", "allocation_mode")
 
+freshness_meta = require_schema_ref(root, "FreshnessMeta")
+required_meta_fields = freshness_meta.fetch("required", [])
+fail_contract("FreshnessMeta must require as_of") unless required_meta_fields.include?("as_of")
+fail_contract("FreshnessMeta must require source") unless required_meta_fields.include?("source")
+%w[as_of source lag_seconds degraded].each do |property|
+  fail_contract("FreshnessMeta must expose #{property}") unless freshness_meta.dig("properties", property)
+end
+source_enum = freshness_meta.dig("properties", "source", "enum") || []
+%w[reporting_projection derived operational].each do |value|
+  fail_contract("FreshnessMeta.source enum must include #{value}") unless source_enum.include?(value)
+end
+
+meta_envelope = require_schema_ref(root, "ApiSuccessWithMetaEnvelope")
+meta_envelope_parts = meta_envelope.fetch("allOf", [])
+unless meta_envelope_parts.any? { |part| part.is_a?(Hash) && part["$ref"].to_s.include?("ApiSuccessEnvelope") }
+  fail_contract("ApiSuccessWithMetaEnvelope must compose ApiSuccessEnvelope via allOf")
+end
+meta_property_part = meta_envelope_parts.find { |part| part.is_a?(Hash) && part.dig("properties", "meta") }
+fail_contract("ApiSuccessWithMetaEnvelope must expose a meta property") unless meta_property_part
+if (meta_property_part["required"] || []).include?("meta")
+  fail_contract("ApiSuccessWithMetaEnvelope.meta must remain optional to preserve Phase 1 backward compatibility")
+end
+
+worker_kind = require_schema_ref(root, "WorkerKind")
+required_kinds = %w[notification projection compensation export reservation_compensation]
+missing_kinds = required_kinds - (worker_kind["enum"] || [])
+fail_contract("WorkerKind enum must include #{missing_kinds.join(", ")}") unless missing_kinds.empty?
+
 puts "openapi source files parsed: #{source_files.length}"
 puts "openapi paths verified: #{EXPECTED_OPERATIONS.length}"
 puts "openapi refs resolved"
@@ -299,3 +339,4 @@ puts "openapi role metadata passed"
 puts "openapi response envelope coverage passed"
 puts "openapi product auth boundary passed"
 puts "openapi COR-18 rule coverage passed"
+puts "openapi PH2-02 freshness meta + worker kind coverage passed"
