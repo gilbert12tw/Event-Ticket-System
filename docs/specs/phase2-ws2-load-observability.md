@@ -1,0 +1,142 @@
+# Phase 2 WS2 — Load and Observability
+
+> Workstream-level spec. Parent: `COR-40` / `[PH2-WS2]`. Owner: Person B.
+> Anchors: `docs/specs/phase2-scale-hardening.md` (§1, §3.2, §4), Phase 1 baseline `docs/specs/phase1-production-upper-bound.md`, k6 reference `k6/phase1-production-gate.js`.
+
+## 1. Summary
+
+WS2 owns the evidence base for Phase 2: realistic 50k employee load seed, single-hot-event k6 profile, threshold gate, DB lock / pool wait metrics, queue lag + worker metrics, structured trace/log schema for Phase 2 hops, baseline report that pinpoints the actual bottleneck (registration tx time vs DB lock wait vs DB pool wait vs browse latency vs outbox lag vs worker throughput vs reporting aggregation vs read model freshness), and CI wiring for regression. WS2 does not tune the hot path or change runtime behavior — it produces measurements that WS3/WS4/WS5 use to decide what to change.
+
+WS2 starts Wave 1 in parallel with WS3/WS4/WS5 spec work; the baseline report (`PH2-16`) gates WS3 implementation (`PH2-22`, `PH2-23`, `PH2-25`).
+
+## 2. Scope
+
+In scope (`PH2-10`..`PH2-17`):
+
+- 50k employee load seed command (idempotent, repeatable, deterministic).
+- Single-hot-event k6 profile: one limited event of bounded capacity, multiple eligible employees competing — distinct from Phase 1 fan-out across many events.
+- k6 threshold gate aligned to acceptance matrix §1.1/§1.3: 270 RPS, 35 booking TPS, 2,400 active VUs; p95 / p99 latency thresholds.
+- DB instrumentation: `pgx` pool wait time, lock wait time, transaction duration histogram, statement timeout counter.
+- Queue/worker instrumentation: outbox lag (`occurred_at` → `processed_at`), per-kind processing time, retry count, dead-letter count.
+- Trace/log schema for Phase 2 hops: request → Redis pre-admission → DB tx → outbox enqueue → worker pickup → SMTP / projection write. One `trace_id` end-to-end.
+- Capacity baseline report (`PH2-16`): markdown artifact in `docs/specs/` (or `k6/reports/`) naming the bottleneck with measurements.
+- Performance regression CI wiring: thresholds fail CI with non-zero exit; mode toggle for smoke vs full gate.
+
+Out of scope (other WS):
+
+- Redis reservation gate, idempotency hardening, contention reduction — WS3.
+- Worker kind split, replay, dead-letter, isolation — WS4.
+- Read model freshness contract, ops UI — WS5.
+- Acceptance matrix, OpenAPI delta, event envelope — WS1.
+
+## 3. Acceptance Criteria
+
+| AC | Given | When | Then |
+| --- | --- | --- | --- |
+| WS2-AC-1 | A fresh local Compose DB | `cets seed --profile=phase2-50k` (or equivalent admin process) runs | 50,000 employees + eligibility rules + event fixtures land deterministically; re-running is safe (`ON CONFLICT DO UPDATE`) and produces identical row counts. |
+| WS2-AC-2 | The hot-event k6 profile runs against a primed Compose stack | One limited event with bounded capacity is targeted | The script generates booking pressure that exceeds capacity, exercising oversell-prevention paths, with no implicit fan-out across other events. |
+| WS2-AC-3 | k6 threshold gate runs | Phase 2 capacity targets (§1.1) are applied | Thresholds for HTTP p95/p99, booking HTTP p95/p99, RPS, TPS, error rate are encoded and the run exits non-zero on any breach. |
+| WS2-AC-4 | The app is built with WS2 metrics wired | Booking pressure runs | DB pool wait, lock wait, tx duration, statement timeout counter are exported and visible (Prometheus scrape or `/metrics` endpoint) without requiring a code reread. |
+| WS2-AC-5 | The worker runs against backed-up outbox | Lag accumulates | Outbox lag p95 / max, per-kind processing time, retry count, dead-letter count are exported and labeled by `event_type` and `worker_kind`. |
+| WS2-AC-6 | A booking request enters the system | Trace is followed | A single `trace_id` correlates HTTP request → Redis call → DB tx → outbox enqueue → worker pickup → SMTP send / projection write, in structured stdout logs (no PII / signed tokens). |
+| WS2-AC-7 | `PH2-16` baseline report is produced | Reviewer reads it | Report names the dominant bottleneck among {registration tx time, DB lock wait, DB pool wait, browse/detail latency, outbox lag, worker throughput, reporting aggregation, read model freshness} with measurements, and recommends which WS3/WS4/WS5 issue is unblocked. |
+| WS2-AC-8 | CI runs the Phase 2 performance gate | Thresholds regress beyond a configured tolerance | Job fails with a non-zero exit and a link to the breach summary. |
+
+## 4. Edge Cases
+
+| # | Scenario | Expected behavior |
+| --- | --- | --- |
+| WS2-E-1 | Seed run interrupted mid-batch | Re-run completes from scratch idempotently; partial state never blocks a clean run. |
+| WS2-E-2 | k6 hot profile accidentally spreads load across many events | Threshold gate detects abnormally low contention (e.g. tx duration too low, oversell-prevention paths cold); report flags fixture drift. |
+| WS2-E-3 | Trace context dropped at worker handoff | Worker enqueue/pickup logs a missing-trace-id metric; not fatal but visible in baseline report. |
+| WS2-E-4 | Metric cardinality explodes (e.g. `event_id` label on every histogram) | Metrics are bucketed by `worker_kind` / `event_type` / `outcome`; high-cardinality labels are documented as opt-in. |
+| WS2-E-5 | k6 gate fails because Compose has fewer cores than CI runner | Profile encodes runner expectations; gate documents minimum CPU/RAM and skips on under-resourced runners with a warning rather than a spurious fail. |
+| WS2-E-6 | Baseline report identifies no clear bottleneck (everything roughly equal) | Report says so explicitly and recommends a follow-up profile rather than greenlighting hot-path changes. |
+| WS2-E-7 | Worker isolation (`PH2-32`) ships before WS2 per-kind metrics | Metrics adapter is backward-compatible: missing `worker_kind` label degrades to `worker_kind=unknown`. |
+
+## 5. Non-Functional Requirements
+
+| Category | Requirement | Metric |
+| --- | --- | --- |
+| Reproducibility | Seed + k6 profile run from clean Compose with one command sequence. | `dc up -d` → `cets seed --profile=phase2-50k` → `k6 run k6/phase2-hot-event.js` succeeds in CI and locally. |
+| Realism | Hot profile creates real contention on one limited event. | Booking oversell-prevention paths fire; tx duration distribution is non-trivial. |
+| Cost | Metric cardinality bounded. | Each new histogram ≤ small number of label combinations; documented in `PH2-15`. |
+| No-runtime-truth | Metrics never become the authority for correctness (booking truth stays in PostgreSQL). | Reviewer checklist item. |
+| Decision-quality | Baseline report is enough to decide next WS3/WS4/WS5 issue. | `PH2-16` cited by every WS3/WS4/WS5 implementation PR. |
+
+## 6. Minimal API / Data Contract
+
+WS2 surfaces metrics and traces; no new product API. Metric / log shape (consumed by WS5 ops UI and reviewers):
+
+```text
+metrics (prometheus-style):
+  cets_db_pool_wait_seconds_bucket{le=...}
+  cets_db_lock_wait_seconds_bucket{le=...}
+  cets_booking_tx_duration_seconds_bucket{outcome="confirmed|rejected|conflict"}
+  cets_outbox_lag_seconds_bucket{event_type, worker_kind}
+  cets_worker_process_seconds_bucket{worker_kind, outcome}
+  cets_worker_retry_total{worker_kind, reason}
+  cets_worker_deadletter_total{worker_kind}
+  cets_http_request_seconds_bucket{route, method, status_class}
+
+structured log fields (stdout JSON):
+  ts, level, msg, trace_id, span_id, route, employee_id_hash,
+  event_id, registration_id, idempotency_key, worker_kind,
+  outcome, latency_ms, retry_count
+```
+
+`employee_id_hash` and any PII-derived field is salted/truncated per existing Phase 1 redaction rules. No signed tokens, provider tokens, or full names in any field.
+
+Seed command contract (admin process):
+
+```text
+cets seed --profile=phase2-50k [--events=N] [--eligibility-coverage=0.0..1.0]
+  - idempotent; safe to re-run
+  - exits 0 on success, non-zero on partial failure with structured error log
+  - does not require app/worker to be running
+```
+
+## 7. 12-Factor Notes
+
+- **Config**: New env vars are read-only knobs — `METRICS_LISTEN_ADDR`, `K6_BASE_URL`, `K6_PROFILE`, `SEED_PROFILE`, optional `OTEL_EXPORTER_OTLP_ENDPOINT`. All documented in compose `.env.example`. No secrets.
+- **Backing services**: No new attached resources required. Metrics scrape is pull-based against the existing app/worker ports. Optional OTLP export is opt-in and treated as a backing service if enabled.
+- **Build / release / run**: Same binary; metrics wiring is in-process. k6 runs from `grafana/k6:1.7.1-with-browser` (already used by Phase 1 gate).
+- **Processes**: No new process types; seed runs as `cets seed` admin one-off.
+- **Logs**: Structured JSON to stdout — additive fields only, never logging tokens or full PII. CI log-scan from Phase 1 (`ci.yml` "Scan live gate logs") stays green.
+- **Admin processes**: `cets seed --profile=phase2-50k` is a same-codebase admin command; baseline report run is a one-off `k6 run` + write to artifact path.
+- **Disposability**: Metric exporters drain on SIGTERM with the rest of the app.
+
+## 8. Tests / Verification
+
+- `cd services/api && go test ./internal/observability/... -count=1` (new package) — metric registration, label cardinality bound, redaction.
+- Seed command test: `go test ./services/api/cmd/cets -run TestSeedPhase2 -count=1` against a temp DB; asserts deterministic counts.
+- k6 dry-run in CI: `k6 inspect k6/phase2-hot-event.js` + smoke run with reduced VUs.
+- k6 threshold gate: `k6 run k6/phase2-hot-event.js` against live Compose in `live-gates` job; thresholds fail on regression.
+- Trace assertion: integration test issues a booking, scrapes structured logs, asserts a single `trace_id` appears in HTTP, DB, outbox enqueue, worker pickup, and SMTP send entries.
+- Baseline report (`PH2-16`): markdown artifact reviewed by Person A + at least one consumer WS owner.
+
+## 9. Rollback / Disable
+
+Runtime additions in WS2 are observability only — disable paths must exist before merge:
+
+- Metrics endpoint: disabled by `METRICS_LISTEN_ADDR=""` (no listener bound); does not affect booking, check-in, worker, or audit paths.
+- OTLP export: opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT`; unset → no exporter goroutine, zero overhead.
+- New histograms / counters: registered behind a guard so a metric-registration panic during startup logs + degrades rather than killing the app. Reviewer test asserts the guard.
+- Seed profile: idempotent and re-runnable; rollback = `DROP TABLE`/`TRUNCATE` via existing migrate tooling, not a new admin process.
+- k6 CI gate: gated by workflow input / branch filter; disable by reverting the workflow change. No runtime impact.
+
+## 10. Non-Goals
+
+- Do not change booking, eligibility, check-in, worker, or notification behavior to "make the numbers move." Tuning lives in WS3/WS4/WS5.
+- Do not introduce a separate metrics backend service as a Phase 2 deliverable. Scrape endpoint + opt-in OTLP only.
+- Do not put metrics in the booking commit path (no synchronous metric writes that can block a tx).
+- Do not use baseline report numbers to justify Kafka, Kubernetes, service mesh, microservice split, or cross-region HA. Those remain deferred decision-gate topics.
+
+## 11. Cross-Stream Dependencies
+
+| Consumer WS | Consumes from WS2 | Where it lands |
+| --- | --- | --- |
+| WS3 | `PH2-16` baseline report, pool/lock metrics | Decide whether to ship `PH2-22` (Redis Lua), `PH2-23` (TTL compensation), `PH2-25` (hot-row contention). |
+| WS4 | Outbox lag + worker metrics, trace schema | Tune retry/backoff (`PH2-33`), confirm isolation (`PH2-32`) helped. |
+| WS5 | Outbox lag + report freshness signals, ops UI feed shape | Reports freshness contract (`PH2-44`), ops UI (`PH2-46`). |
+| WS1 | k6 thresholds + baseline report | Release checklist (`PH2-06`) cites these as acceptance evidence. |
