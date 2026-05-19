@@ -208,10 +208,16 @@ func TestValidatorRejectsWrongSchemaVersion(t *testing.T) {
 	assert.Contains(t, err.Error(), "schema_version must be 2")
 }
 
+func mutablePayload(t *testing.T, env map[string]any) map[string]any {
+	t.Helper()
+	payload, ok := env["payload"].(map[string]any)
+	require.Truef(t, ok, "payload must be object")
+	return payload
+}
+
 func TestValidatorRejectsForbiddenEmail(t *testing.T) {
 	env := loadFixture(t, "notification.requested.v2")
-	payload := env["payload"].(map[string]any)
-	payload["nickname"] = "ops-rotation+contact@example.com"
+	mutablePayload(t, env)["nickname"] = "ops-rotation+contact@example.com"
 	err := validateEnvelope(env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "email pattern")
@@ -219,8 +225,7 @@ func TestValidatorRejectsForbiddenEmail(t *testing.T) {
 
 func TestValidatorRejectsForbiddenJWT(t *testing.T) {
 	env := loadFixture(t, "ticket.issued.v2")
-	payload := env["payload"].(map[string]any)
-	payload["audit_blob"] = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.dummysig01"
+	mutablePayload(t, env)["audit_blob"] = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.dummysig01"
 	err := validateEnvelope(env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "JWT pattern")
@@ -228,8 +233,7 @@ func TestValidatorRejectsForbiddenJWT(t *testing.T) {
 
 func TestValidatorRejectsForbiddenKey(t *testing.T) {
 	env := loadFixture(t, "notification.requested.v2")
-	payload := env["payload"].(map[string]any)
-	payload["recipient_email"] = "redacted"
+	mutablePayload(t, env)["recipient_email"] = "redacted"
 	err := validateEnvelope(env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "forbidden key")
