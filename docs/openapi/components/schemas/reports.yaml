@@ -1,6 +1,6 @@
 ReportSummaryResponse:
   allOf:
-    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
     - type: object
       properties:
         data:

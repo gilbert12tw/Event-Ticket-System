@@ -1,0 +1,163 @@
+"/admin/ops/capacity-pressure":
+  get:
+    tags:
+      - Ops
+    operationId: getOpsCapacityPressure
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: Read capacity-pressure snapshot for hot events.
+    description: "Derived snapshot per event of remaining capacity, reservation count, rate-limit drop rate, and idempotency replay rate. Read-only; not authoritative for booking commit. Source: docs/specs/phase2-ws3-registration-hot-path.md §6."
+    responses:
+      "200":
+        description: Capacity-pressure snapshot.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/ops.yaml#/CapacityPressureResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/ops/queues":
+  get:
+    tags:
+      - Ops
+    operationId: getOpsQueues
+    x-required-roles:
+      - hr_admin
+      - system_admin
+    summary: Read per-worker-kind queue health.
+    description: "Per-kind pending, in-flight, dead-letter, and p95 age. Consumed by ops UI. Source: docs/specs/phase2-ws4-async-notification.md §6."
+    responses:
+      "200":
+        description: Queue health feed.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/ops.yaml#/QueueStatusResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/ops/queues/{kind}/replay":
+  post:
+    tags:
+      - Ops
+    operationId: postOpsQueueReplay
+    x-required-roles:
+      - hr_admin
+    summary: Replay queue rows by time window.
+    description: "Re-enqueue outbox rows for the given worker kind across a [from, to] window. Consumers are idempotent. dry_run=true returns affected count without enqueuing; dry_run=false enqueues and writes an audit row. Source: docs/specs/phase2-ws4-async-notification.md §6."
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: Worker kind enum (notification, projection, compensation, export, reservation_compensation).
+        schema:
+          "$ref": "../components/schemas/ops.yaml#/WorkerKind"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/ops.yaml#/QueueReplayRequest"
+    responses:
+      "200":
+        description: Replay outcome (dry-run or applied).
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/ops.yaml#/QueueReplayResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+"/admin/ops/notification-deliveries":
+  get:
+    tags:
+      - Ops
+    operationId: getOpsNotificationDeliveries
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: Read notification delivery ops feed.
+    description: "Redacted, queue-annotated view of recent notification deliveries (status, retry_count, last_error, dead_letter_at). Distinct from /admin/notifications/deliveries: this is the ops control-plane view, not the Phase 1 administrative listing."
+    parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          "$ref": "../components/schemas/common.yaml#/NotificationDeliveryStatus"
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+    responses:
+      "200":
+        description: Notification delivery ops feed.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/ops.yaml#/NotificationDeliveriesAdminResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/ops/report-freshness":
+  get:
+    tags:
+      - Ops
+    operationId: getOpsReportFreshness
+    x-required-roles:
+      - hr_admin
+      - system_admin
+    summary: Read reporting projection freshness.
+    description: "Per-projection last_applied, lag_seconds, degraded, rebuild_in_progress signals. Source: docs/specs/phase2-ws5-reporting-ops.md §6."
+    responses:
+      "200":
+        description: Reporting freshness.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/ops.yaml#/ReportFreshnessResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+"/admin/ops/dashboard":
+  get:
+    tags:
+      - Ops
+    operationId: getOpsDashboard
+    x-required-roles:
+      - activity_admin
+      - hr_admin
+      - system_admin
+    summary: Read aggregated ops control-plane snapshot.
+    description: "Aggregates capacity pressure (WS3), queue health (WS4), reporting freshness (WS5), recent dead-letters, and recent replays. activity_admin sees a payload-redacted read subset; hr_admin and system_admin see the full payload. Server enforces the subset; OpenAPI cannot encode role-conditional payloads."
+    responses:
+      "200":
+        description: Aggregated ops snapshot.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/ops.yaml#/OpsDashboardResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"

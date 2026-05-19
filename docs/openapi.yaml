@@ -32,6 +32,8 @@ tags:
     description: Redacted sensitive action audit queries.
   - name: Admin
     description: Activity administration endpoints.
+  - name: Ops
+    description: Phase 2 ops control plane — capacity pressure, queue health, replay, report freshness, dashboard.
 paths:
   "/auth/me":
     "$ref": "./openapi/paths/auth.yaml#/~1auth~1me"
@@ -97,6 +99,18 @@ paths:
     "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports~1{export_id}"
   "/admin/audit-logs":
     "$ref": "./openapi/paths/audit.yaml#/~1admin~1audit-logs"
+  "/admin/ops/capacity-pressure":
+    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1capacity-pressure"
+  "/admin/ops/queues":
+    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1queues"
+  "/admin/ops/queues/{kind}/replay":
+    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1queues~1{kind}~1replay"
+  "/admin/ops/notification-deliveries":
+    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1notification-deliveries"
+  "/admin/ops/report-freshness":
+    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1report-freshness"
+  "/admin/ops/dashboard":
+    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1dashboard"
 components:
   securitySchemes:
     ProviderBearerAuth:
@@ -121,6 +135,10 @@ components:
       "$ref": "./openapi/components/schemas/common.yaml#/ApiErrorEnvelope"
     ApiEnvelope:
       "$ref": "./openapi/components/schemas/common.yaml#/ApiEnvelope"
+    ApiSuccessWithMetaEnvelope:
+      "$ref": "./openapi/components/schemas/common.yaml#/ApiSuccessWithMetaEnvelope"
+    FreshnessMeta:
+      "$ref": "./openapi/components/schemas/common.yaml#/FreshnessMeta"
     AuthMeResponse:
       "$ref": "./openapi/components/schemas/common.yaml#/AuthMeResponse"
     AuthBootstrapResponse:
@@ -275,6 +293,42 @@ components:
       "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDelivery"
     AuditLogEntry:
       "$ref": "./openapi/components/schemas/audit.yaml#/AuditLogEntry"
+    WorkerKind:
+      "$ref": "./openapi/components/schemas/ops.yaml#/WorkerKind"
+    CapacityPressureRow:
+      "$ref": "./openapi/components/schemas/ops.yaml#/CapacityPressureRow"
+    CapacityPressure:
+      "$ref": "./openapi/components/schemas/ops.yaml#/CapacityPressure"
+    CapacityPressureResponse:
+      "$ref": "./openapi/components/schemas/ops.yaml#/CapacityPressureResponse"
+    QueueStatusRow:
+      "$ref": "./openapi/components/schemas/ops.yaml#/QueueStatusRow"
+    QueueStatus:
+      "$ref": "./openapi/components/schemas/ops.yaml#/QueueStatus"
+    QueueStatusResponse:
+      "$ref": "./openapi/components/schemas/ops.yaml#/QueueStatusResponse"
+    QueueReplayRequest:
+      "$ref": "./openapi/components/schemas/ops.yaml#/QueueReplayRequest"
+    QueueReplayResult:
+      "$ref": "./openapi/components/schemas/ops.yaml#/QueueReplayResult"
+    QueueReplayResponse:
+      "$ref": "./openapi/components/schemas/ops.yaml#/QueueReplayResponse"
+    NotificationDeliveryAdminRow:
+      "$ref": "./openapi/components/schemas/ops.yaml#/NotificationDeliveryAdminRow"
+    NotificationDeliveriesAdmin:
+      "$ref": "./openapi/components/schemas/ops.yaml#/NotificationDeliveriesAdmin"
+    NotificationDeliveriesAdminResponse:
+      "$ref": "./openapi/components/schemas/ops.yaml#/NotificationDeliveriesAdminResponse"
+    ReportFreshnessProjection:
+      "$ref": "./openapi/components/schemas/ops.yaml#/ReportFreshnessProjection"
+    ReportFreshness:
+      "$ref": "./openapi/components/schemas/ops.yaml#/ReportFreshness"
+    ReportFreshnessResponse:
+      "$ref": "./openapi/components/schemas/ops.yaml#/ReportFreshnessResponse"
+    OpsDashboard:
+      "$ref": "./openapi/components/schemas/ops.yaml#/OpsDashboard"
+    OpsDashboardResponse:
+      "$ref": "./openapi/components/schemas/ops.yaml#/OpsDashboardResponse"
   responses:
     BadRequest:
       "$ref": "./openapi/components/responses.yaml#/BadRequest"
