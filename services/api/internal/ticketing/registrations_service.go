@@ -164,7 +164,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err := insertAudit(ctx, tx, auditID, actor, action, "registration", regID, map[string]interface{}{"event_id": eventID, "status": status, "capacity_type": event.CapacityType, "family_count": req.FamilyCount}); err != nil {
 		return BookingResponse{}, err
 	}
-	if err := insertOutbox(ctx, tx, action, regID, map[string]interface{}{"registration_id": regID, "event_id": eventID, "employee_id": employeeID, "capacity_type": event.CapacityType, "family_count": req.FamilyCount}); err != nil {
+	if err := insertOutbox(ctx, tx, action, regID, bookingNotificationPayload(reg, event, actor)); err != nil {
 		return BookingResponse{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
