@@ -1,0 +1,15 @@
+{
+  "event_id": "out_01HXY0000000000000000000E",
+  "event_type": "eligibility.impact_review.created.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-19T11:30:00Z",
+  "idempotency_key": "eligibility.impact_review.created:rev_01HXY00000000000000000001",
+  "partition_key": "evt_01HXY00000000000000000001",
+  "payload": {
+    "review_id": "rev_01HXY00000000000000000001",
+    "event_id": "evt_01HXY00000000000000000001",
+    "rule_version": 7,
+    "impacted_registration_count": 14,
+    "created_at": "2026-05-19T11:30:00Z"
+  }
+}

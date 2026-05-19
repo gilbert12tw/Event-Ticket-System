@@ -1,0 +1,20 @@
+{
+  "event_id": "out_01HXY00000000000000000009",
+  "event_type": "notification.requested.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-19T12:34:57Z",
+  "idempotency_key": "notification.requested:ntf_01HXY00000000000000000001",
+  "partition_key": "EMP-001",
+  "payload": {
+    "notification_id": "ntf_01HXY00000000000000000001",
+    "category": "registration_confirmed",
+    "channel": "in_app",
+    "recipient_employee_id": "EMP-001",
+    "template_key": "registration.confirmed.v1",
+    "data_refs": {
+      "registration_id": "reg_01HXY00000000000000000001",
+      "event_id": "evt_01HXY00000000000000000001"
+    },
+    "requested_at": "2026-05-19T12:34:57Z"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "event_id": "out_01HXY0000000000000000000D",
+  "event_type": "hr_sync.batch.completed.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-19T02:00:00Z",
+  "idempotency_key": "hr_sync.batch.completed:hrb_01HXY00000000000000000001",
+  "partition_key": "hrb_01HXY00000000000000000001",
+  "payload": {
+    "batch_id": "hrb_01HXY00000000000000000001",
+    "source": "hr_csv",
+    "employee_count": 4231,
+    "created_count": 12,
+    "updated_count": 87,
+    "deactivated_count": 3,
+    "completed_at": "2026-05-19T02:00:00Z"
+  }
+}
