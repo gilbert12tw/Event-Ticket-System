@@ -13,6 +13,7 @@ type CheckinResponse struct {
 	CheckinID        string       `json:"checkin_id"`
 	TicketID         string       `json:"ticket_id"`
 	EventID          string       `json:"event_id"`
+	EventTitle       string       `json:"event_title,omitempty"`
 	EmployeeID       string       `json:"employee_id"`
 	Status           string       `json:"status"`
 	ReasonCode       string       `json:"reason_code,omitempty"`

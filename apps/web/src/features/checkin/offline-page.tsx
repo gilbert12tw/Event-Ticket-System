@@ -15,23 +15,18 @@ import {
   BoundaryContext,
   EmptyState,
   Field,
-  Kpi,
   ReadinessMessage,
   ResponsiveTable,
   SelectField,
-  StatusBadge,
   TextareaField,
 } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { Button } from "@/components/ui/button";
-import {
-  checkinStatusView,
-  devicePresetOptions,
-  localizedMessage,
-} from "@/lib/ui/options";
+import { devicePresetOptions } from "@/lib/ui/options";
 import { fingerprint } from "@/lib/api/redaction";
+import { OfflineResultStep } from "./offline-result-step";
 
 type OfflineTab = "package" | "scan" | "results";
 const offlineTabs = ["package", "scan", "results"] as const;
@@ -426,73 +421,5 @@ function OfflineScanStep({
         </ResponsiveTable>
       )}
     </div>
-  );
-}
-
-function OfflineResultStep({
-  syncResult,
-}: {
-  syncResult: OfflineCheckinSyncResponse | null;
-}) {
-  return (
-    <>
-      {syncResult && (
-        <div className="kpi-row">
-          <Kpi label="成功" value={syncResult.accepted} />
-          <Kpi label="重複" value={syncResult.duplicate} />
-          <Kpi label="衝突" value={syncResult.conflict} />
-        </div>
-      )}
-      {syncResult && syncResult.results.length > 0 ? (
-        <ResponsiveTable>
-          <thead>
-            <tr>
-              <th>票券</th>
-              <th>持票人</th>
-              <th>狀態</th>
-              <th>原因</th>
-              <th>掃描時間</th>
-            </tr>
-          </thead>
-          <tbody>
-            {syncResult.results.map((result) => {
-              const status = checkinStatusView(result.status, result.duplicate);
-              return (
-                <tr
-                  key={`${result.checkin_id || result.ticket_id || result.scanned_at}-${result.status}`}
-                >
-                  <td className="mono-cell">{result.ticket_id}</td>
-                  <td>
-                    {result.holder?.display_name || result.employee_id}
-                    <span className="table-muted">
-                      {result.employee_id} · 家屬 {result.family_count ?? 0} 人
-                    </span>
-                  </td>
-                  <td>
-                    <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                  </td>
-                  <td>
-                    {result.reason_code || result.conflict_reason
-                      ? localizedMessage(
-                          result.rejection_message ||
-                            result.reason_code ||
-                            result.conflict_reason ||
-                            "",
-                        )
-                      : "—"}
-                  </td>
-                  <td>{formatDate(result.scanned_at)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </ResponsiveTable>
-      ) : (
-        <EmptyState
-          title="尚無同步結果"
-          action="完成第二步同步後，成功、重複與衝突結果會出現在這裡。"
-        />
-      )}
-    </>
   );
 }

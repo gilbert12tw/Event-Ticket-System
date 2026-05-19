@@ -288,6 +288,7 @@ export async function ensureSessionRoutes(
           checkin_id: "checkin-001",
           ticket_id: "ticket-001",
           event_id: "evt-cets-001",
+          event_title: "Corporate Family Day",
           employee_id: "E1001",
           status: "accepted",
           reason_code: "accepted",

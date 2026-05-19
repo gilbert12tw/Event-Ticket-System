@@ -170,6 +170,7 @@ describe("OfflineCheckinBoundaryPage", () => {
           checkin_id: "c1",
           ticket_id: "t1",
           event_id: "evt-1",
+          event_title: "Family Night",
           employee_id: "E1001",
           status: "accepted",
           scanned_at: "2026-05-06T10:10:00Z",
@@ -221,6 +222,8 @@ describe("OfflineCheckinBoundaryPage", () => {
       const resultTable = tables[0];
       expect(within(resultTable).getByText("t1")).toBeInTheDocument();
       expect(within(resultTable).getByText(/E1001/)).toBeInTheDocument();
+      expect(within(resultTable).getByText("Family Night")).toBeInTheDocument();
+      expect(within(resultTable).getByText(/同行 0 人/)).toBeInTheDocument();
       expect(within(resultTable).getByText("驗票成功")).toBeInTheDocument();
     });
   });

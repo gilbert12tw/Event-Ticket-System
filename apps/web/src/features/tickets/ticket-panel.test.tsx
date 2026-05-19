@@ -24,11 +24,18 @@ describe("TicketPanel", () => {
       event_title: "台北家庭電影夜",
       event_location: "Taipei HQ",
       employee_name: "Ariel Chen",
+      department: "Engineering",
+      city: "Taipei",
+      family_count: 2,
     };
 
     const { container } = render(<TicketPanel ticket={ticket} />);
 
     expect(screen.getByText("台北家庭電影夜")).toBeInTheDocument();
+    expect(screen.getByText("不可轉讓")).toBeInTheDocument();
+    expect(screen.getByText("同行人數")).toBeInTheDocument();
+    expect(screen.getByText("僅供入場人數核對，非可轉讓票券。")).toBeInTheDocument();
+    expect(screen.getByText("Engineering")).toBeInTheDocument();
     expect(screen.getByText("T-1")).toBeInTheDocument();
     expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
     expect(
@@ -111,6 +118,30 @@ describe("TicketPanel", () => {
     expect(
       screen.getByRole("button", { name: "重新整理票券" }),
     ).toBeInTheDocument();
+  });
+
+  it("does not mark tickets as entry-ready before the event starts", () => {
+    const ticket: Ticket = {
+      ticket_id: "T-future",
+      registration_id: "R-1",
+      event_id: "EVT-1",
+      employee_id: "E1001",
+      status: "active",
+      signed_token: "signed-secret",
+      qr_payload: "qr-secret",
+      issued_at: "2026-05-06T10:00:00Z",
+      event_starts_at: "2099-05-06T10:00:00Z",
+      event_title: "台北家庭電影夜",
+    };
+
+    render(<TicketPanel ticket={ticket} />);
+
+    expect(screen.getByText("尚未開放入場")).toBeInTheDocument();
+    expect(
+      screen.getByText("活動尚未開始，請於開始時間到場後再出示二維碼驗票。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("可入場")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
   });
 
   it("keeps employees in their own workspace when opening event detail", async () => {

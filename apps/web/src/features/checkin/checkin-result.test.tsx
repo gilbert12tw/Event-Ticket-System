@@ -9,6 +9,7 @@ describe("CheckinResult", () => {
       checkin_id: "C-1",
       ticket_id: "T-1",
       event_id: "EVT-1",
+      event_title: "台北家庭電影夜",
       employee_id: "E1001",
       status: "accepted",
       scanned_at: "2026-05-06T10:00:00Z",
@@ -28,7 +29,11 @@ describe("CheckinResult", () => {
       screen.getByRole("heading", { name: "驗票成功" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Ariel Chen")).toBeInTheDocument();
+    expect(screen.getByText("Engineering / Taipei")).toBeInTheDocument();
+    expect(screen.getByText("台北家庭電影夜")).toBeInTheDocument();
+    expect(screen.getByText("EVT-1")).toBeInTheDocument();
     expect(screen.getByText("2 人")).toBeInTheDocument();
+    expect(screen.getByText("隨持票員工入場，非轉讓票券。")).toBeInTheDocument();
     expect(screen.getByText("T-1")).toBeInTheDocument();
   });
 
@@ -37,8 +42,10 @@ describe("CheckinResult", () => {
       checkin_id: "C-2",
       ticket_id: "T-1",
       event_id: "EVT-1",
+      event_title: "台北家庭電影夜",
       employee_id: "E1001",
       status: "duplicate",
+      reason_code: "duplicate_scan",
       scanned_at: "2026-05-06T10:05:00Z",
       first_scanned_at: "2026-05-06T10:00:00Z",
       first_scanned_by: "gate-1",
@@ -55,6 +62,8 @@ describe("CheckinResult", () => {
 
     expect(screen.getByRole("status")).toHaveClass("warn");
     expect(screen.getByText("重複掃描被拒絕")).toBeInTheDocument();
+    expect(screen.getByText("首次核銷")).toBeInTheDocument();
+    expect(screen.getByText("duplicate_scan")).toBeInTheDocument();
     expect(screen.getByText("裝置 gate-1")).toBeInTheDocument();
   });
 
@@ -63,6 +72,7 @@ describe("CheckinResult", () => {
       checkin_id: "",
       ticket_id: "T-bad",
       event_id: "EVT-1",
+      event_title: "台北家庭電影夜",
       employee_id: "E1001",
       status: "rejected",
       reason_code: "ticket_token_claims_mismatch",
