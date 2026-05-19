@@ -205,7 +205,7 @@ func (s *Service) processOneOutbox(ctx context.Context, options OutboxProcessorO
 		if err := ctx.Err(); err != nil {
 			return 1, err
 		}
-		message := deliveryMessageForOutbox(claim.eventType, employeeID)
+		message := deliveryMessageForOutbox(claim.eventType, employeeID, payload)
 		sendErr = options.Sender.Send(ctx, message)
 		status := deliveryStatusSent
 		lastError := ""
@@ -423,11 +423,16 @@ func stringFromPayload(payload map[string]interface{}, key string) string {
 	return strings.TrimSpace(fmt.Sprint(value))
 }
 
-func deliveryMessageForOutbox(eventType string, employeeID string) DeliveryMessage {
+func deliveryMessageForOutbox(eventType string, employeeID string, payload map[string]interface{}) DeliveryMessage {
+	context := notificationActivityContext(payload)
+	body := fmt.Sprintf("Your corporate event ticketing status changed: %s.", eventType)
+	if context != "" {
+		body = fmt.Sprintf("%s %s", body, context)
+	}
 	return DeliveryMessage{
 		To:      deliveryAddressForEmployee(employeeID),
 		Subject: fmt.Sprintf("CETS update: %s", eventType),
-		Body:    fmt.Sprintf("Your corporate event ticketing status changed: %s.", eventType),
+		Body:    body,
 	}
 }
 
@@ -437,4 +442,21 @@ func deliveryAddressForEmployee(employeeID string) string {
 		return "unknown@cets.local"
 	}
 	return employeeID + "@cets.local"
+}
+
+func notificationActivityContext(payload map[string]interface{}) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	parts := []string{}
+	if title := stringFromPayload(payload, "event_title"); title != "" {
+		parts = append(parts, "Activity: "+title+".")
+	}
+	if startsAt := stringFromPayload(payload, "starts_at"); startsAt != "" {
+		parts = append(parts, "Starts at: "+startsAt+".")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ")
 }

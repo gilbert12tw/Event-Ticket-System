@@ -128,6 +128,49 @@ func TestRecordNoShowSkipsSideEffectsWhenInsertIsDeduplicated(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.no_show_recorded' AND aggregate_id = $1`, booking.Registration.RegistrationID, 1)
 }
 
+func TestRecordNoShowWritesSafeGovernanceMetadata(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now.Add(-96 * time.Hour) }
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:             "No Show Governance",
+		Capacity:          5,
+		Status:            EventStatusPublished,
+		StartsAt:          now.Add(-48 * time.Hour),
+		RegistrationStart: now.Add(-120 * time.Hour),
+		RegistrationClose: now.Add(-72 * time.Hour),
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "metadata-no-show-book"})
+	require.NoError(t, err)
+
+	service.now = func() time.Time { return now }
+	actor := Actor{ID: "system-1", Role: RoleSystemAdmin}
+	recorded, _, err := service.recordNoShow(ctx, actor, booking.Registration.RegistrationID, event.EventID, "E1001", service.noShowPolicy.Normalize())
+	require.NoError(t, err)
+	require.True(t, recorded)
+
+	audit := readJSONMap(t, service, ctx, `SELECT metadata::text FROM audit_logs WHERE action = 'registration.no_show_recorded' AND entity_id = $1`, booking.Registration.RegistrationID)
+	assert.Equal(t, event.EventID, audit["event_id"])
+	assert.Equal(t, "No Show Governance", audit["event_title"])
+	assert.Equal(t, booking.Registration.RegistrationID, audit["registration_id"])
+	assert.Equal(t, "cooldown_active", audit["cooldown_status"])
+	assertNoSensitiveJSONValues(t, audit, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
+
+	payload := readJSONMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = 'registration.no_show_recorded' AND aggregate_id = $1`, booking.Registration.RegistrationID)
+	assert.Equal(t, event.EventID, payload["event_id"])
+	assert.Equal(t, "No Show Governance", payload["event_title"])
+	assert.Equal(t, "E1001", payload["employee_id"])
+	assert.Equal(t, "cooldown_active", payload["cooldown_status"])
+	assertNoSensitiveJSONValues(t, payload, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
+}
+
 func TestEmployeeCancellationCutoffAndAdminReason(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

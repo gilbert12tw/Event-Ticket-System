@@ -121,10 +121,20 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	if err != nil {
 		return BookingResponse{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "registration.cancelled", "registration", registrationID, map[string]interface{}{"event_id": eventID, "reason": req.Reason}); err != nil {
+	eventContext := eventContextMetadata(event)
+	cancellationMetadata := mergeMetadata(eventContext, map[string]interface{}{
+		"registration_id": registrationID,
+		"reason":          req.Reason,
+	})
+	if err := insertAudit(ctx, tx, auditID, actor, "registration.cancelled", "registration", registrationID, cancellationMetadata); err != nil {
 		return BookingResponse{}, err
 	}
-	if err := insertOutbox(ctx, tx, "registration.cancelled", registrationID, map[string]interface{}{"registration_id": registrationID, "event_id": eventID, "employee_id": reg.EmployeeID}); err != nil {
+	cancellationPayload := mergeMetadata(eventContext, map[string]interface{}{
+		"registration_id": registrationID,
+		"employee_id":     reg.EmployeeID,
+		"reason":          req.Reason,
+	})
+	if err := insertOutbox(ctx, tx, "registration.cancelled", registrationID, cancellationPayload); err != nil {
 		return BookingResponse{}, err
 	}
 	ticket, err := s.findTicketByRegistrationTx(ctx, tx, reg.RegistrationID)
