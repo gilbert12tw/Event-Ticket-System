@@ -1,0 +1,13 @@
+{
+  "event_id": "out_01HXY00000000000000000007",
+  "event_type": "ticket.expired.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-20T03:00:00Z",
+  "idempotency_key": "ticket.expired:tkt_01HXY00000000000000000003",
+  "partition_key": "evt_01HXY00000000000000000001",
+  "payload": {
+    "ticket_id": "tkt_01HXY00000000000000000003",
+    "event_id": "evt_01HXY00000000000000000001",
+    "expired_at": "2026-05-20T03:00:00Z"
+  }
+}

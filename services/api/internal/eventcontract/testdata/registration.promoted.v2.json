@@ -1,0 +1,17 @@
+{
+  "event_id": "out_01HXY00000000000000000004",
+  "event_type": "registration.promoted.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-19T13:05:00Z",
+  "idempotency_key": "registration.promoted:reg_01HXY00000000000000000002:2026-05-19T13:05:00Z",
+  "partition_key": "evt_01HXY00000000000000000001",
+  "payload": {
+    "registration_id": "reg_01HXY00000000000000000002",
+    "event_id": "evt_01HXY00000000000000000001",
+    "employee_id": "EMP-002",
+    "from_status": "waitlisted",
+    "to_status": "confirmed",
+    "reason": "capacity_freed",
+    "promoted_at": "2026-05-19T13:05:00Z"
+  }
+}

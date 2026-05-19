@@ -1,0 +1,18 @@
+{
+  "event_id": "out_01HXY00000000000000000008",
+  "event_type": "checkin.recorded.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-19T19:02:11Z",
+  "idempotency_key": "checkin.recorded:tkt_01HXY00000000000000000001",
+  "partition_key": "evt_01HXY00000000000000000001",
+  "payload": {
+    "checkin_id": "chk_01HXY00000000000000000001",
+    "ticket_id": "tkt_01HXY00000000000000000001",
+    "event_id": "evt_01HXY00000000000000000001",
+    "device_id": "dev_main_lobby_01",
+    "staff_id": "EMP-2001",
+    "source": "online",
+    "scanned_at": "2026-05-19T19:02:11Z",
+    "synced_at": "2026-05-19T19:02:11Z"
+  }
+}
