@@ -40,6 +40,10 @@ describe("EmployeeTicketsPage", () => {
       ticketFixture({ ticket_id: "T-2", status: "active", signed_token: "" }),
       ticketFixture({ ticket_id: "T-3", status: "redeemed" }),
       ticketFixture({ ticket_id: "T-4", status: "revoked" }),
+      ticketFixture({
+        ticket_id: "T-5",
+        event_starts_at: "2099-05-19T10:00:00Z",
+      }),
     ]);
 
     render(<EmployeeTicketsPage claims={claims} />);
@@ -51,6 +55,7 @@ describe("EmployeeTicketsPage", () => {
     );
     const summary = screen.getByLabelText("票券摘要");
     expect(summary).toHaveTextContent("可入場1");
+    expect(summary).toHaveTextContent("尚未開放1");
     expect(summary).toHaveTextContent("待產生 QR1");
     expect(summary).toHaveTextContent("已核銷1");
     expect(summary).toHaveTextContent("已撤銷1");

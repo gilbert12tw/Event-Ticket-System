@@ -71,6 +71,11 @@ CheckInResolvedResult:
     event_id:
       type: string
       format: uuid
+    event_title:
+      type:
+        - string
+        - "null"
+      description: Event title returned when the ticket can be resolved.
     employee_id:
       type: string
     status:
@@ -133,6 +138,11 @@ CheckInRejectedResult:
     event_id:
       type: string
       format: uuid
+    event_title:
+      type:
+        - string
+        - "null"
+      description: Event title returned when the rejected token can be safely resolved.
     employee_id:
       type: string
     status:

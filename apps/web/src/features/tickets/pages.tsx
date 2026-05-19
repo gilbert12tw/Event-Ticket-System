@@ -31,17 +31,23 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
   const pendingListFocusRef = useRef(false);
 
   const principalID = claims.employee_id;
-  const entryReadyTickets = tickets.filter(
-    (ticket) => ticketEntryReadinessView(ticket).kind === "entry-ready",
+  const ticketReadinessViews = tickets.map((ticket) =>
+    ticketEntryReadinessView(ticket),
   );
-  const pendingQrTickets = tickets.filter(
-    (ticket) => ticketEntryReadinessView(ticket).kind === "qr-pending",
+  const entryReadyTickets = ticketReadinessViews.filter(
+    (readiness) => readiness.kind === "entry-ready",
   );
-  const redeemedTickets = tickets.filter(
-    (ticket) => ticket.status === "redeemed",
+  const notOpenTickets = ticketReadinessViews.filter(
+    (readiness) => readiness.kind === "not-open",
   );
-  const unavailableTickets = tickets.filter((ticket) =>
-    ["revoked"].includes(ticket.status),
+  const pendingQrTickets = ticketReadinessViews.filter(
+    (readiness) => readiness.kind === "qr-pending",
+  );
+  const redeemedTickets = ticketReadinessViews.filter(
+    (readiness) => readiness.kind === "redeemed",
+  );
+  const unavailableTickets = ticketReadinessViews.filter(
+    (readiness) => readiness.kind === "revoked",
   );
 
   async function refreshList() {
@@ -211,6 +217,7 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
           items={[
             { label: "票券", value: tickets.length },
             { label: "可入場", value: entryReadyTickets.length },
+            { label: "尚未開放", value: notOpenTickets.length },
             { label: "待產生 QR", value: pendingQrTickets.length },
             { label: "已核銷", value: redeemedTickets.length },
             { label: "已撤銷", value: unavailableTickets.length },
