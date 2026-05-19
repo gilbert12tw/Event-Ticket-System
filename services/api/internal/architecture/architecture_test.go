@@ -140,6 +140,49 @@ func TestPhase1DocsDoNotClaimDeferredInfrastructureIsComplete(t *testing.T) {
 	assert.Empty(t, offenders, "Phase 1 docs claim deferred infrastructure is complete: %s", strings.Join(offenders, "; "))
 }
 
+func TestPhase2DocsDoNotClaimDeferredInfraIsRequired(t *testing.T) {
+	root := repoRoot(t)
+	docsRoot := filepath.Join(root, "docs")
+	forbidden := []string{
+		"phase 2 requires kafka",
+		"phase 2 uses kafka",
+		"phase 2 requires kubernetes",
+		"phase 2 uses kubernetes",
+		"phase 2 implements microservices",
+		"phase 2 requires service mesh",
+		"phase 2 uses service mesh",
+		"phase 2 requires cross-region ha",
+		"phase 2 has cross-region ha",
+		"phase 2 has cross-region high availability",
+	}
+
+	var offenders []string
+	for _, path := range []string{filepath.Join(root, "AGENTS.md"), docsRoot} {
+		err := filepath.WalkDir(path, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".md") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			content := strings.ToLower(string(data))
+			for _, phrase := range forbidden {
+				if strings.Contains(content, phrase) {
+					rel, _ := filepath.Rel(root, path)
+					offenders = append(offenders, rel+": "+phrase)
+				}
+			}
+			return nil
+		})
+		require.NoError(t, err)
+	}
+	assert.Empty(t, offenders, "Phase 2 docs claim deferred infrastructure is required: %s", strings.Join(offenders, "; "))
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
