@@ -33,6 +33,12 @@ describe("TicketPanel", () => {
 
     expect(screen.getByText("台北家庭電影夜")).toBeInTheDocument();
     expect(screen.getByText("不可轉讓")).toBeInTheDocument();
+    expect(screen.getByText("入場提示")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "請在入口出示此 QR code，驗票員完成核銷後票券會更新為已核銷。",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("同行人數")).toBeInTheDocument();
     expect(
       screen.getByText("僅供入場人數核對，非可轉讓票券。"),

@@ -132,7 +132,21 @@
   line-height: 1.45;
 }
 
+.ticket-entry-instruction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--success-line);
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  color: var(--ink);
+  line-height: 1.45;
+}
+
 .ticket-nontransferable span:last-child,
+.ticket-entry-instruction span:last-child,
 .checkin-result-copy {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -274,7 +288,18 @@
   }
 
   .ticket-nontransferable,
+  .ticket-entry-instruction,
   .checkin-result {
     padding: 12px;
+  }
+
+  .ticket-detail-panel .qr-wrap {
+    justify-items: center;
+  }
+
+  .ticket-detail-panel .qr {
+    width: min(280px, 100%);
+    height: auto;
+    aspect-ratio: 1;
   }
 }
