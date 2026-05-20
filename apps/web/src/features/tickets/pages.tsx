@@ -338,9 +338,17 @@ export function TicketPanel({
           <span>此票券綁定持票員工本人，入場時驗票員會核對持票人身份。</span>
         </div>
         {canShowQr && (
-          <div className="qr-wrap">
-            <TicketQrCode token={qrToken} />
-          </div>
+          <>
+            <div className="ticket-entry-instruction" role="note">
+              <StatusBadge tone="ok">入場提示</StatusBadge>
+              <span>
+                請在入口出示此 QR code，驗票員完成核銷後票券會更新為已核銷。
+              </span>
+            </div>
+            <div className="qr-wrap">
+              <TicketQrCode token={qrToken} />
+            </div>
+          </>
         )}
         <dl className="meta-list ticket-meta-list">
           <div>
