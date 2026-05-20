@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - ".github/workflows/ci.yml"
-      - ".github/workflows/cloudflare-pages-preview.yml"
       - ".dockerignore"
       - ".npmrc"
       - ".prettierignore"
@@ -30,7 +29,6 @@ on:
       - "v*"
     paths:
       - ".github/workflows/ci.yml"
-      - ".github/workflows/cloudflare-pages-preview.yml"
       - ".dockerignore"
       - ".npmrc"
       - ".prettierignore"
@@ -174,7 +172,7 @@ jobs:
           if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$)' /tmp/changed-files; then
             backend=true
           fi
-          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$|\.github/workflows/cloudflare-pages-preview\.yml$)' /tmp/changed-files; then
+          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' /tmp/changed-files; then
             frontend=true
           fi
           if grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' /tmp/changed-files; then
