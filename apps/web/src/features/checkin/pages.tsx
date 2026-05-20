@@ -22,6 +22,7 @@ import {
   readHistoryCheckinToken,
 } from "./checkin-token";
 import { CheckinResult } from "./checkin-result";
+import { MobileQrScanner } from "./mobile-qr-scanner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -113,6 +114,7 @@ export function CheckinPage() {
               <p>送出後會立即顯示可入場、重複掃描或拒絕原因。</p>
             </div>
           </div>
+          <MobileQrScanner onTokenDetected={setToken} />
           <CompactStatsBar
             items={[
               { label: "已入場", value: total.checkedIn },

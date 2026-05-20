@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, checkIn, reports } from "@/lib/api";
 import { CheckinPage } from "./pages";
 
@@ -19,6 +19,10 @@ vi.mock("@/lib/api", async () => {
 
 const mockCheckIn = vi.mocked(checkIn);
 const mockReports = vi.mocked(reports);
+const originalMediaDevices = navigator.mediaDevices;
+const originalBarcodeDetector = (
+  window as typeof window & { BarcodeDetector?: unknown }
+).BarcodeDetector;
 
 describe("CheckinPage", () => {
   beforeEach(() => {
@@ -26,6 +30,28 @@ describe("CheckinPage", () => {
     localStorage.clear();
     mockCheckIn.mockClear();
     mockReports.mockClear();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: originalMediaDevices,
+    });
+    delete (window as typeof window & { BarcodeDetector?: unknown })
+      .BarcodeDetector;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: originalMediaDevices,
+    });
+    if (originalBarcodeDetector) {
+      (
+        window as typeof window & { BarcodeDetector?: unknown }
+      ).BarcodeDetector = originalBarcodeDetector;
+    } else {
+      delete (window as typeof window & { BarcodeDetector?: unknown })
+        .BarcodeDetector;
+    }
+    vi.restoreAllMocks();
   });
 
   it("prefills token from navigation state and ignores production localStorage tokens by default", async () => {
@@ -98,5 +124,51 @@ describe("CheckinPage", () => {
       await screen.findByRole("heading", { name: "驗票成功" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("role is not allowed")).not.toBeInTheDocument();
+  });
+
+  it("keeps manual fallback available when camera QR detection is unsupported", async () => {
+    mockReports.mockResolvedValue([]);
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+
+    expect(
+      screen.getByText(/此瀏覽器不支援直接相機辨識 QR code/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toBeInTheDocument();
+  });
+
+  it("fills the token field when browser QR detection reads a code", async () => {
+    mockReports.mockResolvedValue([]);
+    const track = { stop: vi.fn() };
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [track],
+        }),
+      },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    class MockBarcodeDetector {
+      detect = vi.fn().mockResolvedValue([{ rawValue: "qr-token-123" }]);
+    }
+    (
+      window as typeof window & { BarcodeDetector?: unknown }
+    ).BarcodeDetector = MockBarcodeDetector;
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+
+    expect(await screen.findByText("已讀取 QR code，可以送出驗票。"))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue(
+      "qr-token-123",
+    );
+    expect(track.stop).toHaveBeenCalled();
   });
 });
