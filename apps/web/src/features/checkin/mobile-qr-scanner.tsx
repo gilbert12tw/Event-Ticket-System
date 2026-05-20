@@ -30,8 +30,16 @@ export function MobileQrScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const frameRef = useRef(0);
+  const mountedRef = useRef(false);
+  const scannerActiveRef = useRef(false);
 
-  useEffect(() => () => stopCamera(false), []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopCamera(false);
+    };
+  }, []);
 
   async function startScanner() {
     setMessage("");
@@ -42,6 +50,7 @@ export function MobileQrScanner({
       return;
     }
 
+    scannerActiveRef.current = true;
     setState("starting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -50,28 +59,36 @@ export function MobileQrScanner({
         },
         audio: false,
       });
+      if (!scannerActiveRef.current || !videoRef.current) {
+        stopStream(stream);
+        return;
+      }
       streamRef.current = stream;
-      if (!videoRef.current) return;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
+      if (!scannerActiveRef.current) return;
       setState("scanning");
       scanFrame(new Detector({ formats: ["qr_code"] }));
     } catch {
+      const wasActive = scannerActiveRef.current;
       stopCamera();
-      setState("unavailable");
-      setMessage(
-        "無法啟動相機。請允許瀏覽器相機權限，或改用手動貼上票券簽章碼。",
-      );
+      if (mountedRef.current && wasActive) {
+        setState("unavailable");
+        setMessage(
+          "無法啟動相機。請允許瀏覽器相機權限，或改用手動貼上票券簽章碼。",
+        );
+      }
     }
   }
 
   function scanFrame(detector: BarcodeDetectorInstance) {
     const video = videoRef.current;
-    if (!video) return;
+    if (!scannerActiveRef.current || !video) return;
 
     void detector
       .detect(video)
       .then((codes) => {
+        if (!scannerActiveRef.current) return;
         const token = codes.find((code) => code.rawValue)?.rawValue?.trim();
         if (token) {
           onTokenDetected(token);
@@ -85,6 +102,7 @@ export function MobileQrScanner({
         );
       })
       .catch(() => {
+        if (!scannerActiveRef.current) return;
         frameRef.current = window.requestAnimationFrame(() =>
           scanFrame(detector),
         );
@@ -92,12 +110,13 @@ export function MobileQrScanner({
   }
 
   function stopCamera(resetState = true) {
+    scannerActiveRef.current = false;
     if (frameRef.current) window.cancelAnimationFrame(frameRef.current);
     frameRef.current = 0;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    if (streamRef.current) stopStream(streamRef.current);
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-    if (resetState) {
+    if (resetState && mountedRef.current) {
       setState((current) => (current === "scanning" ? "idle" : current));
     }
   }
@@ -114,7 +133,7 @@ export function MobileQrScanner({
         >
           <Icon name="scan" />
           {state === "starting"
-            ? "啟動相機"
+            ? "啟動中..."
             : state === "scanning"
               ? "掃描中"
               : "手機掃描 QR"}
@@ -129,12 +148,7 @@ export function MobileQrScanner({
         </Button>
       </div>
       <div className="mobile-qr-preview" data-state={state}>
-        <video
-          ref={videoRef}
-          muted
-          playsInline
-          aria-label="QR code 相機預覽"
-        />
+        <video ref={videoRef} muted playsInline aria-label="QR code 相機預覽" />
         {state !== "scanning" && state !== "starting" && (
           <span>相機預覽會在開始掃描後顯示</span>
         )}
@@ -144,6 +158,10 @@ export function MobileQrScanner({
       )}
     </div>
   );
+}
+
+function stopStream(stream: MediaStream) {
+  stream.getTracks().forEach((track) => track.stop());
 }
 
 function barcodeDetector() {

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, checkIn, reports } from "@/lib/api";
@@ -30,10 +30,6 @@ describe("CheckinPage", () => {
     localStorage.clear();
     mockCheckIn.mockClear();
     mockReports.mockClear();
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: originalMediaDevices,
-    });
     delete (window as typeof window & { BarcodeDetector?: unknown })
       .BarcodeDetector;
   });
@@ -155,20 +151,121 @@ describe("CheckinPage", () => {
     class MockBarcodeDetector {
       detect = vi.fn().mockResolvedValue([{ rawValue: "qr-token-123" }]);
     }
-    (
-      window as typeof window & { BarcodeDetector?: unknown }
-    ).BarcodeDetector = MockBarcodeDetector;
+    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
+      MockBarcodeDetector;
 
     render(<CheckinPage />);
     await userEvent.click(
       await screen.findByRole("button", { name: "手機掃描 QR" }),
     );
 
-    expect(await screen.findByText("已讀取 QR code，可以送出驗票。"))
-      .toBeInTheDocument();
-    expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue(
-      "qr-token-123",
-    );
+    expect(
+      await screen.findByText("已讀取 QR code，可以送出驗票。"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue("qr-token-123");
     expect(track.stop).toHaveBeenCalled();
+  });
+
+  it("shows camera permission failures without hiding manual entry", async () => {
+    mockReports.mockResolvedValue([]);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockRejectedValue(new DOMException("NotAllowed")),
+      },
+    });
+    class MockBarcodeDetector {
+      detect = vi.fn().mockResolvedValue([]);
+    }
+    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
+      MockBarcodeDetector;
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+
+    expect(screen.getByText(/無法啟動相機/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toBeInTheDocument();
+  });
+
+  it("stops a camera stream that resolves after the page unmounts", async () => {
+    mockReports.mockResolvedValue([]);
+    const track = { stop: vi.fn() };
+    let resolveStream: (stream: {
+      getTracks: () => Array<typeof track>;
+    }) => void = () => {};
+    const streamPromise = new Promise<{ getTracks: () => Array<typeof track> }>(
+      (resolve) => {
+        resolveStream = resolve;
+      },
+    );
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockReturnValue(streamPromise),
+      },
+    });
+    class MockBarcodeDetector {
+      detect = vi.fn().mockResolvedValue([]);
+    }
+    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
+      MockBarcodeDetector;
+
+    const { unmount } = render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+    unmount();
+
+    await act(async () => {
+      resolveStream({ getTracks: () => [track] });
+      await streamPromise;
+    });
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not schedule another scan frame after the scanner is stopped", async () => {
+    mockReports.mockResolvedValue([]);
+    const track = { stop: vi.fn() };
+    let rejectDetect: () => void = () => {};
+    const detectPromise = new Promise<never>((_, reject) => {
+      rejectDetect = () => reject(new Error("camera stopped"));
+    });
+    const requestFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockReturnValue(1);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [track],
+        }),
+      },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    class MockBarcodeDetector {
+      detect = vi.fn().mockReturnValue(detectPromise);
+    }
+    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
+      MockBarcodeDetector;
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "停止" })).not.toBeDisabled(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "停止" }));
+
+    await act(async () => {
+      rejectDetect();
+      await detectPromise.catch(() => undefined);
+    });
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(requestFrameSpy).not.toHaveBeenCalled();
   });
 });
