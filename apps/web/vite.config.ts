@@ -6,6 +6,9 @@ import { fileURLToPath, URL } from "node:url";
 const configuredWebDevPort = process.env.WEB_DEV_PORT;
 const webDevPort = Number(configuredWebDevPort ?? "5173");
 const apiTarget = process.env.CETS_DEV_API_TARGET ?? "http://localhost:8080";
+const buildOutDir =
+  process.env.CETS_WEB_BUILD_OUT_DIR ??
+  "../../services/api/internal/httpapi/static";
 const watchOptions =
   process.env.CHOKIDAR_USEPOLLING === "true"
     ? { usePolling: true, interval: 100 }
@@ -19,7 +22,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../../services/api/internal/httpapi/static",
+    outDir: buildOutDir,
     emptyOutDir: true,
   },
   server: {
