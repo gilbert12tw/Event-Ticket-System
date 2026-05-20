@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, checkIn, reports } from "@/lib/api";
 import { CheckinPage } from "./pages";
 
+const zxingMocks = vi.hoisted(() => ({
+  decodeFromConstraints: vi.fn(),
+}));
+
+vi.mock("@zxing/browser", () => ({
+  BrowserQRCodeReader: class MockBrowserQRCodeReader {
+    decodeFromConstraints = zxingMocks.decodeFromConstraints;
+  },
+}));
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -20,9 +30,6 @@ vi.mock("@/lib/api", async () => {
 const mockCheckIn = vi.mocked(checkIn);
 const mockReports = vi.mocked(reports);
 const originalMediaDevices = navigator.mediaDevices;
-const originalBarcodeDetector = (
-  window as typeof window & { BarcodeDetector?: unknown }
-).BarcodeDetector;
 
 describe("CheckinPage", () => {
   beforeEach(() => {
@@ -30,8 +37,8 @@ describe("CheckinPage", () => {
     localStorage.clear();
     mockCheckIn.mockClear();
     mockReports.mockClear();
-    delete (window as typeof window & { BarcodeDetector?: unknown })
-      .BarcodeDetector;
+    zxingMocks.decodeFromConstraints.mockReset();
+    mockCameraAvailable();
   });
 
   afterEach(() => {
@@ -39,15 +46,7 @@ describe("CheckinPage", () => {
       configurable: true,
       value: originalMediaDevices,
     });
-    if (originalBarcodeDetector) {
-      (
-        window as typeof window & { BarcodeDetector?: unknown }
-      ).BarcodeDetector = originalBarcodeDetector;
-    } else {
-      delete (window as typeof window & { BarcodeDetector?: unknown })
-        .BarcodeDetector;
-    }
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it("prefills token from navigation state and ignores production localStorage tokens by default", async () => {
@@ -122,37 +121,31 @@ describe("CheckinPage", () => {
     expect(screen.queryByText("role is not allowed")).not.toBeInTheDocument();
   });
 
-  it("keeps manual fallback available when camera QR detection is unsupported", async () => {
+  it("keeps manual fallback available when camera access is unsupported", async () => {
     mockReports.mockResolvedValue([]);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: undefined,
+    });
 
     render(<CheckinPage />);
     await userEvent.click(
       await screen.findByRole("button", { name: "手機掃描 QR" }),
     );
 
-    expect(
-      screen.getByText(/此瀏覽器不支援直接相機辨識 QR code/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/此瀏覽器無法開啟相機/)).toBeInTheDocument();
     expect(screen.getByLabelText(/掃描或貼上票券/)).toBeInTheDocument();
   });
 
-  it("fills the token field when browser QR detection reads a code", async () => {
+  it("fills the token field when QR detection reads a code", async () => {
     mockReports.mockResolvedValue([]);
-    const track = { stop: vi.fn() };
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        getUserMedia: vi.fn().mockResolvedValue({
-          getTracks: () => [track],
-        }),
+    const controls = { stop: vi.fn() };
+    zxingMocks.decodeFromConstraints.mockImplementation(
+      async (_constraints, _video, callback) => {
+        callback({ getText: () => "qr-token-123" });
+        return controls;
       },
-    });
-    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
-    class MockBarcodeDetector {
-      detect = vi.fn().mockResolvedValue([{ rawValue: "qr-token-123" }]);
-    }
-    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
-      MockBarcodeDetector;
+    );
 
     render(<CheckinPage />);
     await userEvent.click(
@@ -163,22 +156,30 @@ describe("CheckinPage", () => {
       await screen.findByText("已讀取 QR code，可以送出驗票。"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue("qr-token-123");
-    expect(track.stop).toHaveBeenCalled();
+    expect(controls.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the camera without depending on BarcodeDetector support", async () => {
+    mockReports.mockResolvedValue([]);
+    const controls = { stop: vi.fn() };
+    zxingMocks.decodeFromConstraints.mockResolvedValue(controls);
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+
+    expect(
+      await screen.findByText("相機已開啟，請將 QR code 對準畫面中央。"),
+    ).toBeInTheDocument();
+    expect(zxingMocks.decodeFromConstraints).toHaveBeenCalled();
   });
 
   it("shows camera permission failures without hiding manual entry", async () => {
     mockReports.mockResolvedValue([]);
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        getUserMedia: vi.fn().mockRejectedValue(new DOMException("NotAllowed")),
-      },
-    });
-    class MockBarcodeDetector {
-      detect = vi.fn().mockResolvedValue([]);
-    }
-    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
-      MockBarcodeDetector;
+    zxingMocks.decodeFromConstraints.mockRejectedValue(
+      new DOMException("NotAllowed"),
+    );
 
     render(<CheckinPage />);
     await userEvent.click(
@@ -189,28 +190,14 @@ describe("CheckinPage", () => {
     expect(screen.getByLabelText(/掃描或貼上票券/)).toBeInTheDocument();
   });
 
-  it("stops a camera stream that resolves after the page unmounts", async () => {
+  it("stops scanner controls that resolve after the page unmounts", async () => {
     mockReports.mockResolvedValue([]);
-    const track = { stop: vi.fn() };
-    let resolveStream: (stream: {
-      getTracks: () => Array<typeof track>;
-    }) => void = () => {};
-    const streamPromise = new Promise<{ getTracks: () => Array<typeof track> }>(
-      (resolve) => {
-        resolveStream = resolve;
-      },
-    );
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        getUserMedia: vi.fn().mockReturnValue(streamPromise),
-      },
+    const controls = { stop: vi.fn() };
+    let resolveControls: (controls: typeof controls) => void = () => {};
+    const controlsPromise = new Promise<typeof controls>((resolve) => {
+      resolveControls = resolve;
     });
-    class MockBarcodeDetector {
-      detect = vi.fn().mockResolvedValue([]);
-    }
-    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
-      MockBarcodeDetector;
+    zxingMocks.decodeFromConstraints.mockReturnValue(controlsPromise);
 
     const { unmount } = render(<CheckinPage />);
     await userEvent.click(
@@ -219,37 +206,23 @@ describe("CheckinPage", () => {
     unmount();
 
     await act(async () => {
-      resolveStream({ getTracks: () => [track] });
-      await streamPromise;
+      resolveControls(controls);
+      await controlsPromise;
     });
 
-    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(controls.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("does not schedule another scan frame after the scanner is stopped", async () => {
+  it("does not accept a QR result after the scanner is stopped", async () => {
     mockReports.mockResolvedValue([]);
-    const track = { stop: vi.fn() };
-    let rejectDetect: () => void = () => {};
-    const detectPromise = new Promise<never>((_, reject) => {
-      rejectDetect = () => reject(new Error("camera stopped"));
-    });
-    const requestFrameSpy = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockReturnValue(1);
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        getUserMedia: vi.fn().mockResolvedValue({
-          getTracks: () => [track],
-        }),
+    const controls = { stop: vi.fn() };
+    let scanCallback: (result?: { getText: () => string }) => void = () => {};
+    zxingMocks.decodeFromConstraints.mockImplementation(
+      async (_constraints, _video, callback) => {
+        scanCallback = callback;
+        return controls;
       },
-    });
-    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
-    class MockBarcodeDetector {
-      detect = vi.fn().mockReturnValue(detectPromise);
-    }
-    (window as typeof window & { BarcodeDetector?: unknown }).BarcodeDetector =
-      MockBarcodeDetector;
+    );
 
     render(<CheckinPage />);
     await userEvent.click(
@@ -260,12 +233,28 @@ describe("CheckinPage", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "停止" }));
 
-    await act(async () => {
-      rejectDetect();
-      await detectPromise.catch(() => undefined);
-    });
+    scanCallback({ getText: () => "late-token" });
 
-    expect(track.stop).toHaveBeenCalledTimes(1);
-    expect(requestFrameSpy).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue("");
+    expect(controls.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a full-width touch layout for mobile scanner actions", async () => {
+    mockReports.mockResolvedValue([]);
+    render(<CheckinPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
   });
 });
+
+function mockCameraAvailable() {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: vi.fn(),
+    },
+  });
+}

@@ -267,6 +267,26 @@
     gap: 14px;
   }
 
+  .checkin-workspace [data-slot="button"] {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    justify-content: center;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .checkin-workspace .helper-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .mobile-qr-scanner-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .mobile-qr-preview {
     min-height: 220px;
   }

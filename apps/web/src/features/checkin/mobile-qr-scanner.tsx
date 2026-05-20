@@ -1,24 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import { BrowserQRCodeReader } from "@zxing/browser";
+import type { IScannerControls } from "@zxing/browser";
 import { Alert } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 
-type BarcodeResult = {
-  rawValue?: string;
-};
-
-type BarcodeDetectorInstance = {
-  detect(source: HTMLVideoElement): Promise<BarcodeResult[]>;
-};
-
-type BarcodeDetectorConstructor = new (options?: {
-  formats?: string[];
-}) => BarcodeDetectorInstance;
-
 type ScannerState = "idle" | "starting" | "scanning" | "done" | "unavailable";
 
 const CAMERA_UNAVAILABLE_COPY =
-  "此瀏覽器不支援直接相機辨識 QR code，請使用手機內建掃描器或手動貼上票券簽章碼。";
+  "此瀏覽器無法開啟相機。請確認使用 HTTPS、允許 Safari 相機權限，或改用手動貼上票券簽章碼。";
 
 export function MobileQrScanner({
   onTokenDetected,
@@ -27,11 +17,10 @@ export function MobileQrScanner({
 }) {
   const [state, setState] = useState<ScannerState>("idle");
   const [message, setMessage] = useState("");
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const frameRef = useRef(0);
+  const controlsRef = useRef<IScannerControls | null>(null);
   const mountedRef = useRef(false);
   const scannerActiveRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -43,8 +32,7 @@ export function MobileQrScanner({
 
   async function startScanner() {
     setMessage("");
-    const Detector = barcodeDetector();
-    if (!Detector || !navigator.mediaDevices?.getUserMedia) {
+    if (!navigator.mediaDevices?.getUserMedia || !videoRef.current) {
       setState("unavailable");
       setMessage(CAMERA_UNAVAILABLE_COPY);
       return;
@@ -53,22 +41,32 @@ export function MobileQrScanner({
     scannerActiveRef.current = true;
     setState("starting");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
+      const reader = new BrowserQRCodeReader();
+      const controls = await reader.decodeFromConstraints(
+        {
+          video: {
+            facingMode: { ideal: "environment" },
+          },
+          audio: false,
         },
-        audio: false,
-      });
-      if (!scannerActiveRef.current || !videoRef.current) {
-        stopStream(stream);
+        videoRef.current,
+        (result) => {
+          if (!scannerActiveRef.current || !result) return;
+          const token = result.getText().trim();
+          if (!token) return;
+          onTokenDetected(token);
+          setState("done");
+          setMessage("已讀取 QR code，可以送出驗票。");
+          stopCamera(false);
+        },
+      );
+      if (!scannerActiveRef.current) {
+        controls.stop();
         return;
       }
-      streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      if (!scannerActiveRef.current) return;
+      controlsRef.current = controls;
       setState("scanning");
-      scanFrame(new Detector({ formats: ["qr_code"] }));
+      setMessage("相機已開啟，請將 QR code 對準畫面中央。");
     } catch {
       const wasActive = scannerActiveRef.current;
       stopCamera();
@@ -81,40 +79,10 @@ export function MobileQrScanner({
     }
   }
 
-  function scanFrame(detector: BarcodeDetectorInstance) {
-    const video = videoRef.current;
-    if (!scannerActiveRef.current || !video) return;
-
-    void detector
-      .detect(video)
-      .then((codes) => {
-        if (!scannerActiveRef.current) return;
-        const token = codes.find((code) => code.rawValue)?.rawValue?.trim();
-        if (token) {
-          onTokenDetected(token);
-          setState("done");
-          setMessage("已讀取 QR code，可以送出驗票。");
-          stopCamera(false);
-          return;
-        }
-        frameRef.current = window.requestAnimationFrame(() =>
-          scanFrame(detector),
-        );
-      })
-      .catch(() => {
-        if (!scannerActiveRef.current) return;
-        frameRef.current = window.requestAnimationFrame(() =>
-          scanFrame(detector),
-        );
-      });
-  }
-
   function stopCamera(resetState = true) {
     scannerActiveRef.current = false;
-    if (frameRef.current) window.cancelAnimationFrame(frameRef.current);
-    frameRef.current = 0;
-    if (streamRef.current) stopStream(streamRef.current);
-    streamRef.current = null;
+    controlsRef.current?.stop();
+    controlsRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     if (resetState && mountedRef.current) {
       setState((current) => (current === "scanning" ? "idle" : current));
@@ -158,16 +126,4 @@ export function MobileQrScanner({
       )}
     </div>
   );
-}
-
-function stopStream(stream: MediaStream) {
-  stream.getTracks().forEach((track) => track.stop());
-}
-
-function barcodeDetector() {
-  return (
-    window as typeof window & {
-      BarcodeDetector?: BarcodeDetectorConstructor;
-    }
-  ).BarcodeDetector;
 }
