@@ -71,6 +71,10 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS reporting_projection_offsets",
 		"last_processed_outbox_id BIGINT",
 		"INSERT INTO reporting_projection_offsets",
+		// booking-ban
+		"CREATE TABLE IF NOT EXISTS booking_bans",
+		"booking_bans_unique_active UNIQUE (event_id, employee_id)",
+		"idx_booking_bans_employee",
 	}
 
 	for _, fragment := range required {
@@ -111,6 +115,8 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 		// PH2-41
 		"reporting_event_summary",
 		"reporting_projection_offsets",
+		// booking-ban
+		"booking_bans",
 	}
 	for _, table := range requiredTables {
 		var exists bool
@@ -237,6 +243,7 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 
 func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS
+		booking_bans,
 		reporting_projection_offsets,
 		reporting_event_summary,
 		report_exports,
