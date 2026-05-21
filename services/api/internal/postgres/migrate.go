@@ -358,6 +358,35 @@ var SchemaStatements = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_checkin_rejections_ticket ON checkin_rejections(ticket_id)`,
 	`ALTER TABLE tickets ALTER COLUMN qr_payload SET DEFAULT ''`,
+
+	// PH2-41: Reporting projection tables.
+	// These tables are derived, disposable, and rebuildable. They are never
+	// the source of truth for bookings, capacity, eligibility, or access
+	// control. No OLTP table is altered by these statements.
+	`CREATE TABLE IF NOT EXISTS reporting_event_summary (
+		event_id             TEXT        NOT NULL PRIMARY KEY,
+		total_capacity       INTEGER     NOT NULL DEFAULT 0,
+		confirmed_count      INTEGER     NOT NULL DEFAULT 0,
+		cancelled_count      INTEGER     NOT NULL DEFAULT 0,
+		waitlist_count       INTEGER     NOT NULL DEFAULT 0,
+		department_breakdown JSONB       NOT NULL DEFAULT '{}',
+		last_event_offset    BIGINT      NOT NULL DEFAULT 0,
+		updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+		CONSTRAINT reporting_event_summary_confirmed_count_check  CHECK (confirmed_count  >= 0),
+		CONSTRAINT reporting_event_summary_cancelled_count_check  CHECK (cancelled_count  >= 0),
+		CONSTRAINT reporting_event_summary_waitlist_count_check   CHECK (waitlist_count   >= 0),
+		CONSTRAINT reporting_event_summary_total_capacity_check   CHECK (total_capacity   >= 0)
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_reporting_event_summary_updated_at
+		ON reporting_event_summary (updated_at DESC)`,
+	`CREATE TABLE IF NOT EXISTS reporting_projection_offsets (
+		projection_name          TEXT        NOT NULL PRIMARY KEY,
+		last_processed_outbox_id BIGINT      NOT NULL DEFAULT 0,
+		updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`INSERT INTO reporting_projection_offsets (projection_name, last_processed_outbox_id)
+		VALUES ('event_summary', 0)
+		ON CONFLICT DO NOTHING`,
 }
 
 func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
