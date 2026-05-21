@@ -4,6 +4,7 @@ import "errors"
 
 type AppError struct {
 	Status  int
+	Code    string
 	Message string
 }
 
@@ -49,4 +50,10 @@ func conflict(message string) AppError {
 
 func notImplemented(message string) AppError {
 	return AppError{Status: 501, Message: message}
+}
+
+// bookingBanned returns a 422 with machine-readable code BOOKING_BANNED.
+// Use this only when an active booking_bans row blocks the booking attempt.
+func bookingBanned(message string) AppError {
+	return AppError{Status: 422, Code: "BOOKING_BANNED", Message: message}
 }
