@@ -7,7 +7,7 @@ import (
 )
 
 // checkBookingBanTx queries whether there is an active ban for this employee on this event.
-// It is intended to be called within the booking transaction, before the UNIQUE constraint
+// It is intended to be called within the booking transaction, before the UNIQUE constrain
 // check, to provide a clear business error.
 func (s *Service) checkBookingBanTx(ctx context.Context, tx pgx.Tx, eventID, employeeID string) error {
 	var banID string
@@ -66,8 +66,8 @@ func (s *Service) LiftBookingBan(ctx context.Context, actor Actor, eventID, empl
 
 	var banID string
 	err = tx.QueryRow(ctx, `
-		UPDATE booking_bans 
-		SET lifted_at = $1, lifted_by = $2 
+		UPDATE booking_bans
+		SET lifted_at = $1, lifted_by = $2
 		WHERE event_id = $3 AND employee_id = $4 AND lifted_at IS NULL
 		RETURNING ban_id`, s.now(), actor.ID, eventID, employeeID).Scan(&banID)
 

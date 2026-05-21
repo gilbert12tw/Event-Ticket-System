@@ -14,10 +14,10 @@ func TestBookingBanCreatedAfterConfirmedCancellation(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Ban Target",
@@ -29,7 +29,7 @@ func TestBookingBanCreatedAfterConfirmedCancellation(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "ban-book"})
 	require.NoError(t, err)
@@ -46,10 +46,10 @@ func TestBookingBanNotCreatedAfterWaitlistCancellation(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Waitlist Ban Target",
@@ -61,7 +61,7 @@ func TestBookingBanNotCreatedAfterWaitlistCancellation(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "w-book-1"})
 	require.NoError(t, err)
 
@@ -81,10 +81,10 @@ func TestBannedEmployeeCannotRebook(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Banned Rebook",
@@ -96,7 +96,7 @@ func TestBannedEmployeeCannotRebook(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "b-book"})
 	require.NoError(t, err)
@@ -115,10 +115,10 @@ func TestBannedEmployeeCannotJoinWaitlist(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Banned Waitlist",
@@ -130,7 +130,7 @@ func TestBannedEmployeeCannotJoinWaitlist(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "bw-book"})
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestBannedEmployeeCannotJoinWaitlist(t *testing.T) {
 	_, err = service.CancelMyRegistration(ctx, employee, booking.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "bw-cancel", Reason: "sick"})
 	require.NoError(t, err)
 
-	// Another employee takes the spot
+	// Another employee takes the spo
 	_, err = service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "bw-book-2"})
 	require.NoError(t, err)
 
@@ -154,10 +154,10 @@ func TestLiftBanAllowsRebook(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Lift Ban",
@@ -169,7 +169,7 @@ func TestLiftBanAllowsRebook(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lb-book"})
 	require.NoError(t, err)
@@ -192,7 +192,7 @@ func TestLiftBanNotFoundReturns404(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	err := service.LiftBookingBan(ctx, admin, "non-existent-event", "E1001")
 	require.Error(t, err)
@@ -204,10 +204,10 @@ func TestBanCreationIdempotent(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Idempotent Ban",
@@ -219,7 +219,7 @@ func TestBanCreationIdempotent(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "ib-book"})
 	require.NoError(t, err)
@@ -239,10 +239,10 @@ func TestPhase1DataNotRetroactivelyBanned(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Phase1 Data",
@@ -254,12 +254,12 @@ func TestPhase1DataNotRetroactivelyBanned(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	// Manually insert a cancelled registration with no ban row
 	_, err = service.db.Exec(ctx, `INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key, cancel_idempotency_key, cancelled_at, created_at)
 		VALUES ('reg_p1', $1, 'E1001', 'cancelled', 'p1_book', 'p1_cancel', $2, $2)`, event.EventID, now)
 	require.NoError(t, err)
-	
+
 	// Booking should succeed
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	_, err = service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "p1-book2"})
@@ -271,10 +271,10 @@ func TestAuditLogWrittenOnBanAndLift(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	
+
 	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	
+
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
 		Title:             "Audit Ban",
@@ -286,7 +286,7 @@ func TestAuditLogWrittenOnBanAndLift(t *testing.T) {
 		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	
+
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 	booking, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "ab-book"})
 	require.NoError(t, err)

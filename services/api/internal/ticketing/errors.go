@@ -28,6 +28,14 @@ func ErrorMessage(err error) string {
 	return "internal server error"
 }
 
+func ErrorCode(err error) string {
+	var appErr AppError
+	if errors.As(err, &appErr) {
+		return appErr.Code
+	}
+	return ""
+}
+
 func badRequest(message string) AppError {
 	return AppError{Status: 400, Message: message}
 }
