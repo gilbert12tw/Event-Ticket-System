@@ -48,6 +48,10 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return existing, tx.Commit(ctx)
 	}
 
+	if err := s.checkBookingBanTx(ctx, tx, eventID, employeeID); err != nil {
+		return BookingResponse{}, err
+	}
+
 	event, rule, err := s.lockEventWithRule(ctx, tx, eventID)
 	if err != nil {
 		return BookingResponse{}, err
