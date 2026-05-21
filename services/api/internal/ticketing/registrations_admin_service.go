@@ -31,7 +31,7 @@ func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID st
 	var details []RegistrationDetail
 	for rows.Next() {
 		var detail RegistrationDetail
-		var ticket Ticke
+		var ticket Ticket
 		var ticketID string
 		err := rows.Scan(
 			&detail.RegistrationID, &detail.EventID, &detail.EmployeeID, &detail.Status, &detail.IdempotencyKey, &detail.CancelKey, &detail.CancelledAt, &detail.CancelReason, &detail.FamilyCount, &detail.CreatedAt,
@@ -43,7 +43,7 @@ func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID st
 		}
 		if ticketID != "" {
 			ticket.TicketID = ticketID
-			detail.Ticket = &ticke
+			detail.Ticket = &ticket
 		}
 		details = append(details, detail)
 	}
@@ -113,7 +113,7 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	reg.Status = RegistrationCancelled
 	reg.CancelKey = cancelID
 	reg.CancelReason = req.Reason
-	reg.CancelledAt = cancelledA
+	reg.CancelledAt = cancelledAt
 
 	if wasConfirmed {
 		if err := s.createBookingBanTx(ctx, tx, actor, eventID, reg.EmployeeID, registrationID, req.Reason); err != nil {
