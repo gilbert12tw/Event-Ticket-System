@@ -44,6 +44,7 @@ type RegistrationService interface {
 	CancelMyRegistration(ctx context.Context, actor ticketing.Actor, registrationID string, req ticketing.CancelRegistrationRequest) (ticketing.BookingResponse, error)
 	PromoteWaitlist(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.PromoteWaitlistResponse, error)
 	RunLottery(ctx context.Context, actor ticketing.Actor, eventID string, req ticketing.LotteryRunRequest) (ticketing.LotteryRun, error)
+	LiftBookingBan(ctx context.Context, actor ticketing.Actor, eventID, employeeID string) error
 }
 
 type TicketService interface {
