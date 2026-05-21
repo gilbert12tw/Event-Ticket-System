@@ -143,6 +143,19 @@ var SchemaStatements = []string{
 		revoked_reason TEXT NOT NULL DEFAULT '',
 		issued_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
+	`CREATE TABLE IF NOT EXISTS booking_idempotency_results (
+		idempotency_key TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL,
+		employee_id TEXT NOT NULL,
+		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
+		registration_id TEXT REFERENCES registrations(registration_id) ON DELETE CASCADE,
+		registration_status TEXT NOT NULL DEFAULT '' CHECK (registration_status IN ('', 'confirmed', 'waitlisted', 'cancelled')),
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
+		remaining_capacity INTEGER NOT NULL DEFAULT 0 CHECK (remaining_capacity >= 0),
+		message TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		completed_at TIMESTAMPTZ
+	)`,
 	`CREATE TABLE IF NOT EXISTS eligibility_impact_reviews (
 		review_id TEXT PRIMARY KEY,
 		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
@@ -331,6 +344,20 @@ var SchemaStatements = []string{
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_family_count_check`,
 	`ALTER TABLE registrations ADD CONSTRAINT registrations_family_count_check CHECK (family_count BETWEEN 0 AND 10)`,
+	`CREATE TABLE IF NOT EXISTS booking_idempotency_results (
+		idempotency_key TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL,
+		employee_id TEXT NOT NULL,
+		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
+		registration_id TEXT REFERENCES registrations(registration_id) ON DELETE CASCADE,
+		registration_status TEXT NOT NULL DEFAULT '' CHECK (registration_status IN ('', 'confirmed', 'waitlisted', 'cancelled')),
+		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
+		remaining_capacity INTEGER NOT NULL DEFAULT 0 CHECK (remaining_capacity >= 0),
+		message TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		completed_at TIMESTAMPTZ
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_booking_idempotency_results_registration ON booking_idempotency_results(registration_id)`,
 	`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_status_check`,
 	`ALTER TABLE tickets ADD CONSTRAINT tickets_status_check CHECK (status IN ('active', 'redeemed', 'revoked', 'expired'))`,
 	`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sequence_number INTEGER NOT NULL DEFAULT 1`,

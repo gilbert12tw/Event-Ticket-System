@@ -87,6 +87,18 @@ func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, e
 	return reg, ticket, true, nil
 }
 
+func (s *Service) findRegistrationByIDTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {
+	var reg Registration
+	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
+			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
+		FROM registrations WHERE registration_id = $1`, registrationID).
+		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Registration{}, notFound("registration not found")
+	}
+	return reg, err
+}
+
 func (s *Service) lockRegistrationTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {
 	var reg Registration
 	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
