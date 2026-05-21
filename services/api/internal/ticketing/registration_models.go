@@ -45,3 +45,14 @@ type BookingResponse struct {
 	Message           string       `json:"message"`
 	Duplicate         bool         `json:"duplicate,omitempty"`
 }
+
+type BookingBan struct {
+	BanID          string     `json:"ban_id"`
+	EventID        string     `json:"event_id"`
+	EmployeeID     string     `json:"employee_id"`
+	RegistrationID string     `json:"registration_id"`
+	Reason         string     `json:"reason"`
+	BannedAt       time.Time  `json:"banned_at"`
+	LiftedAt       *time.Time `json:"lifted_at,omitempty"`
+	LiftedBy       string     `json:"lifted_by,omitempty"`
+}
