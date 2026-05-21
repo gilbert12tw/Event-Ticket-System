@@ -336,9 +336,9 @@ func TestReportingProjectionCheckConstraintsRejectNegativeCounts(t *testing.T) {
 	require.NoError(t, Migrate(ctx, pool))
 
 	for _, tc := range []struct {
-		name    string
-		col     string
-		val     int
+		name string
+		col  string
+		val  int
 	}{
 		{"negative confirmed_count", "confirmed_count", -1},
 		{"negative cancelled_count", "cancelled_count", -1},
