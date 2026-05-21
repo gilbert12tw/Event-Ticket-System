@@ -62,6 +62,18 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"ALTER TABLE events ADD CONSTRAINT events_capacity_rules_check",
 		"family_count INTEGER NOT NULL DEFAULT 0",
 		"registrations_family_count_check",
+		// PH2-41: reporting projection tables
+		"CREATE TABLE IF NOT EXISTS reporting_event_summary",
+		"department_breakdown JSONB",
+		"last_event_offset    BIGINT",
+		"reporting_event_summary_confirmed_count_check",
+		"reporting_event_summary_cancelled_count_check",
+		"reporting_event_summary_waitlist_count_check",
+		"reporting_event_summary_total_capacity_check",
+		"idx_reporting_event_summary_updated_at",
+		"CREATE TABLE IF NOT EXISTS reporting_projection_offsets",
+		"last_processed_outbox_id BIGINT",
+		"INSERT INTO reporting_projection_offsets",
 	}
 
 	for _, fragment := range required {
@@ -100,6 +112,9 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 		"checkin_rejections",
 		"offline_checkin_batches",
 		"report_exports",
+		// PH2-41
+		"reporting_event_summary",
+		"reporting_projection_offsets",
 	}
 	for _, table := range requiredTables {
 		var exists bool
@@ -226,6 +241,8 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 
 func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS
+		reporting_projection_offsets,
+		reporting_event_summary,
 		report_exports,
 		offline_checkin_scans,
 		offline_checkin_batches,
@@ -250,6 +267,130 @@ func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		employees
 		CASCADE`)
 	return err
+}
+
+// PH2-41 schema tests -------------------------------------------------------
+
+// TestReportingProjectionTablesHaveNoPIIColumns asserts that
+// reporting_event_summary does not contain any column that could identify an
+// individual employee.  If this test fails, a privacy violation has been
+// introduced in the schema.
+func TestReportingProjectionTablesHaveNoPIIColumns(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	require.NoError(t, Migrate(ctx, pool))
+
+	var cols []string
+	rows, err := pool.Query(ctx,
+		`SELECT column_name FROM information_schema.columns
+		 WHERE table_name = 'reporting_event_summary'
+		   AND table_schema = current_schema()`)
+	require.NoError(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		require.NoError(t, rows.Scan(&col))
+		cols = append(cols, col)
+	}
+	require.NoError(t, rows.Err())
+
+	prohibited := []string{
+		"employee_id",
+		"employee_name",
+		"full_name",
+		"email",
+		"token",
+		"signed_token",
+		"qr_payload",
+		"provider_token",
+	}
+	for _, banned := range prohibited {
+		assert.NotContains(t, cols, banned,
+			"reporting_event_summary must never contain column %q (PII violation)", banned)
+	}
+}
+
+// TestReportingProjectionCheckConstraintsRejectNegativeCounts asserts that
+// the CHECK constraints on reporting_event_summary prevent negative counts.
+func TestReportingProjectionCheckConstraintsRejectNegativeCounts(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	require.NoError(t, Migrate(ctx, pool))
+
+	for _, tc := range []struct {
+		name    string
+		col     string
+		val     int
+	}{
+		{"negative confirmed_count", "confirmed_count", -1},
+		{"negative cancelled_count", "cancelled_count", -1},
+		{"negative waitlist_count", "waitlist_count", -1},
+		{"negative total_capacity", "total_capacity", -1},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := pool.Exec(ctx,
+				`INSERT INTO reporting_event_summary
+					(event_id, `+tc.col+`)
+				 VALUES ('evt_neg_test', $1)`, tc.val)
+			assert.Error(t, err,
+				"expected CHECK constraint to reject %s = %d", tc.col, tc.val)
+		})
+	}
+}
+
+// TestReportingProjectionOffsetsSeedRowExists asserts that the migration seeds
+// exactly one row in reporting_projection_offsets for the 'event_summary'
+// projection with an initial offset of 0.
+func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	require.NoError(t, Migrate(ctx, pool))
+
+	var name string
+	var offset int64
+	err := pool.QueryRow(ctx,
+		`SELECT projection_name, last_processed_outbox_id
+		   FROM reporting_projection_offsets
+		  WHERE projection_name = 'event_summary'`).Scan(&name, &offset)
+	require.NoError(t, err, "seed row for 'event_summary' must exist after migration")
+	assert.Equal(t, "event_summary", name)
+	assert.Equal(t, int64(0), offset)
+
+	// Running Migrate a second time must not create a duplicate row.
+	require.NoError(t, Migrate(ctx, pool))
+	var count int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM reporting_projection_offsets
+		  WHERE projection_name = 'event_summary'`).Scan(&count))
+	assert.Equal(t, 1, count, "ON CONFLICT DO NOTHING must prevent duplicate seed rows")
 }
 
 func newMigrationTestPool(t *testing.T, ctx context.Context, databaseURL string) (*pgxpool.Pool, func()) {
