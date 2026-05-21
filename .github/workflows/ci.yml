@@ -9,9 +9,12 @@ on:
       - ".dockerignore"
       - ".npmrc"
       - ".prettierignore"
+      - "AGENTS.md"
       - "apps/web/**"
+      - "docs/ARCHITECTURE.md"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
+      - "docs/specs/**"
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
@@ -32,9 +35,12 @@ on:
       - ".dockerignore"
       - ".npmrc"
       - ".prettierignore"
+      - "AGENTS.md"
       - "apps/web/**"
+      - "docs/ARCHITECTURE.md"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
+      - "docs/specs/**"
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
@@ -169,7 +175,7 @@ jobs:
               fi
             fi
           fi
-          if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$)' /tmp/changed-files; then
+          if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$|docs/specs/|docs/ARCHITECTURE\.md$|AGENTS\.md$)' /tmp/changed-files; then
             backend=true
           fi
           if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' /tmp/changed-files; then

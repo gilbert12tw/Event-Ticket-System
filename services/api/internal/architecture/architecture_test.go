@@ -6,8 +6,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"event-ticket-system/internal/eventcontract"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,6 +180,14 @@ func TestPhase2DocsDoNotClaimDeferredInfraIsRequired(t *testing.T) {
 		"phase 2 ships cross-region ha",
 		"cross-region ha is complete in phase 2",
 		"cross-region high availability is complete in phase 2",
+		"phase 2 completed kafka",
+		"phase 2 completed kubernetes",
+		"phase 2 completed service mesh",
+		"phase 2 completed cross-region ha",
+		"phase 2 completed microservices",
+		"kafka completed in phase 2",
+		"kubernetes completed in phase 2",
+		"service mesh completed in phase 2",
 	}
 
 	var offenders []string
@@ -204,6 +215,82 @@ func TestPhase2DocsDoNotClaimDeferredInfraIsRequired(t *testing.T) {
 		require.NoError(t, err)
 	}
 	assert.Empty(t, offenders, "Phase 2 docs claim deferred infrastructure is required: %s", strings.Join(offenders, "; "))
+}
+
+func TestEventTypeRegistryMatchesNormativeDoc(t *testing.T) {
+	root := repoRoot(t)
+	docPath := filepath.Join(root, "docs", "specs", "phase2-ws4-async-notification.md")
+	data, err := os.ReadFile(docPath)
+	require.NoError(t, err)
+
+	docTypes := extractEventRegistryFromDoc(t, string(data))
+	require.NotEmpty(t, docTypes, "WS4 §6 event registry block not found in %s", docPath)
+	assert.Equalf(t, eventcontract.Registry, docTypes,
+		"event type registry drift: docs/specs/phase2-ws4-async-notification.md §6 must match eventcontract.Registry exactly (order-sensitive)")
+
+	allowed := map[string]struct{}{}
+	for _, et := range eventcontract.Registry {
+		allowed[et] = struct{}{}
+	}
+	literalRe := regexp.MustCompile(`"[a-z_]+(?:\.[a-z_]+){1,3}\.v[0-9]+"`)
+	var offenders []string
+	err = filepath.WalkDir(filepath.Join(root, "services", "api", "internal"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		if strings.HasSuffix(filepath.ToSlash(path), "/eventcontract/registry.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, match := range literalRe.FindAll(body, -1) {
+			literal := strings.Trim(string(match), `"`)
+			if _, ok := allowed[literal]; !ok {
+				rel, _ := filepath.Rel(root, path)
+				offenders = append(offenders, rel+": "+literal)
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Empty(t, offenders, "Go code references event types not in eventcontract.Registry: %s", strings.Join(offenders, "; "))
+}
+
+func extractEventRegistryFromDoc(t *testing.T, content string) []string {
+	t.Helper()
+	lines := strings.Split(content, "\n")
+	marker := "Event type registry (normative"
+	var inBlock bool
+	var sawMarker bool
+	var types []string
+	for _, line := range lines {
+		if !sawMarker {
+			if strings.Contains(line, marker) {
+				sawMarker = true
+			}
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if !inBlock {
+			if strings.HasPrefix(trimmed, "```") {
+				inBlock = true
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") {
+			break
+		}
+		if trimmed == "" {
+			continue
+		}
+		types = append(types, trimmed)
+	}
+	return types
 }
 
 func repoRoot(t *testing.T) string {
