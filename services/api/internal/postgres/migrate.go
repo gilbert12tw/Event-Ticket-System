@@ -412,7 +412,7 @@ var SchemaStatements = []string{
 		updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
 	`INSERT INTO reporting_projection_offsets (projection_name, last_processed_outbox_id)
-		VALUES ('event_summary', 0)
+		VALUES ('event_summary', '')
 		ON CONFLICT DO NOTHING`,
 }
 
