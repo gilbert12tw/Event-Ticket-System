@@ -39,13 +39,14 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	}
 	defer rollback(ctx, tx)
 
-	if existing, found, err := s.findRegistrationByIdempotencyKey(ctx, tx, req.IdempotencyKey, eventID, employeeID); err != nil {
+	if snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount); err != nil {
 		return BookingResponse{}, err
 	} else if found {
-		if existing.Registration.FamilyCount != req.FamilyCount {
-			return BookingResponse{}, conflict("idempotency key belongs to a different booking request")
+		response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+		if err != nil {
+			return BookingResponse{}, err
 		}
-		return existing, tx.Commit(ctx)
+		return response, tx.Commit(ctx)
 	}
 
 	event, rule, err := s.lockEventWithRule(ctx, tx, eventID)
@@ -101,7 +102,11 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		if err != nil {
 			return BookingResponse{}, err
 		}
-		return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}, tx.Commit(ctx)
+		response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}
+		if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, response); err != nil {
+			return BookingResponse{}, err
+		}
+		return response, tx.Commit(ctx)
 	}
 
 	status := RegistrationConfirmed
@@ -134,6 +139,12 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 				return BookingResponse{}, findErr
 			}
 			if found {
+				if existing.Registration.FamilyCount != req.FamilyCount {
+					return BookingResponse{}, conflict("idempotency key belongs to a different booking request")
+				}
+				if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, existing); err != nil {
+					return BookingResponse{}, err
+				}
 				return existing, tx.Commit(ctx)
 			}
 		}
@@ -167,14 +178,21 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err := insertOutbox(ctx, tx, action, regID, bookingNotificationPayload(reg, event, actor)); err != nil {
 		return BookingResponse{}, err
 	}
+	response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remainingForNewBooking(event, status, capacity, confirmedCount), Message: bookingMessage(status)}
+	if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, response); err != nil {
+		return BookingResponse{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return BookingResponse{}, err
 	}
 
-	remaining := 0
-	if event.CapacityType == CapacityTypeLimited && status == RegistrationConfirmed {
-		remaining = max(capacity-confirmedCount-1, 0)
-	}
 	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", action, "status", status, "event_id", eventID, "actor_role", actor.Role)
-	return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(status)}, nil
+	return response, nil
+}
+
+func remainingForNewBooking(event Event, status string, capacity int, confirmedCount int) int {
+	if event.CapacityType == CapacityTypeLimited && status == RegistrationConfirmed {
+		return max(capacity-confirmedCount-1, 0)
+	}
+	return 0
 }
