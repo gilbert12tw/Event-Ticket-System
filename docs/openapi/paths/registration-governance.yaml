@@ -119,3 +119,34 @@
         "$ref": "../components/responses.yaml#/NotFound"
       "409":
         "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}/bans/{target_employee_id}":
+  delete:
+    tags:
+      - Admin
+    operationId: liftBookingBan
+    x-required-roles:
+      - activity_admin
+      - system_admin
+    summary: Lift a booking ban.
+    description: Lifts an active booking ban for a specific employee on a specific event.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+      - "$ref": "../components/parameters.yaml#/TargetEmployeeId"
+    responses:
+      "200":
+        description: Booking ban successfully lifted.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                success:
+                  type: boolean
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"

@@ -25,7 +25,7 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEn
 	mux.HandleFunc("POST /api/v1/events/{event_id}/bookings/{registration_id}/cancel", protected(handleCancelRegistration(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/registrations/{registration_id}/cancel", protected(handleCancelRegistration(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/waitlist/promote", protected(handlePromoteWaitlist(service)))
-	mux.HandleFunc("DELETE /api/v1/admin/events/{event_id}/bans/{employee_id}", protected(handleLiftBookingBan(service)))
+	mux.HandleFunc("DELETE /api/v1/admin/events/{event_id}/bans/{target_employee_id}", protected(handleLiftBookingBan(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/lottery-runs", protected(handleRunLottery(service)))
 	mux.HandleFunc("GET /api/v1/me/tickets", protected(handleListTickets(service)))
 	mux.HandleFunc("GET /api/v1/tickets/{ticket_id}", protected(handleGetTicket(service)))
