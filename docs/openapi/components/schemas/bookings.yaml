@@ -11,21 +11,16 @@ CancelRegistrationResponse:
     - type: object
       properties:
         data:
-          "$ref": "#/CancelledRegistration"
+          "$ref": "#/BookingResult"
 RegistrationListResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
     - type: object
       properties:
         data:
-          type: object
-          required:
-            - registrations
-          properties:
-            registrations:
-              type: array
-              items:
-                "$ref": "#/RegistrationDetail"
+          type: array
+          items:
+            "$ref": "#/RegistrationDetail"
 PromoteWaitlistResponseEnvelope:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -58,12 +53,35 @@ CreateBookingRequest:
 BookingResult:
   type: object
   required:
+    - registration
+    - remaining_capacity
+    - message
+  properties:
+    registration:
+      "$ref": "#/Registration"
+    ticket:
+      oneOf:
+        - "$ref": "./tickets.yaml#/RedactedTicket"
+        - type: "null"
+    remaining_capacity:
+      type: integer
+      minimum: 0
+    message:
+      type: string
+    duplicate:
+      type: boolean
+      default: false
+      description: True when the request resolved to an existing booking instead of creating a new registration.
+Registration:
+  type: object
+  required:
     - registration_id
     - event_id
+    - employee_id
     - status
-    - capacity_type
+    - idempotency_key
     - family_count
-    - warnings
+    - created_at
   properties:
     registration_id:
       type: string
@@ -71,31 +89,25 @@ BookingResult:
     event_id:
       type: string
       format: uuid
+    employee_id:
+      type: string
     status:
       "$ref": "./common.yaml#/BookingStatus"
-    capacity_type:
-      "$ref": "./common.yaml#/CapacityType"
-    ticket_id:
-      type:
-        - string
-        - "null"
-      format: uuid
-    duplicate:
-      type: boolean
-      default: false
-      description: True when the request resolved to an existing booking instead of creating a new registration.
+    idempotency_key:
+      type: string
+    cancel_idempotency_key:
+      type: string
+    cancelled_at:
+      type: string
+      format: date-time
+    cancel_reason:
+      type: string
     family_count:
       type: integer
       minimum: 0
-    cancellation_deadline:
-      type:
-        - string
-        - "null"
+    created_at:
+      type: string
       format: date-time
-    warnings:
-      type: array
-      items:
-        "$ref": "./common.yaml#/Warning"
 CancelRegistrationRequest:
   type: object
   required:
@@ -106,7 +118,7 @@ CancelRegistrationRequest:
       type: string
       minLength: 8
       maxLength: 128
-    cancel_reason:
+    reason:
       type: string
       maxLength: 500
 AdminCancelRegistrationRequest:
@@ -149,9 +161,12 @@ RegistrationDetail:
   required:
     - registration_id
     - event_id
+    - employee_id
     - status
+    - idempotency_key
     - family_count
     - created_at
+    - employee_name
   properties:
     registration_id:
       type: string
@@ -159,15 +174,14 @@ RegistrationDetail:
     event_id:
       type: string
       format: uuid
-    employee_ref:
-      type:
-        - string
-        - "null"
-      description: Redacted employee reference for admin governance.
-    employee_display_name:
-      type:
-        - string
-        - "null"
+    employee_id:
+      type: string
+    idempotency_key:
+      type: string
+    cancel_idempotency_key:
+      type: string
+    employee_name:
+      type: string
     status:
       "$ref": "./common.yaml#/BookingStatus"
     family_count:
@@ -184,7 +198,7 @@ RegistrationDetail:
         - "null"
     ticket:
       oneOf:
-        - "$ref": "./tickets.yaml#/RedactedTicket"
+        - "$ref": "./tickets.yaml#/Ticket"
         - type: "null"
     created_at:
       type: string

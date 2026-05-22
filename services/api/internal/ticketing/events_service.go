@@ -94,7 +94,7 @@ func (s *Service) CreateEvent(ctx context.Context, actor Actor, req CreateEventR
 		Capacity:          capacity,
 		AllowsFamily:      allowsFamily,
 		Status:            req.Status,
-		AllocationMode:    "fcfs",
+		AllocationMode:    AllocationModeFCFS,
 		Category:          strings.TrimSpace(req.Category),
 		Tags:              normalizeTags(req.Tags),
 		EntryMethod:       strings.TrimSpace(req.EntryMethod),

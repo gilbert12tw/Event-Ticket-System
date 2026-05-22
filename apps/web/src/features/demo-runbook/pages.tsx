@@ -135,13 +135,17 @@ export function DemoRunbookPage({
 
       startStep("checkin", "首次核銷");
       await runAs("staff-1");
-      const accepted = await checkIn(activeTicket.signed_token, "gate-1");
+      const accepted = await checkIn(
+        activeTicket.signed_token,
+        "gate-1",
+        event.event_id,
+      );
       mark("checkin", "done", `驗票成功：${formatDate(accepted.scanned_at)}`);
 
       startStep("duplicate", "重複掃描");
       await runAs("staff-1");
       try {
-        await checkIn(activeTicket.signed_token, "gate-1");
+        await checkIn(activeTicket.signed_token, "gate-1", event.event_id);
         mark("duplicate", "fail", "預期的重複掃描拒絕沒有發生。");
       } catch (error) {
         mark("duplicate", "done", errorMessage(error));

@@ -35,14 +35,14 @@ type UpdateEligibilityRequest struct {
 }
 
 type EligibilityImpactReview struct {
-	ReviewID   string    `json:"review_id"`
-	EventID    string    `json:"event_id"`
-	EmployeeID string    `json:"employee_id"`
-	TicketID   string    `json:"ticket_id"`
-	Status     string    `json:"status"`
-	Reason     string    `json:"reason"`
-	CreatedAt  time.Time `json:"created_at"`
-	ResolvedAt time.Time `json:"resolved_at,omitempty"`
+	ReviewID    string    `json:"review_id"`
+	EventID     string    `json:"event_id"`
+	EmployeeRef string    `json:"employee_ref"`
+	TicketID    string    `json:"ticket_id"`
+	Status      string    `json:"status"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"created_at"`
+	ResolvedAt  time.Time `json:"resolved_at,omitempty"`
 }
 
 type ResolveImpactReviewRequest struct {

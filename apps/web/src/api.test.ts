@@ -3,6 +3,7 @@ import {
   ApiError,
   auditLogs,
   bookEvent,
+  checkIn,
   checkEligibility,
   createReportExport,
   getEvent,
@@ -314,6 +315,22 @@ describe("api client", () => {
       /^\[票券證據已遮蔽 #[0-9a-f]{8}\]$/,
     );
     expect(responseBody.data.nested.token).toBe("[工作階段已遮蔽]");
+  });
+
+  it("sends event context for online check-in", async () => {
+    mockSuccess({ ticket_id: "tkt_1", status: "accepted" });
+
+    await checkIn("signed-token", "gate-1", "evt_1", "photo mismatch");
+
+    expect(fetchCall(0)).toMatchObject({
+      path: "/api/v1/checkins",
+      body: {
+        signed_token: "signed-token",
+        device_id: "gate-1",
+        event_id: "evt_1",
+        holder_mismatch_reason: "photo mismatch",
+      },
+    });
   });
 
   it("calls production eligibility, lottery, ticket, report, and audit endpoints", async () => {

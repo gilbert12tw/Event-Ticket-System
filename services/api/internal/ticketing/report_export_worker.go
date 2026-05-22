@@ -3,6 +3,7 @@ package ticketing
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -42,13 +43,18 @@ func (s *Service) processReportExportOutbox(ctx context.Context, claim outboxCla
 
 func (s *Service) loadReportExport(ctx context.Context, exportID string) (ReportExport, error) {
 	var export ReportExport
+	var completedAt sql.NullTime
 	err := s.db.QueryRow(ctx, `SELECT export_id, requested_by, report_type, status, object_key, created_at,
-			COALESCE(completed_at, '0001-01-01 00:00:00+00'::timestamptz)
+			completed_at
 		FROM report_exports WHERE export_id = $1`, exportID).
-		Scan(&export.ExportID, &export.RequestedBy, &export.ReportType, &export.Status, &export.ObjectKey, &export.CreatedAt, &export.CompletedAt)
+		Scan(&export.ExportID, &export.RequestedBy, &export.ReportType, &export.Status, &export.ObjectKey, &export.CreatedAt, &completedAt)
 	if err != nil {
 		return ReportExport{}, err
 	}
+	if completedAt.Valid {
+		export.CompletedAt = &completedAt.Time
+	}
+	export.Format = ReportExportFormatCSV
 	return export, nil
 }
 
@@ -114,8 +120,14 @@ func (s *Service) markReportExportReady(ctx context.Context, exportID string) er
 }
 
 func (s *Service) failReportExportOutbox(ctx context.Context, claim outboxClaim, maxAttempts int, failure error) error {
-	if _, err := s.db.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = now() WHERE export_id = $2`, ReportExportStatusFailed, claim.aggregateID); err != nil {
+	if claim.attempts >= maxAttempts {
+		if _, err := s.db.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = now() WHERE export_id = $2`, ReportExportStatusFailed, claim.aggregateID); err != nil {
+			return err
+		}
+		return s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, failure.Error())
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = NULL WHERE export_id = $2`, ReportExportStatusPending, claim.aggregateID); err != nil {
 		return err
 	}
-	return s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, failure)
+	return s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, failure.Error())
 }

@@ -32,7 +32,7 @@ DeliveryId:
   required: true
   schema:
     type: string
-    format: uuid
+    pattern: "^del_[a-f0-9]{32}$"
 ExportId:
   name: export_id
   in: path

@@ -11,13 +11,13 @@ type NotificationPreferences struct {
 }
 
 type NotificationDelivery struct {
-	DeliveryID string    `json:"delivery_id"`
-	OutboxID   string    `json:"outbox_id"`
-	EmployeeID string    `json:"employee_id"`
-	Channel    string    `json:"channel"`
-	Status     string    `json:"status"`
-	Attempts   int       `json:"attempts"`
-	LastError  string    `json:"last_error"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	DeliveryID  string    `json:"delivery_id"`
+	OutboxID    string    `json:"outbox_id"`
+	EmployeeRef string    `json:"employee_ref,omitempty"`
+	Channel     string    `json:"channel"`
+	Status      string    `json:"status"`
+	Attempts    int       `json:"attempts"`
+	LastError   string    `json:"last_error"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

@@ -34,6 +34,9 @@ services:
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
       WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-25}
+      NO_SHOW_THRESHOLD: ${NO_SHOW_THRESHOLD:-1}
+      NO_SHOW_COOLDOWN_DAYS: ${NO_SHOW_COOLDOWN_DAYS:-90}
+      NO_SHOW_GRACE_HOURS: ${NO_SHOW_GRACE_HOURS:-24}
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:
@@ -76,6 +79,9 @@ services:
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
       WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-25}
+      NO_SHOW_THRESHOLD: ${NO_SHOW_THRESHOLD:-1}
+      NO_SHOW_COOLDOWN_DAYS: ${NO_SHOW_COOLDOWN_DAYS:-90}
+      NO_SHOW_GRACE_HOURS: ${NO_SHOW_GRACE_HOURS:-24}
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +119,9 @@ services:
       SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
       PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
+      NO_SHOW_THRESHOLD: ${NO_SHOW_THRESHOLD:-1}
+      NO_SHOW_COOLDOWN_DAYS: ${NO_SHOW_COOLDOWN_DAYS:-90}
+      NO_SHOW_GRACE_HOURS: ${NO_SHOW_GRACE_HOURS:-24}
     depends_on:
       postgres:
         condition: service_healthy

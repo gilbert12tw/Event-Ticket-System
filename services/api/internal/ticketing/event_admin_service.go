@@ -123,6 +123,13 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 		if *event.Capacity < confirmed {
 			return EventSummary{}, conflict("capacity cannot be lower than confirmed registrations")
 		}
+		familyRegistrations, err := s.activeFamilyRegistrationCountTx(ctx, tx, eventID)
+		if err != nil {
+			return EventSummary{}, err
+		}
+		if familyRegistrations > 0 {
+			return EventSummary{}, conflict("limited events cannot contain family registrations")
+		}
 	}
 	if req.Category != nil {
 		event.Category = strings.TrimSpace(*req.Category)

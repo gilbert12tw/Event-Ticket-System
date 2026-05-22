@@ -191,6 +191,7 @@ function ticketFixture(overrides: Partial<Ticket> = {}): Ticket {
     event_location: "Taipei HQ",
     event_starts_at: "2026-05-19T10:00:00Z",
     employee_name: "Ariel Chen",
+    non_transferable: true,
     ...overrides,
   };
 }

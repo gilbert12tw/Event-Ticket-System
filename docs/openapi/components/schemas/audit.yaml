@@ -4,18 +4,9 @@ AuditLogListResponse:
     - type: object
       properties:
         data:
-          type: object
-          required:
-            - entries
-          properties:
-            entries:
-              type: array
-              items:
-                "$ref": "#/AuditLogEntry"
-            next_cursor:
-              type:
-                - string
-                - "null"
+          type: array
+          items:
+            "$ref": "#/AuditLogEntry"
 AuditLogEntry:
   type: object
   required:
@@ -24,6 +15,7 @@ AuditLogEntry:
     - entity_type
     - entity_id
     - role
+    - metadata
     - created_at
   properties:
     audit_id:
@@ -45,6 +37,6 @@ AuditLogEntry:
     created_at:
       type: string
       format: date-time
-    redacted_metadata:
-      type: object
-      additionalProperties: true
+    metadata:
+      type: string
+      description: Redacted JSON metadata serialized as a string.

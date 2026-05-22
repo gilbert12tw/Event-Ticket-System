@@ -214,6 +214,12 @@ func (s *Service) confirmedCountTx(ctx context.Context, tx pgx.Tx, eventID strin
 	return count, err
 }
 
+func (s *Service) activeFamilyRegistrationCountTx(ctx context.Context, tx pgx.Tx, eventID string) (int, error) {
+	var count int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND status <> 'cancelled' AND family_count > 0`, eventID).Scan(&count)
+	return count, err
+}
+
 func (s *Service) remainingCapacityTx(ctx context.Context, tx pgx.Tx, eventID string, capacity int) (int, error) {
 	confirmed, err := s.confirmedCountTx(ctx, tx, eventID)
 	if err != nil {

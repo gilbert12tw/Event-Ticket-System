@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -21,15 +22,18 @@ func TestCreateReportExportStartsPendingWithOutboxAndAudit(t *testing.T) {
 	hr := Actor{ID: "hr-1", Role: RoleHRAdmin}
 	got, err := service.CreateReportExport(ctx, hr, ReportExportRequest{ReportType: "participation"})
 	require.NoError(t, err)
+	assert.Equal(t, ReportExportTypeParticipation, got.ReportType)
+	assert.Equal(t, ReportExportFormatCSV, got.Format)
 	assert.Equal(t, ReportExportStatusPending, got.Status)
 	assert.NotEmpty(t, got.ObjectKey, "report export object key must be set")
-	assert.True(t, got.CompletedAt.IsZero(), "pending report export should not be completed yet")
+	assert.Nil(t, got.CompletedAt, "pending report export should not be completed yet")
 
 	var status string
 	var completedAt sql.NullTime
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT status, completed_at FROM report_exports WHERE export_id = $1`, got.ExportID).Scan(&status, &completedAt))
 	assert.Equal(t, ReportExportStatusPending, status)
 	assert.False(t, completedAt.Valid, "stored report export completed_at should be null while pending")
+	assertPendingReportExportOmitsCompletedAt(t, got)
 
 	var outboxCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'report.export.requested' AND aggregate_id = $1`, got.ExportID).Scan(&outboxCount))
@@ -38,6 +42,33 @@ func TestCreateReportExportStartsPendingWithOutboxAndAudit(t *testing.T) {
 	var auditCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'report.export.requested' AND entity_id = $1`, got.ExportID).Scan(&auditCount))
 	assert.Equal(t, 1, auditCount)
+}
+
+func TestCreateReportExportRejectsUnsupportedContracts(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	hr := Actor{ID: "hr-1", Role: RoleHRAdmin}
+
+	tests := []struct {
+		name string
+		req  ReportExportRequest
+	}{
+		{name: "missing report type"},
+		{name: "unsupported report type", req: ReportExportRequest{ReportType: "tickets"}},
+		{name: "unsupported format", req: ReportExportRequest{ReportType: "participation", Format: "json"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.CreateReportExport(ctx, hr, tt.req)
+
+			require.Error(t, err)
+			assert.Equal(t, 400, ErrorStatus(err))
+		})
+	}
+	assertReportExportSideEffects(t, service, ctx, 0)
 }
 
 func TestGetReportExportRequiresHRAndReturnsPersistedStatus(t *testing.T) {
@@ -51,10 +82,33 @@ func TestGetReportExportRequiresHRAndReturnsPersistedStatus(t *testing.T) {
 	got, err := service.GetReportExport(ctx, hr, created.ExportID)
 	require.NoError(t, err)
 	assert.Equal(t, created.ExportID, got.ExportID)
+	assert.Equal(t, ReportExportFormatCSV, got.Format)
 	assert.Equal(t, ReportExportStatusPending, got.Status)
 	assert.NotEmpty(t, got.ObjectKey)
+	assert.Nil(t, got.CompletedAt)
+	assertPendingReportExportOmitsCompletedAt(t, got)
 	_, err = service.GetReportExport(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, created.ExportID)
 	require.Error(t, err, "activity admin should not read report export status")
+}
+
+func assertPendingReportExportOmitsCompletedAt(t *testing.T, export ReportExport) {
+	t.Helper()
+	payload, err := json.Marshal(export)
+	require.NoError(t, err)
+	assert.NotContains(t, string(payload), "completed_at")
+}
+
+func assertReportExportSideEffects(t *testing.T, service *Service, ctx context.Context, want int) {
+	t.Helper()
+	for _, query := range []string{
+		`SELECT count(*) FROM report_exports`,
+		`SELECT count(*) FROM outbox_events WHERE event_type = 'report.export.requested'`,
+		`SELECT count(*) FROM audit_logs WHERE action = 'report.export.requested'`,
+	} {
+		var got int
+		require.NoError(t, service.db.QueryRow(ctx, query).Scan(&got))
+		assert.Equal(t, want, got, "row count for %q", query)
+	}
 }
 
 func TestRunLotteryAllocatesDeterministicWinnersAndLeavesRemainingWaitlisted(t *testing.T) {
@@ -71,6 +125,7 @@ func TestRunLotteryAllocatesDeterministicWinnersAndLeavesRemainingWaitlisted(t *
 		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
+	setLotteryAllocationMode(t, service, ctx, event.EventID)
 
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lottery-book-1"})
 	require.NoError(t, err)
@@ -163,6 +218,7 @@ func TestRunLotteryReturnsExistingRunBySeed(t *testing.T) {
 		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
+	setLotteryAllocationMode(t, service, ctx, event.EventID)
 
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lottery-idem-book-1"})
 	require.NoError(t, err)
@@ -221,4 +277,10 @@ func lotteryExpectedWinners(seed string, registrationIDs []string, limit int) ma
 		expected[candidates[i].registrationID] = true
 	}
 	return expected
+}
+
+func setLotteryAllocationMode(t *testing.T, service *Service, ctx context.Context, eventID string) {
+	t.Helper()
+	_, err := service.db.Exec(ctx, `UPDATE events SET allocation_mode = $1 WHERE event_id = $2`, AllocationModeLottery, eventID)
+	require.NoError(t, err)
 }

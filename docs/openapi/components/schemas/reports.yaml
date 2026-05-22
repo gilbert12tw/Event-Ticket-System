@@ -4,7 +4,9 @@ ReportSummaryResponse:
     - type: object
       properties:
         data:
-          "$ref": "#/ReportSummary"
+          type: array
+          items:
+            "$ref": "#/ReportRow"
 ReportExportResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -133,6 +135,7 @@ ReportExport:
   type: object
   required:
     - export_id
+    - requested_by
     - report_type
     - format
     - status
@@ -141,6 +144,8 @@ ReportExport:
     export_id:
       type: string
       format: uuid
+    requested_by:
+      type: string
     report_type:
       type: string
       enum:

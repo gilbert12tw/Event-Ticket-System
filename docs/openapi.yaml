@@ -143,6 +143,10 @@ components:
       "$ref": "./openapi/components/schemas/common.yaml#/AuthMeResponse"
     AuthBootstrapResponse:
       "$ref": "./openapi/components/schemas/common.yaml#/AuthBootstrapResponse"
+    AuthBootstrap:
+      "$ref": "./openapi/components/schemas/common.yaml#/AuthBootstrap"
+    MockProfile:
+      "$ref": "./openapi/components/schemas/common.yaml#/MockProfile"
     EventListResponse:
       "$ref": "./openapi/components/schemas/events.yaml#/EventListResponse"
     EventDetailResponse:
@@ -157,6 +161,8 @@ components:
       "$ref": "./openapi/components/schemas/bookings.yaml#/CancelRegistrationResponse"
     CheckInResponse:
       "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInResponse"
+    CheckInErrorResponse:
+      "$ref": "./openapi/components/schemas/checkins.yaml#/CheckInErrorResponse"
     ReportSummaryResponse:
       "$ref": "./openapi/components/schemas/reports.yaml#/ReportSummaryResponse"
     AuditLogListResponse:

@@ -324,7 +324,7 @@ export function NotificationDeliveryPage() {
               <dl className="meta-list vertical">
                 <div>
                   <dt>員工</dt>
-                  <dd>{row.employee_id || "系統"}</dd>
+                  <dd>{row.employee_ref || "系統"}</dd>
                 </div>
                 <div>
                   <dt>通道</dt>
@@ -347,17 +347,15 @@ export function NotificationDeliveryPage() {
                 type="button"
                 disabled={
                   loading ||
-                  !canRetryDelivery(row.status) ||
+                  !canRetryDelivery(row) ||
                   retrying === row.delivery_id
                 }
                 onClick={() => setPendingRetry(row)}
               >
                 {retryButtonLabel(row, retrying === row.delivery_id)}
               </Button>
-              {!canRetryDelivery(row.status) && (
-                <span className="table-muted">
-                  {retryDisabledReason(row.status)}
-                </span>
+              {!canRetryDelivery(row) && (
+                <span className="table-muted">{retryDisabledReason(row)}</span>
               )}
             </article>
           ))}
@@ -379,7 +377,7 @@ export function NotificationDeliveryPage() {
               <tr key={row.delivery_id}>
                 <td className="mono-cell">{row.delivery_id}</td>
                 <td className="mono-cell">{row.outbox_id}</td>
-                <td>{row.employee_id || "系統"}</td>
+                <td>{row.employee_ref || "系統"}</td>
                 <td>{channelLabel(row.channel)}</td>
                 <td>
                   <StatusBadge tone={deliveryStatusView(row.status).tone}>
@@ -397,16 +395,16 @@ export function NotificationDeliveryPage() {
                     type="button"
                     disabled={
                       loading ||
-                      !canRetryDelivery(row.status) ||
+                      !canRetryDelivery(row) ||
                       retrying === row.delivery_id
                     }
                     onClick={() => setPendingRetry(row)}
                   >
                     {retryButtonLabel(row, retrying === row.delivery_id)}
                   </Button>
-                  {!canRetryDelivery(row.status) && (
+                  {!canRetryDelivery(row) && (
                     <span className="table-muted">
-                      {retryDisabledReason(row.status)}
+                      {retryDisabledReason(row)}
                     </span>
                   )}
                 </td>

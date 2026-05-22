@@ -171,7 +171,7 @@ export function HrSyncSettingsPage() {
               >
                 <td className="mono-cell">{review.review_id}</td>
                 <td>{review.event_id}</td>
-                <td>{review.employee_id}</td>
+                <td>{review.employee_ref}</td>
                 <td>{review.ticket_id}</td>
                 <td>
                   <StatusBadge tone={reviewStatusView(review.status).tone}>
@@ -226,7 +226,7 @@ export function HrSyncSettingsPage() {
                 </div>
                 <div>
                   <dt>員工</dt>
-                  <dd>{selected.employee_id}</dd>
+                  <dd>{selected.employee_ref}</dd>
                 </div>
                 <div>
                   <dt>票券</dt>
@@ -271,7 +271,7 @@ export function HrSyncSettingsPage() {
                   <div className="helper-strip">
                     <StatusBadge tone="warn">將寫入稽核</StatusBadge>
                     <span>
-                      將關閉此資格影響：員工 {selected.employee_id} · 活動{" "}
+                      將關閉此資格影響：員工 {selected.employee_ref} · 活動{" "}
                       {selected.event_id} · 票券 {selected.ticket_id}
                     </span>
                   </div>

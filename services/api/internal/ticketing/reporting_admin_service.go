@@ -15,9 +15,9 @@ func (s *Service) CreateReportExport(ctx context.Context, actor Actor, req Repor
 	if err := requireRole(actor, RoleHRAdmin); err != nil {
 		return ReportExport{}, err
 	}
-	reportType := strings.TrimSpace(req.ReportType)
-	if reportType == "" {
-		reportType = "participation"
+	reportType, format, err := validateReportExportRequest(req)
+	if err != nil {
+		return ReportExport{}, err
 	}
 	exportID, err := newID("exp")
 	if err != nil {
@@ -52,7 +52,25 @@ func (s *Service) CreateReportExport(ctx context.Context, actor Actor, req Repor
 	if err := tx.Commit(ctx); err != nil {
 		return ReportExport{}, err
 	}
-	return ReportExport{ExportID: exportID, RequestedBy: actor.ID, ReportType: reportType, Status: ReportExportStatusPending, ObjectKey: objectKey, CreatedAt: now}, nil
+	return ReportExport{ExportID: exportID, RequestedBy: actor.ID, ReportType: reportType, Format: format, Status: ReportExportStatusPending, ObjectKey: objectKey, CreatedAt: now}, nil
+}
+
+func validateReportExportRequest(req ReportExportRequest) (string, string, error) {
+	reportType := strings.TrimSpace(req.ReportType)
+	if reportType == "" {
+		return "", "", badRequest("report_type is required")
+	}
+	if reportType != ReportExportTypeParticipation {
+		return "", "", badRequest("report_type must be participation")
+	}
+	format := strings.TrimSpace(req.Format)
+	if format == "" {
+		format = ReportExportFormatCSV
+	}
+	if format != ReportExportFormatCSV {
+		return "", "", badRequest("format must be csv")
+	}
+	return reportType, format, nil
 }
 
 func (s *Service) GetReportExport(ctx context.Context, actor Actor, exportID string) (ReportExport, error) {
@@ -105,6 +123,9 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 		return existing, tx.Commit(ctx)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
+		return LotteryRun{}, err
+	}
+	if err := validateLotteryEvent(event); err != nil {
 		return LotteryRun{}, err
 	}
 
@@ -181,6 +202,16 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 		return LotteryRun{}, err
 	}
 	return LotteryRun{RunID: runID, EventID: eventID, Seed: seed, Status: "completed", WinnerCount: winnerCount, CreatedBy: actor.ID, CreatedAt: now}, nil
+}
+
+func validateLotteryEvent(event Event) error {
+	if event.Status != EventStatusPublished {
+		return conflict("lottery can only run for published events")
+	}
+	if event.AllocationMode != AllocationModeLottery {
+		return conflict("lottery allocation is not enabled for this event")
+	}
+	return nil
 }
 
 func insertLotteryResultTx(ctx context.Context, tx pgx.Tx, runID string, eventID string, registrationID string, employeeID string, result string, ticketID string, drawOrder int) error {
