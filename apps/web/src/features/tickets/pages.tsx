@@ -308,7 +308,10 @@ export function TicketPanel({
   }
   const qrToken = ticket.qr_payload || ticket.signed_token || "";
   const readiness = ticketEntryReadinessView(ticket);
-  const canShowQr = readiness.kind === "entry-ready" && Boolean(qrToken);
+  const canShowQr =
+    Boolean(qrToken) &&
+    (readiness.kind === "entry-ready" || readiness.kind === "not-open");
+  const showEntryInstruction = readiness.kind === "entry-ready";
   const panelClassName = [
     "ticket-panel",
     compact ? "compact" : "",
@@ -339,12 +342,14 @@ export function TicketPanel({
         </div>
         {canShowQr && (
           <>
-            <div className="ticket-entry-instruction" role="note">
-              <StatusBadge tone="ok">入場提示</StatusBadge>
-              <span>
-                請在入口出示此 QR code，驗票員完成核銷後票券會更新為已核銷。
-              </span>
-            </div>
+            {showEntryInstruction && (
+              <div className="ticket-entry-instruction" role="note">
+                <StatusBadge tone="ok">入場提示</StatusBadge>
+                <span>
+                  請在入口出示此 QR code，驗票員完成核銷後票券會更新為已核銷。
+                </span>
+              </div>
+            )}
             <div className="qr-wrap">
               <TicketQrCode token={qrToken} />
             </div>

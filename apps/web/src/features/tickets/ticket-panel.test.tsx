@@ -132,7 +132,7 @@ describe("TicketPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not mark tickets as entry-ready before the event starts", () => {
+  it("shows issued QR without marking future tickets as entry-ready", () => {
     const ticket: Ticket = {
       ticket_id: "T-future",
       registration_id: "R-1",
@@ -153,7 +153,8 @@ describe("TicketPanel", () => {
       screen.getByText("活動尚未開始，請於開始時間到場後再出示二維碼驗票。"),
     ).toBeInTheDocument();
     expect(screen.queryByText("可入場")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(screen.queryByText("入場提示")).not.toBeInTheDocument();
   });
 
   it("keeps employees in their own workspace when opening event detail", async () => {
