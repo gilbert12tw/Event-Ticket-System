@@ -5,54 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"event-ticket-system/internal/eventcontract"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-// registry mirrors docs/specs/phase2-event-contract-v2.md §4.
-var registry = []string{
-	"registration.confirmed.v2",
-	"registration.cancelled.v2",
-	"registration.waitlisted.v2",
-	"registration.promoted.v2",
-	"ticket.issued.v2",
-	"ticket.revoked.v2",
-	"ticket.expired.v2",
-	"checkin.recorded.v2",
-	"notification.requested.v2",
-	"report.export.requested.v2",
-	"report.export.completed.v2",
-	"report.export.failed.v2",
-	"hr_sync.batch.completed.v2",
-	"eligibility.impact_review.created.v2",
-	"reporting.projection.update_required.v2",
-}
-
-var requiredEnvelopeKeys = []string{
-	"event_id", "event_type", "schema_version", "occurred_at",
-	"idempotency_key", "partition_key", "payload",
-}
-
-// forbiddenKeys mirrors §8 of the spec.
-var forbiddenKeys = map[string]struct{}{
-	"email": {}, "recipient_email": {}, "email_address": {}, "sender_email": {},
-	"full_name": {}, "display_name": {}, "given_name": {}, "family_name": {},
-	"phone": {}, "phone_number": {}, "mobile": {}, "address": {}, "street": {}, "postal_code": {},
-	"qr_token": {}, "signed_token": {}, "provider_token": {}, "bearer_token": {}, "access_token": {},
-	"refresh_token": {}, "jwt": {}, "session_token": {}, "qr_payload": {},
-	"password": {}, "passcode": {}, "pin": {}, "secret": {}, "credentials": {}, "private_key": {},
-	"download_url": {}, "signed_url": {}, "presigned_url": {},
-}
-
-var (
-	emailRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
-	jwtRe   = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`)
 )
 
 const testdataDirName = "testdata"
@@ -79,7 +40,7 @@ func TestRegistryHasFixtureForEveryEntry(t *testing.T) {
 		have[strings.TrimSuffix(name, ".json")] = true
 	}
 	want := map[string]bool{}
-	for _, et := range registry {
+	for _, et := range eventcontract.Registry {
 		want[et] = true
 		assert.Truef(t, have[et], "registry entry %s has no fixture under %s/", et, testdataDirName)
 	}
@@ -89,11 +50,11 @@ func TestRegistryHasFixtureForEveryEntry(t *testing.T) {
 }
 
 func TestFixtureEnvelopeShape(t *testing.T) {
-	for _, et := range registry {
+	for _, et := range eventcontract.Registry {
 		et := et
 		t.Run(et, func(t *testing.T) {
 			env := loadFixture(t, et)
-			for _, k := range requiredEnvelopeKeys {
+			for _, k := range eventcontract.RequiredEnvelopeKeys {
 				assert.Containsf(t, env, k, "envelope missing key %s", k)
 			}
 			assert.EqualValuesf(t, 2, env["schema_version"], "schema_version must be 2")
@@ -117,7 +78,7 @@ func TestFixtureEnvelopeShape(t *testing.T) {
 }
 
 func TestFixtureNoForbiddenKeys(t *testing.T) {
-	for _, et := range registry {
+	for _, et := range eventcontract.Registry {
 		et := et
 		t.Run(et, func(t *testing.T) {
 			env := loadFixture(t, et)
@@ -127,14 +88,14 @@ func TestFixtureNoForbiddenKeys(t *testing.T) {
 }
 
 func TestFixtureNoForbiddenPatterns(t *testing.T) {
-	for _, et := range registry {
+	for _, et := range eventcontract.Registry {
 		et := et
 		t.Run(et, func(t *testing.T) {
 			env := loadFixture(t, et)
 			body, err := json.Marshal(env)
 			require.NoError(t, err)
-			assert.Falsef(t, emailRe.Match(body), "fixture %s contains email-shaped substring: %s", et, body)
-			assert.Falsef(t, jwtRe.Match(body), "fixture %s contains JWT-shaped substring", et)
+			assert.Falsef(t, eventcontract.EmailPattern.Match(body), "fixture %s contains email-shaped substring: %s", et, body)
+			assert.Falsef(t, eventcontract.JWTPattern.Match(body), "fixture %s contains JWT-shaped substring", et)
 		})
 	}
 }
@@ -142,7 +103,7 @@ func TestFixtureNoForbiddenPatterns(t *testing.T) {
 // validateEnvelope is the contract validator under test. It is intentionally
 // in-package (not exported) — the spec is fixture-driven, not Go-typed.
 func validateEnvelope(env map[string]any) error {
-	for _, k := range requiredEnvelopeKeys {
+	for _, k := range eventcontract.RequiredEnvelopeKeys {
 		if _, ok := env[k]; !ok {
 			return fmt.Errorf("missing %s", k)
 		}
@@ -157,10 +118,10 @@ func validateEnvelope(env map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if emailRe.Match(body) {
+	if eventcontract.EmailPattern.Match(body) {
 		return fmt.Errorf("forbidden email pattern present")
 	}
-	if jwtRe.Match(body) {
+	if eventcontract.JWTPattern.Match(body) {
 		return fmt.Errorf("forbidden JWT pattern present")
 	}
 	return nil
@@ -175,7 +136,7 @@ func walkRejectKeys(node any, path string) error {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			if _, banned := forbiddenKeys[k]; banned {
+			if _, banned := eventcontract.ForbiddenKeys[k]; banned {
 				return fmt.Errorf("forbidden key %q at %s/%s", k, path, k)
 			}
 			if err := walkRejectKeys(v[k], path+"/"+k); err != nil {

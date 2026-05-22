@@ -332,6 +332,89 @@ required_kinds = %w[notification projection compensation export reservation_comp
 missing_kinds = required_kinds - (worker_kind["enum"] || [])
 fail_contract("WorkerKind enum must include #{missing_kinds.join(", ")}") unless missing_kinds.empty?
 
+# PH2-05: pin Phase 1 envelope signatures so silent drift can't break Phase 1 clients.
+success_envelope = require_schema_ref(root, "ApiSuccessEnvelope")
+unless (success_envelope["required"] || []).sort == %w[data error success]
+  fail_contract("ApiSuccessEnvelope.required must remain [success, data, error]")
+end
+unless success_envelope.dig("properties", "success", "const") == true
+  fail_contract("ApiSuccessEnvelope.properties.success.const must remain true")
+end
+unless success_envelope.dig("properties", "error", "type") == "null"
+  fail_contract("ApiSuccessEnvelope.properties.error.type must remain \"null\"")
+end
+
+error_envelope = require_schema_ref(root, "ApiErrorEnvelope")
+unless (error_envelope["required"] || []).sort == %w[data error success]
+  fail_contract("ApiErrorEnvelope.required must remain [success, data, error]")
+end
+unless error_envelope.dig("properties", "success", "const") == false
+  fail_contract("ApiErrorEnvelope.properties.success.const must remain false")
+end
+unless error_envelope.dig("properties", "data", "type") == "null"
+  fail_contract("ApiErrorEnvelope.properties.data.type must remain \"null\"")
+end
+
+envelope_union = require_schema_ref(root, "ApiEnvelope")
+union_refs = (envelope_union["oneOf"] || []).map { |part| part.is_a?(Hash) ? part["$ref"].to_s : "" }
+%w[ApiSuccessEnvelope ApiErrorEnvelope].each do |name|
+  unless union_refs.any? { |ref| ref.include?(name) }
+    fail_contract("ApiEnvelope.oneOf must continue to reference #{name}")
+  end
+end
+
+warning_schema = require_schema_ref(root, "Warning")
+phase1_warning_codes = %w[cross_city registration_closing_soon non_transferable_ticket]
+warning_enum = warning_schema.dig("properties", "code", "enum") || []
+missing_codes = phase1_warning_codes - warning_enum
+unless missing_codes.empty?
+  fail_contract("Warning.code enum must continue to expose Phase 1 codes #{missing_codes.join(", ")}")
+end
+
+# PH2-05: scan all description strings for forbidden Phase 2 completion language.
+PHASE2_FORBIDDEN_PHRASES = [
+  "phase 2 requires kafka", "phase 2 uses kafka", "phase 2 has kafka",
+  "phase 2 implements kafka", "phase 2 ships kafka", "kafka is complete in phase 2",
+  "phase 2 completed kafka", "kafka completed in phase 2",
+  "phase 2 requires kubernetes", "phase 2 uses kubernetes", "phase 2 has kubernetes",
+  "phase 2 implements kubernetes", "phase 2 ships kubernetes", "kubernetes is complete in phase 2",
+  "phase 2 completed kubernetes", "kubernetes completed in phase 2",
+  "phase 2 requires service mesh", "phase 2 uses service mesh", "phase 2 has service mesh",
+  "phase 2 implements service mesh", "phase 2 ships service mesh", "service mesh is complete in phase 2",
+  "phase 2 completed service mesh", "service mesh completed in phase 2",
+  "phase 2 requires cross-region ha", "phase 2 has cross-region ha",
+  "phase 2 has cross-region high availability", "phase 2 implements cross-region ha",
+  "phase 2 ships cross-region ha", "cross-region ha is complete in phase 2",
+  "phase 2 completed cross-region ha",
+  "phase 2 implements microservices", "phase 2 has microservices",
+  "phase 2 has full microservices", "phase 2 implements full microservices",
+  "phase 2 ships microservices", "phase 2 ships full microservices",
+  "phase 2 completed microservices", "microservices are complete in phase 2",
+].freeze
+
+description_offenders = []
+walk = lambda do |node, trail|
+  case node
+  when Hash
+    node.each do |key, value|
+      if key == "description" && value.is_a?(String)
+        lower = value.downcase
+        PHASE2_FORBIDDEN_PHRASES.each do |phrase|
+          description_offenders << "#{trail.join("/")}: #{phrase}" if lower.include?(phrase)
+        end
+      else
+        walk.call(value, trail + [key.to_s])
+      end
+    end
+  when Array
+    node.each_with_index { |item, idx| walk.call(item, trail + ["[#{idx}]"]) }
+  end
+end
+walk.call(root, [])
+unless description_offenders.empty?
+  fail_contract("OpenAPI description strings contain forbidden Phase 2 language:\n  - " + description_offenders.uniq.join("\n  - "))
+end
+
 puts "openapi source files parsed: #{source_files.length}"
 puts "openapi paths verified: #{EXPECTED_OPERATIONS.length}"
 puts "openapi refs resolved"
@@ -340,3 +423,4 @@ puts "openapi response envelope coverage passed"
 puts "openapi product auth boundary passed"
 puts "openapi COR-18 rule coverage passed"
 puts "openapi PH2-02 freshness meta + worker kind coverage passed"
+puts "openapi PH2-05 Phase 1 envelope drift + Phase 2 language guard passed"
