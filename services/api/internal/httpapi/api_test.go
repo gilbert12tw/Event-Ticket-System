@@ -139,6 +139,68 @@ func TestCheckinHandlerReturnsDuplicateDetailsOnConflict(t *testing.T) {
 	assertEnvelope(t, rec.Body.String(), `"success":false`, `"checkin_id":"chk_1"`, `"duplicate":true`)
 }
 
+func TestCheckinHandlerRejectsScannedAtField(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      service,
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	body := `{"signed_token":"token","event_id":"evt_1","device_id":"gate-1","scanned_at":"2026-05-06T10:00:00Z"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkins", bytes.NewBufferString(body))
+	authorizeRequest(t, req, ticketing.RoleCheckinStaff)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Empty(t, service.checkinActor.ID)
+}
+
+func TestOfflineCheckinSyncRejectsLocalScanIDField(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      service,
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	body := `{"batch_id":"off_1","event_id":"evt_1","device_id":"gate-1","package_signature":"sig_1","scans":[{"signed_token":"token","scanned_at":"2026-05-06T10:00:00Z","local_scan_id":"scan-1"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkins/offline-sync", bytes.NewBufferString(body))
+	authorizeRequest(t, req, ticketing.RoleCheckinStaff)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Empty(t, service.offlineSyncActor.ID)
+}
+
+func TestNotificationPreferencesResponseIncludesEmployeeID(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      service,
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/notifications/preferences", nil)
+	authorizeRequest(t, req, ticketing.RoleEmployee)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assertEnvelope(t, rec.Body.String(), `"employee_id":"E1001"`, `"email_enabled":true`, `"in_app_enabled":true`)
+}
+
 func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := NewRouter(Dependencies{
@@ -270,6 +332,28 @@ func TestAuditHandlerParsesServerSideFilterQuery(t *testing.T) {
 	assert.Equal(t, "event.updated", service.auditQuery[0].Action)
 	assert.Equal(t, "event", service.auditQuery[0].EntityType)
 	assert.Equal(t, 25, service.auditQuery[0].Limit)
+}
+
+func TestNotificationDeliveriesResponseUsesRedactedEmployeeRef(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      service,
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/notifications/deliveries", nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assertEnvelope(t, rec.Body.String(), `"employee_ref":"E100****"`)
+	assert.NotContains(t, rec.Body.String(), `"employee_id"`)
+	assert.NotContains(t, rec.Body.String(), `"E1001"`)
 }
 
 func authorizeRequest(t *testing.T, req *http.Request, role string) {

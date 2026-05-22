@@ -93,6 +93,7 @@ flowchart LR
 ### 4.2 Compose 操作約定
 
 - `services/api/deploy/compose.yaml` 作為本地開發與 mentor demo 的主要入口。
+- `services/api/deploy/k8s/` 提供可選的 local / staging-safe Kubernetes 範本；Compose 仍是 Phase 1 primary local deployment，套用到 shared staging 前必須替換 image tag 與 placeholder secrets。
 - `services/api/deploy/.env.example` 作為環境變數模板；`services/api/deploy/.env` 可本地使用但不得放入真實 secrets。
 - app 與 worker 使用同一份映像與同一份設定來源，只是啟動 command 不同。
 - app 提供 `health` / `ready` endpoint；Compose 使用 `healthcheck` 與 `depends_on: service_healthy` 等待 PostgreSQL / Redis ready，但 business readiness 目前只驗證 PostgreSQL。

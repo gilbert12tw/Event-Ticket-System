@@ -3,23 +3,27 @@ package ticketing
 import "time"
 
 const (
-	ReportExportStatusPending = "pending"
-	ReportExportStatusReady   = "ready"
-	ReportExportStatusFailed  = "failed"
+	ReportExportStatusPending     = "pending"
+	ReportExportStatusReady       = "ready"
+	ReportExportStatusFailed      = "failed"
+	ReportExportTypeParticipation = "participation"
+	ReportExportFormatCSV         = "csv"
 )
 
 type ReportExportRequest struct {
 	ReportType string `json:"report_type"`
+	Format     string `json:"format,omitempty"`
 }
 
 type ReportExport struct {
-	ExportID    string    `json:"export_id"`
-	RequestedBy string    `json:"requested_by"`
-	ReportType  string    `json:"report_type"`
-	Status      string    `json:"status"`
-	ObjectKey   string    `json:"object_key"`
-	CreatedAt   time.Time `json:"created_at"`
-	CompletedAt time.Time `json:"completed_at,omitempty"`
+	ExportID    string     `json:"export_id"`
+	RequestedBy string     `json:"requested_by"`
+	ReportType  string     `json:"report_type"`
+	Format      string     `json:"format"`
+	Status      string     `json:"status"`
+	ObjectKey   string     `json:"object_key"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 type LotteryRunRequest struct {

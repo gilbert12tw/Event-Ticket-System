@@ -27,6 +27,7 @@ describe("TicketPanel", () => {
       department: "Engineering",
       city: "Taipei",
       family_count: 2,
+      non_transferable: true,
     };
 
     const { container } = render(<TicketPanel ticket={ticket} />);
@@ -61,6 +62,7 @@ describe("TicketPanel", () => {
       status: "active",
       signed_token: "signed-secret",
       issued_at: "2026-05-06T10:00:00Z",
+      non_transferable: true,
     };
 
     const { container } = render(<TicketPanel compact ticket={ticket} />);
@@ -86,6 +88,7 @@ describe("TicketPanel", () => {
       signed_token: "signed-secret",
       issued_at: "2026-05-06T10:00:00Z",
       event_title: "台北家庭電影夜",
+      non_transferable: true,
     };
 
     const { container } = render(<TicketPanel ticket={ticket} />);
@@ -108,6 +111,7 @@ describe("TicketPanel", () => {
       status: "active",
       issued_at: "2026-05-06T10:00:00Z",
       event_title: "台北家庭電影夜",
+      non_transferable: true,
     };
 
     const { container } = render(
@@ -164,6 +168,7 @@ describe("TicketPanel", () => {
       event_title: "台北家庭電影夜",
       event_location: "Taipei HQ",
       employee_name: "Ariel Chen",
+      non_transferable: true,
     };
 
     const pushStateSpy = vi.spyOn(window.history, "pushState");

@@ -3,6 +3,7 @@ package ticketing
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -90,14 +91,14 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND employee_id = 'E2001'`, event.EventID, 0)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM tickets WHERE event_id = $1 AND employee_id = 'E2001'`, event.EventID, 0)
 
-	checkin, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: first.Ticket.SignedToken, DeviceID: "gate-1"})
+	checkin, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: first.Ticket.SignedToken, EventID: event.EventID, DeviceID: "gate-1"})
 	require.NoError(t, err)
 	assert.Equal(t, "accepted", checkin.Status)
 	assert.Equal(t, first.Ticket.TicketID, checkin.TicketID)
 	assert.Equal(t, "Ariel Chen", checkin.Holder.DisplayName)
 	assert.Equal(t, "Engineering", checkin.Holder.Department)
 	assert.Equal(t, "Taipei", checkin.Holder.City)
-	duplicate, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: first.Ticket.SignedToken, DeviceID: "gate-1"})
+	duplicate, err := service.CheckIn(ctx, staff, CheckinRequest{SignedToken: first.Ticket.SignedToken, EventID: event.EventID, DeviceID: "gate-1"})
 	require.Error(t, err)
 	assert.Equal(t, 409, ErrorStatus(err))
 	assert.True(t, duplicate.Duplicate)
@@ -292,6 +293,14 @@ func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1`, event.EventID, 2)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_impact_reviews WHERE event_id = $1 AND employee_id = 'E1001' AND status = 'pending'`, event.EventID, 1)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'eligibility.impact_review.created' AND aggregate_id = $1`, event.EventID, 1)
+	reviews, err := service.EligibilityImpactReviews(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin})
+	require.NoError(t, err)
+	require.NotEmpty(t, reviews)
+	rawReview, err := json.Marshal(reviews[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(rawReview), `"employee_ref":"E100****"`)
+	assert.NotContains(t, string(rawReview), `"employee_id"`)
+	assert.NotContains(t, string(rawReview), `"E1001"`)
 
 	_, err = service.UpdateEligibility(ctx, admin, event.EventID, UpdateEligibilityRequest{
 		Rule:           RuleInput{Department: "Legal", Site: "Nowhere", MinGrade: 99, EmploymentStatus: "active"},

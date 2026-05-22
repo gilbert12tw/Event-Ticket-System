@@ -3,6 +3,7 @@ package ticketing
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,8 +105,26 @@ func (s *Service) SyncOfflineCheckins(ctx context.Context, actor Actor, req Offl
 	if req.PackageSignature == "" {
 		return OfflineCheckinSyncResponse{}, badRequest("package_signature is required")
 	}
-	if err := s.validateOfflineBatch(ctx, actor, req); err != nil {
+	for i, scan := range req.Scans {
+		if scan.ScannedAt.IsZero() {
+			return OfflineCheckinSyncResponse{}, badRequest("scans[" + strconv.Itoa(i) + "].scanned_at is required")
+		}
+	}
+	batchLockTx, err := s.db.Begin(ctx)
+	if err != nil {
 		return OfflineCheckinSyncResponse{}, err
+	}
+	defer rollback(ctx, batchLockTx)
+
+	batchStatus, err := s.validateOfflineBatchTx(ctx, batchLockTx, actor, req)
+	if err != nil {
+		return OfflineCheckinSyncResponse{}, err
+	}
+	if batchStatus != "open" {
+		if err := batchLockTx.Commit(ctx); err != nil {
+			return OfflineCheckinSyncResponse{}, err
+		}
+		return s.replayOfflineSync(ctx, req)
 	}
 	response := OfflineCheckinSyncResponse{BatchID: req.BatchID}
 	for _, scan := range req.Scans {
@@ -123,63 +142,75 @@ func (s *Service) SyncOfflineCheckins(ctx context.Context, actor Actor, req Offl
 			response.Conflict++
 		}
 	}
-	_, err := s.db.Exec(ctx, `UPDATE offline_checkin_batches SET status = CASE WHEN $2 > 0 THEN 'conflict' ELSE 'synced' END, synced_at = now() WHERE batch_id = $1`, req.BatchID, response.Conflict)
-	return response, err
+	_, err = batchLockTx.Exec(ctx, `UPDATE offline_checkin_batches SET status = CASE WHEN $2 > 0 THEN 'conflict' ELSE 'synced' END, synced_at = now() WHERE batch_id = $1`, req.BatchID, response.Conflict)
+	if err != nil {
+		return OfflineCheckinSyncResponse{}, err
+	}
+	return response, batchLockTx.Commit(ctx)
 }
 
-func (s *Service) validateOfflineBatch(ctx context.Context, actor Actor, req OfflineCheckinSyncRequest) error {
+func (s *Service) validateOfflineBatchTx(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest) (string, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, req.BatchID); err != nil {
+		return "", err
+	}
 	var eventID, deviceID, staffID, status string
 	var validUntil time.Time
 	var packageSignature string
-	err := s.db.QueryRow(ctx, `SELECT event_id, device_id, staff_id, status, valid_until, package_signature
+	err := tx.QueryRow(ctx, `SELECT event_id, device_id, staff_id, status, valid_until, package_signature
 		FROM offline_checkin_batches WHERE batch_id = $1`, req.BatchID).
 		Scan(&eventID, &deviceID, &staffID, &status, &validUntil, &packageSignature)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return notFound("offline check-in batch not found")
+		return "", notFound("offline check-in batch not found")
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if staffID != actor.ID {
-		return forbidden("offline check-in batch belongs to a different staff member")
+		return "", forbidden("offline check-in batch belongs to a different staff member")
 	}
 	if eventID != req.EventID {
-		return conflict("offline check-in batch event mismatch")
+		return "", conflict("offline check-in batch event mismatch")
 	}
 	if deviceID != req.DeviceID {
-		return conflict("offline check-in batch device mismatch")
-	}
-	if status != "open" {
-		return conflict("offline check-in batch is already synced")
+		return "", conflict("offline check-in batch device mismatch")
 	}
 	if packageSignature != req.PackageSignature {
-		return badRequest("offline package signature does not match batch")
+		return "", badRequest("offline package signature does not match batch")
 	}
 	claims, err := s.signer.VerifyOfflinePackage(req.PackageSignature)
 	if err != nil {
-		return badRequest("invalid offline package signature")
+		return "", badRequest("invalid offline package signature")
 	}
 	if claims.BatchID != req.BatchID || claims.EventID != req.EventID || claims.DeviceID != req.DeviceID || claims.StaffID != actor.ID {
-		return badRequest("offline package claims do not match request")
+		return "", badRequest("offline package claims do not match request")
 	}
 	if !claims.ValidUntil.Equal(validUntil.UTC()) {
-		return badRequest("offline package expiry does not match batch")
+		return "", badRequest("offline package expiry does not match batch")
 	}
-	if !validUntil.After(s.now()) {
-		return conflict("offline package is expired")
+	if status != "open" && status != "synced" && status != "conflict" {
+		return "", conflict("offline check-in batch has invalid status")
 	}
-	return nil
+	if status == "open" && !validUntil.After(s.now()) {
+		return "", conflict("offline package is expired")
+	}
+	return status, nil
 }
 
 func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput) (CheckinResponse, string, error) {
 	if scan.ScannedAt.IsZero() {
 		scan.ScannedAt = s.now()
 	}
+	tokenHash := s.signer.HashToken(scan.SignedToken)
 	claims, err := s.signer.Verify(scan.SignedToken)
 	if err != nil {
+		if result, status, found, replayErr := s.replayOfflineScan(ctx, req, scan, TicketClaims{}, tokenHash); replayErr != nil || found {
+			return result, status, replayErr
+		}
 		return s.recordOfflineUnknownConflict(ctx, actor, req, scan, TicketClaims{}, offlineConflictInvalidToken)
 	}
-	tokenHash := s.signer.HashToken(scan.SignedToken)
+	if result, status, found, err := s.replayOfflineScan(ctx, req, scan, claims, tokenHash); err != nil || found {
+		return result, status, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
@@ -361,7 +392,11 @@ func insertOfflineAcceptedSideEffectsTx(ctx context.Context, tx pgx.Tx, actor Ac
 	}); err != nil {
 		return err
 	}
-	return insertOutbox(ctx, tx, "ticket.redeemed", ticket.TicketID, map[string]interface{}{"ticket_id": ticket.TicketID, "event_id": ticket.EventID})
+	return insertOutbox(ctx, tx, "ticket.redeemed", ticket.TicketID, ticketOutboxPayload(ticket, map[string]interface{}{
+		"batch_id":  req.BatchID,
+		"device_id": req.DeviceID,
+		"mode":      "offline_sync",
+	}))
 }
 
 func conflictResultFromClaims(req OfflineCheckinSyncRequest, claims TicketClaims, scannedAt time.Time, reason string) CheckinResponse {

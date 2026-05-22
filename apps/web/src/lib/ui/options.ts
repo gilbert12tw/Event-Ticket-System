@@ -323,6 +323,7 @@ const reportExportStatuses: Record<string, StatusView> = {
 
 const reviewStatuses: Record<string, StatusView> = {
   open: { label: "待處理", tone: "warn" },
+  pending: { label: "待處理", tone: "warn" },
   resolved: { label: "已處理", tone: "ok" },
 };
 

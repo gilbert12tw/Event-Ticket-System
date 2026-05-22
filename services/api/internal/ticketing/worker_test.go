@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,34 @@ func (s *recordingNotificationSender) Send(ctx context.Context, message Delivery
 	s.calls++
 	s.messages = append(s.messages, message)
 	return s.err
+}
+
+type idempotentCancelingNotificationSender struct {
+	cancel       context.CancelFunc
+	calls        int
+	providerSent int
+	messages     []DeliveryMessage
+	seen         map[string]struct{}
+}
+
+func (s *idempotentCancelingNotificationSender) Send(ctx context.Context, message DeliveryMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.calls++
+	s.messages = append(s.messages, message)
+	if s.seen == nil {
+		s.seen = map[string]struct{}{}
+	}
+	if _, ok := s.seen[message.IdempotencyKey]; !ok {
+		s.seen[message.IdempotencyKey] = struct{}{}
+		s.providerSent++
+	}
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+	return nil
 }
 
 func TestDeliveryAddressForEmployeeNormalizesLocalMailbox(t *testing.T) {
@@ -92,7 +121,7 @@ func TestSMTPNotificationSenderRedirectsRecipientInEnvelopeAndBody(t *testing.T)
 		From:       "noreply@cets.local",
 		RedirectTo: "notifications@cets.local",
 	}
-	message := DeliveryMessage{To: "e1001@cets.local", Subject: "test", Body: "body"}
+	message := DeliveryMessage{To: "e1001@cets.local", Subject: "test", Body: "body", IdempotencyKey: "del_abc123"}
 
 	recipient := sender.deliveryRecipient(message)
 	body := sender.deliveryBody(message, recipient)
@@ -100,6 +129,8 @@ func TestSMTPNotificationSenderRedirectsRecipientInEnvelopeAndBody(t *testing.T)
 	assert.Equal(t, "notifications@cets.local", recipient)
 	assert.NotContains(t, body, "e1001@cets.local", "body leaked employee recipient")
 	assert.Contains(t, body, "To: notifications@cets.local")
+	assert.Contains(t, body, "Message-ID: <del_abc123@cets.local>")
+	assert.Contains(t, body, "X-Idempotency-Key: del_abc123")
 }
 
 func TestNotificationCategorySuppressedMatchesLabelsCaseInsensitive(t *testing.T) {
@@ -130,6 +161,59 @@ func TestProcessOutboxOnceSuppressesDisabledPreferences(t *testing.T) {
 	assert.Equal(t, deliveryStatusSuppressed, statuses["email"])
 	assert.Equal(t, deliveryStatusSuppressed, statuses["in_app"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-pref-suppressed", "published", 1)
+}
+
+func TestProcessOutboxOncePublishesEventsWithoutRecipient(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	insertWorkerOutboxPayload(t, service, ctx, "out-no-recipient", "event.updated", "pending", 0, `{"event_id":"evt_1"}`)
+	sender := &recordingNotificationSender{}
+
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 0, sender.calls)
+	assertWorkerOutboxStatus(t, service, ctx, "out-no-recipient", "published", 1)
+	assertWorkerDeliveryCount(t, service, ctx, "out-no-recipient", 0)
+}
+
+func TestProcessOutboxOnceSuppressesOptedOutEventCategory(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, service.SeedDemoData(ctx))
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:    "Family Day",
+		Capacity: 5,
+		Status:   EventStatusPublished,
+		Category: "family",
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	_, err = service.UpdateNotificationPreferences(ctx, Actor{ID: "E1001", Role: RoleEmployee}, NotificationPreferences{
+		EmailEnabled:       true,
+		InAppEnabled:       true,
+		OptedOutCategories: []string{"family"},
+	})
+	require.NoError(t, err)
+	payload, err := json.Marshal(map[string]string{"employee_id": "E1001", "event_id": event.EventID})
+	require.NoError(t, err)
+	insertWorkerOutboxPayload(t, service, ctx, "out-category-suppressed", "booking.confirmed", "pending", 0, string(payload))
+	sender := &recordingNotificationSender{}
+
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 0, sender.calls)
+	statuses := workerDeliveryStatuses(t, service, ctx, "out-category-suppressed")
+	assert.Equal(t, deliveryStatusSuppressed, statuses["email"])
+	assert.Equal(t, deliveryStatusSuppressed, statuses["in_app"])
+	assertWorkerOutboxStatus(t, service, ctx, "out-category-suppressed", "published", 1)
 }
 
 func TestProcessOutboxOnceProcessesConfiguredBatch(t *testing.T) {
@@ -234,6 +318,67 @@ func TestProcessOutboxOnceMarksFailedEmailForRetry(t *testing.T) {
 	assertWorkerOutboxStatus(t, service, ctx, "out-email-failed", "pending", 1)
 }
 
+func TestProcessOutboxOnceUsesStableEmailIdempotencyKeyAfterSendFailure(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	seedWorkerEmployee(t, service, ctx)
+	insertWorkerOutbox(t, service, ctx, "out-email-idempotent", "pending", 0)
+	sender := &idempotentCancelingNotificationSender{cancel: cancel}
+
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+	require.Error(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 1, sender.calls)
+	assert.Equal(t, 1, sender.providerSent)
+	require.Len(t, sender.messages, 1)
+	assert.NotEmpty(t, sender.messages[0].IdempotencyKey)
+
+	runCtx := context.Background()
+	assertWorkerOutboxStatus(t, service, runCtx, "out-email-idempotent", "processing", 1)
+	_, err = service.db.Exec(runCtx, `UPDATE outbox_events SET available_at = now() - interval '1 minute' WHERE outbox_id = $1`, "out-email-idempotent")
+	require.NoError(t, err)
+
+	processed, err = service.ProcessOutboxOnce(runCtx, sender, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 2, sender.calls)
+	assert.Equal(t, 1, sender.providerSent)
+	require.Len(t, sender.messages, 2)
+	assert.Equal(t, sender.messages[0].IdempotencyKey, sender.messages[1].IdempotencyKey)
+	statuses := workerDeliveryStatuses(t, service, runCtx, "out-email-idempotent")
+	assert.Equal(t, deliveryStatusSent, statuses["email"])
+	assertWorkerOutboxStatus(t, service, runCtx, "out-email-idempotent", "published", 2)
+}
+
+func TestProcessOutboxOnceRedactsFailedDeliveryError(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	seedWorkerEmployee(t, service, ctx)
+	insertWorkerOutbox(t, service, ctx, "out-email-redacted", "pending", 0)
+	sender := &recordingNotificationSender{err: errors.New("550 rejected e1001@cets.local for E1001")}
+
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	var deliveryError string
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT last_error FROM notification_deliveries WHERE outbox_id = $1 AND channel = 'email'`, "out-email-redacted").Scan(&deliveryError))
+	assertSanitizedNotificationError(t, deliveryError)
+	var outboxError string
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT last_error FROM outbox_events WHERE outbox_id = $1`, "out-email-redacted").Scan(&outboxError))
+	assertSanitizedNotificationError(t, outboxError)
+
+	deliveries, err := service.NotificationDeliveries(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin})
+	require.NoError(t, err)
+	require.NotEmpty(t, deliveries)
+	raw, err := json.Marshal(deliveries[0])
+	require.NoError(t, err)
+	assertSanitizedNotificationError(t, string(raw))
+}
+
 func TestProcessOutboxOnceMarksDeadLetterAtMaxAttempts(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
@@ -249,130 +394,6 @@ func TestProcessOutboxOnceMarksDeadLetterAtMaxAttempts(t *testing.T) {
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-email-dead-letter")
 	assert.Equal(t, deliveryStatusDeadLetter, statuses["email"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-email-dead-letter", "dead_letter", 3)
-}
-
-func TestBookingOutboxPayloadIncludesOnlyRedactedCrossCityContext(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	require.NoError(t, service.SeedDemoData(ctx))
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:     "Cross City Notification",
-		Location:  "Taipei HQ",
-		EventCity: "Taipei",
-		Capacity:  2,
-		Status:    EventStatusPublished,
-		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
-		Department:       "Engineering",
-		Site:             "Taipei HQ",
-		City:             "Hsinchu",
-		Grade:            6,
-		EmploymentStatus: "active",
-	}}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "cross-city-notification"})
-	require.NoError(t, err)
-
-	payloadText := workerOutboxPayload(t, service, ctx, booking.Registration.RegistrationID, "booking.confirmed")
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(payloadText), &payload))
-	assert.Equal(t, string(WarningCrossCity), payload["warning_code"])
-	assert.Equal(t, "Taipei", payload["event_city"])
-	assert.NotContains(t, payload, "employee_city")
-	assert.NotContains(t, payloadText, "Hsinchu")
-	assert.NotContains(t, payloadText, "Ariel Chen")
-	assert.NotContains(t, payloadText, "@")
-	assert.NotContains(t, payloadText, "signed_token")
-	assert.NotContains(t, payloadText, "qr_payload")
-
-	sender := &recordingNotificationSender{}
-	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	require.NoError(t, err)
-	assert.Equal(t, 1, processed)
-	require.Len(t, sender.messages, 1)
-	assert.Contains(t, sender.messages[0].Body, "This activity is in Taipei")
-	assert.NotContains(t, sender.messages[0].Body, "Hsinchu")
-}
-
-func TestBookingOutboxPayloadOmitsCrossCityContextForSameCity(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	require.NoError(t, service.SeedDemoData(ctx))
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:     "Same City Notification",
-		Location:  "Taipei HQ",
-		EventCity: "Taipei",
-		Capacity:  2,
-		Status:    EventStatusPublished,
-		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
-		Department:       "Engineering",
-		Site:             "Taipei HQ",
-		City:             "Taipei",
-		Grade:            6,
-		EmploymentStatus: "active",
-	}}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "same-city-notification"})
-	require.NoError(t, err)
-
-	payloadText := workerOutboxPayload(t, service, ctx, booking.Registration.RegistrationID, "booking.confirmed")
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(payloadText), &payload))
-	assert.NotContains(t, payload, "warning_code")
-	assert.NotContains(t, payload, "event_city")
-
-	sender := &recordingNotificationSender{}
-	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
-	require.NoError(t, err)
-	assert.Equal(t, 1, processed)
-	require.Len(t, sender.messages, 1)
-	assert.NotContains(t, sender.messages[0].Body, "This activity is in")
-}
-
-func TestBookingOutboxPayloadOmitsCrossCityContextForWaitlistedBooking(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	require.NoError(t, service.SeedDemoData(ctx))
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:     "Waitlist Cross City Notification",
-		Location:  "Taipei HQ",
-		EventCity: "Taipei",
-		Capacity:  1,
-		Status:    EventStatusPublished,
-		Rule:      RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
-		Department:       "Engineering",
-		Site:             "Taipei HQ",
-		City:             "Hsinchu",
-		Grade:            6,
-		EmploymentStatus: "active",
-	}}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "waitlist-cross-city-confirmed"})
-	require.NoError(t, err)
-	waitlisted, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee, Claims: &ProviderClaims{
-		Department:       "Engineering",
-		Site:             "Taipei HQ",
-		City:             "Hsinchu",
-		Grade:            5,
-		EmploymentStatus: "active",
-	}}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "waitlist-cross-city-waitlisted"})
-	require.NoError(t, err)
-	require.Equal(t, RegistrationWaitlisted, waitlisted.Registration.Status)
-
-	payloadText := workerOutboxPayload(t, service, ctx, waitlisted.Registration.RegistrationID, "booking.waitlisted")
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(payloadText), &payload))
-	assert.NotContains(t, payload, "warning_code")
-	assert.NotContains(t, payload, "event_city")
-	assert.NotContains(t, payloadText, "Hsinchu")
 }
 
 func seedWorkerEmployee(t *testing.T, service *Service, ctx context.Context) {
@@ -433,4 +454,19 @@ func assertWorkerOutboxStatus(t *testing.T, service *Service, ctx context.Contex
 		Scan(&gotStatus, &gotAttempts))
 	assert.Equal(t, wantStatus, gotStatus)
 	assert.Equal(t, wantAttempts, gotAttempts)
+}
+
+func assertWorkerDeliveryCount(t *testing.T, service *Service, ctx context.Context, outboxID string, want int) {
+	t.Helper()
+	var got int
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM notification_deliveries WHERE outbox_id = $1`, outboxID).Scan(&got))
+	assert.Equal(t, want, got)
+}
+
+func assertSanitizedNotificationError(t *testing.T, value string) {
+	t.Helper()
+	assert.Contains(t, value, "550 rejected")
+	assert.Contains(t, value, "[redacted email]")
+	assert.NotContains(t, value, "E1001")
+	assert.NotContains(t, strings.ToLower(value), "e1001@cets.local")
 }

@@ -8,6 +8,9 @@ import (
 const (
 	CapacityTypeLimited   = "limited"
 	CapacityTypeUnlimited = "unlimited"
+
+	AllocationModeFCFS    = "fcfs"
+	AllocationModeLottery = "lottery"
 )
 
 type Event struct {

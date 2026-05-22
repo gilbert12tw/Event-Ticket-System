@@ -93,6 +93,37 @@ func TestCancelRegistrationWritesSafeGovernanceMetadata(t *testing.T) {
 	assertNoSensitiveJSONValues(t, payload, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
 }
 
+func TestListRegistrationsReturnsRedactedNontransferableTicketSummary(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Registration Ticket Summary",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: "registration-ticket-summary",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, booking.Ticket)
+
+	registrations, err := service.ListRegistrations(ctx, admin, event.EventID)
+	require.NoError(t, err)
+	require.Len(t, registrations, 1)
+	require.NotNil(t, registrations[0].Ticket)
+	assert.Equal(t, booking.Ticket.TicketID, registrations[0].Ticket.TicketID)
+	assert.True(t, registrations[0].Ticket.NonTransferable)
+	assert.Empty(t, registrations[0].Ticket.SignedToken)
+	assert.Empty(t, registrations[0].Ticket.QRPayload)
+}
+
 func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
@@ -139,6 +170,76 @@ func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 	var cancelledOutboxCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID).Scan(&cancelledOutboxCount))
 	assert.Equal(t, 1, cancelledOutboxCount)
+}
+
+func TestCancelMyRegistrationCancelsOwnRegistrationAndRedactsTicket(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Self Cancel Test",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: "self-cancel-book",
+	})
+	require.NoError(t, err)
+
+	cancelled, err := service.CancelMyRegistration(ctx, Actor{ID: "E1001", Role: RoleEmployee}, booking.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "self-cancel-key",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationCancelled, cancelled.Registration.Status)
+	assert.Equal(t, "self-cancel-key", cancelled.Registration.CancelKey)
+	require.NotNil(t, cancelled.Ticket)
+	assert.Equal(t, booking.Ticket.TicketID, cancelled.Ticket.TicketID)
+	assert.Empty(t, cancelled.Ticket.SignedToken)
+	assert.Empty(t, cancelled.Ticket.QRPayload)
+
+	var ticketStatus string
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT status FROM tickets WHERE ticket_id = $1`, booking.Ticket.TicketID).Scan(&ticketStatus))
+	assert.Equal(t, TicketRevoked, ticketStatus)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'registration.cancelled' AND actor_id = $1`, "E1001", 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, booking.Registration.RegistrationID, 1)
+}
+
+func TestCancelMyRegistrationRejectsOtherEmployeeRegistration(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Self Cancel Ownership",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: "self-cancel-owner-book",
+	})
+	require.NoError(t, err)
+
+	_, err = service.CancelMyRegistration(ctx, Actor{ID: "E1002", Role: RoleEmployee}, booking.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "self-cancel-wrong-owner",
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, 403, ErrorStatus(err))
+	assert.Equal(t, "employees may only cancel their own registrations", ErrorMessage(err))
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE registration_id = $1 AND status = 'confirmed'`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, booking.Registration.RegistrationID, 0)
 }
 
 func TestPromoteWaitlistDoesNotExposeTicketTokenToAdmin(t *testing.T) {

@@ -4,14 +4,9 @@ TicketListResponse:
     - type: object
       properties:
         data:
-          type: object
-          required:
-            - tickets
-          properties:
-            tickets:
-              type: array
-              items:
-                "$ref": "#/Ticket"
+          type: array
+          items:
+            "$ref": "#/Ticket"
 TicketResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -33,11 +28,15 @@ Ticket:
     - "$ref": "#/TicketBase"
     - type: object
       required:
-        - qr_token
+        - signed_token
+        - qr_payload
       properties:
-        qr_token:
+        signed_token:
           type: string
-          description: Signed display token for the employee who owns the ticket; it does not transfer ticket ownership.
+          description: Signed ticket token for the employee who owns the ticket; it does not transfer ticket ownership.
+        qr_payload:
+          type: string
+          description: QR payload rendered from the signed ticket token for employee check-in.
 RedactedTicket:
   allOf:
     - "$ref": "#/TicketBase"
@@ -47,13 +46,15 @@ TicketBase:
   type: object
   required:
     - ticket_id
+    - registration_id
     - event_id
-    - event_title
+    - employee_id
     - status
-    - holder
+    - sequence_number
+    - expires_at
+    - issued_at
     - family_count
     - non_transferable
-    - sequence_number
   properties:
     ticket_id:
       type: string
@@ -61,35 +62,40 @@ TicketBase:
     event_id:
       type: string
       format: uuid
+    employee_id:
+      type: string
     event_title:
       type: string
+    event_location:
+      type: string
+    event_starts_at:
+      type: string
+      format: date-time
     registration_id:
-      type:
-        - string
-        - "null"
+      type: string
       format: uuid
     sequence_number:
       type: integer
       minimum: 1
     status:
       "$ref": "./common.yaml#/TicketStatus"
-    holder:
-      "$ref": "#/TicketHolder"
+    employee_name:
+      type: string
+    department:
+      type: string
+    city:
+      type: string
     family_count:
       type: integer
       minimum: 0
     non_transferable:
       type: boolean
       const: true
-    first_checkin_at:
-      type:
-        - string
-        - "null"
-      format: date-time
     expires_at:
-      type:
-        - string
-        - "null"
+      type: string
+      format: date-time
+    issued_at:
+      type: string
       format: date-time
     revoked_reason:
       type:

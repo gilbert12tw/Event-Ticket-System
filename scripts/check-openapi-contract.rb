@@ -202,6 +202,14 @@ def require_schema_ref(root, name)
   resolve_if_ref(entry, OPENAPI_ROOT.to_s)
 end
 
+def require_schema_fields(root, schema_name, fields)
+  schema = require_schema_ref(root, schema_name)
+  fields.each do |field|
+    fail_contract("#{schema_name} must expose #{field}") unless schema.dig("properties", field)
+    fail_contract("#{schema_name} must require #{field}") unless schema.fetch("required", []).include?(field)
+  end
+end
+
 fail_contract("Missing #{OPENAPI_ROOT}") unless OPENAPI_ROOT.file?
 
 source_files = [OPENAPI_ROOT.to_s] + Dir.glob(OPENAPI_SOURCE_GLOB).sort
@@ -281,8 +289,95 @@ unless capacity_type.fetch("enum").sort == %w[limited unlimited]
   fail_contract("CapacityType must enumerate limited and unlimited")
 end
 
+ticket_status = require_schema_ref(root, "TicketStatus")
+unless ticket_status.fetch("enum").sort == %w[active expired redeemed revoked]
+  fail_contract("TicketStatus must match API ticket status values")
+end
+
+allocation_mode = require_schema_ref(root, "AllocationMode")
+unless allocation_mode.fetch("enum").sort == %w[fcfs lottery]
+  fail_contract("AllocationMode must match API allocation mode values")
+end
+
+event_summary = require_schema_ref(root, "EventSummary")
+require_schema_fields(root, "EventSummary", %w[registration_start registration_close current_user_status rule allocation_mode])
+%w[registration_opens_at registration_closes_at current_booking_status eligibility_rule].each do |field|
+  fail_contract("EventSummary must not expose stale #{field}") if event_summary.dig("properties", field)
+end
+
+event_create = require_schema_ref(root, "CreateEventRequest")
+require_schema_fields(root, "CreateEventRequest", %w[registration_start registration_close rule])
+%w[registration_opens_at registration_closes_at eligibility_rule].each do |field|
+  fail_contract("CreateEventRequest must not expose stale #{field}") if event_create.dig("properties", field)
+end
+
+event_update = require_schema_ref(root, "UpdateEventRequest")
+%w[registration_start registration_close].each do |field|
+  fail_contract("UpdateEventRequest must expose #{field}") unless event_update.dig("properties", field)
+end
+%w[registration_opens_at registration_closes_at eligibility_rule].each do |field|
+  fail_contract("UpdateEventRequest must not expose stale #{field}") if event_update.dig("properties", field)
+end
+
 create_booking = require_schema_ref(root, "CreateBookingRequest")
 fail_contract("CreateBookingRequest must expose family_count") unless create_booking.dig("properties", "family_count")
+
+offline_scan = require_schema_ref(root, "OfflineCheckInScanInput")
+fail_contract("OfflineCheckInScanInput must require scanned_at") unless offline_scan.fetch("required").include?("scanned_at")
+if offline_scan.dig("properties", "local_scan_id")
+  fail_contract("OfflineCheckInScanInput must not expose unsupported local_scan_id")
+end
+
+checkin_error = require_schema_ref(root, "CheckInErrorResponse")
+unless checkin_error.dig("properties", "success", "const") == false
+  fail_contract("CheckInErrorResponse must be an error envelope")
+end
+fail_contract("CheckInErrorResponse must expose response data") unless checkin_error.dig("properties", "data")
+fail_contract("CheckInErrorResponse must require data") unless checkin_error.fetch("required", []).include?("data")
+unless checkin_error.dig("properties", "error", "type") == "string"
+  fail_contract("CheckInErrorResponse must expose string error")
+end
+checkin_operation = path_item_for(root, "/checkins").fetch("post")
+checkin_success_description = checkin_operation.dig("responses", "200", "description").to_s.downcase
+%w[duplicated rejected conflicted].each do |stale_status|
+  if checkin_success_description.include?(stale_status)
+    fail_contract("POST /checkins 200 response must not describe #{stale_status} outcomes")
+  end
+end
+checkin_conflict_schema = checkin_operation.dig("responses", "409", "content", "application/json", "schema") || {}
+unless checkin_conflict_schema["$ref"].to_s.end_with?("CheckInErrorResponse")
+  fail_contract("POST /checkins 409 response must use CheckInErrorResponse")
+end
+
+require_schema_fields(root, "EmployeeClaims", %w[grade employment_status])
+require_schema_fields(root, "MockProfile", %w[grade employment_status])
+require_schema_fields(root, "AuthBootstrap", %w[debug_chrome_enabled])
+require_schema_fields(root, "NotificationPreferences", %w[employee_id])
+notification_delivery = require_schema_ref(root, "NotificationDelivery")
+delivery_id_schema = notification_delivery.dig("properties", "delivery_id") || {}
+if delivery_id_schema["format"] == "uuid" || delivery_id_schema["pattern"] != "^del_[a-f0-9]{32}$"
+  fail_contract("NotificationDelivery.delivery_id must use the del_ prefixed ID pattern")
+end
+outbox_id_schema = notification_delivery.dig("properties", "outbox_id") || {}
+if outbox_id_schema["format"] == "uuid" || outbox_id_schema["pattern"] != "^out_[a-f0-9]{32}$"
+  fail_contract("NotificationDelivery.outbox_id must use the out_ prefixed ID pattern")
+end
+delivery_id_parameter = resolve_if_ref(root.dig("components", "parameters", "DeliveryId"), OPENAPI_ROOT.to_s)
+delivery_id_parameter_schema = delivery_id_parameter.fetch("schema")
+if delivery_id_parameter_schema["format"] == "uuid" || delivery_id_parameter_schema["pattern"] != "^del_[a-f0-9]{32}$"
+  fail_contract("DeliveryId parameter must use the del_ prefixed ID pattern")
+end
+impact_review = require_schema_ref(root, "EligibilityImpactReview")
+fail_contract("EligibilityImpactReview must expose employee_ref") unless impact_review.dig("properties", "employee_ref")
+fail_contract("EligibilityImpactReview must require employee_ref") unless impact_review.fetch("required", []).include?("employee_ref")
+fail_contract("EligibilityImpactReview must not expose employee_id") if impact_review.dig("properties", "employee_id")
+unless impact_review.dig("properties", "status", "enum").sort == %w[pending resolved]
+  fail_contract("EligibilityImpactReview status enum must match API values")
+end
+audit_log = require_schema_ref(root, "AuditLogEntry")
+fail_contract("AuditLogEntry must expose metadata") unless audit_log.dig("properties", "metadata", "type") == "string"
+fail_contract("AuditLogEntry must require metadata") unless audit_log.fetch("required", []).include?("metadata")
+fail_contract("AuditLogEntry must not expose redacted_metadata") if audit_log.dig("properties", "redacted_metadata")
 
 warning = require_schema_ref(root, "Warning")
 fail_contract("Warning must include cross_city") unless warning.dig("properties", "code", "enum").include?("cross_city")
@@ -299,7 +394,6 @@ unless ticket_base.dig("properties", "non_transferable", "const") == true
   fail_contract("Ticket must be explicitly non-transferable")
 end
 
-event_create = require_schema_ref(root, "CreateEventRequest")
 fail_contract("CreateEventRequest must expose capacity_type") unless event_create.dig("properties", "capacity_type")
 fail_contract("CreateEventRequest must expose allows_family") unless event_create.dig("properties", "allows_family")
 fail_contract("CreateEventRequest must expose allocation_mode") unless event_create.dig("properties", "allocation_mode")

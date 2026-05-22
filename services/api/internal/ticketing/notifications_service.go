@@ -3,6 +3,7 @@ package ticketing
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -52,9 +53,12 @@ func (s *Service) NotificationDeliveries(ctx context.Context, actor Actor) ([]No
 	var deliveries []NotificationDelivery
 	for rows.Next() {
 		var delivery NotificationDelivery
-		if err := rows.Scan(&delivery.DeliveryID, &delivery.OutboxID, &delivery.EmployeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt); err != nil {
+		var employeeID string
+		if err := rows.Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt); err != nil {
 			return nil, err
 		}
+		delivery.EmployeeRef = notificationEmployeeRef(employeeID)
+		delivery.LastError = redactNotificationDeliveryError(delivery.LastError, employeeID)
 		deliveries = append(deliveries, delivery)
 	}
 	return deliveries, rows.Err()
@@ -70,21 +74,39 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	}
 	defer rollback(ctx, tx)
 	var delivery NotificationDelivery
-	err = tx.QueryRow(ctx, `UPDATE notification_deliveries
-		SET status = 'pending', last_error = '', updated_at = now()
+	var employeeID string
+	err = tx.QueryRow(ctx, `SELECT delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at
+		FROM notification_deliveries
 		WHERE delivery_id = $1
-		RETURNING delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at`, deliveryID).
-		Scan(&delivery.DeliveryID, &delivery.OutboxID, &delivery.EmployeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
+		FOR UPDATE`, deliveryID).
+		Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NotificationDelivery{}, notFound("delivery not found")
 	}
 	if err != nil {
 		return NotificationDelivery{}, err
 	}
-	if delivery.OutboxID != "" {
-		if _, err := tx.Exec(ctx, `UPDATE outbox_events SET publish_status = 'pending', available_at = now(), last_error = '' WHERE outbox_id = $1`, delivery.OutboxID); err != nil {
-			return NotificationDelivery{}, err
-		}
+	if delivery.Channel != "email" {
+		return NotificationDelivery{}, conflict("only email deliveries can be retried")
+	}
+	if delivery.Status != deliveryStatusFailed && delivery.Status != deliveryStatusDeadLetter {
+		return NotificationDelivery{}, conflict("only failed notification deliveries can be retried")
+	}
+	if delivery.OutboxID == "" {
+		return NotificationDelivery{}, conflict("notification delivery outbox is unavailable")
+	}
+	err = tx.QueryRow(ctx, `UPDATE notification_deliveries
+		SET status = 'pending', last_error = '', updated_at = now()
+		WHERE delivery_id = $1
+		RETURNING delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at`, deliveryID).
+		Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
+	if err != nil {
+		return NotificationDelivery{}, err
+	}
+	delivery.EmployeeRef = notificationEmployeeRef(employeeID)
+	delivery.LastError = redactNotificationDeliveryError(delivery.LastError, employeeID)
+	if _, err := tx.Exec(ctx, `UPDATE outbox_events SET publish_status = 'pending', available_at = now(), last_error = '' WHERE outbox_id = $1`, delivery.OutboxID); err != nil {
+		return NotificationDelivery{}, err
 	}
 	return delivery, tx.Commit(ctx)
 }
@@ -100,4 +122,12 @@ func (s *Service) findNotificationPreferences(ctx context.Context, employeeID st
 	}
 	prefs.OptedOutCategories = splitTags(categories)
 	return prefs, nil
+}
+
+func notificationEmployeeRef(employeeID string) string {
+	employeeID = strings.TrimSpace(employeeID)
+	if employeeID == "" {
+		return ""
+	}
+	return maskID(employeeID)
 }

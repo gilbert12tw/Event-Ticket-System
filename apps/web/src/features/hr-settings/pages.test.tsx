@@ -26,9 +26,9 @@ describe("HrSyncSettingsPage", () => {
       {
         review_id: "rev-1",
         event_id: "evt-1",
-        employee_id: "E1001",
+        employee_ref: "E100****",
         ticket_id: "tk-1",
-        status: "open",
+        status: "pending",
         reason: "員工離職",
         created_at: "2026-05-06T10:00:00Z",
       },
@@ -54,9 +54,9 @@ describe("HrSyncSettingsPage", () => {
       {
         review_id: "rev-2",
         event_id: "evt-2",
-        employee_id: "E1002",
+        employee_ref: "E100****",
         ticket_id: "tk-2",
-        status: "open",
+        status: "pending",
         reason: "資格不一致",
         created_at: "2026-05-06T10:02:00Z",
       },
@@ -64,7 +64,7 @@ describe("HrSyncSettingsPage", () => {
     resolveEligibilityImpactReview.mockResolvedValue({
       review_id: "rev-2",
       event_id: "evt-2",
-      employee_id: "E1002",
+      employee_ref: "E100****",
       ticket_id: "tk-2",
       status: "resolved",
       reason: "人資已確認",

@@ -252,9 +252,11 @@ func (s *Service) EligibilityImpactReviews(ctx context.Context, actor Actor) ([]
 	var reviews []EligibilityImpactReview
 	for rows.Next() {
 		var review EligibilityImpactReview
-		if err := rows.Scan(&review.ReviewID, &review.EventID, &review.EmployeeID, &review.TicketID, &review.Status, &review.Reason, &review.CreatedAt, &review.ResolvedAt); err != nil {
+		var employeeID string
+		if err := rows.Scan(&review.ReviewID, &review.EventID, &employeeID, &review.TicketID, &review.Status, &review.Reason, &review.CreatedAt, &review.ResolvedAt); err != nil {
 			return nil, err
 		}
+		review.EmployeeRef = maskID(employeeID)
 		reviews = append(reviews, review)
 	}
 	return reviews, rows.Err()
@@ -271,22 +273,24 @@ func (s *Service) ResolveEligibilityImpactReview(ctx context.Context, actor Acto
 	defer rollback(ctx, tx)
 
 	var review EligibilityImpactReview
+	var employeeID string
 	err = tx.QueryRow(ctx, `UPDATE eligibility_impact_reviews
 		SET status = 'resolved', resolved_at = now(), reason = CASE WHEN $2 = '' THEN reason ELSE $2 END
 		WHERE review_id = $1
 		RETURNING review_id, event_id, employee_id, COALESCE(ticket_id, ''), status, reason, created_at, COALESCE(resolved_at, '0001-01-01 00:00:00+00'::timestamptz)`, reviewID, strings.TrimSpace(req.Reason)).
-		Scan(&review.ReviewID, &review.EventID, &review.EmployeeID, &review.TicketID, &review.Status, &review.Reason, &review.CreatedAt, &review.ResolvedAt)
+		Scan(&review.ReviewID, &review.EventID, &employeeID, &review.TicketID, &review.Status, &review.Reason, &review.CreatedAt, &review.ResolvedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return EligibilityImpactReview{}, notFound("impact review not found")
 	}
 	if err != nil {
 		return EligibilityImpactReview{}, err
 	}
+	review.EmployeeRef = maskID(employeeID)
 	auditID, err := newID("aud")
 	if err != nil {
 		return EligibilityImpactReview{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "eligibility_impact.resolved", "eligibility_impact_review", reviewID, map[string]interface{}{"event_id": review.EventID, "employee_ref": maskID(review.EmployeeID)}); err != nil {
+	if err := insertAudit(ctx, tx, auditID, actor, "eligibility_impact.resolved", "eligibility_impact_review", reviewID, map[string]interface{}{"event_id": review.EventID, "employee_ref": review.EmployeeRef}); err != nil {
 		return EligibilityImpactReview{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

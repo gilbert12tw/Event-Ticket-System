@@ -26,12 +26,11 @@ func (s *Service) RevokeTicket(ctx context.Context, actor Actor, ticketID string
 		}
 		ticket.Status = TicketRevoked
 		ticket.RevokedReason = req.Reason
-		if err := insertOutbox(ctx, tx, "ticket.revoked", ticketID, map[string]interface{}{
-			"event_id":   ticket.EventID,
+		if err := insertOutbox(ctx, tx, "ticket.revoked", ticketID, ticketOutboxPayload(ticket, map[string]interface{}{
 			"reason":     req.Reason,
 			"actor_id":   actor.ID,
 			"actor_role": actor.Role,
-		}); err != nil {
+		})); err != nil {
 			return Ticket{}, err
 		}
 		auditID, err := newID("aud")

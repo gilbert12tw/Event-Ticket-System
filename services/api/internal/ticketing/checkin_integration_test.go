@@ -14,10 +14,20 @@ func TestServiceRejectsTamperedCheckinToken(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 
-	_, err := service.CheckIn(context.Background(), Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "bad.token", DeviceID: "gate-1"})
+	_, err := service.CheckIn(context.Background(), Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "bad.token", EventID: "evt-invalid", DeviceID: "gate-1"})
 	if err == nil || ErrorStatus(err) != 400 {
 		t.Fatalf("expected bad token 400, got %v", err)
 	}
+}
+
+func TestServiceRequiresEventIDForOnlineCheckin(t *testing.T) {
+	service := &Service{}
+
+	_, err := service.CheckIn(context.Background(), Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "any.token", DeviceID: "gate-1"})
+
+	require.Error(t, err)
+	assert.Equal(t, 400, ErrorStatus(err))
+	assert.Equal(t, "event_id is required", ErrorMessage(err))
 }
 
 func TestServiceRejectsEventAndClaimsMismatchCheckinTokens(t *testing.T) {
@@ -144,6 +154,7 @@ func TestServicePersistsHolderMismatchRejectionWithoutRedeeming(t *testing.T) {
 	if accepted.Status != "accepted" {
 		t.Fatalf("accepted response = %+v", accepted)
 	}
+	assertTicketOutboxPayload(t, service, ctx, "ticket.redeemed", *booking.Ticket)
 }
 
 func TestCheckinTransferRejectionAuditOmitsFreeTextDetail(t *testing.T) {
@@ -208,7 +219,7 @@ func TestServiceExpiresTicketDuringCheckin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rejected, err := service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: booking.Ticket.SignedToken, DeviceID: "gate-expired"})
+	rejected, err := service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: booking.Ticket.SignedToken, EventID: event.EventID, DeviceID: "gate-expired"})
 	if err == nil || ErrorStatus(err) != 409 {
 		t.Fatalf("expected expired check-in 409, got %v", err)
 	}
@@ -225,6 +236,7 @@ func TestServiceExpiresTicketDuringCheckin(t *testing.T) {
 	}
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'ticket.expired' AND entity_id = $1`, booking.Ticket.TicketID, 1)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.expired' AND aggregate_id = $1`, booking.Ticket.TicketID, 1)
+	assertTicketOutboxPayload(t, service, ctx, "ticket.expired", *booking.Ticket)
 }
 
 func TestServiceRejectsRevokedTicketDuringCheckin(t *testing.T) {
@@ -253,7 +265,7 @@ func TestServiceRejectsRevokedTicketDuringCheckin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rejected, err := service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: booking.Ticket.SignedToken, DeviceID: "gate-revoked"})
+	rejected, err := service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: booking.Ticket.SignedToken, EventID: event.EventID, DeviceID: "gate-revoked"})
 	if err == nil || ErrorStatus(err) != 409 {
 		t.Fatalf("expected revoked check-in 409, got %v", err)
 	}

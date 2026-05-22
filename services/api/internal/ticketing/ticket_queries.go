@@ -111,6 +111,23 @@ func (s *Service) lockTicketTx(ctx context.Context, tx pgx.Tx, ticketID string) 
 	return ticket, err
 }
 
+func ticketSnapshotTx(ctx context.Context, tx pgx.Tx, ticketID string) (Ticket, error) {
+	var ticket Ticket
+	err := tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
+			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at,
+			r.family_count, e.full_name, e.department, e.site
+		FROM tickets t
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees e ON e.employee_id = t.employee_id
+		WHERE t.ticket_id = $1`, ticketID).
+		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+	if err == pgx.ErrNoRows {
+		return Ticket{}, notFound("ticket not found")
+	}
+	ticket.NonTransferable = true
+	return ticket, err
+}
+
 func (s *Service) hydrateTicketToken(ticket *Ticket) error {
 	if ticket == nil {
 		return nil

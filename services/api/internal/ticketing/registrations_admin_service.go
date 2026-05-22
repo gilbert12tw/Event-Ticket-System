@@ -43,7 +43,9 @@ func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID st
 		}
 		if ticketID != "" {
 			ticket.TicketID = ticketID
-			detail.Ticket = &ticket
+			ticket.FamilyCount = detail.FamilyCount
+			ticket.NonTransferable = true
+			detail.Ticket = sanitizeTicket(&ticket)
 		}
 		details = append(details, detail)
 	}

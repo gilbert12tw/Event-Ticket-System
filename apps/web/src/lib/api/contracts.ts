@@ -100,7 +100,7 @@ export type UpdateEligibilityRequest = {
 export type EligibilityImpactReview = {
   review_id: string;
   event_id: string;
-  employee_id: string;
+  employee_ref: string;
   ticket_id: string;
   status: string;
   reason: string;
@@ -228,7 +228,7 @@ export type Ticket = {
   department?: string;
   city?: string;
   family_count?: number;
-  non_transferable?: boolean;
+  non_transferable: true;
 };
 
 export type BookingResponse = {
@@ -351,7 +351,7 @@ export type UpdateNotificationPreferencesRequest = {
 export type NotificationDelivery = {
   delivery_id: string;
   outbox_id: string;
-  employee_id: string;
+  employee_ref?: string | null;
   channel: string;
   status: string;
   attempts: number;
@@ -385,10 +385,11 @@ export type ReportExport = {
   export_id: string;
   requested_by: string;
   report_type: string;
+  format: string;
   status: string;
   object_key: string;
   created_at: string;
-  completed_at?: string;
+  completed_at?: string | null;
 };
 
 export type LotteryRunRequest = {
