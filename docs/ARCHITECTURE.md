@@ -102,6 +102,8 @@ flowchart LR
 
 ### 4.3 Phase 1 Connectivity Acceptance
 
+- `GET /metrics` exposes Prometheus-style operational metrics on the app port. The current Phase 2 slice includes HTTP RED metrics by route pattern / method / status class, PostgreSQL pool acquire wait counters, current lock-waiting sessions, and outbox backlog / oldest-lag gauges. Route labels must use patterns such as `/api/v1/events/{event_id}` rather than raw IDs or tokens.
+
 - `GET /readyz` 回 200 代表 app 已透過 `DATABASE_URL` 連到 PostgreSQL；PostgreSQL 停止時 `/readyz` 必須回 503。
 - `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml ps` 代表 Redis、MinIO、Mailhog 已作為 local backing services 啟動；production gate 還必須通過 app/worker behavior tests。
 - Redis 目前是 attached resource 與 future reservation/read cache；MinIO 與 Mailhog 已分別透過 report export object-store adapter 與 worker SMTP adapter 進入 business flow。
@@ -485,6 +487,8 @@ Phase 1 文件不把任何雲供應商作為必備前提。Compose 中的 backin
 ## 13. Observability and Operations
 
 ### 13.1 Phase 1 可觀測性
+
+Current scrape surface: `/metrics` is unauthenticated operational telemetry for local/CI scraping. It must stay additive, bounded-cardinality, and free of full PII, signed tokens, QR payloads, provider tokens, and raw path identifiers.
 
 | 類別 | 指標 / 紀錄 |
 | --- | --- |

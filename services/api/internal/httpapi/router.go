@@ -5,8 +5,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
@@ -25,6 +27,7 @@ type Dependencies struct {
 	DB             Pinger
 	Ticketing      TicketingService
 	Logger         *slog.Logger
+	Metrics        *observability.Registry
 	RequestTimeout time.Duration
 	AppEnv         string
 	ProviderAuth   ProviderAuthConfig
@@ -37,16 +40,20 @@ func NewRouter(deps Dependencies) http.Handler {
 	if deps.RequestTimeout <= 0 {
 		deps.RequestTimeout = 5 * time.Second
 	}
+	if deps.Metrics == nil {
+		deps.Metrics = observability.NewRegistry()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", handleIndex)
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /readyz", handleReady(deps.DB, deps.RequestTimeout))
+	mux.Handle("GET /metrics", deps.Metrics.Handler(deps.DB))
 	provider := NewProviderVerifier(deps.ProviderAuth)
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
 	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider)
 
-	return withTraceID(withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
+	return withTraceID(withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -106,7 +113,9 @@ func withTimeout(timeout time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
-		next.ServeHTTP(w, r.WithContext(ctx))
+		timedRequest := r.WithContext(ctx)
+		next.ServeHTTP(w, timedRequest)
+		r.Pattern = timedRequest.Pattern
 	})
 }
 
@@ -118,10 +127,21 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		logger.Info("request handled",
 			"trace_id", traceid.FromContext(r.Context()),
 			"method", r.Method,
+			"route", routePattern(r),
 			"path", r.URL.Path,
 			"status", recorder.status,
+			"status_class", statusClass(recorder.status),
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
+	})
+}
+
+func withHTTPMetrics(metrics *observability.Registry, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		metrics.ObserveHTTPRequest(routePattern(r), r.Method, recorder.status, time.Since(started))
 	})
 }
 
@@ -141,4 +161,23 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
+}
+
+func routePattern(r *http.Request) string {
+	pattern := strings.TrimSpace(r.Pattern)
+	if pattern == "" {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			return "/api/unknown"
+		}
+		return r.URL.Path
+	}
+	prefix := r.Method + " "
+	return strings.TrimPrefix(pattern, prefix)
+}
+
+func statusClass(status int) string {
+	if status < 100 || status > 599 {
+		return "unknown"
+	}
+	return string(rune('0'+status/100)) + "xx"
 }

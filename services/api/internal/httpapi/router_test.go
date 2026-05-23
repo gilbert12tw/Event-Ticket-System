@@ -118,6 +118,36 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 	assertEnvelope(t, logs.String(), `"trace_id":"trace-test-123"`, `"path":"/api/v1/admin/events"`, `"status":201`)
 }
 
+func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Ticketing:      service,
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+		AppEnv:         "test",
+		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/evt_secret_token", nil)
+	authorizeRequest(t, req, ticketing.RoleEmployee)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	router.ServeHTTP(metricsRec, metricsReq)
+
+	require.Equal(t, http.StatusOK, metricsRec.Code)
+	assert.Equal(t, "text/plain; version=0.0.4; charset=utf-8", metricsRec.Header().Get("Content-Type"))
+	assertEnvelope(t, metricsRec.Body.String(),
+		`cets_http_requests_total{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"} 1`,
+		`cets_http_request_seconds_bucket{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"`,
+	)
+	assert.NotContains(t, metricsRec.Body.String(), "evt_secret_token")
+}
+
 func TestIndexServesDemoUI(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
