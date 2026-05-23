@@ -390,21 +390,23 @@ var SchemaStatements = []string{
 
 	// booking-ban: per-event re-booking block after a confirmed-cancel.
 	// A ban is active when lifted_at IS NULL.
-	// UNIQUE (event_id, employee_id) is the DB-level guarantee; application
-	// logic uses ON CONFLICT DO NOTHING for idempotent ban creation.
-	// NOTE: if the registration row is hard-deleted (cascade), the ban row
-	// is also removed — the ban anchor is gone.
+	// booking_bans_unique_active is a PARTIAL unique index on (event_id, employee_id)
+	// WHERE lifted_at IS NULL. This allows the same employee to be re-banned after a lift
+	// (lift→rebook→confirmed-cancel creates a new active row; the old lifted row remains
+	// as an immutable audit trail).
 	`CREATE TABLE IF NOT EXISTS booking_bans (
 		ban_id          TEXT        NOT NULL PRIMARY KEY,
 		event_id        TEXT        NOT NULL REFERENCES events(event_id)        ON DELETE CASCADE,
-		employee_id     TEXT        NOT NULL REFERENCES employees(employee_id)   ON DELETE CASCADE,
+		employee_id     TEXT        NOT NULL REFERENCES employees(employee_id),
 		registration_id TEXT        NOT NULL REFERENCES registrations(registration_id) ON DELETE CASCADE,
 		reason          TEXT        NOT NULL DEFAULT '',
 		banned_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 		lifted_at       TIMESTAMPTZ,
-		lifted_by       TEXT,
-		CONSTRAINT booking_bans_unique_active UNIQUE (event_id, employee_id)
+		lifted_by       TEXT
 	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS booking_bans_unique_active
+		ON booking_bans (event_id, employee_id)
+		WHERE lifted_at IS NULL`,
 	`CREATE INDEX IF NOT EXISTS idx_booking_bans_employee
 		ON booking_bans (employee_id)`,
 }

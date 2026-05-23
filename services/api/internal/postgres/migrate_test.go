@@ -73,7 +73,7 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"INSERT INTO reporting_projection_offsets",
 		// booking-ban
 		"CREATE TABLE IF NOT EXISTS booking_bans",
-		"booking_bans_unique_active UNIQUE (event_id, employee_id)",
+		"booking_bans_unique_active",
 		"idx_booking_bans_employee",
 	}
 

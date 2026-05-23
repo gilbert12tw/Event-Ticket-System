@@ -303,3 +303,62 @@ func TestAuditLogWrittenOnBanAndLift(t *testing.T) {
 	// Verify ban lifted audit log
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_lifted", 1)
 }
+
+// TestReBanAfterLiftReactivatesBan covers the lift→rebook→confirmed-cancel cycle.
+// Previously the full UNIQUE(event_id, employee_id) constraint caused the INSERT to silently
+// skip on the lifted row, making the employee permanently un-bannable for that event.
+func TestReBanAfterLiftReactivatesBan(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:             "Re-Ban After Lift",
+		Capacity:          1,
+		Status:            EventStatusPublished,
+		StartsAt:          now.Add(48 * time.Hour),
+		RegistrationStart: now.Add(-time.Hour),
+		RegistrationClose: now.Add(24 * time.Hour),
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+
+	employee := Actor{ID: "E1001", Role: RoleEmployee}
+
+	// Step 1: book → confirmed-cancel → ban created.
+	booking1, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "rbl-book-1"})
+	require.NoError(t, err)
+	_, err = service.CancelMyRegistration(ctx, employee, booking1.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "rbl-cancel-1", Reason: "sick"})
+	require.NoError(t, err)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 1)
+
+	// Step 2: lift the ban.
+	err = service.LiftBookingBan(ctx, admin, event.EventID, "E1001")
+	require.NoError(t, err)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 0)
+
+	// Step 3: employee re-books successfully after lift.
+	booking2, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "rbl-book-2"})
+	require.NoError(t, err)
+	require.Equal(t, RegistrationConfirmed, booking2.Registration.Status)
+
+	// Step 4: employee cancels again → a new active ban must be created (not silently skipped).
+	_, err = service.CancelMyRegistration(ctx, employee, booking2.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "rbl-cancel-2", Reason: "changed mind"})
+	require.NoError(t, err)
+
+	// Active ban must exist again.
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 1)
+
+	// Two booking.ban_created audit entries (one per ban cycle).
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_created", 2)
+
+	// Employee must now be blocked from booking again.
+	_, err = service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "rbl-book-3"})
+	require.Error(t, err)
+	assert.Equal(t, "BOOKING_BANNED", ErrorCode(err))
+}
