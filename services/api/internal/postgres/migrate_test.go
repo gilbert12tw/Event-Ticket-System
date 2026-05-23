@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -376,15 +375,14 @@ func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
 	require.NoError(t, Migrate(ctx, pool))
 
 	var name string
-	var offset pgtype.Timestamptz
+	var offsetStr string
 	err := pool.QueryRow(ctx,
-		`SELECT projection_name, last_processed_at
+		`SELECT projection_name, last_processed_at::text
 		   FROM reporting_projection_offsets
-		  WHERE projection_name = 'event_summary'`).Scan(&name, &offset)
+		  WHERE projection_name = 'event_summary'`).Scan(&name, &offsetStr)
 	require.NoError(t, err, "seed row for 'event_summary' must exist after migration")
 	assert.Equal(t, "event_summary", name)
-	// Seed value is '-infinity'; pgtype.Timestamptz represents this as InfinityModifier = -1.
-	assert.Equal(t, pgtype.NegInfinity, offset.InfinityModifier, "seed offset must be '-infinity'")
+	assert.Equal(t, "-infinity", offsetStr, "seed offset must be '-infinity'")
 
 	// Running Migrate a second time must not create a duplicate row.
 	require.NoError(t, Migrate(ctx, pool))
