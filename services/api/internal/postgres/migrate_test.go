@@ -65,14 +65,14 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		// PH2-41: reporting projection tables
 		"CREATE TABLE IF NOT EXISTS reporting_event_summary",
 		"department_breakdown JSONB",
-		"last_event_offset    TEXT",
+		"last_processed_at    TIMESTAMPTZ",
 		"reporting_event_summary_confirmed_count_check",
 		"reporting_event_summary_cancelled_count_check",
 		"reporting_event_summary_waitlist_count_check",
 		"reporting_event_summary_total_capacity_check",
 		"idx_reporting_event_summary_updated_at",
 		"CREATE TABLE IF NOT EXISTS reporting_projection_offsets",
-		"last_processed_outbox_id TEXT",
+		"last_processed_at TIMESTAMPTZ",
 		"INSERT INTO reporting_projection_offsets",
 	}
 
@@ -375,14 +375,15 @@ func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
 	require.NoError(t, Migrate(ctx, pool))
 
 	var name string
-	var offset string
+	var offset time.Time
 	err := pool.QueryRow(ctx,
-		`SELECT projection_name, last_processed_outbox_id
+		`SELECT projection_name, last_processed_at
 		   FROM reporting_projection_offsets
 		  WHERE projection_name = 'event_summary'`).Scan(&name, &offset)
 	require.NoError(t, err, "seed row for 'event_summary' must exist after migration")
 	assert.Equal(t, "event_summary", name)
-	assert.Equal(t, "", offset)
+	// '-infinity' in PostgreSQL scans as the zero time in Go.
+	assert.True(t, offset.IsZero() || offset.Equal(time.Time{}), "seed offset must be '-infinity' (zero time)")
 
 	// Running Migrate a second time must not create a duplicate row.
 	require.NoError(t, Migrate(ctx, pool))

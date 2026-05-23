@@ -397,7 +397,7 @@ var SchemaStatements = []string{
 		cancelled_count      INTEGER     NOT NULL DEFAULT 0,
 		waitlist_count       INTEGER     NOT NULL DEFAULT 0,
 		department_breakdown JSONB       NOT NULL DEFAULT '{}',
-		last_event_offset    TEXT        NOT NULL DEFAULT '',
+		last_processed_at    TIMESTAMPTZ NOT NULL DEFAULT '-infinity',
 		updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 		CONSTRAINT reporting_event_summary_confirmed_count_check  CHECK (confirmed_count  >= 0),
 		CONSTRAINT reporting_event_summary_cancelled_count_check  CHECK (cancelled_count  >= 0),
@@ -407,12 +407,12 @@ var SchemaStatements = []string{
 	`CREATE INDEX IF NOT EXISTS idx_reporting_event_summary_updated_at
 		ON reporting_event_summary (updated_at DESC)`,
 	`CREATE TABLE IF NOT EXISTS reporting_projection_offsets (
-		projection_name          TEXT        NOT NULL PRIMARY KEY,
-		last_processed_outbox_id TEXT        NOT NULL DEFAULT '',
-		updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+		projection_name  TEXT        NOT NULL PRIMARY KEY,
+		last_processed_at TIMESTAMPTZ NOT NULL DEFAULT '-infinity',
+		updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
-	`INSERT INTO reporting_projection_offsets (projection_name, last_processed_outbox_id)
-		VALUES ('event_summary', '')
+	`INSERT INTO reporting_projection_offsets (projection_name, last_processed_at)
+		VALUES ('event_summary', '-infinity')
 		ON CONFLICT DO NOTHING`,
 }
 
