@@ -73,6 +73,7 @@ Current implementation slice:
 - `GET /metrics` exposes Prometheus text format from the existing app process.
 - HTTP RED metrics use route pattern, method, and status class labels; raw IDs, signed tokens, QR payloads, and provider tokens must not appear in labels.
 - PostgreSQL pool acquire wait, current lock-waiting sessions, and outbox backlog / oldest lag are scrapeable as white-box signals for the Phase 2 baseline.
+- Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus and Grafana with a provisioned `CETS Observability` dashboard. This is a review/demo profile, not a required production backing service.
 
 ```text
 metrics (prometheus-style):
@@ -134,7 +135,7 @@ Runtime additions in WS2 are observability only — disable paths must exist bef
 ## 10. Non-Goals
 
 - Do not change booking, eligibility, check-in, worker, or notification behavior to "make the numbers move." Tuning lives in WS3/WS4/WS5.
-- Do not introduce a separate metrics backend service as a Phase 2 deliverable. Scrape endpoint + opt-in OTLP only.
+- Do not require a separate metrics backend service as a Phase 2 runtime deliverable. The optional local Prometheus/Grafana profile is for review and baseline evidence only.
 - Do not put metrics in the booking commit path (no synchronous metric writes that can block a tx).
 - Do not use baseline report numbers to justify Kafka, Kubernetes, service mesh, microservice split, or cross-region HA. Those remain deferred decision-gate topics.
 
