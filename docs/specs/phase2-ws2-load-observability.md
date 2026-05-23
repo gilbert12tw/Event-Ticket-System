@@ -68,6 +68,12 @@ Out of scope (other WS):
 
 WS2 surfaces metrics and traces; no new product API. Metric / log shape (consumed by WS5 ops UI and reviewers):
 
+Current implementation slice:
+
+- `GET /metrics` exposes Prometheus text format from the existing app process.
+- HTTP RED metrics use route pattern, method, and status class labels; raw IDs, signed tokens, QR payloads, and provider tokens must not appear in labels.
+- PostgreSQL pool acquire wait, current lock-waiting sessions, and outbox backlog / oldest lag are scrapeable as white-box signals for the Phase 2 baseline.
+
 ```text
 metrics (prometheus-style):
   cets_db_pool_wait_seconds_bucket{le=...}
