@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -375,15 +376,15 @@ func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
 	require.NoError(t, Migrate(ctx, pool))
 
 	var name string
-	var offset time.Time
+	var offset pgtype.Timestamptz
 	err := pool.QueryRow(ctx,
 		`SELECT projection_name, last_processed_at
 		   FROM reporting_projection_offsets
 		  WHERE projection_name = 'event_summary'`).Scan(&name, &offset)
 	require.NoError(t, err, "seed row for 'event_summary' must exist after migration")
 	assert.Equal(t, "event_summary", name)
-	// '-infinity' in PostgreSQL scans as the zero time in Go.
-	assert.True(t, offset.IsZero() || offset.Equal(time.Time{}), "seed offset must be '-infinity' (zero time)")
+	// Seed value is '-infinity'; pgtype.Timestamptz represents this as InfinityModifier = -1.
+	assert.Equal(t, pgtype.NegInfinity, offset.InfinityModifier, "seed offset must be '-infinity'")
 
 	// Running Migrate a second time must not create a duplicate row.
 	require.NoError(t, Migrate(ctx, pool))
