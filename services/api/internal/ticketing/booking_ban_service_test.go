@@ -359,7 +359,7 @@ func TestReBanAfterLiftReactivatesBan(t *testing.T) {
 	// Two booking.ban_created audit entries (one per ban cycle).
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_created", 2)
 
-	// Employee must now be blocked from booking again (create a new dummy event to test this employee's ban, 
+	// Employee must now be blocked from booking again (create a new dummy event to test this employee's ban,
 	// actually the ban is per-event, so they are blocked for THIS event).
 	_, err = service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "rbl-book-3"})
 	require.Error(t, err)
