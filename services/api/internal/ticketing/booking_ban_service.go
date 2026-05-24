@@ -21,9 +21,14 @@ func (s *Service) checkBookingBanTx(ctx context.Context, tx pgx.Tx, eventID, emp
 	return err
 }
 
-// createBookingBanTx creates or reactivates a per-event ban for an employee. It is invoked when a
-// confirmed booking is cancelled. Uses ON CONFLICT DO UPDATE on the partial index so that a
-// lift→rebook→re-cancel cycle correctly reactivates the ban and writes a new audit entry.
+// createBookingBanTx inserts a per-event ban for an employee. It is invoked when a confirmed
+// booking is cancelled. With the partial unique index on (event_id, employee_id) WHERE lifted_at
+// IS NULL, a lifted row is not in the index — so a new INSERT always succeeds and creates a
+// fresh active ban row without conflicting with historical lifted rows.
+//
+// ErrNoRows means RETURNING found no row because an active ban already exists (ON CONFLICT DO
+// NOTHING). That is an idempotent repeat of an already-banned cancel — skip the audit entry.
+// Any other error is a genuine DB failure and is returned directly.
 func (s *Service) createBookingBanTx(ctx context.Context, tx pgx.Tx, actor Actor, eventID, employeeID, registrationID, reason string) error {
 	banID, err := newID("ban")
 	if err != nil {
@@ -38,22 +43,11 @@ func (s *Service) createBookingBanTx(ctx context.Context, tx pgx.Tx, actor Actor
 		banID, eventID, employeeID, registrationID, reason, s.now()).Scan(&activeBanID)
 
 	if err == pgx.ErrNoRows {
-		// Partial-index conflict: an active ban already exists — idempotent, skip audit.
+		// Active ban already exists for this pair — idempotent cancel, skip audit.
 		return nil
 	}
 	if err != nil {
-		// No active ban but a lifted row exists — reactivate it.
-		var reactivatedBanID string
-		reactivateErr := tx.QueryRow(ctx, `
-			UPDATE booking_bans
-			SET registration_id = $3, reason = $4, banned_at = $5, lifted_at = NULL, lifted_by = NULL
-			WHERE event_id = $1 AND employee_id = $2 AND lifted_at IS NOT NULL
-			RETURNING ban_id`,
-			eventID, employeeID, registrationID, reason, s.now()).Scan(&reactivatedBanID)
-		if reactivateErr != nil {
-			return err // return the original INSERT error if the UPDATE also fails
-		}
-		activeBanID = reactivatedBanID
+		return err
 	}
 
 	auditID, err := newID("aud")

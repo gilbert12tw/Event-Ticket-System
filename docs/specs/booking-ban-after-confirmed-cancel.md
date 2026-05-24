@@ -34,28 +34,35 @@ Add to `SchemaStatements` in `services/api/internal/postgres/migrate.go`:
 ```sql
 CREATE TABLE IF NOT EXISTS booking_bans (
     ban_id          TEXT        NOT NULL PRIMARY KEY,
-    event_id        TEXT        NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
-    employee_id     TEXT        NOT NULL REFERENCES employees(employee_id) ON DELETE CASCADE,
+    event_id        TEXT        NOT NULL REFERENCES events(event_id)        ON DELETE CASCADE,
+    employee_id     TEXT        NOT NULL REFERENCES employees(employee_id),
     registration_id TEXT        NOT NULL REFERENCES registrations(registration_id) ON DELETE CASCADE,
     reason          TEXT        NOT NULL DEFAULT '',
     banned_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     lifted_at       TIMESTAMPTZ,
-    lifted_by       TEXT,
-    CONSTRAINT booking_bans_unique_active UNIQUE (event_id, employee_id)
+    lifted_by       TEXT
 );
+
+-- Partial unique index: at most one active ban per (event, employee).
+-- Lifted rows (lifted_at IS NOT NULL) are excluded from the index so that
+-- a new ban can be inserted after a lift without conflicting with history.
+CREATE UNIQUE INDEX IF NOT EXISTS booking_bans_unique_active
+    ON booking_bans (event_id, employee_id)
+    WHERE lifted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_booking_bans_employee
     ON booking_bans (employee_id);
 ```
 
 **Design notes:**
-- `UNIQUE (event_id, employee_id)` enforces at most one active ban per pair — the DB is the
-  final guarantee, not application logic.
+- `booking_bans_unique_active` is a **partial** unique index on `(event_id, employee_id) WHERE
+  lifted_at IS NULL`. This enforces at most one active ban per pair while allowing historical
+  lifted rows to coexist. The DB constraint is the final guarantee.
+- `employee_id` has **no `ON DELETE CASCADE`** — employees must not be silently removed in
+  Phase 1. The FK prevents orphaned bans without cascading deletes.
 - `lifted_at` / `lifted_by` preserve history for audit rather than deleting the row.
   A ban is **active** when `lifted_at IS NULL`.
 - `registration_id` links back to the originating cancellation for auditability.
-- No `CASCADE` from employees — employees should not be silently deleted in Phase 1.
-  The FK prevents orphaned bans.
 
 ### No OLTP table is altered
 
@@ -68,7 +75,7 @@ No `ALTER TABLE` on any Phase 1 table. The new table stands alone.
 | File | Change |
 |---|---|
 | `services/api/internal/postgres/migrate.go` | Append `booking_bans` DDL + index to `SchemaStatements` |
-| `services/api/internal/postgres/migrate_test.go` | Assert `booking_bans` exists after migration; assert `UNIQUE (event_id, employee_id)` is in schema; add PII-column absence test for `booking_bans`; add `dropSchema` entry |
+| `services/api/internal/postgres/migrate_test.go` | Assert `booking_bans` exists after migration; assert `booking_bans_unique_active` partial index is in schema; add PII-column absence test for `booking_bans`; add `dropSchema` entry |
 | `services/api/internal/ticketing/errors.go` | Add `AppError.Code string` field + `bookedBanned()` constructor returning 422 + `"BOOKING_BANNED"` |
 | `services/api/internal/httpapi/response.go` | Update `envelope` struct to include `"error_code"` field; propagate code from `AppError` in `writeError` / `writeServiceError` |
 | `services/api/internal/ticketing/registration_models.go` | Add `BookingBan` struct |
@@ -97,8 +104,12 @@ inside the same transaction, only when `wasConfirmed == true`:
 banID  ← newID("ban")
 INSERT INTO booking_bans (ban_id, event_id, employee_id, registration_id, reason, banned_at)
 VALUES (...)
-ON CONFLICT (event_id, employee_id) DO NOTHING  -- idempotent: already banned
+ON CONFLICT (event_id, employee_id) WHERE lifted_at IS NULL DO NOTHING  -- idempotent: active ban exists
 ```
+
+With the partial index `WHERE lifted_at IS NULL`, a previously lifted row is **not** in the
+index. A subsequent INSERT for the same pair after a lift therefore succeeds and creates a new
+active row — no special reactivation logic is required in application code.
 
 Insert audit log: action `"booking.ban_created"`, entity_type `"booking_ban"`, entity_id `ban_id`.
 
@@ -179,7 +190,7 @@ func bookingBanned(message string) AppError {
 ### Unit / Static
 
 1. `TestSchemaIncludesBookingBans` — asserts `SchemaStatements` contains `booking_bans`,
-   `UNIQUE (event_id, employee_id)`, and `idx_booking_bans_employee`.
+   `booking_bans_unique_active` (partial index), and `idx_booking_bans_employee`.
 
 ### Integration (`TEST_DATABASE_URL` required)
 

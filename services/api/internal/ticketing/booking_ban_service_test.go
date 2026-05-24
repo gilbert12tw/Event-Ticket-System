@@ -304,10 +304,13 @@ func TestAuditLogWrittenOnBanAndLift(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_lifted", 1)
 }
 
-// TestReBanAfterLiftReactivatesBan covers the lift→rebook→confirmed-cancel cycle.
-// Previously the full UNIQUE(event_id, employee_id) constraint caused the INSERT to silently
-// skip on the lifted row, making the employee permanently un-bannable for that event.
-func TestReBanAfterLiftReactivatesBan(t *testing.T) {
+// TestLiftBanAndRebookGetsExistingCancelledRegistration documents the Phase 1 API behaviour:
+// after a ban is lifted the employee can call Book() again, but because registrations enforces
+// UNIQUE(event_id, employee_id) the service returns the existing cancelled row (Duplicate=true)
+// rather than creating a new confirmed registration. A second ban is therefore not triggered via
+// the normal API path in Phase 1. This test asserts the observed behaviour explicitly so any
+// future schema change (e.g. allow re-registration) is caught by CI.
+func TestLiftBanAndRebookGetsExistingCancelledRegistration(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -318,7 +321,7 @@ func TestReBanAfterLiftReactivatesBan(t *testing.T) {
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:             "Re-Ban After Lift",
+		Title:             "Lift And Rebook",
 		Capacity:          1,
 		Status:            EventStatusPublished,
 		StartsAt:          now.Add(48 * time.Hour),
@@ -330,38 +333,77 @@ func TestReBanAfterLiftReactivatesBan(t *testing.T) {
 
 	employee := Actor{ID: "E1001", Role: RoleEmployee}
 
-	// Step 1: book → confirmed-cancel → ban created.
-	booking1, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "rbl-book-1"})
+	// Book → cancel → ban created.
+	booking1, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lrb-book-1"})
 	require.NoError(t, err)
-	_, err = service.CancelMyRegistration(ctx, employee, booking1.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "rbl-cancel-1", Reason: "sick"})
+	_, err = service.CancelMyRegistration(ctx, employee, booking1.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "lrb-cancel-1", Reason: "sick"})
 	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 1)
 
-	// Step 2: lift the ban.
-	err = service.LiftBookingBan(ctx, admin, event.EventID, "E1001")
-	require.NoError(t, err)
+	// Lift the ban.
+	require.NoError(t, service.LiftBookingBan(ctx, admin, event.EventID, "E1001"))
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 0)
 
-	// Step 3: employee re-books successfully after lift.
-	// Note: since the Phase 1 DB schema enforces UNIQUE(event_id, employee_id) for registrations,
-	// service.Book just returns the existing cancelled row. To simulate a successful rebook
-	// (or reactivation) for the sake of testing the ban cycle, we manually set it to confirmed.
-	_, err = service.db.Exec(ctx, "UPDATE registrations SET status = 'confirmed' WHERE registration_id = $1", booking1.Registration.RegistrationID)
+	// Phase 1: Book() returns the existing cancelled row (UNIQUE constraint prevents a new one).
+	rebook, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lrb-book-2"})
+	require.NoError(t, err)
+	assert.Equal(t, "cancelled", string(rebook.Registration.Status), "Phase 1: Book returns cancelled row, not a new confirmed registration")
+	// No second ban was created — the cancelled row was returned, not a new confirmed booking.
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1`, "E1001", 1)
+}
+
+// TestCreateBookingBanTxInsertsNewRowAfterLiftedBan verifies that the partial unique index
+// (WHERE lifted_at IS NULL) allows a second INSERT to succeed after the first ban has been
+// lifted. This directly tests the database behaviour that makes re-banning possible via the
+// service layer — without relying on the API path which is blocked by registrations' own
+// UNIQUE(event_id, employee_id) constraint in Phase 1.
+func TestCreateBookingBanTxInsertsNewRowAfterLiftedBan(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	now := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:             "DB Re-Ban Test",
+		Capacity:          1,
+		Status:            EventStatusPublished,
+		StartsAt:          now.Add(48 * time.Hour),
+		RegistrationStart: now.Add(-time.Hour),
+		RegistrationClose: now.Add(24 * time.Hour),
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
 	require.NoError(t, err)
 
-	// Step 4: employee cancels again → a new active ban must be created (not silently skipped).
-	_, err = service.CancelMyRegistration(ctx, employee, booking1.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "rbl-cancel-2", Reason: "changed mind"})
-	require.NoError(t, err)
+	employee := Actor{ID: "E1001", Role: RoleEmployee}
 
-	// Active ban must exist again.
+	// Create the first ban through the normal cancel flow.
+	booking1, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "drb-book-1"})
+	require.NoError(t, err)
+	_, err = service.CancelMyRegistration(ctx, employee, booking1.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "drb-cancel-1", Reason: "sick"})
+	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 1)
 
-	// Two booking.ban_created audit entries (one per ban cycle).
-	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_created", 2)
+	// Lift the ban.
+	require.NoError(t, service.LiftBookingBan(ctx, admin, event.EventID, "E1001"))
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 0)
 
-	// Employee must now be blocked from booking again (create a new dummy event to test this employee's ban,
-	// actually the ban is per-event, so they are blocked for THIS event).
-	_, err = service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "rbl-book-3"})
-	require.Error(t, err)
-	assert.Equal(t, "BOOKING_BANNED", ErrorCode(err))
+	// Directly call createBookingBanTx to verify the partial index allows a fresh INSERT.
+	tx, err := service.db.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	err = service.createBookingBanTx(ctx, tx, admin, event.EventID, "E1001", booking1.Registration.RegistrationID, "second cancel")
+	require.NoError(t, err, "partial index must allow INSERT after lifted ban")
+	require.NoError(t, tx.Commit(ctx))
+
+	// Both lifted and new-active rows exist; exactly one is active.
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1`, "E1001", 2)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 1)
+
+	// Two ban_created audit entries (one per ban cycle).
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_created", 2)
 }
+
