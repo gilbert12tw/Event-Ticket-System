@@ -15,6 +15,7 @@ import {
   BoundaryContext,
   EmptyState,
   Field,
+  MetaList,
   ReadinessMessage,
   ResponsiveTable,
   SelectField,
@@ -296,26 +297,19 @@ function OfflinePackageStep({
       </div>
       <div className="offline-preview">
         {packageSummary ? (
-          <dl className="meta-list vertical detail-panel">
-            <div>
-              <dt>批次編號</dt>
-              <dd>{packageSummary.batch_id}</dd>
-            </div>
-            <div>
-              <dt>有效至</dt>
-              <dd>{formatDate(packageSummary.valid_until)}</dd>
-            </div>
-            <div>
-              <dt>名單簽章指紋</dt>
-              <dd className="mono-cell">
-                #{fingerprint(packageSummary.package_signature)}
-              </dd>
-            </div>
-            <div>
-              <dt>可同步票券</dt>
-              <dd>{packageSummary.ticket_count}</dd>
-            </div>
-          </dl>
+          <MetaList
+            className="vertical detail-panel"
+            rows={[
+              ["批次編號", packageSummary.batch_id],
+              ["有效至", formatDate(packageSummary.valid_until)],
+              [
+                "名單簽章指紋",
+                `#${fingerprint(packageSummary.package_signature)}`,
+                "mono-cell",
+              ],
+              ["可同步票券", packageSummary.ticket_count],
+            ]}
+          />
         ) : (
           <EmptyState
             title="名單尚未下載"

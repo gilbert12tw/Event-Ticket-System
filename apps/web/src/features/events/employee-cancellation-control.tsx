@@ -10,7 +10,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { SelectField, StatusBadge } from "@/components/shared";
+import { MetaList, SelectField, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import type { EventSummary } from "@/lib/api";
 import {
@@ -65,40 +65,27 @@ export function CancellationControl({
               取消後會立即更新報名狀態，並寫入活動報名紀錄。
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <dl className="meta-list vertical cancellation-confirmation-list">
-            <div>
-              <dt>活動</dt>
-              <dd>{event.title}</dd>
-            </div>
-            <div>
-              <dt>目前狀態</dt>
-              <dd>
+          <MetaList
+            className="vertical cancellation-confirmation-list"
+            rows={[
+              ["活動", event.title],
+              [
+                "目前狀態",
                 <StatusBadge
                   tone={registrationStatusView(event.current_user_status).tone}
                 >
                   {registrationStatusView(event.current_user_status).label}
-                </StatusBadge>
-              </dd>
-            </div>
-            <div>
-              <dt>取消原因</dt>
-              <dd>{cancelReasonLabel(reasonValue)}</dd>
-            </div>
-            <div>
-              <dt>票券影響</dt>
-              <dd>{cancellationTicketConsequence(event)}</dd>
-            </div>
-            <div>
-              <dt>名額與候補</dt>
-              <dd>{cancellationCapacityConsequence(event)}</dd>
-            </div>
-            <div>
-              <dt>重新報名</dt>
-              <dd>
-                取消後不能自行用前端重新報名；若需恢復或重新報名，請聯絡活動主辦。
-              </dd>
-            </div>
-          </dl>
+                </StatusBadge>,
+              ],
+              ["取消原因", cancelReasonLabel(reasonValue)],
+              ["票券影響", cancellationTicketConsequence(event)],
+              ["名額與候補", cancellationCapacityConsequence(event)],
+              [
+                "重新報名",
+                "取消後不能自行用前端重新報名；若需恢復或重新報名，請聯絡活動主辦。",
+              ],
+            ]}
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>保留報名</AlertDialogCancel>
             <AlertDialogAction type="button" disabled={busy} onClick={onCancel}>

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { MouseEvent } from "react";
 import type { ApiLogEntry, AuthSession, Role } from "@/lib/api";
 import type { RouteKey, WorkspaceKey } from "@/app/routes";
 import {
@@ -12,6 +11,7 @@ import {
   userRoutes,
 } from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
+import { runClientNavigation } from "@/lib/navigation";
 import { Icon } from "@/components/shared/icon";
 import { AppPageHeader, SkeletonRows, StatusBadge } from "@/components/shared";
 import { Button } from "@/components/ui/button";
@@ -64,11 +64,9 @@ export function WorkspaceSwitch({
         >
           <a
             href={workspace.path}
-            onClick={(event) => {
-              if (shouldUseNativeNavigation(event)) return;
-              event.preventDefault();
-              navigate(workspace.path);
-            }}
+            onClick={(event) =>
+              runClientNavigation(event, () => navigate(workspace.path))
+            }
           >
             {workspace.label}
           </a>
@@ -206,11 +204,11 @@ function DebugToolsSheet({
               <Button asChild variant="outline">
                 <a
                   href={routePath("admin-demo")}
-                  onClick={(event) => {
-                    if (shouldUseNativeNavigation(event)) return;
-                    event.preventDefault();
-                    navigate(routePath("admin-demo"));
-                  }}
+                  onClick={(event) =>
+                    runClientNavigation(event, () =>
+                      navigate(routePath("admin-demo")),
+                    )
+                  }
                 >
                   <Icon name="play" />
                   執行流程檢查
@@ -390,14 +388,4 @@ function serviceStatusLabel(status: string) {
   if (status === "ok") return "正常";
   if (status === "down") return "異常";
   return status;
-}
-
-function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
-  );
 }

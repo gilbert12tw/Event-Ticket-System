@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { MouseEvent } from "react";
 import {
   authBootstrap,
   clearProviderToken,
@@ -51,6 +50,7 @@ import { AdminAuditPage } from "@/features/audit/pages";
 import { DemoRunbookPage } from "@/features/demo-runbook/pages";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { runClientNavigation } from "@/lib/navigation";
 import { isDebugChromeEnabled, setDebugChromeQuery } from "@/lib/ui/debug";
 
 function App() {
@@ -361,27 +361,13 @@ function UnauthorizedState({
         <Button asChild>
           <a
             href={routePath(fallbackRoute)}
-            onClick={(event) => {
-              if (shouldUseNativeNavigation(event)) return;
-              event.preventDefault();
-              onReturn();
-            }}
+            onClick={(event) => runClientNavigation(event, onReturn)}
           >
             返回預設頁面
           </a>
         </Button>
       </section>
     </Card>
-  );
-}
-
-function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
   );
 }
 

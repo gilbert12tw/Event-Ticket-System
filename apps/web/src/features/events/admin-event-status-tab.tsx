@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   CompactStatsBar,
   Field,
+  MetaList,
   SelectField,
   StatusBadge,
 } from "@/components/shared";
@@ -93,30 +94,26 @@ export function AdminEventStatusTab({
               狀態變更會影響員工能否報名、候補與入場，並寫入稽核紀錄。
             </DialogDescription>
           </DialogHeader>
-          <dl className="meta-list vertical">
-            <div>
-              <dt>活動</dt>
-              <dd>{selectedEvent.title}</dd>
-            </div>
-            <div>
-              <dt>狀態變更</dt>
-              <dd>
-                {eventStatusView(selectedEvent.status).label} →{" "}
-                {eventStatusView(stateForm.status).label}
-              </dd>
-            </div>
-            <div>
-              <dt>影響名單</dt>
-              <dd>
-                已報名 {selectedEvent.confirmed_count}、候補{" "}
-                {selectedEvent.waitlist_count}
-              </dd>
-            </div>
-            <div>
-              <dt>原因</dt>
-              <dd>{stateForm.reason}</dd>
-            </div>
-          </dl>
+          <MetaList
+            rows={[
+              ["活動", selectedEvent.title],
+              [
+                "狀態變更",
+                <>
+                  {eventStatusView(selectedEvent.status).label} →{" "}
+                  {eventStatusView(stateForm.status).label}
+                </>,
+              ],
+              [
+                "影響名單",
+                <>
+                  已報名 {selectedEvent.confirmed_count}、候補{" "}
+                  {selectedEvent.waitlist_count}
+                </>,
+              ],
+              ["原因", stateForm.reason],
+            ]}
+          />
           <DialogFooter>
             <Button
               variant="outline"

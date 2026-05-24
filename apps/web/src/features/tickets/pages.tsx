@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { getTicket, listTickets } from "@/lib/api";
 import type { AuthMeClaims, Ticket } from "@/lib/api";
 import { navigate, ticketDetailPath } from "@/app/routes";
 import { errorMessage, formatDate } from "@/lib/formatting";
+import { runClientNavigation } from "@/lib/navigation";
 import {
   Alert,
   CompactStatsBar,
   EmptyState,
+  MetaList,
   SkeletonRows,
   StatusBadge,
 } from "@/components/shared";
@@ -36,24 +38,7 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
   const pendingListFocusRef = useRef(false);
 
   const principalID = claims.employee_id;
-  const ticketReadinessViews = tickets.map((ticket) =>
-    ticketEntryReadinessView(ticket),
-  );
-  const entryReadyTickets = ticketReadinessViews.filter(
-    (readiness) => readiness.kind === "entry-ready",
-  );
-  const notOpenTickets = ticketReadinessViews.filter(
-    (readiness) => readiness.kind === "not-open",
-  );
-  const pendingQrTickets = ticketReadinessViews.filter(
-    (readiness) => readiness.kind === "qr-pending",
-  );
-  const redeemedTickets = ticketReadinessViews.filter(
-    (readiness) => readiness.kind === "redeemed",
-  );
-  const unavailableTickets = ticketReadinessViews.filter(
-    (readiness) => readiness.kind === "revoked",
-  );
+  const readinessCounts = countTicketReadiness(tickets);
 
   async function refreshList() {
     setMessage("");
@@ -140,10 +125,10 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
   }, [detailID]);
 
   function openTicket(event: MouseEvent<HTMLAnchorElement>, ticketID: string) {
-    if (shouldUseNativeNavigation(event)) return;
-    event.preventDefault();
-    setDetailID(ticketID);
-    navigate(ticketDetailPath(ticketID));
+    runClientNavigation(event, () => {
+      setDetailID(ticketID);
+      navigate(ticketDetailPath(ticketID));
+    });
   }
 
   function returnToList() {
@@ -169,11 +154,7 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
             <Button asChild variant="outline">
               <a
                 href="/user/tickets"
-                onClick={(event) => {
-                  if (shouldUseNativeNavigation(event)) return;
-                  event.preventDefault();
-                  returnToList();
-                }}
+                onClick={(event) => runClientNavigation(event, returnToList)}
               >
                 返回我的票券
               </a>
@@ -221,11 +202,11 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
         <CompactStatsBar
           items={[
             { label: "票券", value: tickets.length },
-            { label: "可入場", value: entryReadyTickets.length },
-            { label: "尚未開放", value: notOpenTickets.length },
-            { label: "待產生 QR", value: pendingQrTickets.length },
-            { label: "已核銷", value: redeemedTickets.length },
-            { label: "已撤銷", value: unavailableTickets.length },
+            { label: "可入場", value: readinessCounts["entry-ready"] },
+            { label: "尚未開放", value: readinessCounts["not-open"] },
+            { label: "待產生 QR", value: readinessCounts["qr-pending"] },
+            { label: "已核銷", value: readinessCounts.redeemed },
+            { label: "已撤銷", value: readinessCounts.revoked },
           ]}
           label="票券摘要"
         />
@@ -265,6 +246,7 @@ function TicketRow({
   ticket: Ticket;
 }) {
   const readiness = ticketEntryReadinessView(ticket);
+  const statusView = ticketStatusView(ticket.status);
   return (
     <a
       className="ticket-row"
@@ -277,9 +259,7 @@ function TicketRow({
         <small>{safeTicketID(ticket.ticket_id)}</small>
       </span>
       <span className="ticket-row-badges">
-        <StatusBadge tone={ticketStatusView(ticket.status).tone}>
-          {ticketStatusView(ticket.status).label}
-        </StatusBadge>
+        <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
         <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
       </span>
       <span className="ticket-row-action" aria-hidden="true">
@@ -308,10 +288,12 @@ export function TicketPanel({
   }
   const qrToken = ticket.qr_payload || ticket.signed_token || "";
   const readiness = ticketEntryReadinessView(ticket);
+  const statusView = ticketStatusView(ticket.status);
   const canShowQr =
     Boolean(qrToken) &&
     (readiness.kind === "entry-ready" || readiness.kind === "not-open");
   const showEntryInstruction = readiness.kind === "entry-ready";
+  const eventDetailHref = `/user/events/detail?event_id=${encodeURIComponent(ticket.event_id)}`;
   const panelClassName = [
     "ticket-panel",
     compact ? "compact" : "",
@@ -322,9 +304,7 @@ export function TicketPanel({
   return (
     <div className={panelClassName}>
       <div className="ticket-detail">
-        <StatusBadge tone={ticketStatusView(ticket.status).tone}>
-          {ticketStatusView(ticket.status).label}
-        </StatusBadge>
+        <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
         <h2>{ticket.event_title || ticket.event_id}</h2>
         <div className="helper-strip">
           <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
@@ -355,69 +335,13 @@ export function TicketPanel({
             </div>
           </>
         )}
-        <dl className="meta-list ticket-meta-list">
-          <div>
-            <dt>持票人</dt>
-            <dd>
-              {ticket.employee_name || ticket.employee_id}
-              <span className="table-muted">{ticket.employee_id}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>部門 / 城市</dt>
-            <dd>
-              {ticket.department || "未提供"}
-              <span className="table-muted">{ticket.city || "未提供"}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>同行人數</dt>
-            <dd>
-              {ticket.family_count ?? 0} 人
-              <span className="table-muted">
-                僅供入場人數核對，非可轉讓票券。
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt>地點</dt>
-            <dd>{siteLabel(ticket.event_location)}</dd>
-          </div>
-          <div>
-            <dt>開始時間</dt>
-            <dd>{formatDate(ticket.event_starts_at)}</dd>
-          </div>
-          <div>
-            <dt>票券編號</dt>
-            <dd>{ticket.ticket_id}</dd>
-          </div>
-          <div>
-            <dt>發行時間</dt>
-            <dd>{formatDate(ticket.issued_at)}</dd>
-          </div>
-          {ticket.expires_at && (
-            <div>
-              <dt>有效期限</dt>
-              <dd>{formatDate(ticket.expires_at)}</dd>
-            </div>
-          )}
-          {ticket.revoked_reason && (
-            <div>
-              <dt>撤銷原因</dt>
-              <dd>{ticket.revoked_reason}</dd>
-            </div>
-          )}
-        </dl>
+        <MetaList className="ticket-meta-list" rows={ticketMetaRows(ticket)} />
         <Button asChild variant="outline">
           <a
-            href={`/user/events/detail?event_id=${encodeURIComponent(ticket.event_id)}`}
-            onClick={(event) => {
-              if (shouldUseNativeNavigation(event)) return;
-              event.preventDefault();
-              navigate(
-                `/user/events/detail?event_id=${encodeURIComponent(ticket.event_id)}`,
-              );
-            }}
+            href={eventDetailHref}
+            onClick={(event) =>
+              runClientNavigation(event, () => navigate(eventDetailHref))
+            }
           >
             <Icon name="audit" />
             查看活動詳情
@@ -428,16 +352,56 @@ export function TicketPanel({
   );
 }
 
-function ticketIDFromLocation() {
-  return new URLSearchParams(window.location.search).get("ticket_id") || "";
+function countTicketReadiness(tickets: Ticket[]) {
+  return tickets.reduce(
+    (counts, ticket) => {
+      counts[ticketEntryReadinessView(ticket).kind] += 1;
+      return counts;
+    },
+    {
+      "entry-ready": 0,
+      "not-open": 0,
+      "qr-pending": 0,
+      redeemed: 0,
+      unavailable: 0,
+      revoked: 0,
+    },
+  );
 }
 
-function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
-  );
+function ticketMetaRows(ticket: Ticket): Array<[string, ReactNode]> {
+  const rows: Array<[string, ReactNode]> = [
+    [
+      "持票人",
+      <>
+        {ticket.employee_name || ticket.employee_id}
+        <span className="table-muted">{ticket.employee_id}</span>
+      </>,
+    ],
+    [
+      "部門 / 城市",
+      <>
+        {ticket.department || "未提供"}
+        <span className="table-muted">{ticket.city || "未提供"}</span>
+      </>,
+    ],
+    [
+      "同行人數",
+      <>
+        {ticket.family_count ?? 0} 人
+        <span className="table-muted">僅供入場人數核對，非可轉讓票券。</span>
+      </>,
+    ],
+    ["地點", siteLabel(ticket.event_location)],
+    ["開始時間", formatDate(ticket.event_starts_at)],
+    ["票券編號", ticket.ticket_id],
+    ["發行時間", formatDate(ticket.issued_at)],
+  ];
+  if (ticket.expires_at) rows.push(["有效期限", formatDate(ticket.expires_at)]);
+  if (ticket.revoked_reason) rows.push(["撤銷原因", ticket.revoked_reason]);
+  return rows;
+}
+
+function ticketIDFromLocation() {
+  return new URLSearchParams(window.location.search).get("ticket_id") || "";
 }

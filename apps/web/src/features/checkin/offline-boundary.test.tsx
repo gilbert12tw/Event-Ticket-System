@@ -7,6 +7,7 @@ import {
   offlineCheckinPackage,
   syncOfflineCheckins,
 } from "@/lib/api";
+import { eventFixture } from "@/test/event-fixtures";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -24,35 +25,7 @@ describe("OfflineCheckinBoundaryPage", () => {
   });
 
   it("loads events and creates an offline package", async () => {
-    listAdminEvents.mockResolvedValue([
-      {
-        event_id: "evt-1",
-        title: "Family Night",
-        description: "event",
-        location: "Taipei",
-        starts_at: "2026-05-10T09:00:00Z",
-        registration_start: "2026-05-08T09:00:00Z",
-        registration_close: "2026-05-09T09:00:00Z",
-        capacity: 10,
-        status: "published",
-        allocation_mode: "FCFS",
-        created_by: "admin-1",
-        created_at: "2026-05-06T10:00:00Z",
-        updated_at: "2026-05-06T10:00:00Z",
-        rule: {
-          department: "Engineering",
-          site: "Taipei",
-          min_grade: 3,
-          employment_status: "active",
-        },
-        eligible: true,
-        eligibility_reason: "ok",
-        confirmed_count: 0,
-        waitlist_count: 0,
-        remaining_capacity: 10,
-        current_user_status: "",
-      },
-    ]);
+    listAdminEvents.mockResolvedValue([offlineEvent()]);
     offlineCheckinPackage.mockResolvedValue({
       batch_id: "batch-1",
       event_id: "evt-1",
@@ -61,28 +34,8 @@ describe("OfflineCheckinBoundaryPage", () => {
       package_signature: "sig-1",
       ticket_count: 2,
       tickets: [
-        {
-          ticket_id: "t1",
-          employee_id: "E1001",
-          token_hash: "hash-1",
-          holder: {
-            display_name: "Ariel Chen",
-            department: "Engineering",
-            city: "Taipei",
-          },
-          family_count: 0,
-        },
-        {
-          ticket_id: "t2",
-          employee_id: "E1002",
-          token_hash: "hash-2",
-          holder: {
-            display_name: "Ben Lin",
-            department: "Engineering",
-            city: "Taipei",
-          },
-          family_count: 1,
-        },
+        offlineTicket("t1", "E1001", "Ariel Chen"),
+        offlineTicket("t2", "E1002", "Ben Lin", 1),
       ],
     });
 
@@ -110,35 +63,7 @@ describe("OfflineCheckinBoundaryPage", () => {
   });
 
   it("submits a scan batch and renders summary", async () => {
-    listAdminEvents.mockResolvedValue([
-      {
-        event_id: "evt-1",
-        title: "Family Night",
-        description: "event",
-        location: "Taipei",
-        starts_at: "2026-05-10T09:00:00Z",
-        registration_start: "2026-05-08T09:00:00Z",
-        registration_close: "2026-05-09T09:00:00Z",
-        capacity: 10,
-        status: "published",
-        allocation_mode: "FCFS",
-        created_by: "admin-1",
-        created_at: "2026-05-06T10:00:00Z",
-        updated_at: "2026-05-06T10:00:00Z",
-        rule: {
-          department: "Engineering",
-          site: "Taipei",
-          min_grade: 3,
-          employment_status: "active",
-        },
-        eligible: true,
-        eligibility_reason: "ok",
-        confirmed_count: 0,
-        waitlist_count: 0,
-        remaining_capacity: 10,
-        current_user_status: "",
-      },
-    ]);
+    listAdminEvents.mockResolvedValue([offlineEvent()]);
     offlineCheckinPackage.mockResolvedValue({
       batch_id: "batch-2",
       event_id: "evt-1",
@@ -146,19 +71,7 @@ describe("OfflineCheckinBoundaryPage", () => {
       valid_until: "2026-05-06T14:00:00Z",
       package_signature: "sig-2",
       ticket_count: 1,
-      tickets: [
-        {
-          ticket_id: "t1",
-          employee_id: "E1001",
-          token_hash: "hash-1",
-          holder: {
-            display_name: "Ariel Chen",
-            department: "Engineering",
-            city: "Taipei",
-          },
-          family_count: 0,
-        },
-      ],
+      tickets: [offlineTicket("t1", "E1001", "Ariel Chen")],
     });
     syncOfflineCheckins.mockResolvedValue({
       batch_id: "batch-2",
@@ -228,3 +141,39 @@ describe("OfflineCheckinBoundaryPage", () => {
     });
   });
 });
+
+function offlineEvent() {
+  return eventFixture({
+    event_id: "evt-1",
+    title: "Family Night",
+    description: "event",
+    location: "Taipei",
+    starts_at: "2026-05-10T09:00:00Z",
+    registration_start: "2026-05-08T09:00:00Z",
+    registration_close: "2026-05-09T09:00:00Z",
+    allocation_mode: "FCFS",
+    confirmed_count: 0,
+    remaining_capacity: 10,
+    rule: {
+      department: "Engineering",
+      site: "Taipei",
+      min_grade: 3,
+      employment_status: "active",
+    },
+  });
+}
+
+function offlineTicket(
+  ticket_id: string,
+  employee_id: string,
+  display_name: string,
+  family_count = 0,
+) {
+  return {
+    ticket_id,
+    employee_id,
+    token_hash: ticket_id.replace("t", "hash-"),
+    holder: { display_name, department: "Engineering", city: "Taipei" },
+    family_count,
+  };
+}

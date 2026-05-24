@@ -59,8 +59,9 @@ apps/web/src/components/layout
 apps/web/src/components/shared
   ResponsiveTable accepts optional mobileCards content while retaining table semantics.
 
-apps/web/src/hooks/use-mobile.ts
-  Shared viewport hook aligns JavaScript breakpoint behavior with the CSS mobile shell.
+apps/web/src/components/layout
+  Mobile behavior stays in the shell and CSS breakpoint system; avoid adding a separate viewport hook
+  unless JavaScript needs behavior that CSS cannot express.
 ```
 
 ## 12-Factor Compliance Notes

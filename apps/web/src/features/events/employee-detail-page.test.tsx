@@ -2,13 +2,15 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type BookingResponse,
   bookEvent,
   cancelMyRegistration,
   getEvent,
   listEvents,
+  type Ticket,
 } from "@/lib/api";
 import { EmployeeEventDetailPage } from "./employee-detail-page";
-import { claims, eventFixture } from "./employee-pages-test-helpers";
+import { claims, eventFixture } from "@/test/event-fixtures";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -26,6 +28,67 @@ const mockGetEvent = vi.mocked(getEvent);
 const mockBookEvent = vi.mocked(bookEvent);
 const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
 
+type EventOverrides = Parameters<typeof eventFixture>[0];
+type BookingStatus = "cancelled" | "confirmed" | "waitlisted";
+
+function showEvent(overrides: EventOverrides = {}) {
+  const event = eventFixture(overrides);
+  mockListEvents.mockResolvedValue([event]);
+  mockGetEvent.mockResolvedValue(event);
+  return event;
+}
+
+function ticket(
+  ticket_id: string,
+  registration_id = ticket_id.replace("T", "R"),
+  status = "active",
+  issued_at = "2026-05-06T10:00:00Z",
+): Ticket {
+  return {
+    ticket_id,
+    registration_id,
+    event_id: "evt-1",
+    employee_id: "E1001",
+    status,
+    signed_token: "signed-secret",
+    issued_at,
+    non_transferable: true,
+  };
+}
+
+function bookingResponse(
+  registration_id: string,
+  status: BookingStatus = "confirmed",
+  overrides: Partial<BookingResponse> = {},
+): BookingResponse {
+  return {
+    registration: {
+      registration_id,
+      event_id: "evt-1",
+      employee_id: "E1001",
+      status,
+      idempotency_key: "book-evt-1-E1001",
+      created_at: "2026-05-16T10:00:00Z",
+    },
+    remaining_capacity: status === "waitlisted" ? 0 : 2,
+    message: "confirmed",
+    ...overrides,
+  };
+}
+
+function revokedTicket(
+  ticket_id: string,
+  registration_id = ticket_id.replace("T", "R"),
+): Ticket {
+  return {
+    ...ticket(ticket_id, registration_id, "revoked"),
+    issued_at: "2026-05-16T10:00:00Z",
+    signed_token: undefined,
+    revoked_at: "2026-05-17T10:00:00Z",
+    revoked_reason: "registration cancelled",
+  };
+}
+
 describe("EmployeeEventDetailPage", () => {
   beforeEach(() => {
     mockListEvents.mockReset();
@@ -36,13 +99,11 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("shows compact confirmation and waitlist policy on event detail", async () => {
-    const event = eventFixture({
+    showEvent({
       allocation_mode: "fcfs",
       remaining_capacity: 0,
       waitlist_count: 3,
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -53,20 +114,10 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("keeps event detail actions without embedding the ticket QR", async () => {
-    const event = eventFixture({
-      current_user_ticket: {
-        ticket_id: "T-2",
-        registration_id: "R-2",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "active",
-        signed_token: "signed-secret",
-        issued_at: "2026-05-06T10:00:00Z",
-      },
+    showEvent({
+      current_user_ticket: ticket("T-2", "R-2"),
       current_user_status: "confirmed",
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -79,20 +130,10 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("opens the exact ticket detail from the event detail handoff", async () => {
-    const event = eventFixture({
-      current_user_ticket: {
-        ticket_id: "T-3",
-        registration_id: "R-3",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "active",
-        signed_token: "signed-secret",
-        issued_at: "2026-05-06T10:00:00Z",
-      },
+    showEvent({
+      current_user_ticket: ticket("T-3", "R-3"),
       current_user_status: "confirmed",
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -105,33 +146,15 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("opens the exact ticket detail after booking success", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_status: "",
       remaining_capacity: 3,
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
-    mockBookEvent.mockResolvedValue({
-      registration: {
-        registration_id: "R-4",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "confirmed",
-        idempotency_key: "book-evt-1-E1001",
-        created_at: "2026-05-16T10:00:00Z",
-      },
-      ticket: {
-        ticket_id: "T-4",
-        registration_id: "R-4",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "active",
-        signed_token: "signed-secret",
-        issued_at: "2026-05-16T10:00:00Z",
-      },
-      remaining_capacity: 2,
-      message: "confirmed",
-    });
+    mockBookEvent.mockResolvedValue(
+      bookingResponse("R-4", "confirmed", {
+        ticket: ticket("T-4", "R-4", "active", "2026-05-16T10:00:00Z"),
+      }),
+    );
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -147,34 +170,22 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("shows duplicate confirmed booking as existing state with exact ticket handoff", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_status: "",
       remaining_capacity: 3,
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
-    mockBookEvent.mockResolvedValue({
-      registration: {
-        registration_id: "R-duplicate",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "confirmed",
-        idempotency_key: "book-evt-1-E1001",
-        created_at: "2026-05-16T10:00:00Z",
-      },
-      ticket: {
-        ticket_id: "T-duplicate",
-        registration_id: "R-duplicate",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "active",
-        signed_token: "signed-secret",
-        issued_at: "2026-05-16T10:00:00Z",
-      },
-      remaining_capacity: 2,
-      message: "booking confirmed and ticket issued",
-      duplicate: true,
-    });
+    mockBookEvent.mockResolvedValue(
+      bookingResponse("R-duplicate", "confirmed", {
+        ticket: ticket(
+          "T-duplicate",
+          "R-duplicate",
+          "active",
+          "2026-05-16T10:00:00Z",
+        ),
+        message: "booking confirmed and ticket issued",
+        duplicate: true,
+      }),
+    );
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -198,26 +209,17 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("shows duplicate waitlist booking without fresh success wording", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_status: "",
       remaining_capacity: 0,
       waitlist_count: 1,
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
-    mockBookEvent.mockResolvedValue({
-      registration: {
-        registration_id: "R-wait-duplicate",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "waitlisted",
-        idempotency_key: "book-evt-1-E1001",
-        created_at: "2026-05-16T10:00:00Z",
-      },
-      remaining_capacity: 0,
-      message: "event is full; employee joined waitlist",
-      duplicate: true,
-    });
+    mockBookEvent.mockResolvedValue(
+      bookingResponse("R-wait-duplicate", "waitlisted", {
+        message: "event is full; employee joined waitlist",
+        duplicate: true,
+      }),
+    );
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -238,35 +240,18 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("shows duplicate cancelled booking as blocked recovery guidance", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_status: "",
       remaining_capacity: 3,
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
-    mockBookEvent.mockResolvedValue({
-      registration: {
-        registration_id: "R-cancelled-duplicate",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "cancelled",
-        idempotency_key: "book-evt-1-E1001",
-        created_at: "2026-05-16T10:00:00Z",
-      },
-      ticket: {
-        ticket_id: "T-revoked-duplicate",
-        registration_id: "R-cancelled-duplicate",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "revoked",
-        issued_at: "2026-05-16T10:00:00Z",
-        revoked_at: "2026-05-17T10:00:00Z",
-        revoked_reason: "registration cancelled",
-      },
-      remaining_capacity: 3,
-      message: "booking already cancelled",
-      duplicate: true,
-    });
+    mockBookEvent.mockResolvedValue(
+      bookingResponse("R-cancelled-duplicate", "cancelled", {
+        ticket: revokedTicket("T-revoked-duplicate", "R-cancelled-duplicate"),
+        remaining_capacity: 3,
+        message: "booking already cancelled",
+        duplicate: true,
+      }),
+    );
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -285,22 +270,11 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("does not show active ticket handoff for cancelled revoked tickets", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_registration_id: "R-revoked",
       current_user_status: "cancelled",
-      current_user_ticket: {
-        ticket_id: "T-revoked",
-        registration_id: "R-revoked",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "revoked",
-        issued_at: "2026-05-16T10:00:00Z",
-        revoked_at: "2026-05-17T10:00:00Z",
-        revoked_reason: "registration cancelled",
-      },
+      current_user_ticket: revokedTicket("T-revoked", "R-revoked"),
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -316,12 +290,10 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("does not submit from event detail when the current user is already registered", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_registration_id: "R-existing",
       current_user_status: "confirmed",
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
 
     render(<EmployeeEventDetailPage claims={claims} />);
 
@@ -336,22 +308,12 @@ describe("EmployeeEventDetailPage", () => {
   });
 
   it("explains the cancellation outcome after a successful cancel", async () => {
-    const event = eventFixture({
+    showEvent({
       current_user_registration_id: "R-cancel",
       current_user_status: "confirmed",
       title: "台北家庭電影夜",
-      current_user_ticket: {
-        ticket_id: "T-cancel",
-        registration_id: "R-cancel",
-        event_id: "evt-1",
-        employee_id: "E1001",
-        status: "active",
-        signed_token: "signed-secret",
-        issued_at: "2026-05-06T10:00:00Z",
-      },
+      current_user_ticket: ticket("T-cancel", "R-cancel"),
     });
-    mockListEvents.mockResolvedValue([event]);
-    mockGetEvent.mockResolvedValue(event);
     mockCancelMyRegistration.mockResolvedValue({
       registration: {
         registration_id: "R-cancel",

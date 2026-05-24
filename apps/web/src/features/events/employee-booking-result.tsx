@@ -1,9 +1,9 @@
 import { navigate, ticketDetailPath } from "@/app/routes";
-import type { MouseEvent } from "react";
-import { Alert } from "@/components/shared";
+import { Alert, MetaList } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import type { AuthMeClaims, BookingResponse, EventSummary } from "@/lib/api";
 import { formatDate } from "@/lib/formatting";
+import { runClientNavigation } from "@/lib/navigation";
 import { localizedMessage } from "@/lib/ui/options";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,38 +61,19 @@ export function ActionSummary({
           <p>{action.recoveryCopy}</p>
         </div>
       </div>
-      <dl className="meta-list vertical">
-        <div>
-          <dt>活動</dt>
-          <dd>{event.title}</dd>
-        </div>
-        <div>
-          <dt>報名人</dt>
-          <dd>{claims.display_name || claims.employee_id}</dd>
-        </div>
-        <div>
-          <dt>資格</dt>
-          <dd>{eligibilityDecisionLabel(event)}</dd>
-        </div>
-        <div>
-          <dt>名額結果</dt>
-          <dd>{availabilityDecisionLabel(event)}</dd>
-        </div>
-        <div>
-          <dt>取消期限</dt>
-          <dd>{formatDate(event.registration_close)}</dd>
-        </div>
-        {event.capacity_type === "unlimited" && (
-          <div>
-            <dt>同行家屬</dt>
-            <dd>{familyCount} 人</dd>
-          </div>
-        )}
-        <div>
-          <dt>目前狀態</dt>
-          <dd>{attendeeStatusLabel(event)}</dd>
-        </div>
-      </dl>
+      <MetaList
+        rows={[
+          ["活動", event.title],
+          ["報名人", claims.display_name || claims.employee_id],
+          ["資格", eligibilityDecisionLabel(event)],
+          ["名額結果", availabilityDecisionLabel(event)],
+          ["取消期限", formatDate(event.registration_close)],
+          ...(event.capacity_type === "unlimited"
+            ? ([["同行家屬", `${familyCount} 人`]] as const)
+            : []),
+          ["目前狀態", attendeeStatusLabel(event)],
+        ]}
+      />
       <p className="form-hint">
         送出時系統會重新檢查資格、活動狀態與名額；額滿時會依活動政策加入候補。
       </p>
@@ -207,11 +188,11 @@ function BookingResultAction({ result }: { result: BookingResultState }) {
       <Button asChild variant="outline">
         <a
           href={ticketDetailPath(ticketID)}
-          onClick={(event) => {
-            if (shouldUseNativeNavigation(event)) return;
-            event.preventDefault();
-            navigate(ticketDetailPath(ticketID));
-          }}
+          onClick={(event) =>
+            runClientNavigation(event, () =>
+              navigate(ticketDetailPath(ticketID)),
+            )
+          }
         >
           <Icon name="ticket" />
           查看票券
@@ -224,11 +205,9 @@ function BookingResultAction({ result }: { result: BookingResultState }) {
       <Button asChild variant="outline">
         <a
           href="/user/notifications"
-          onClick={(event) => {
-            if (shouldUseNativeNavigation(event)) return;
-            event.preventDefault();
-            navigate("/user/notifications");
-          }}
+          onClick={(event) =>
+            runClientNavigation(event, () => navigate("/user/notifications"))
+          }
         >
           <Icon name="send" />
           查看通知中心
@@ -240,25 +219,15 @@ function BookingResultAction({ result }: { result: BookingResultState }) {
     <Button asChild variant="outline">
       <a
         href="/user/events?tab=registered"
-        onClick={(event) => {
-          if (shouldUseNativeNavigation(event)) return;
-          event.preventDefault();
-          navigate("/user/events?tab=registered");
-        }}
+        onClick={(event) =>
+          runClientNavigation(event, () =>
+            navigate("/user/events?tab=registered"),
+          )
+        }
       >
         <Icon name="calendar" />
         查看我的報名
       </a>
     </Button>
-  );
-}
-
-function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
   );
 }

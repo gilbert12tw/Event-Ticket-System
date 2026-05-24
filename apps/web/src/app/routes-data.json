@@ -1,0 +1,175 @@
+{
+  "userRouteSeeds": [
+    [
+      "user-events",
+      "/user/events",
+      "活動探索",
+      "活動",
+      10,
+      "員工瀏覽活動、確認資格、報名或加入候補。",
+      "calendar",
+      ["資格檢核", "名額狀態", "報名結果"]
+    ],
+    [
+      "user-event-detail",
+      "/user/events/detail",
+      "活動詳情",
+      "詳情",
+      11,
+      "員工檢視單一活動的完整時間、資格、容量與目前報名狀態。",
+      "audit",
+      ["單筆查詢", "資格原因", "容量證據"],
+      { "mobilePrimary": false }
+    ],
+    [
+      "user-tickets",
+      "/user/tickets",
+      "我的票券",
+      "票券",
+      20,
+      "員工查看電子票券與二維碼入場資訊。",
+      "ticket",
+      ["票券狀態", "二維碼入場", "簽章碼保護"]
+    ],
+    [
+      "user-notifications",
+      "/user/notifications",
+      "通知中心",
+      "通知",
+      30,
+      "員工查看報名、候補、票券與驗票相關通知。",
+      "bell",
+      ["站內通知", "電子郵件", "重試狀態"]
+    ]
+  ],
+  "adminRouteSeeds": [
+    [
+      "admin-events",
+      "/admin/events",
+      "活動設定",
+      "活動",
+      10,
+      "活動主辦建立活動、設定容量、報名期間與資格規則。",
+      "activity",
+      ["發布檢查", "資格預覽", "稽核寫入"]
+    ],
+    [
+      "admin-registrations",
+      "/admin/registrations",
+      "報名治理",
+      "報名",
+      20,
+      "管理活動報名清單、候補提升、取消報名與票券撤銷。",
+      "users",
+      ["候補提升", "取消報名", "撤銷票券"]
+    ],
+    [
+      "admin-notifications",
+      "/admin/notifications",
+      "通知投遞",
+      "通知",
+      50,
+      "管理通知投遞、重試與失敗記錄。",
+      "send",
+      ["待投遞佇列", "重試", "投遞紀錄"]
+    ],
+    [
+      "admin-checkin",
+      "/admin/checkin",
+      "現場驗票",
+      "驗票",
+      30,
+      "驗票員以線上簽章碼核銷，清楚處理首次與重複掃描。",
+      "scan",
+      ["首次核銷", "重複阻擋", "裝置追蹤"]
+    ],
+    [
+      "admin-offline-checkin",
+      "/admin/checkin/offline",
+      "離線驗票同步",
+      "離線",
+      31,
+      "下載離線名單、同步掃描結果，並保留衝突稽核資料。",
+      "wifiOff",
+      ["名單快照", "同步衝突", "稽核保留"],
+      { "mobileOverflow": true }
+    ],
+    [
+      "admin-reports",
+      "/admin/reports",
+      "人資報表",
+      "報表",
+      40,
+      "人資檢視參與彙總、票券數、候補量與到場率。",
+      "chart",
+      ["彙總數據", "到場率", "最小個資"]
+    ],
+    [
+      "admin-hr-settings",
+      "/admin/hr-settings",
+      "人資同步設定",
+      "同步",
+      60,
+      "管理人資屬性同步、欄位映射與手動匯入設定。",
+      "settings",
+      ["欄位映射", "同步狀態", "最小個資"]
+    ],
+    [
+      "admin-audit",
+      "/admin/audit",
+      "稽核查詢",
+      "稽核",
+      70,
+      "系統管理員追蹤敏感操作、衝突與稽核中繼資料。",
+      "audit",
+      ["敏感操作", "中繼資料", "衝突追蹤"]
+    ],
+    [
+      "admin-demo",
+      "/admin/flow-check",
+      "流程檢查",
+      "流程",
+      90,
+      "一鍵檢查活動建立、報名、候補、驗票、報表與稽核流程。",
+      "play",
+      ["流程檢查", "端到端", "可重跑"],
+      { "mobileOverflow": true }
+    ]
+  ],
+  "routeAliases": {
+    "/": "user-events",
+    "/employee/events": "user-events",
+    "/employee/tickets": "user-tickets",
+    "/admin/events/new": "admin-events",
+    "/checkin": "admin-checkin",
+    "/admin/offline-checkin": "admin-offline-checkin",
+    "/admin/checkin/offline": "admin-offline-checkin",
+    "/hr/reports": "admin-reports",
+    "/admin/hr-sync": "admin-hr-settings",
+    "/admin/settings": "admin-hr-settings",
+    "/demo": "admin-demo",
+    "/admin/demo": "admin-demo"
+  },
+  "roleRouteAccess": {
+    "employee": [
+      "user-events",
+      "user-event-detail",
+      "user-tickets",
+      "user-notifications"
+    ],
+    "activity_admin": [
+      "admin-events",
+      "admin-registrations",
+      "admin-notifications",
+      "admin-demo"
+    ],
+    "checkin_staff": ["admin-checkin", "admin-offline-checkin"],
+    "hr_admin": ["admin-reports", "admin-hr-settings", "admin-audit"],
+    "system_admin": [
+      "admin-reports",
+      "admin-hr-settings",
+      "admin-audit",
+      "admin-notifications"
+    ]
+  }
+}

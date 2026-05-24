@@ -10,14 +10,7 @@ export type Actor = {
   role: Role;
 };
 
-export type AuthSession = {
-  actor: Actor;
-  expires_at: string;
-  claims: AuthMeClaims;
-  source: "provider";
-};
-
-export type AuthMeClaims = {
+type EmployeeClaims = {
   employee_id: string;
   display_name: string;
   job_title?: string | null;
@@ -28,6 +21,16 @@ export type AuthMeClaims = {
   city: string;
   grade: number;
   employment_status: string;
+};
+
+export type AuthSession = {
+  actor: Actor;
+  expires_at: string;
+  claims: AuthMeClaims;
+  source: "provider";
+};
+
+export type AuthMeClaims = EmployeeClaims & {
   claims_status: "complete" | "rejected";
 };
 
@@ -37,17 +40,8 @@ export type AuthBootstrap = {
   debug_chrome_enabled: boolean;
 };
 
-export type MockProfile = {
+export type MockProfile = EmployeeClaims & {
   profile_id: string;
-  display_name: string;
-  job_title?: string | null;
-  role_claims: string[];
-  mapped_roles: Role[];
-  department: string;
-  site: string;
-  city: string;
-  grade: number;
-  employment_status: string;
 };
 
 export type MockProviderToken = {
@@ -132,8 +126,7 @@ export interface EligibilityDecision {
   no_show_cooldown: NoShowCooldown;
 }
 
-export type EventSummary = {
-  event_id: string;
+type EventMutableFields = {
   title: string;
   description: string;
   location: string;
@@ -145,12 +138,16 @@ export type EventSummary = {
   capacity_type: CapacityType;
   capacity: number | null;
   allows_family: boolean;
-  status: string;
-  allocation_mode: string;
   category?: string;
   tags?: string[];
   entry_method?: string;
   visibility?: string;
+};
+
+export type EventSummary = EventMutableFields & {
+  event_id: string;
+  status: string;
+  allocation_mode: string;
   version?: number;
   archived_at?: string;
   created_by: string;
@@ -231,26 +228,7 @@ export type Ticket = {
   non_transferable: true;
 };
 
-export type BookingResponse = {
-  registration: {
-    registration_id: string;
-    event_id: string;
-    employee_id: string;
-    status: string;
-    idempotency_key: string;
-    cancel_idempotency_key?: string;
-    cancelled_at?: string;
-    cancel_reason?: string;
-    family_count?: number;
-    created_at: string;
-  };
-  ticket?: Ticket;
-  remaining_capacity: number;
-  message: string;
-  duplicate?: boolean;
-};
-
-export type RegistrationDetail = {
+type RegistrationRecord = {
   registration_id: string;
   event_id: string;
   employee_id: string;
@@ -261,6 +239,17 @@ export type RegistrationDetail = {
   cancel_reason?: string;
   family_count?: number;
   created_at: string;
+};
+
+export type BookingResponse = {
+  registration: RegistrationRecord;
+  ticket?: Ticket;
+  remaining_capacity: number;
+  message: string;
+  duplicate?: boolean;
+};
+
+export type RegistrationDetail = RegistrationRecord & {
   employee_name: string;
   ticket?: Ticket;
 };
@@ -417,43 +406,12 @@ export type AuditLog = {
   created_at: string;
 };
 
-export type CreateEventRequest = {
-  title: string;
-  description: string;
-  location: string;
-  event_city?: string;
-  event_site?: string;
-  starts_at: string;
-  registration_start: string;
-  registration_close: string;
-  capacity_type: CapacityType;
-  capacity: number | null;
-  allows_family: boolean;
+export type CreateEventRequest = EventMutableFields & {
   status: string;
-  category?: string;
-  tags?: string[];
-  entry_method?: string;
-  visibility?: string;
   rule: EligibilityRule;
 };
 
-export type UpdateEventRequest = {
-  title?: string;
-  description?: string;
-  location?: string;
-  event_city?: string;
-  event_site?: string;
-  starts_at?: string;
-  registration_start?: string;
-  registration_close?: string;
-  capacity_type?: CapacityType;
-  capacity?: number | null;
-  allows_family?: boolean;
-  category?: string;
-  tags?: string[];
-  entry_method?: string;
-  visibility?: string;
-};
+export type UpdateEventRequest = Partial<EventMutableFields>;
 
 export type AuditLogFilters = {
   actor_id?: string;

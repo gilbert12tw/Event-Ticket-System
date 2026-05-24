@@ -137,16 +137,6 @@
   padding: 0;
 }
 
-.cell-vertical {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.cell-vertical > * {
-  min-width: 0;
-}
-
 .compact-list {
   gap: 8px;
 }
@@ -178,15 +168,6 @@
   min-width: 0;
 }
 
-.event-card {
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 178px);
-}
-
-.event-action {
-  min-width: 0;
-}
-
-.event-action [data-slot="button"],
 .ticket-detail [data-slot="button"],
 .toolbar [data-slot="button"],
 .row-actions [data-slot="button"],
@@ -212,7 +193,6 @@
 
 .helper-strip,
 .publish-check,
-.token-safety,
 .action-readiness,
 .ticket-handoff {
   align-items: flex-start;
@@ -220,7 +200,6 @@
 
 .helper-strip [data-slot="button"],
 .publish-check [data-slot="button"],
-.token-safety [data-slot="button"],
 .ticket-handoff [data-slot="button"] {
   flex: 0 0 auto;
 }
