@@ -54,8 +54,11 @@ The projection worker consumes two kinds of sources:
 | `registrations` | OLTP direct read (rebuild only) | `registration_id`, `event_id`, `status`, `employee_id`, `created_at` |
 | `employees` | OLTP direct read (rebuild only) | `employee_id`, `department` (for department breakdown aggregation only) |
 
-**Incremental path (normal operation):** the worker polls `outbox_events` ordered by `id` from
-`last_processed_outbox_id` and applies delta upserts.
+**Incremental path (normal operation):** the worker polls `outbox_events` ordered by
+`(created_at ASC, outbox_id ASC)` where `created_at > last_processed_at` (stored in
+`reporting_projection_offsets.last_processed_at`). Because `outbox_id` is a random
+non-monotonic key, it is used only as a tiebreaker for rows with the same `created_at`;
+the high-water mark is always the `created_at` timestamp of the last successfully applied row.
 
 **Rebuild path:** the worker reads OLTP tables directly, aggregates in-process, and bulk-inserts
 into `reporting_event_summary`. See §5 for the full rebuild procedure.
@@ -84,7 +87,7 @@ The following fields must never appear in a projection-bound query or payload:
 | `cancelled_count` | INTEGER ≥ 0 | Count of registrations with status `cancelled` |
 | `waitlist_count` | INTEGER ≥ 0 | Count of registrations with status `waitlisted` |
 | `department_breakdown` | JSONB | Map of `{ "department_label": integer_count }` — no names or IDs |
-| `last_event_offset` | BIGINT | `outbox_events.id` of the last event applied; used for idempotent upsert |
+| `last_processed_at` | TIMESTAMPTZ | `created_at` of the last outbox event applied to this row; used for idempotent skip |
 | `updated_at` | TIMESTAMPTZ | Wall-clock time of last projection write |
 
 `confirmed_count <= total_capacity` is intentionally not enforced at the projection layer.
@@ -96,10 +99,11 @@ OLTP's responsibility.
 | Column | Type | Notes |
 |---|---|---|
 | `projection_name` | TEXT (PK) | Logical name of the projection, e.g. `event_summary` |
-| `last_processed_outbox_id` | BIGINT | Highest `outbox_events.id` successfully applied |
+| `last_processed_at` | TIMESTAMPTZ | `created_at` of the last `outbox_events` row successfully applied |
 | `updated_at` | TIMESTAMPTZ | Wall-clock time of last offset commit |
 
-One row per projection. Seeded at migration time with `last_processed_outbox_id = 0`.
+One row per projection. Seeded at migration time with `last_processed_at = '-infinity'` (i.e.
+`TIMESTAMPTZ '-infinity'`), ensuring the first poll picks up all existing outbox events.
 
 ---
 
@@ -152,8 +156,9 @@ locked.
    Role required: `system_admin`.
 
 2. **Reset offset:** the worker updates `reporting_projection_offsets` SET
-   `last_processed_outbox_id = 0`, `updated_at = now()` WHERE `projection_name =
-   'event_summary'`.
+   `last_processed_at = '-infinity'`, `updated_at = now()` WHERE `projection_name =
+   'event_summary'`. This causes the incremental poll loop to resume from the beginning
+   of the outbox after rebuild completes.
 
 3. **Truncate projection:** the worker executes `TRUNCATE reporting_event_summary`.  
    No OLTP table is touched.
@@ -165,8 +170,10 @@ locked.
    - Read `events` for `total_capacity`.
    - Bulk-insert into `reporting_event_summary` using `INSERT … ON CONFLICT DO UPDATE`.
 
-5. **Advance offset:** after replay completes, set `last_processed_outbox_id` to the current
-   `MAX(id)` in `outbox_events` so incremental processing resumes from the right position.
+5. **Advance offset:** after replay completes, set `last_processed_at` to
+   `SELECT MAX(created_at) FROM outbox_events` so incremental processing resumes from
+   the right position and does not redundantly re-apply events that were already reflected
+   in the OLTP snapshot. If `outbox_events` is empty, leave `last_processed_at = '-infinity'`.
 
 6. **Resume incremental processing:** the worker's normal poll loop continues from the new
    offset.
@@ -183,8 +190,8 @@ empty data set rather than erroring. The booking hot path is unaffected.
 
 | Failure | Expected Behaviour |
 |---|---|
-| Outbox worker crashes mid-event | Projection falls behind. Freshness SLA breach detected via `X-Report-Freshness` and health check. On restart, worker reads `last_processed_outbox_id` and resumes from the last committed offset — no data is lost or double-counted. |
-| Duplicate outbox event delivered | The worker checks `last_event_offset` on the target row before applying the delta. If `outbox_events.id <= last_event_offset`, the event is skipped. Upsert is idempotent. |
+| Outbox worker crashes mid-event | Projection falls behind. Freshness SLA breach detected via `X-Report-Freshness` and health check. On restart, worker reads `last_processed_at` from `reporting_projection_offsets` and resumes polling from that timestamp — no data is lost or double-counted. |
+| Duplicate outbox event delivered | The worker's poll query filters `WHERE created_at > last_processed_at`, so already-applied events are never re-fetched in normal operation. For any event that does slip through (e.g. clock skew within the same second), the upsert uses `ON CONFLICT DO UPDATE` with no net state change, making the apply step idempotent. |
 | Projection table corrupted or schema mismatch | OLTP tables are entirely unaffected. Admin triggers a full rebuild (§5). The projection is restored from OLTP source truth. |
 | Stale read model served to report API | Response includes `X-Report-Freshness` timestamp. UI shows staleness banner when age > 120 s. Booking, check-in, and eligibility flows are never gated on projection freshness. |
 | Projection worker starved by notification worker | Prevented by worker-kind split (PH2-31). The reporting projection worker runs as a separate process (`cets worker --kind reporting`), isolated from the notification worker (`cets worker --kind notification`). Both consume the same outbox but neither can starve the other. |
