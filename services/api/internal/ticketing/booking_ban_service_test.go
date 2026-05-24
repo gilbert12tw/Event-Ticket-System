@@ -406,4 +406,3 @@ func TestCreateBookingBanTxInsertsNewRowAfterLiftedBan(t *testing.T) {
 	// Two ban_created audit entries (one per ban cycle).
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_created", 2)
 }
-
