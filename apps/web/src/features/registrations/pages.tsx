@@ -13,6 +13,8 @@ import {
   Alert,
   CompactStatsBar,
   EmptyState,
+  MetaList,
+  type MetaListRow,
   ResponsiveTable,
   SelectField,
   StatusBadge,
@@ -39,22 +41,36 @@ import {
 import { GovernanceActionButton } from "./governance-action-button";
 import { AllocationTab } from "./allocation-tab";
 
-type RegistrationTab =
-  | "registrations"
-  | "waitlist"
-  | "allocation"
-  | "tickets"
-  | "history";
 const registrationTabs = [
-  "registrations",
-  "waitlist",
-  "allocation",
-  "tickets",
-  "history",
+  ["registrations", "報名名單"],
+  ["waitlist", "候補名單"],
+  ["allocation", "配票抽籤"],
+  ["tickets", "票券狀態"],
+  ["history", "取消/撤銷紀錄"],
 ] as const;
+type RegistrationTab = (typeof registrationTabs)[number][0];
+const registrationTabValues = registrationTabs.map(([value]) => value);
 type GovernanceAction =
   | { kind: "cancel-registration" | "cancel-waitlist"; row: RegistrationDetail }
   | { kind: "revoke-ticket"; row: RegistrationDetail; ticket: Ticket };
+const governanceActionCopies = {
+  "revoke-ticket": {
+    title: "確認撤銷票券",
+    buttonLabel: "確認撤銷",
+    consequence:
+      "票券撤銷後不可入場，驗票端會改為拒絕，員工需要由主辦重新處理。",
+  },
+  "cancel-waitlist": {
+    title: "確認取消候補",
+    buttonLabel: "確認取消候補",
+    consequence: "候補取消後會離開候補名單，不會再自動遞補名額。",
+  },
+  "cancel-registration": {
+    title: "確認取消報名",
+    buttonLabel: "確認取消報名",
+    consequence: "報名取消後會釋出名額；若已有票券，票券治理需同步確認。",
+  },
+};
 
 export function AdminRegistrationsPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -67,7 +83,7 @@ export function AdminRegistrationsPage() {
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useUrlTab<RegistrationTab>(
     "tab",
-    registrationTabs,
+    registrationTabValues,
     "registrations",
   );
   const selectedEvent = events.find((event) => event.event_id === eventID);
@@ -92,14 +108,16 @@ export function AdminRegistrationsPage() {
     void refresh();
   }, []);
 
-  async function promote() {
-    if (!eventID) return;
+  async function runGovernance(
+    action: () => Promise<string>,
+    nextEventID = eventID,
+  ) {
     setBusy(true);
     setMessage("");
     try {
-      const result = await promoteWaitlist(eventID);
-      setMessage(localizedMessage(result.message));
-      await refresh(eventID);
+      const nextMessage = await action();
+      await refresh(nextEventID);
+      setMessage((current) => current || nextMessage);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -107,48 +125,39 @@ export function AdminRegistrationsPage() {
     }
   }
 
+  async function promote() {
+    if (!eventID) return;
+    await runGovernance(async () =>
+      localizedMessage((await promoteWaitlist(eventID)).message),
+    );
+  }
+
   async function cancel(row: RegistrationDetail, reason: string) {
-    setBusy(true);
-    setMessage("");
-    try {
+    await runGovernance(async () => {
       const result = await cancelRegistration(
         row.event_id,
         row.registration_id,
         reason,
         `cancel-${row.registration_id}`,
       );
-      setMessage(localizedMessage(result.message));
-      await refresh(row.event_id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
+      return localizedMessage(result.message);
+    }, row.event_id);
   }
 
   async function revoke(ticket: Ticket, reason: string) {
-    setBusy(true);
-    setMessage("");
-    try {
+    await runGovernance(async () => {
       await revokeTicket(ticket.ticket_id, reason);
-      setMessage("票券已撤銷。");
-      await refresh(ticket.event_id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
+      return "票券已撤銷。";
+    }, ticket.event_id);
   }
 
   async function confirmGovernanceAction() {
     if (!pendingGovernanceAction || !pendingReason.trim()) return;
     const action = pendingGovernanceAction;
     const reason = pendingReason.trim();
-    if (action.kind === "revoke-ticket") {
-      await revoke(action.ticket, reason);
-    } else {
-      await cancel(action.row, reason);
-    }
+    await (action.kind === "revoke-ticket"
+      ? revoke(action.ticket, reason)
+      : cancel(action.row, reason));
     setPendingGovernanceAction(null);
     setPendingReason("");
   }
@@ -158,18 +167,39 @@ export function AdminRegistrationsPage() {
     setPendingReason("");
   }
 
+  const renderCancellationAction =
+    (kind: "cancel-registration" | "cancel-waitlist", buttonLabel: string) =>
+    (row: RegistrationDetail) => (
+      <GovernanceActionButton
+        buttonLabel={buttonLabel}
+        disabled={busy || row.status === "cancelled"}
+        onClick={() => openGovernanceAction({ kind, row })}
+      />
+    );
+  const renderTicketAction = (row: RegistrationDetail) =>
+    row.ticket ? (
+      <GovernanceActionButton
+        buttonLabel="撤銷票券"
+        disabled={busy || row.ticket.status !== "active"}
+        onClick={() =>
+          row.ticket &&
+          openGovernanceAction({
+            kind: "revoke-ticket",
+            row,
+            ticket: row.ticket,
+          })
+        }
+      />
+    ) : (
+      <span className="table-muted">尚無票券</span>
+    );
+
   const confirmedRows = rows.filter((row) => row.status === "confirmed");
   const waitlistRows = rows.filter((row) => row.status === "waitlisted");
   const ticketRows = rows.filter((row) => row.ticket);
   const historyRows = rows.filter(
     (row) => row.status === "cancelled" || row.ticket?.status === "revoked",
   );
-  const stats = {
-    confirmed: confirmedRows.length,
-    waitlisted: waitlistRows.length,
-    cancelled: rows.filter((row) => row.status === "cancelled").length,
-    tickets: ticketRows.length,
-  };
 
   return (
     <section className="content-grid">
@@ -198,11 +228,11 @@ export function AdminRegistrationsPage() {
               ]}
             />
             <TabsList>
-              <TabsTrigger value="registrations">報名名單</TabsTrigger>
-              <TabsTrigger value="waitlist">候補名單</TabsTrigger>
-              <TabsTrigger value="allocation">配票抽籤</TabsTrigger>
-              <TabsTrigger value="tickets">票券狀態</TabsTrigger>
-              <TabsTrigger value="history">取消/撤銷紀錄</TabsTrigger>
+              {registrationTabs.map(([value, label]) => (
+                <TabsTrigger key={value} value={value}>
+                  {label}
+                </TabsTrigger>
+              ))}
             </TabsList>
           </div>
         </div>
@@ -219,10 +249,13 @@ export function AdminRegistrationsPage() {
         )}
         <CompactStatsBar
           items={[
-            { label: "已報名", value: stats.confirmed },
-            { label: "候補", value: stats.waitlisted },
-            { label: "已取消", value: stats.cancelled },
-            { label: "票券", value: stats.tickets },
+            { label: "已報名", value: confirmedRows.length },
+            { label: "候補", value: waitlistRows.length },
+            {
+              label: "已取消",
+              value: rows.filter((row) => row.status === "cancelled").length,
+            },
+            { label: "票券", value: ticketRows.length },
           ]}
           label="報名治理摘要"
         />
@@ -230,17 +263,9 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={confirmedRows}
             emptyTitle="尚無已報名資料"
-            renderAction={(row) => (
-              <GovernanceActionButton
-                buttonLabel="取消"
-                disabled={busy || row.status === "cancelled"}
-                onClick={() =>
-                  openGovernanceAction({
-                    kind: "cancel-registration",
-                    row,
-                  })
-                }
-              />
+            renderAction={renderCancellationAction(
+              "cancel-registration",
+              "取消",
             )}
           />
         </TabsContent>
@@ -258,17 +283,9 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={waitlistRows}
             emptyTitle="尚無候補名單"
-            renderAction={(row) => (
-              <GovernanceActionButton
-                buttonLabel="取消候補"
-                disabled={busy || row.status === "cancelled"}
-                onClick={() =>
-                  openGovernanceAction({
-                    kind: "cancel-waitlist",
-                    row,
-                  })
-                }
-              />
+            renderAction={renderCancellationAction(
+              "cancel-waitlist",
+              "取消候補",
             )}
           />
         </TabsContent>
@@ -285,24 +302,7 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={ticketRows}
             emptyTitle="尚無票券資料"
-            renderAction={(row) =>
-              row.ticket ? (
-                <GovernanceActionButton
-                  buttonLabel="撤銷票券"
-                  disabled={busy || row.ticket.status !== "active"}
-                  onClick={() =>
-                    row.ticket &&
-                    openGovernanceAction({
-                      kind: "revoke-ticket",
-                      row,
-                      ticket: row.ticket,
-                    })
-                  }
-                />
-              ) : (
-                <span className="table-muted">尚無票券</span>
-              )
-            }
+            renderAction={renderTicketAction}
           />
         </TabsContent>
         <TabsContent value="history">
@@ -346,12 +346,11 @@ function RegistrationTable({
     <ResponsiveTable label="報名治理清單">
       <thead>
         <tr>
-          <th>員工</th>
-          <th>報名編號</th>
-          <th>狀態</th>
-          <th>票券</th>
-          <th>建立時間</th>
-          <th>操作</th>
+          {["員工", "報名編號", "狀態", "票券", "建立時間", "操作"].map(
+            (heading) => (
+              <th key={heading}>{heading}</th>
+            ),
+          )}
         </tr>
       </thead>
       <tbody>
@@ -363,9 +362,7 @@ function RegistrationTable({
             </td>
             <td className="mono-cell">{row.registration_id}</td>
             <td>
-              <StatusBadge tone={registrationStatusView(row.status).tone}>
-                {registrationStatusView(row.status).label}
-              </StatusBadge>
+              {renderStatusBadge(registrationStatusView(row.status))}
               {row.cancel_reason && (
                 <span className="table-muted">{row.cancel_reason}</span>
               )}
@@ -373,9 +370,7 @@ function RegistrationTable({
             <td>
               {row.ticket ? (
                 <>
-                  <StatusBadge tone={ticketStatusView(row.ticket.status).tone}>
-                    {ticketStatusView(row.ticket.status).label}
-                  </StatusBadge>
+                  {renderStatusBadge(ticketStatusView(row.ticket.status))}
                   <span className="table-muted">{row.ticket.ticket_id}</span>
                 </>
               ) : (
@@ -389,6 +384,10 @@ function RegistrationTable({
       </tbody>
     </ResponsiveTable>
   );
+}
+
+function renderStatusBadge(view: ReturnType<typeof registrationStatusView>) {
+  return <StatusBadge tone={view.tone}>{view.label}</StatusBadge>;
 }
 
 function GovernanceConfirmationDialog({
@@ -406,11 +405,27 @@ function GovernanceConfirmationDialog({
   onConfirm: () => void;
   reason: string;
 }) {
-  const copy = action ? governanceActionCopy(action) : null;
+  const copy = action ? governanceActionCopies[action.kind] : null;
   const options =
     action?.kind === "revoke-ticket"
       ? revocationReasonOptions
       : cancellationReasonOptions;
+  const details: MetaListRow[] = action
+    ? [
+        [
+          "員工",
+          <>
+            {action.row.employee_name || action.row.employee_id}
+            <span className="table-muted">{action.row.employee_id}</span>
+          </>,
+        ],
+        ["報名編號", action.row.registration_id],
+        ...(action.kind === "revoke-ticket"
+          ? ([["票券編號", action.ticket.ticket_id]] satisfies MetaListRow[])
+          : []),
+      ]
+    : [];
+
   return (
     <Dialog open={Boolean(action)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -422,25 +437,7 @@ function GovernanceConfirmationDialog({
         </DialogHeader>
         {action && copy && (
           <>
-            <dl className="meta-list vertical">
-              <div>
-                <dt>員工</dt>
-                <dd>
-                  {action.row.employee_name || action.row.employee_id}
-                  <span className="table-muted">{action.row.employee_id}</span>
-                </dd>
-              </div>
-              <div>
-                <dt>報名編號</dt>
-                <dd>{action.row.registration_id}</dd>
-              </div>
-              {action.kind === "revoke-ticket" && (
-                <div>
-                  <dt>票券編號</dt>
-                  <dd>{action.ticket.ticket_id}</dd>
-                </div>
-              )}
-            </dl>
+            <MetaList rows={details} />
             <Alert tone="warn">{copy.consequence}</Alert>
             <SelectField
               label="處置原因"
@@ -474,27 +471,4 @@ function GovernanceConfirmationDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function governanceActionCopy(action: GovernanceAction) {
-  if (action.kind === "revoke-ticket") {
-    return {
-      title: "確認撤銷票券",
-      buttonLabel: "確認撤銷",
-      consequence:
-        "票券撤銷後不可入場，驗票端會改為拒絕，員工需要由主辦重新處理。",
-    };
-  }
-  if (action.kind === "cancel-waitlist") {
-    return {
-      title: "確認取消候補",
-      buttonLabel: "確認取消候補",
-      consequence: "候補取消後會離開候補名單，不會再自動遞補名額。",
-    };
-  }
-  return {
-    title: "確認取消報名",
-    buttonLabel: "確認取消報名",
-    consequence: "報名取消後會釋出名額；若已有票券，票券治理需同步確認。",
-  };
 }

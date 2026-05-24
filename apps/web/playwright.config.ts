@@ -11,11 +11,12 @@ const viewports = [
 export default defineConfig({
   testDir: "./e2e",
   timeout: 90_000,
+  fullyParallel: true,
   expect: {
     timeout: 8_000,
   },
   testIgnore: ["**/*.snapshots/**"],
-  workers: 1,
+  workers: isCI ? 4 : undefined,
   retries: isCI ? 2 : 0,
   reporter: [
     ["list"],

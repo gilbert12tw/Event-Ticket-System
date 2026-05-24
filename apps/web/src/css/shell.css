@@ -246,13 +246,6 @@
   font-size: 0.9rem;
 }
 
-.signal-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
 .header-actions {
   display: flex;
   align-items: center;

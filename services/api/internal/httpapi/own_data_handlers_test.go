@@ -103,12 +103,24 @@ func TestOwnDataHandlersUseProviderClaimsIdentity(t *testing.T) {
 }
 
 func testTicketingRouter(service *fakeTicketingService) http.Handler {
-	return NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	return testRouter(Dependencies{Ticketing: service})
+}
+
+func testRouter(deps Dependencies) http.Handler {
+	if deps.DB == nil {
+		deps.DB = fakePinger{}
+	}
+	if deps.Logger == nil {
+		deps.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if deps.RequestTimeout == 0 {
+		deps.RequestTimeout = time.Second
+	}
+	if deps.AppEnv == "" {
+		deps.AppEnv = "test"
+	}
+	if deps.ProviderAuth.Secret == "" {
+		deps.ProviderAuth.Secret = providerTestSecret()
+	}
+	return NewRouter(deps)
 }

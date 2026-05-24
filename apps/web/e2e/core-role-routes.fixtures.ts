@@ -1,27 +1,36 @@
+function session<const Role extends string>(id: string, role: Role) {
+  return {
+    actor: { id, role },
+    expires_at: "2099-12-31T23:59:59Z",
+  };
+}
+
 export const sessions = {
-  E1001: {
-    actor: { id: "E1001", role: "employee" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "admin-1": {
-    actor: { id: "admin-1", role: "activity_admin" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "staff-1": {
-    actor: { id: "staff-1", role: "checkin_staff" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "hr-1": {
-    actor: { id: "hr-1", role: "hr_admin" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "system-1": {
-    actor: { id: "system-1", role: "system_admin" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
+  E1001: session("E1001", "employee"),
+  "admin-1": session("admin-1", "activity_admin"),
+  "staff-1": session("staff-1", "checkin_staff"),
+  "hr-1": session("hr-1", "hr_admin"),
+  "system-1": session("system-1", "system_admin"),
 };
 
 export type Session = (typeof sessions)[keyof typeof sessions];
+
+export const sampleTickets = [
+  {
+    ticket_id: "ticket-001",
+    registration_id: "reg-001",
+    event_id: "evt-cets-001",
+    employee_id: "E1001",
+    status: "active",
+    issued_at: "2026-01-02T09:00:00Z",
+    event_title: "第一階段企業午餐日",
+    event_location: "台北總部多功能廳",
+    event_starts_at: "2026-01-10T10:00:00Z",
+    employee_name: "陳雅莉",
+    qr_payload: "mocked-qr-token",
+    signed_token: "mocked-token",
+  },
+];
 
 export const sampleEvent = {
   event_id: "evt-cets-001",
@@ -53,34 +62,8 @@ export const sampleEvent = {
   waitlist_count: 0,
   remaining_capacity: 228,
   current_user_status: "confirmed",
-  current_user_ticket: {
-    ticket_id: "ticket-001",
-    registration_id: "reg-001",
-    event_id: "evt-cets-001",
-    employee_id: "E1001",
-    status: "active",
-    issued_at: "2026-01-02T09:00:00Z",
-    qr_payload: "mocked-qr-token",
-    signed_token: "mocked-token",
-  },
+  current_user_ticket: sampleTickets[0],
 };
-
-export const sampleTickets = [
-  {
-    ticket_id: "ticket-001",
-    registration_id: "reg-001",
-    event_id: "evt-cets-001",
-    employee_id: "E1001",
-    status: "active",
-    issued_at: "2026-01-02T09:00:00Z",
-    event_title: "第一階段企業午餐日",
-    event_location: "台北總部多功能廳",
-    event_starts_at: "2026-01-10T10:00:00Z",
-    employee_name: "陳雅莉",
-    qr_payload: "mocked-qr-token",
-    signed_token: "mocked-token",
-  },
-];
 
 export type EventFixture = Record<string, unknown> & { event_id: string };
 
@@ -150,82 +133,81 @@ export const impactReviews = [
   },
 ];
 
+type PrincipalID = keyof typeof sessions;
+type RouteSeed = readonly [path: string, heading: string];
+
+const roleCase = (
+  name: string,
+  principalID: PrincipalID,
+  routes: readonly RouteSeed[],
+) => ({
+  name,
+  principalID,
+  routes: routes.map(([path, heading]) => ({ path, heading })),
+});
+
+const forbiddenRouteCase = (
+  name: string,
+  principalID: PrincipalID,
+  path: string,
+) => ({ name, principalID, path });
+
 export const roleCases = [
-  {
-    name: "employee",
-    principalID: "E1001",
-    routes: [
-      { path: "/user/events", heading: "活動探索" },
-      { path: "/user/events/evt-cets-001", heading: "活動詳情" },
-      { path: "/user/tickets", heading: "我的票券" },
-      { path: "/user/tickets?ticket_id=ticket-001", heading: "我的票券" },
-      { path: "/user/notifications", heading: "通知中心" },
-    ],
-  },
-  {
-    name: "activity_admin",
-    principalID: "admin-1",
-    routes: [
-      { path: "/admin/events", heading: "活動設定" },
-      { path: "/admin/registrations", heading: "報名治理" },
-      { path: "/admin/notifications", heading: "通知投遞" },
-    ],
-  },
-  {
-    name: "checkin_staff",
-    principalID: "staff-1",
-    routes: [
-      { path: "/admin/checkin", heading: "現場驗票" },
-      { path: "/admin/checkin/offline", heading: "離線驗票同步" },
-    ],
-  },
-  {
-    name: "hr_admin",
-    principalID: "hr-1",
-    routes: [
-      { path: "/admin/reports", heading: "人資報表" },
-      { path: "/admin/hr-settings", heading: "人資同步設定" },
-      { path: "/admin/audit", heading: "稽核查詢" },
-    ],
-  },
-  {
-    name: "system_admin",
-    principalID: "system-1",
-    routes: [
-      { path: "/admin/reports", heading: "人資報表" },
-      { path: "/admin/hr-settings", heading: "人資同步設定" },
-      { path: "/admin/audit", heading: "稽核查詢" },
-      { path: "/admin/notifications", heading: "通知投遞" },
-    ],
-  },
+  roleCase("employee", "E1001", [
+    ["/user/events", "活動探索"],
+    ["/user/events/evt-cets-001", "活動詳情"],
+    ["/user/tickets", "我的票券"],
+    ["/user/tickets?ticket_id=ticket-001", "我的票券"],
+    ["/user/notifications", "通知中心"],
+  ]),
+  roleCase("activity_admin", "admin-1", [
+    ["/admin/events", "活動設定"],
+    ["/admin/registrations", "報名治理"],
+    ["/admin/notifications", "通知投遞"],
+  ]),
+  roleCase("checkin_staff", "staff-1", [
+    ["/admin/checkin", "現場驗票"],
+    ["/admin/checkin/offline", "離線驗票同步"],
+  ]),
+  roleCase("hr_admin", "hr-1", [
+    ["/admin/reports", "人資報表"],
+    ["/admin/hr-settings", "人資同步設定"],
+    ["/admin/audit", "稽核查詢"],
+  ]),
+  roleCase("system_admin", "system-1", [
+    ["/admin/reports", "人資報表"],
+    ["/admin/hr-settings", "人資同步設定"],
+    ["/admin/audit", "稽核查詢"],
+    ["/admin/notifications", "通知投遞"],
+  ]),
 ];
 
 export const forbiddenRouteCases = [
-  {
-    name: "employee cannot open admin events",
-    principalID: "E1001",
-    path: "/admin/events",
-  },
-  {
-    name: "activity admin cannot open check-in",
-    principalID: "admin-1",
-    path: "/admin/checkin",
-  },
-  {
-    name: "check-in staff cannot open reports",
-    principalID: "staff-1",
-    path: "/admin/reports",
-  },
-  {
-    name: "HR cannot open event operations",
-    principalID: "hr-1",
-    path: "/admin/events",
-  },
-  {
-    name: "system admin cannot open event operations",
-    principalID: "system-1",
-    path: "/admin/events",
-  },
+  forbiddenRouteCase(
+    "employee cannot open admin events",
+    "E1001",
+    "/admin/events",
+  ),
+  forbiddenRouteCase(
+    "activity admin cannot open check-in",
+    "admin-1",
+    "/admin/checkin",
+  ),
+  forbiddenRouteCase(
+    "check-in staff cannot open reports",
+    "staff-1",
+    "/admin/reports",
+  ),
+  forbiddenRouteCase(
+    "HR cannot open event operations",
+    "hr-1",
+    "/admin/events",
+  ),
+  forbiddenRouteCase(
+    "system admin cannot open event operations",
+    "system-1",
+    "/admin/events",
+  ),
 ] as const;
 
 export function envelope<T>(

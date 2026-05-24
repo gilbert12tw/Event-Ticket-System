@@ -14,94 +14,48 @@ import (
 )
 
 func migrate(cfg config.Config, logger *slog.Logger) error {
-	if err := cfg.ValidateDatabase(); err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
-	defer cancel()
-
-	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	if err := postgres.Migrate(ctx, pool); err != nil {
-		return err
-	}
-	logger.Info("migration complete")
-	return nil
+	return withDatabase(cfg, cfg.ValidateDatabase, func(ctx context.Context, pool *pgxpool.Pool) error {
+		if err := postgres.Migrate(ctx, pool); err != nil {
+			return err
+		}
+		logger.Info("migration complete")
+		return nil
+	})
 }
 
 func ready(cfg config.Config) error {
-	if err := cfg.ValidateDatabase(); err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
-	defer cancel()
-
-	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-	return nil
+	return withDatabase(cfg, cfg.ValidateDatabase, func(context.Context, *pgxpool.Pool) error { return nil })
 }
 
 func seed(cfg config.Config, logger *slog.Logger) error {
-	if err := cfg.ValidateForServe(); err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
-	defer cancel()
-
-	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	if err := postgres.Migrate(ctx, pool); err != nil {
-		return err
-	}
-	service := newTicketingService(pool, cfg, logger)
-	if err := service.SeedDemoData(ctx); err != nil {
-		return err
-	}
-	logger.Info("seed complete")
-	return nil
+	return withDatabase(cfg, cfg.ValidateForServe, func(ctx context.Context, pool *pgxpool.Pool) error {
+		if err := postgres.Migrate(ctx, pool); err != nil {
+			return err
+		}
+		service := newTicketingService(pool, cfg, logger)
+		if err := service.SeedDemoData(ctx); err != nil {
+			return err
+		}
+		logger.Info("seed complete")
+		return nil
+	})
 }
 
 func hrSync(cfg config.Config, logger *slog.Logger, args []string) error {
-	if err := cfg.ValidateDatabase(); err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
-	defer cancel()
-
-	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
 	source := strings.TrimSpace(strings.Join(args, " "))
 	if source == "" {
 		source = "manual"
 	}
 
-	service := newTicketingService(pool, cfg, logger)
-	batch, err := service.RunHRSync(ctx, ticketing.Actor{ID: "hr-sync", Role: ticketing.RoleHRAdmin}, ticketing.HRSyncRequest{Source: source})
-	if err != nil {
-		return err
-	}
-
-	logger.Info("hr sync completed", "batch_id", batch.BatchID, "source", batch.Source, "employee_count", batch.EmployeeCount, "status", batch.Status)
-	return nil
+	return withDatabase(cfg, cfg.ValidateDatabase, func(ctx context.Context, pool *pgxpool.Pool) error {
+		service := newTicketingService(pool, cfg, logger)
+		batch, err := service.RunHRSync(ctx, ticketing.Actor{ID: "hr-sync", Role: ticketing.RoleHRAdmin}, ticketing.HRSyncRequest{Source: source})
+		if err != nil {
+			return err
+		}
+		logger.Info("hr sync completed", "batch_id", batch.BatchID, "source", batch.Source, "employee_count", batch.EmployeeCount, "status", batch.Status)
+		return nil
+	})
 }
 
 func newTicketingService(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger) *ticketing.Service {
@@ -113,24 +67,27 @@ func newTicketingService(pool *pgxpool.Pool, cfg config.Config, logger *slog.Log
 }
 
 func processNoShows(cfg config.Config, logger *slog.Logger) error {
-	if err := cfg.ValidateDatabase(); err != nil {
+	return withDatabase(cfg, cfg.ValidateDatabase, func(ctx context.Context, pool *pgxpool.Pool) error {
+		service := newTicketingService(pool, cfg, logger)
+		result, err := service.ProcessNoShows(ctx, ticketing.Actor{ID: "no-show-processor", Role: ticketing.RoleSystemAdmin})
+		if err != nil {
+			return err
+		}
+		logger.Info("no-show processing complete", "processed", result.Processed, "cooldowns_applied", result.CooldownsApplied)
+		return nil
+	})
+}
+
+func withDatabase(cfg config.Config, validate func() error, run func(context.Context, *pgxpool.Pool) error) error {
+	if err := validate(); err != nil {
 		return err
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
 	defer cancel()
-
 	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-
-	service := newTicketingService(pool, cfg, logger)
-	result, err := service.ProcessNoShows(ctx, ticketing.Actor{ID: "no-show-processor", Role: ticketing.RoleSystemAdmin})
-	if err != nil {
-		return err
-	}
-	logger.Info("no-show processing complete", "processed", result.Processed, "cooldowns_applied", result.CooldownsApplied)
-	return nil
+	return run(ctx, pool)
 }

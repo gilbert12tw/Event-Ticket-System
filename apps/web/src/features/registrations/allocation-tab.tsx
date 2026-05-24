@@ -4,6 +4,7 @@ import {
   EmptyState,
   Field,
   Kpi,
+  MetaList,
   StatusBadge,
 } from "@/components/shared";
 import { Button } from "@/components/ui/button";
@@ -123,20 +124,13 @@ export function AllocationTab({
         </Button>
       </div>
       {lotteryRun && (
-        <dl className="meta-list vertical">
-          <div>
-            <dt>Run ID</dt>
-            <dd className="mono-cell">{lotteryRun.run_id}</dd>
-          </div>
-          <div>
-            <dt>狀態</dt>
-            <dd>{lotteryRun.status}</dd>
-          </div>
-          <div>
-            <dt>中籤人數</dt>
-            <dd>{lotteryRun.winner_count}</dd>
-          </div>
-        </dl>
+        <MetaList
+          rows={[
+            ["Run ID", lotteryRun.run_id, "mono-cell"],
+            ["狀態", lotteryRun.status],
+            ["中籤人數", lotteryRun.winner_count],
+          ]}
+        />
       )}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>

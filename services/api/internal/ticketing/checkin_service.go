@@ -40,16 +40,12 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 	defer rollback(ctx, tx)
 
 	var ticket Ticket
-	err = tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
-			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
-			ev.title, e.full_name, e.department, e.site
+	err = scanCheckinTicketRow(tx.QueryRow(ctx, `SELECT `+checkinTicketSelectColumns+`
 		FROM tickets t
 		JOIN registrations r ON r.registration_id = t.registration_id
 		JOIN events ev ON ev.event_id = t.event_id
 		JOIN employees e ON e.employee_id = t.employee_id
-		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber,
-			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash), &ticket)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if auditErr := insertCheckinRejectionAuditTx(ctx, tx, actor, "", requestEventID, req.DeviceID, "ticket_not_found", ""); auditErr != nil {
 			return CheckinResponse{}, auditErr
@@ -62,7 +58,6 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 	if err != nil {
 		return CheckinResponse{}, err
 	}
-	holder := ticketHolderFromTicket(ticket)
 	if claims.TicketID != ticket.TicketID || claims.EventID != ticket.EventID || claims.EmployeeID != ticket.EmployeeID {
 		if err := insertCheckinRejectionAuditTx(ctx, tx, actor, ticket.TicketID, ticket.EventID, req.DeviceID, "ticket_token_claims_mismatch", ""); err != nil {
 			return CheckinResponse{}, err
@@ -70,19 +65,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		if err := tx.Commit(ctx); err != nil {
 			return CheckinResponse{}, err
 		}
-		return CheckinResponse{
-			TicketID:         ticket.TicketID,
-			EventID:          ticket.EventID,
-			EventTitle:       ticket.EventTitle,
-			EmployeeID:       ticket.EmployeeID,
-			Status:           "rejected",
-			ReasonCode:       "ticket_token_claims_mismatch",
-			ScannedAt:        s.now(),
-			ConflictReason:   "ticket_token_claims_mismatch",
-			RejectionMessage: "ticket token claims do not match",
-			Holder:           holder,
-			FamilyCount:      ticket.FamilyCount,
-		}, badRequest("ticket token claims do not match")
+		return s.rejectedCheckinResponse(ticket, "ticket_token_claims_mismatch", "ticket token claims do not match"), badRequest("ticket token claims do not match")
 	}
 	if requestEventID != ticket.EventID {
 		if err := insertCheckinRejectionAuditTx(ctx, tx, actor, ticket.TicketID, ticket.EventID, req.DeviceID, "event_mismatch", requestEventID); err != nil {
@@ -91,19 +74,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		if err := tx.Commit(ctx); err != nil {
 			return CheckinResponse{}, err
 		}
-		return CheckinResponse{
-			TicketID:         ticket.TicketID,
-			EventID:          ticket.EventID,
-			EventTitle:       ticket.EventTitle,
-			EmployeeID:       ticket.EmployeeID,
-			Status:           "rejected",
-			ReasonCode:       "event_mismatch",
-			ScannedAt:        s.now(),
-			ConflictReason:   "event_mismatch",
-			RejectionMessage: "ticket belongs to a different event",
-			Holder:           holder,
-			FamilyCount:      ticket.FamilyCount,
-		}, conflict("ticket belongs to a different event")
+		return s.rejectedCheckinResponse(ticket, "event_mismatch", "ticket belongs to a different event"), conflict("ticket belongs to a different event")
 	}
 	if reason := strings.TrimSpace(req.HolderMismatchReason); reason != "" {
 		if err := insertCheckinRejectionAuditTx(ctx, tx, actor, ticket.TicketID, ticket.EventID, req.DeviceID, "holder_mismatch", reason); err != nil {
@@ -112,19 +83,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		if err := tx.Commit(ctx); err != nil {
 			return CheckinResponse{}, err
 		}
-		return CheckinResponse{
-			TicketID:         ticket.TicketID,
-			EventID:          ticket.EventID,
-			EventTitle:       ticket.EventTitle,
-			EmployeeID:       ticket.EmployeeID,
-			Status:           "rejected",
-			ReasonCode:       "holder_mismatch",
-			ScannedAt:        s.now(),
-			ConflictReason:   "holder_mismatch",
-			RejectionMessage: reason,
-			Holder:           holder,
-			FamilyCount:      ticket.FamilyCount,
-		}, conflict("ticket holder mismatch")
+		return s.rejectedCheckinResponse(ticket, "holder_mismatch", reason), conflict("ticket holder mismatch")
 	}
 
 	existing, found, err := s.findCheckinByTicketTx(ctx, tx, ticket.TicketID)
@@ -164,19 +123,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		if err := tx.Commit(ctx); err != nil {
 			return CheckinResponse{}, err
 		}
-		return CheckinResponse{
-			TicketID:         ticket.TicketID,
-			EventID:          ticket.EventID,
-			EventTitle:       ticket.EventTitle,
-			EmployeeID:       ticket.EmployeeID,
-			Status:           "rejected",
-			ReasonCode:       reason,
-			ScannedAt:        s.now(),
-			ConflictReason:   reason,
-			RejectionMessage: message,
-			Holder:           holder,
-			FamilyCount:      ticket.FamilyCount,
-		}, conflict(message)
+		return s.rejectedCheckinResponse(ticket, reason, message), conflict(message)
 	}
 	if !ticket.ExpiresAt.IsZero() && s.now().After(ticket.ExpiresAt) {
 		if err := s.expireTicketTx(ctx, tx, actor, ticket, req.DeviceID); err != nil {
@@ -188,19 +135,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		if err := tx.Commit(ctx); err != nil {
 			return CheckinResponse{}, err
 		}
-		return CheckinResponse{
-			TicketID:         ticket.TicketID,
-			EventID:          ticket.EventID,
-			EventTitle:       ticket.EventTitle,
-			EmployeeID:       ticket.EmployeeID,
-			Status:           "rejected",
-			ReasonCode:       "expired_ticket",
-			ScannedAt:        s.now(),
-			ConflictReason:   "expired_ticket",
-			RejectionMessage: "ticket is expired",
-			Holder:           holder,
-			FamilyCount:      ticket.FamilyCount,
-		}, conflict("ticket is expired")
+		return s.rejectedCheckinResponse(ticket, "expired_ticket", "ticket is expired"), conflict("ticket is expired")
 	}
 
 	checkinID, err := newID("chk")
@@ -244,9 +179,25 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		Status:      "accepted",
 		ReasonCode:  "accepted",
 		ScannedAt:   scannedAt,
-		Holder:      holder,
+		Holder:      ticketHolderFromTicket(ticket),
 		FamilyCount: ticket.FamilyCount,
 	}, nil
+}
+
+func (s *Service) rejectedCheckinResponse(ticket Ticket, reasonCode string, message string) CheckinResponse {
+	return CheckinResponse{
+		TicketID:         ticket.TicketID,
+		EventID:          ticket.EventID,
+		EventTitle:       ticket.EventTitle,
+		EmployeeID:       ticket.EmployeeID,
+		Status:           "rejected",
+		ReasonCode:       reasonCode,
+		ScannedAt:        s.now(),
+		ConflictReason:   reasonCode,
+		RejectionMessage: message,
+		Holder:           ticketHolderFromTicket(ticket),
+		FamilyCount:      ticket.FamilyCount,
+	}
 }
 
 func (s *Service) expireTicketTx(ctx context.Context, tx pgx.Tx, actor Actor, ticket Ticket, deviceID string) error {

@@ -7,6 +7,7 @@ import {
   CompactStatsBar,
   EmptyState,
   Field,
+  MetaList,
   ProgressMeter,
   ResponsiveTable,
   SelectField,
@@ -206,16 +207,12 @@ export function HrReportsPage() {
                     }
                     compact
                   />
-                  <dl className="meta-list vertical">
-                    <div>
-                      <dt>剩餘</dt>
-                      <dd>{numberOrDash(row.remaining_capacity)}</dd>
-                    </div>
-                    <div>
-                      <dt>城市</dt>
-                      <dd>{cityDistributionLabel(row.city_distribution)}</dd>
-                    </div>
-                  </dl>
+                  <MetaList
+                    rows={[
+                      ["剩餘", numberOrDash(row.remaining_capacity)],
+                      ["城市", cityDistributionLabel(row.city_distribution)],
+                    ]}
+                  />
                 </article>
               ))}
             >
@@ -309,30 +306,19 @@ export function HrReportsPage() {
                     : "最新匯出狀態已更新。"}
                 </span>
               </div>
-              <dl className="meta-list vertical">
-                <div>
-                  <dt>匯出編號</dt>
-                  <dd className="mono-cell">{lastExport.export_id}</dd>
-                </div>
-                <div>
-                  <dt>請求者</dt>
-                  <dd>{lastExport.requested_by}</dd>
-                </div>
-                <div>
-                  <dt>建立時間</dt>
-                  <dd>{lastExport.created_at}</dd>
-                </div>
-                <div>
-                  <dt>完成時間</dt>
-                  <dd>{reportExportCompletedAt(lastExport)}</dd>
-                </div>
-                <div>
-                  <dt>物件 key</dt>
-                  <dd className="mono-cell">
-                    {lastExport.object_key || "尚未產生"}
-                  </dd>
-                </div>
-              </dl>
+              <MetaList
+                rows={[
+                  ["匯出編號", lastExport.export_id, "mono-cell"],
+                  ["請求者", lastExport.requested_by],
+                  ["建立時間", lastExport.created_at],
+                  ["完成時間", reportExportCompletedAt(lastExport)],
+                  [
+                    "物件 key",
+                    lastExport.object_key || "尚未產生",
+                    "mono-cell",
+                  ],
+                ]}
+              />
             </div>
           ) : (
             <EmptyState

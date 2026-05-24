@@ -8,6 +8,7 @@ import {
 } from "@/lib/ui/options";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "./icon";
+import { MetaList } from "./meta-list";
 
 export function BoundaryContext({
   title,
@@ -51,31 +52,21 @@ export function ProviderClaimsCard({ claims }: { claims: AuthMeClaims }) {
           <CardTitle>身分宣告</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="meta-list vertical">
-            <div>
-              <dt>員工</dt>
-              <dd>
-                {claims.display_name || claims.employee_id}
-                <span className="table-muted">{claims.employee_id}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>部門</dt>
-              <dd>{departmentLabel(claims.department)}</dd>
-            </div>
-            <div>
-              <dt>廠區</dt>
-              <dd>{siteLabel(claims.site)}</dd>
-            </div>
-            <div>
-              <dt>職稱</dt>
-              <dd>{claims.job_title || "未提供"}</dd>
-            </div>
-            <div>
-              <dt>城市</dt>
-              <dd>{siteLabel(claims.city)}</dd>
-            </div>
-          </dl>
+          <MetaList
+            rows={[
+              [
+                "員工",
+                <>
+                  {claims.display_name || claims.employee_id}
+                  <span className="table-muted">{claims.employee_id}</span>
+                </>,
+              ],
+              ["部門", departmentLabel(claims.department)],
+              ["廠區", siteLabel(claims.site)],
+              ["職稱", claims.job_title || "未提供"],
+              ["城市", siteLabel(claims.city)],
+            ]}
+          />
         </CardContent>
       </aside>
     </Card>
@@ -94,31 +85,21 @@ export function EmployeeProfileCard({
           <CardTitle>人資屬性</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="meta-list vertical">
-            <div>
-              <dt>員工</dt>
-              <dd>
-                {employee.full_name}
-                <span className="table-muted">{employee.employee_id}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>部門</dt>
-              <dd>{departmentLabel(employee.department)}</dd>
-            </div>
-            <div>
-              <dt>廠區</dt>
-              <dd>{siteLabel(employee.site)}</dd>
-            </div>
-            <div>
-              <dt>職等</dt>
-              <dd>G{employee.job_grade}</dd>
-            </div>
-            <div>
-              <dt>狀態</dt>
-              <dd>{employmentStatusLabel(employee.employment_status)}</dd>
-            </div>
-          </dl>
+          <MetaList
+            rows={[
+              [
+                "員工",
+                <>
+                  {employee.full_name}
+                  <span className="table-muted">{employee.employee_id}</span>
+                </>,
+              ],
+              ["部門", departmentLabel(employee.department)],
+              ["廠區", siteLabel(employee.site)],
+              ["職等", `G${employee.job_grade}`],
+              ["狀態", employmentStatusLabel(employee.employment_status)],
+            ]}
+          />
         </CardContent>
       </aside>
     </Card>

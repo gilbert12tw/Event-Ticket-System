@@ -4,6 +4,7 @@ import type { ApiLogEntry, AuthSession } from "@/lib/api";
 import type { NavItem, RouteKey, WorkspaceKey } from "@/app/routes";
 import { navigate } from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
+import { runClientNavigation } from "@/lib/navigation";
 import { DebugToggle } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
@@ -391,19 +392,8 @@ function mobileRouteGroups(navRoutes: NavItem[]) {
 }
 
 function handleNavClick(path: string) {
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
-      event.shiftKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    navigate(path);
-  };
+  return (event: MouseEvent<HTMLAnchorElement>) =>
+    runClientNavigation(event, () => navigate(path));
 }
 
 function navItemActive(item: RouteKey, route: RouteKey) {

@@ -50,7 +50,7 @@ test.describe.serial("第一階段實際產品流程", () => {
     );
 
     await loginThroughUi(page, request, staff.id, "現場驗票");
-    await expectOnlineCheckinAndDuplicate(page, onlineToken);
+    await expectOnlineCheckinAndDuplicate(page, event, onlineToken);
     await expectOfflineSyncWithNonEmptyScan(page, event, offlineToken);
     await expectForbiddenRoute(page, "/admin/events");
 
@@ -173,8 +173,13 @@ async function expectEmployeeTicketAndNotifications(
   await expectNotificationEntry(page, event.title, "票券");
 }
 
-async function expectOnlineCheckinAndDuplicate(page: Page, token: string) {
+async function expectOnlineCheckinAndDuplicate(
+  page: Page,
+  event: EventSummary,
+  token: string,
+) {
   await expectRoute(page, "/admin/checkin", "現場驗票");
+  await chooseComboboxOption(page, "驗票活動", event.title);
   await page.getByLabel("掃描或貼上票券").fill(token);
   await chooseComboboxOption(page, "驗票裝置", "自訂裝置");
   await page.getByLabel("自訂裝置代號").fill("playwright-live-online");

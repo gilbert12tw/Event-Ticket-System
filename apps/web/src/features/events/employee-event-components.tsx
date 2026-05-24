@@ -1,9 +1,10 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { navigate, ticketDetailPath } from "@/app/routes";
 import {
   Alert,
   EventListItem,
   Field,
+  MetaList,
   ProgressMeter,
   StatusBadge,
 } from "@/components/shared";
@@ -11,12 +12,14 @@ import { Icon } from "@/components/shared/icon";
 import type { EventSummary } from "@/lib/api";
 import { getEligibilityDecision } from "@/lib/api/contracts";
 import { formatDate } from "@/lib/formatting";
+import { runClientNavigation } from "@/lib/navigation";
 import {
   departmentLabel,
   employmentStatusLabel,
   eventStatusView,
   registrationStatusView,
   siteLabel,
+  type Tone,
 } from "@/lib/ui/options";
 import { Button } from "@/components/ui/button";
 import { CancellationControl } from "./employee-cancellation-control";
@@ -63,6 +66,7 @@ export function EmployeeEventCard({
     event.allows_family;
   const canRunPrimary =
     action.kind === "ticket" || canSubmitAttendeeAction(event);
+  const eligibilityTone = isEligible && !cooldown?.active ? "ok" : "fail";
   const detailHref = `/user/events/detail?event_id=${encodeURIComponent(
     event.event_id,
   )}`;
@@ -82,24 +86,12 @@ export function EmployeeEventCard({
         <EventCardDescription event={event} copy={action.recoveryCopy} />
       }
       badges={
-        <>
-          <StatusBadge tone={isEligible && !cooldown?.active ? "ok" : "fail"}>
-            {eligibilityLabel(event)}
-          </StatusBadge>
-          <StatusBadge tone={action.tone}>
-            {capacitySummaryLabel(event)}
-          </StatusBadge>
-          <StatusBadge tone={eventStatusView(event.status).tone}>
-            {eventStatusView(event.status).label}
-          </StatusBadge>
-          {mode !== "available" && event.current_user_status && (
-            <StatusBadge
-              tone={registrationStatusView(event.current_user_status).tone}
-            >
-              {registrationStatusView(event.current_user_status).label}
-            </StatusBadge>
-          )}
-        </>
+        <EventBadges
+          event={event}
+          capacity={{ label: capacitySummaryLabel(event), tone: action.tone }}
+          eligibilityTone={eligibilityTone}
+          showRegistration={mode !== "available"}
+        />
       }
       actions={
         <>
@@ -113,9 +105,7 @@ export function EmployeeEventCard({
                     clickEvent.preventDefault();
                     return;
                   }
-                  if (shouldUseNativeNavigation(clickEvent)) return;
-                  clickEvent.preventDefault();
-                  navigate(primaryHref);
+                  runClientNavigation(clickEvent, () => navigate(primaryHref));
                 }}
               >
                 <Icon name={needsFamilySetup ? "calendar" : "ticket"} />
@@ -127,19 +117,9 @@ export function EmployeeEventCard({
           <Button asChild size="sm" variant="ghost">
             <a
               href={detailHref}
-              onClick={(clickEvent) => {
-                if (
-                  clickEvent.button !== 0 ||
-                  clickEvent.metaKey ||
-                  clickEvent.ctrlKey ||
-                  clickEvent.altKey ||
-                  clickEvent.shiftKey
-                ) {
-                  return;
-                }
-                clickEvent.preventDefault();
-                navigate(detailHref);
-              }}
+              onClick={(clickEvent) =>
+                runClientNavigation(clickEvent, () => navigate(detailHref))
+              }
             >
               詳情
             </a>
@@ -199,6 +179,37 @@ function BlockedEventAction({ event }: { event: EventSummary }) {
   );
 }
 
+function EventBadges({
+  capacity,
+  eligibilityTone,
+  event,
+  showRegistration = true,
+}: {
+  capacity: { label: string; tone: Tone };
+  eligibilityTone: Tone;
+  event: EventSummary;
+  showRegistration?: boolean;
+}) {
+  const eventStatus = eventStatusView(event.status);
+  const registrationStatus = event.current_user_status
+    ? registrationStatusView(event.current_user_status)
+    : null;
+  return (
+    <>
+      <StatusBadge tone={eligibilityTone}>
+        {eligibilityLabel(event)}
+      </StatusBadge>
+      <StatusBadge tone={capacity.tone}>{capacity.label}</StatusBadge>
+      <StatusBadge tone={eventStatus.tone}>{eventStatus.label}</StatusBadge>
+      {showRegistration && registrationStatus && (
+        <StatusBadge tone={registrationStatus.tone}>
+          {registrationStatus.label}
+        </StatusBadge>
+      )}
+    </>
+  );
+}
+
 export function EventSummaryBlock({
   compact = false,
   event,
@@ -217,27 +228,18 @@ export function EventSummaryBlock({
   const isEligible = eligibilityDecision
     ? eligibilityDecision.eligible
     : event.eligible;
+  const eligibilityTone = isEligible && !cooldown?.active ? "ok" : "fail";
   return (
     <div className={compact ? "" : "summary-block"}>
       <div className="event-card-top">
-        <StatusBadge tone={isEligible && !cooldown?.active ? "ok" : "fail"}>
-          {eligibilityLabel(event)}
-        </StatusBadge>
-        <StatusBadge
-          tone={event.capacity_type === "unlimited" ? "info" : "neutral"}
-        >
-          {event.capacity_type === "unlimited" ? "不限量" : "限量"}
-        </StatusBadge>
-        <StatusBadge tone={eventStatusView(event.status).tone}>
-          {eventStatusView(event.status).label}
-        </StatusBadge>
-        {event.current_user_status && (
-          <StatusBadge
-            tone={registrationStatusView(event.current_user_status).tone}
-          >
-            {registrationStatusView(event.current_user_status).label}
-          </StatusBadge>
-        )}
+        <EventBadges
+          event={event}
+          capacity={{
+            label: event.capacity_type === "unlimited" ? "不限量" : "限量",
+            tone: event.capacity_type === "unlimited" ? "info" : "neutral",
+          }}
+          eligibilityTone={eligibilityTone}
+        />
       </div>
       <h3>{event.title}</h3>
       <p>{userFacingEventDescription(event.description)}</p>
@@ -274,38 +276,7 @@ export function EventSummaryBlock({
         </Alert>
       )}
       <EligibilityWarningList warnings={warnings} />
-      <dl className="meta-list">
-        {!compact && (
-          <div>
-            <dt>活動編號</dt>
-            <dd>{event.event_id}</dd>
-          </div>
-        )}
-        <div>
-          <dt>地點</dt>
-          <dd>{siteLabel(event.location || event.event_site)}</dd>
-        </div>
-        <div>
-          <dt>開始時間</dt>
-          <dd>{formatDate(event.starts_at)}</dd>
-        </div>
-        <div>
-          <dt>報名開始</dt>
-          <dd>{formatDate(event.registration_start)}</dd>
-        </div>
-        <div>
-          <dt>報名截止</dt>
-          <dd>{formatDate(event.registration_close)}</dd>
-        </div>
-        <div>
-          <dt>資格規則</dt>
-          <dd>
-            {departmentLabel(event.rule.department)} /{" "}
-            {siteLabel(event.rule.site)} / G{event.rule.min_grade}+ /{" "}
-            {employmentStatusLabel(event.rule.employment_status)}
-          </dd>
-        </div>
-      </dl>
+      <MetaList className="" rows={eventSummaryRows(event, compact)} />
       {event.capacity_type === "limited" ? (
         <ProgressMeter
           label="容量使用"
@@ -320,6 +291,25 @@ export function EventSummaryBlock({
       )}
     </div>
   );
+}
+
+function eventSummaryRows(
+  event: EventSummary,
+  compact: boolean,
+): Array<[string, ReactNode]> {
+  const rows: Array<[string, ReactNode]> = [];
+  if (!compact) rows.push(["活動編號", event.event_id]);
+  rows.push(
+    ["地點", siteLabel(event.location || event.event_site)],
+    ["開始時間", formatDate(event.starts_at)],
+    ["報名開始", formatDate(event.registration_start)],
+    ["報名截止", formatDate(event.registration_close)],
+    [
+      "資格規則",
+      `${departmentLabel(event.rule.department)} / ${siteLabel(event.rule.site)} / G${event.rule.min_grade}+ / ${employmentStatusLabel(event.rule.employment_status)}`,
+    ],
+  );
+  return rows;
 }
 
 export function WaitlistPolicy({ event }: { event: EventSummary }) {
@@ -437,14 +427,4 @@ function waitlistPolicyCopy(event: EventSummary) {
   const policy =
     event.allocation_mode === "lottery" ? "抽籤或管理員釋出" : "先到先處理";
   return `${policy}；目前不顯示候補順位，有名額釋出時會透過通知中心更新，保留期限依活動主辦政策處理。`;
-}
-
-function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
-  );
 }
