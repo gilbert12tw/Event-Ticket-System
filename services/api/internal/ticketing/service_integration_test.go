@@ -131,19 +131,8 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 }
 
 func TestServiceEligibilityAndBookingUseProviderClaims(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:    "Claims Eligibility",
-		Location: "Taipei HQ",
-		Capacity: 2,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 6, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
+	service, ctx := newSeededIntegrationTest(t)
+	event := createPublishedEvent(t, service, ctx, engineeringEventRequest("Claims Eligibility", 2, 6))
 
 	lowGradeActor := Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
 		Department:       "Engineering",
@@ -188,20 +177,14 @@ func TestServiceEligibilityAndBookingUseProviderClaims(t *testing.T) {
 }
 
 func TestServiceEligibilityFallsBackToLocationCityForLegacyEvents(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+	service, ctx := newSeededIntegrationTest(t)
+	event := createPublishedEvent(t, service, ctx, CreateEventRequest{
 		Title:    "Legacy City Fallback",
 		Location: "Hsinchu Auditorium",
 		Capacity: 2,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     engineeringRule(5),
 	})
-	require.NoError(t, err)
-	_, err = service.db.Exec(ctx, `UPDATE events SET event_city = '' WHERE event_id = $1`, event.EventID)
+	_, err := service.db.Exec(ctx, `UPDATE events SET event_city = '' WHERE event_id = $1`, event.EventID)
 	require.NoError(t, err)
 
 	decision, err := service.CheckEligibility(ctx, Actor{ID: "E1001", Role: RoleEmployee, Claims: &ProviderClaims{
@@ -220,21 +203,11 @@ func TestServiceEligibilityFallsBackToLocationCityForLegacyEvents(t *testing.T) 
 }
 
 func TestServiceUpdateEventRecomputesLegacyCityWhenLocationChanges(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	service, ctx := newSeededIntegrationTest(t)
 
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Legacy Location Edit",
-		Location: "Taipei HQ",
-		Capacity: 2,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	_, err = service.db.Exec(ctx, `UPDATE events SET event_city = '', event_site = '' WHERE event_id = $1`, event.EventID)
+	event := createPublishedEvent(t, service, ctx, engineeringEventRequest("Legacy Location Edit", 2, 5))
+	_, err := service.db.Exec(ctx, `UPDATE events SET event_city = '', event_site = '' WHERE event_id = $1`, event.EventID)
 	require.NoError(t, err)
 
 	nextLocation := "Hsinchu Auditorium"
@@ -259,19 +232,13 @@ func TestServiceUpdateEventRecomputesLegacyCityWhenLocationChanges(t *testing.T)
 }
 
 func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+	service, ctx := newSeededIntegrationTest(t)
+	event := createPublishedEvent(t, service, ctx, CreateEventRequest{
 		Title:    "Eligibility Impact",
 		Capacity: 2,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+		Rule:     engineeringRule(5),
 	})
-	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1 AND version = 1`, event.EventID, 1)
 
 	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "impact-booking"})
@@ -311,18 +278,9 @@ func TestServiceEligibilityUpdateCreatesImpactReviews(t *testing.T) {
 }
 
 func TestServiceRejectsIdempotencyKeyCollisionAcrossEmployees(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:    "Collision Test",
-		Capacity: 2,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "shared-key"})
+	service, ctx := newSeededIntegrationTest(t)
+	event := createPublishedEvent(t, service, ctx, CreateEventRequest{Title: "Collision Test", Capacity: 2, Rule: engineeringRule(5)})
+	_, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "shared-key"})
 	require.NoError(t, err)
 	_, err = service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "shared-key"})
 	require.Error(t, err)
@@ -330,17 +288,8 @@ func TestServiceRejectsIdempotencyKeyCollisionAcrossEmployees(t *testing.T) {
 }
 
 func TestServiceConcurrentBookingsDoNotOversellLastSeat(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:    "Last Seat Race",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
+	service, ctx := newSeededIntegrationTest(t)
+	event := createPublishedEvent(t, service, ctx, CreateEventRequest{Title: "Last Seat Race", Capacity: 1, Rule: engineeringRule(5)})
 
 	start := make(chan struct{})
 	results := make(chan BookingResponse, 2)
@@ -382,6 +331,31 @@ func TestServiceConcurrentBookingsDoNotOversellLastSeat(t *testing.T) {
 
 func newIntegrationService(t *testing.T) (*Service, func()) {
 	return newIntegrationServiceWithLogger(t, slog.Default())
+}
+
+func newSeededIntegrationTest(t *testing.T) (*Service, context.Context) {
+	t.Helper()
+	service, cleanup := newIntegrationService(t)
+	t.Cleanup(cleanup)
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	return service, ctx
+}
+
+func engineeringRule(minGrade int) RuleInput {
+	return RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: minGrade, EmploymentStatus: "active"}
+}
+
+func engineeringEventRequest(title string, capacity int, minGrade int) CreateEventRequest {
+	return CreateEventRequest{Title: title, Location: "Taipei HQ", Capacity: capacity, Rule: engineeringRule(minGrade)}
+}
+
+func createPublishedEvent(t *testing.T, service *Service, ctx context.Context, req CreateEventRequest) EventSummary {
+	t.Helper()
+	req.Status = EventStatusPublished
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, req)
+	require.NoError(t, err)
+	return event
 }
 
 func newIntegrationServiceWithLogger(t *testing.T, logger *slog.Logger) (*Service, func()) {

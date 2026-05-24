@@ -82,16 +82,7 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 }
 
 func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	ctx, pool := newMigrationTest(t, 10*time.Second)
 
 	require.NoError(t, dropSchema(ctx, pool))
 
@@ -124,16 +115,7 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 }
 
 func TestMigrateSerializesConcurrentCalls(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	ctx, pool := newMigrationTest(t, 20*time.Second)
 
 	require.NoError(t, dropSchema(ctx, pool))
 
@@ -156,16 +138,7 @@ func TestMigrateSerializesConcurrentCalls(t *testing.T) {
 }
 
 func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	ctx, pool := newMigrationTest(t, 10*time.Second)
 
 	_, err := pool.Exec(ctx, `CREATE TABLE events (
 		event_id TEXT PRIMARY KEY,
@@ -201,16 +174,7 @@ func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
 }
 
 func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	ctx, pool := newMigrationTest(t, 10*time.Second)
 
 	require.NoError(t, Migrate(ctx, pool))
 
@@ -269,41 +233,26 @@ func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	return err
 }
 
-// PH2-41 schema tests -------------------------------------------------------
-
-// TestReportingProjectionTablesHaveNoPIIColumns asserts that
-// reporting_event_summary does not contain any column that could identify an
-// individual employee.  If this test fails, a privacy violation has been
-// introduced in the schema.
-func TestReportingProjectionTablesHaveNoPIIColumns(t *testing.T) {
+func newMigrationTest(t *testing.T, timeout time.Duration) (context.Context, *pgxpool.Pool) {
+	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	t.Cleanup(cancel)
 	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	t.Cleanup(cleanup)
+	return ctx, pool
+}
+
+func TestReportingProjectionTablesHaveNoPIIColumns(t *testing.T) {
+	ctx, pool := newMigrationTest(t, 10*time.Second)
 
 	require.NoError(t, Migrate(ctx, pool))
 
-	var cols []string
-	rows, err := pool.Query(ctx,
-		`SELECT column_name FROM information_schema.columns
-		 WHERE table_name = 'reporting_event_summary'
-		   AND table_schema = current_schema()`)
-	require.NoError(t, err)
-	defer rows.Close()
-	for rows.Next() {
-		var col string
-		require.NoError(t, rows.Scan(&col))
-		cols = append(cols, col)
-	}
-	require.NoError(t, rows.Err())
-
-	prohibited := []string{
+	columns := migrationColumnNames(t, ctx, pool, "reporting_event_summary")
+	for _, banned := range []string{
 		"employee_id",
 		"employee_name",
 		"full_name",
@@ -312,26 +261,13 @@ func TestReportingProjectionTablesHaveNoPIIColumns(t *testing.T) {
 		"signed_token",
 		"qr_payload",
 		"provider_token",
-	}
-	for _, banned := range prohibited {
-		assert.NotContains(t, cols, banned,
-			"reporting_event_summary must never contain column %q (PII violation)", banned)
+	} {
+		assert.NotContains(t, columns, banned, "reporting summary contains PII column %q", banned)
 	}
 }
 
-// TestReportingProjectionCheckConstraintsRejectNegativeCounts asserts that
-// the CHECK constraints on reporting_event_summary prevent negative counts.
 func TestReportingProjectionCheckConstraintsRejectNegativeCounts(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	ctx, pool := newMigrationTest(t, 10*time.Second)
 
 	require.NoError(t, Migrate(ctx, pool))
 
@@ -357,20 +293,8 @@ func TestReportingProjectionCheckConstraintsRejectNegativeCounts(t *testing.T) {
 	}
 }
 
-// TestReportingProjectionOffsetsSeedRowExists asserts that the migration seeds
-// exactly one row in reporting_projection_offsets for the 'event_summary'
-// projection with an initial offset of 0.
 func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
-	defer cleanup()
+	ctx, pool := newMigrationTest(t, 10*time.Second)
 
 	require.NoError(t, Migrate(ctx, pool))
 
@@ -391,6 +315,24 @@ func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
 		`SELECT COUNT(*) FROM reporting_projection_offsets
 		  WHERE projection_name = 'event_summary'`).Scan(&count))
 	assert.Equal(t, 1, count, "ON CONFLICT DO NOTHING must prevent duplicate seed rows")
+}
+
+func migrationColumnNames(t *testing.T, ctx context.Context, pool *pgxpool.Pool, table string) []string {
+	t.Helper()
+	rows, err := pool.Query(ctx,
+		`SELECT column_name FROM information_schema.columns
+		 WHERE table_name = $1 AND table_schema = current_schema()`, table)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var columns []string
+	for rows.Next() {
+		var column string
+		require.NoError(t, rows.Scan(&column))
+		columns = append(columns, column)
+	}
+	require.NoError(t, rows.Err())
+	return columns
 }
 
 func newMigrationTestPool(t *testing.T, ctx context.Context, databaseURL string) (*pgxpool.Pool, func()) {

@@ -218,16 +218,12 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 	defer rollback(ctx, tx)
 
 	var ticket Ticket
-	err = tx.QueryRow(ctx, `SELECT t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
-			COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
-			ev.title, e.full_name, e.department, e.site
+	err = scanCheckinTicketRow(tx.QueryRow(ctx, `SELECT `+checkinTicketSelectColumns+`
 		FROM tickets t
 		JOIN registrations r ON r.registration_id = t.registration_id
 		JOIN events ev ON ev.event_id = t.event_id
 		JOIN employees e ON e.employee_id = t.employee_id
-		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash).
-		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber,
-			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash), &ticket)
 	if errors.Is(err, pgx.ErrNoRows) {
 		result := conflictResultFromClaims(req, claims, scan.ScannedAt, offlineConflictNotFound)
 		if err := s.insertOfflineScanTx(ctx, tx, req, "", offlineScanStatusConflict, scan.ScannedAt, tokenHash, result.ConflictReason); err != nil {
