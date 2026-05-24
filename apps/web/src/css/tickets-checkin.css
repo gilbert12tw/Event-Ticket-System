@@ -118,30 +118,28 @@
   overflow-wrap: anywhere;
 }
 
-.ticket-nontransferable {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--warn-line);
-  border-radius: var(--radius);
-  background: var(--warn-bg);
-  color: var(--ink);
-  line-height: 1.45;
-}
-
+.ticket-nontransferable,
 .ticket-entry-instruction {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--success-line);
+  border: 1px solid var(--tone-line);
   border-radius: var(--radius);
-  background: var(--success-bg);
+  background: var(--tone-bg);
   color: var(--ink);
   line-height: 1.45;
+}
+
+.ticket-nontransferable {
+  --tone-line: var(--warn-line);
+  --tone-bg: var(--warn-bg);
+}
+
+.ticket-entry-instruction {
+  --tone-line: var(--success-line);
+  --tone-bg: var(--success-bg);
 }
 
 .ticket-nontransferable span:last-child,
@@ -217,28 +215,29 @@
   gap: 12px;
   margin-top: 12px;
   padding: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-line, var(--line));
   border-radius: var(--radius);
+  background: var(--tone-bg, transparent);
 }
 
 .checkin-result.ok {
-  border-color: var(--success-line);
-  background: var(--success-bg);
+  --tone-line: var(--success-line);
+  --tone-bg: var(--success-bg);
 }
 
 .checkin-result.warn {
-  border-color: var(--warn-line);
-  background: var(--warn-bg);
+  --tone-line: var(--warn-line);
+  --tone-bg: var(--warn-bg);
 }
 
 .checkin-result.fail {
-  border-color: var(--danger-line);
-  background: var(--danger-bg);
+  --tone-line: var(--danger-line);
+  --tone-bg: var(--danger-bg);
 }
 
 .checkin-result.info {
-  border-color: var(--info-line);
-  background: var(--info-bg);
+  --tone-line: var(--info-line);
+  --tone-bg: var(--info-bg);
 }
 
 .checkin-result .meta-list dd {

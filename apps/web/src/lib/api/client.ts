@@ -151,8 +151,8 @@ function adminEventPath(eventID: string, suffix = "") {
   return `/api/v1/admin/events/${encoded(eventID)}${suffix}`;
 }
 
-function postEmpty<T>(path: string) {
-  return api<T>(path, { method: "POST", body: {} });
+function post<T>(path: string, body: unknown = {}) {
+  return api<T>(path, { method: "POST", body });
 }
 
 function logApi(
@@ -191,11 +191,8 @@ export const me = (): Promise<AuthSession> =>
 export const authBootstrap = () => api<AuthBootstrap>("/api/v1/auth/bootstrap");
 
 export function mockProviderToken(profileID: string) {
-  return api<MockProviderToken>("/api/v1/auth/mock-provider-token", {
-    method: "POST",
-    body: {
-      profile_id: profileID,
-    },
+  return post<MockProviderToken>("/api/v1/auth/mock-provider-token", {
+    profile_id: profileID,
   });
 }
 
@@ -210,14 +207,11 @@ export async function selectMockProfile(
 export const clearProviderToken = () => setProviderToken(null);
 
 export function seedDemo() {
-  return postEmpty<{ status: string }>("/api/v1/admin/seed-demo");
+  return post<{ status: string }>("/api/v1/admin/seed-demo");
 }
 
 export function createEvent(body: CreateEventRequest) {
-  return api<EventSummary>("/api/v1/admin/events", {
-    method: "POST",
-    body,
-  });
+  return post<EventSummary>("/api/v1/admin/events", body);
 }
 
 export const listAdminEvents = () =>
@@ -242,14 +236,14 @@ export function changeEventState(
   status: string,
   reason: string,
 ) {
-  return api<EventSummary>(adminEventPath(eventID, "/state"), {
-    method: "POST",
-    body: { status, reason },
+  return post<EventSummary>(adminEventPath(eventID, "/state"), {
+    status,
+    reason,
   });
 }
 
 export function duplicateEvent(eventID: string) {
-  return postEmpty<EventSummary>(adminEventPath(eventID, "/duplicate"));
+  return post<EventSummary>(adminEventPath(eventID, "/duplicate"));
 }
 
 export function archiveEvent(eventID: string) {
@@ -260,9 +254,9 @@ export function previewEligibility(
   eventID: string,
   body: EligibilityPreviewRequest,
 ) {
-  return api<EligibilityPreviewResponse>(
+  return post<EligibilityPreviewResponse>(
     adminEventPath(eventID, "/eligibility/preview"),
-    { method: "POST", body },
+    body,
   );
 }
 
@@ -286,12 +280,9 @@ export function resolveEligibilityImpactReview(
   reviewID: string,
   body: ResolveImpactReviewRequest,
 ) {
-  return api<EligibilityImpactReview>(
+  return post<EligibilityImpactReview>(
     `/api/v1/admin/eligibility-impact-reviews/${encoded(reviewID)}/resolve`,
-    {
-      method: "POST",
-      body,
-    },
+    body,
   );
 }
 
@@ -300,12 +291,9 @@ export function bookEvent(
   idempotencyKey: string,
   familyCount = 0,
 ) {
-  return api<BookingResponse>(eventPath(eventID, "/bookings"), {
-    method: "POST",
-    body: {
-      idempotency_key: idempotencyKey,
-      family_count: familyCount,
-    },
+  return post<BookingResponse>(eventPath(eventID, "/bookings"), {
+    idempotency_key: idempotencyKey,
+    family_count: familyCount,
   });
 }
 
@@ -314,14 +302,11 @@ export function cancelMyRegistration(
   reason: string,
   idempotencyKey: string,
 ) {
-  return api<BookingResponse>(
+  return post<BookingResponse>(
     `/api/v1/me/registrations/${encoded(registrationID)}/cancel`,
     {
-      method: "POST",
-      body: {
-        reason,
-        idempotency_key: idempotencyKey,
-      },
+      reason,
+      idempotency_key: idempotencyKey,
     },
   );
 }
@@ -332,14 +317,11 @@ export function cancelRegistration(
   reason: string,
   idempotencyKey: string,
 ) {
-  return api<BookingResponse>(
+  return post<BookingResponse>(
     adminEventPath(eventID, `/registrations/${encoded(registrationID)}/cancel`),
     {
-      method: "POST",
-      body: {
-        reason,
-        idempotency_key: idempotencyKey,
-      },
+      reason,
+      idempotency_key: idempotencyKey,
     },
   );
 }
@@ -349,16 +331,13 @@ export function listRegistrations(eventID: string) {
 }
 
 export function promoteWaitlist(eventID: string) {
-  return postEmpty<PromoteWaitlistResponse>(
+  return post<PromoteWaitlistResponse>(
     adminEventPath(eventID, "/waitlist/promote"),
   );
 }
 
 export function runLottery(eventID: string, body: LotteryRunRequest) {
-  return api<LotteryRun>(adminEventPath(eventID, "/lottery-runs"), {
-    method: "POST",
-    body,
-  });
+  return post<LotteryRun>(adminEventPath(eventID, "/lottery-runs"), body);
 }
 
 export const listTickets = () => apiList<Ticket>("/api/v1/me/tickets");
@@ -381,16 +360,12 @@ export function checkIn(
   if (holderMismatchReason.trim()) {
     body.holder_mismatch_reason = holderMismatchReason.trim();
   }
-  return api<CheckinResponse>("/api/v1/checkins", {
-    method: "POST",
-    body,
-  });
+  return post<CheckinResponse>("/api/v1/checkins", body);
 }
 
 export function revokeTicket(ticketID: string, reason: string) {
-  return api<Ticket>(`/api/v1/admin/tickets/${encoded(ticketID)}/revoke`, {
-    method: "POST",
-    body: { reason },
+  return post<Ticket>(`/api/v1/admin/tickets/${encoded(ticketID)}/revoke`, {
+    reason,
   });
 }
 
@@ -404,10 +379,10 @@ export function offlineCheckinPackage(eventID: string, deviceID: string) {
 }
 
 export function syncOfflineCheckins(body: OfflineCheckinSyncRequest) {
-  return api<OfflineCheckinSyncResponse>("/api/v1/checkins/offline-sync", {
-    method: "POST",
+  return post<OfflineCheckinSyncResponse>(
+    "/api/v1/checkins/offline-sync",
     body,
-  });
+  );
 }
 
 export function getNotificationPreferences() {
@@ -430,7 +405,7 @@ export function listNotificationDeliveries() {
 }
 
 export function retryNotificationDelivery(deliveryID: string) {
-  return postEmpty<NotificationDelivery>(
+  return post<NotificationDelivery>(
     `/api/v1/admin/notifications/deliveries/${encoded(deliveryID)}/retry`,
   );
 }
@@ -438,10 +413,7 @@ export function retryNotificationDelivery(deliveryID: string) {
 export const reports = () => apiList<ReportRow>("/api/v1/admin/reports");
 
 export function createReportExport(body: ReportExportRequest) {
-  return api<ReportExport>("/api/v1/admin/reports/exports", {
-    method: "POST",
-    body,
-  });
+  return post<ReportExport>("/api/v1/admin/reports/exports", body);
 }
 
 export function getReportExport(exportID: string) {

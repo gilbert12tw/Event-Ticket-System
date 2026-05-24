@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"event-ticket-system/internal/ticketing"
 
@@ -64,11 +62,7 @@ func (r fakeReadyRow) Scan(dest ...interface{}) error {
 }
 
 func TestHealthz(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -79,11 +73,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestRouterGeneratesTraceIDHeader(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -97,14 +87,7 @@ func TestRouterGeneratesTraceIDHeader(t *testing.T) {
 func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 	var logs bytes.Buffer
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testRouter(Dependencies{Ticketing: service, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
 	body := bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
 	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
@@ -119,11 +102,7 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 }
 
 func TestIndexServesFallbackUIWithoutGeneratedAssets(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
@@ -157,11 +136,7 @@ func TestGeneratedIndexAndAssetsAreServedWhenBuilt(t *testing.T) {
 		staticRoot = originalStaticRoot
 	})
 
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 
 	indexReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	indexRec := httptest.NewRecorder()
@@ -177,11 +152,7 @@ func TestGeneratedIndexAndAssetsAreServedWhenBuilt(t *testing.T) {
 }
 
 func TestReactSPARoutesServeIndex(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 	paths := []string{
 		"/user/events",
 		"/user/tickets",
@@ -211,11 +182,7 @@ func TestReactSPARoutesServeIndex(t *testing.T) {
 }
 
 func TestMissingGeneratedAssets404(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 
 	req := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
 	rec := httptest.NewRecorder()
@@ -224,11 +191,7 @@ func TestMissingGeneratedAssets404(t *testing.T) {
 }
 
 func TestUnknownAPIPathDoesNotServeSPA(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil)
 	rec := httptest.NewRecorder()
 
@@ -324,11 +287,7 @@ func readReactSourceTree(root string) (string, error) {
 }
 
 func TestReadyzOK(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakeSchemaPinger{schemaReady: true},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{DB: fakeSchemaPinger{schemaReady: true}})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 
@@ -339,11 +298,7 @@ func TestReadyzOK(t *testing.T) {
 }
 
 func TestReadyzRejectsUnmigratedDatabase(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakeSchemaPinger{schemaReady: false},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{DB: fakeSchemaPinger{schemaReady: false}})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 
@@ -354,11 +309,7 @@ func TestReadyzRejectsUnmigratedDatabase(t *testing.T) {
 }
 
 func TestReadyzDatabaseUnavailable(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{err: errors.New("down")},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-	})
+	router := testRouter(Dependencies{DB: fakePinger{err: errors.New("down")}})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 

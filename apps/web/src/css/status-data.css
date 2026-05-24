@@ -131,75 +131,59 @@
   width: fit-content;
   min-height: 24px;
   padding: 3px 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--tone-line, transparent);
   border-radius: 999px;
+  background: var(--tone-bg, transparent);
+  color: var(--tone-fg, inherit);
   font-size: 0.72rem;
   font-weight: 780;
   line-height: 1;
   white-space: nowrap;
 }
 
-.status-badge.ok {
-  border-color: var(--success-line);
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.status-badge.warn {
-  border-color: var(--warn-line);
-  background: var(--warn-bg);
-  color: var(--warn);
-}
-
-.status-badge.fail {
-  border-color: var(--danger-line);
-  background: var(--danger-bg);
-  color: var(--danger);
-}
-
-.status-badge.info {
-  border-color: var(--info-line);
-  background: var(--info-bg);
-  color: var(--info);
-}
-
-.status-badge.neutral {
-  border-color: var(--line);
-  background: var(--surface-inset);
-  color: var(--muted);
-}
-
 .app-alert {
   grid-column: 1 / -1;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-line, var(--line));
   border-radius: var(--radius);
+  background: var(--tone-bg, transparent);
+  color: var(--tone-fg, inherit);
   font-weight: 650;
   line-height: 1.42;
 }
 
+.status-badge.ok,
 .app-alert.ok {
-  border-color: var(--success-line);
-  background: var(--success-bg);
-  color: var(--success);
+  --tone-line: var(--success-line);
+  --tone-bg: var(--success-bg);
+  --tone-fg: var(--success);
 }
 
+.status-badge.warn,
 .app-alert.warn {
-  border-color: var(--warn-line);
-  background: var(--warn-bg);
-  color: var(--warn);
+  --tone-line: var(--warn-line);
+  --tone-bg: var(--warn-bg);
+  --tone-fg: var(--warn);
 }
 
+.status-badge.fail,
 .app-alert.fail {
-  border-color: var(--danger-line);
-  background: var(--danger-bg);
-  color: var(--danger);
+  --tone-line: var(--danger-line);
+  --tone-bg: var(--danger-bg);
+  --tone-fg: var(--danger);
 }
 
+.status-badge.info,
 .app-alert.info {
-  border-color: var(--info-line);
-  background: var(--info-bg);
-  color: var(--info);
+  --tone-line: var(--info-line);
+  --tone-bg: var(--info-bg);
+  --tone-fg: var(--info);
+}
+
+.status-badge.neutral {
+  --tone-line: var(--line);
+  --tone-bg: var(--surface-inset);
+  --tone-fg: var(--muted);
 }
 
 .empty-state {
