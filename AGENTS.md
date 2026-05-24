@@ -21,33 +21,21 @@ Before changing code, read the rule files relevant to the task:
 - `docs/agent-rules/development-workflow.md` for small tasks, tests, and commit rules.
 - `docs/agent-rules/local-environment.md` for Docker Compose, backing services, and verification.
 
-## Phase 1 Focus
+## Project Context
 
-Phase 1 uses Docker Compose backing services and a modular monolith. Do not implement Phase 1 as microservices. Do not treat Kafka, Kubernetes, cross-region HA, or a service mesh as required Phase 1 deliverables.
+This project implements a TDD-first corporate event ticketing system. The current codebase is a Go
+modular monolith with a React SPA and focuses on:
 
-Phase 1 must cover:
+- event publishing, eligibility, booking, waitlist, and allocation correctness;
+- signed tickets, one-time QR redemption, and offline check-in conflict boundaries;
+- notification, reporting, audit, privacy, and role-based operational workflows;
+- PostgreSQL source-of-truth transactions plus Redis, MinIO, Mailhog, HR, and SSO adapters.
 
-- Employees browse events, check eligibility, and book or join a waitlist.
-- Welfare committee or activity admins create events, configure capacity, define eligibility rules, and inspect booking status.
-- The system issues electronic tickets and QR codes.
-- Check-in staff redeem tickets online while preserving a future offline check-in boundary.
-- HR or system admins inspect participation reports and audit logs.
+Treat the local docs below as source material. Retired research artifacts have been consolidated
+into these checked-in docs and are not required for agent work:
 
-## Core Boundaries
-
-Controllers handle input/output and authorization only. Application services coordinate use cases. Domain code owns business rules. Repositories and adapters wrap PostgreSQL, Redis, object storage, queue, mail, HR, and SSO dependencies.
-
-Primary modules:
-
-- Auth & RBAC
-- Event
-- Eligibility
-- Registration
-- Ticket
-- Check-in
-- Notification
-- Reporting
-- Admin / Audit
+- [docs/principles/solid.md](docs/principles/solid.md)
+- [docs/principles/twelve-factor-rule.md](docs/principles/twelve-factor-rule.md)
 
 ## Non-Negotiable Rules
 

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Twelve-Factor Spec First"
-  short_description: "Spec-first Twelve-Factor service guidance"
-  default_prompt: "Use $twelve-factor-spec-first to define a feature spec and verify Twelve-Factor compliance before implementation."

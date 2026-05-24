@@ -1,27 +1,36 @@
+function session<const Role extends string>(id: string, role: Role) {
+  return {
+    actor: { id, role },
+    expires_at: "2099-12-31T23:59:59Z",
+  };
+}
+
 export const sessions = {
-  E1001: {
-    actor: { id: "E1001", role: "employee" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "admin-1": {
-    actor: { id: "admin-1", role: "activity_admin" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "staff-1": {
-    actor: { id: "staff-1", role: "checkin_staff" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "hr-1": {
-    actor: { id: "hr-1", role: "hr_admin" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
-  "system-1": {
-    actor: { id: "system-1", role: "system_admin" as const },
-    expires_at: "2099-12-31T23:59:59Z",
-  },
+  E1001: session("E1001", "employee"),
+  "admin-1": session("admin-1", "activity_admin"),
+  "staff-1": session("staff-1", "checkin_staff"),
+  "hr-1": session("hr-1", "hr_admin"),
+  "system-1": session("system-1", "system_admin"),
 };
 
 export type Session = (typeof sessions)[keyof typeof sessions];
+
+export const sampleTickets = [
+  {
+    ticket_id: "ticket-001",
+    registration_id: "reg-001",
+    event_id: "evt-cets-001",
+    employee_id: "E1001",
+    status: "active",
+    issued_at: "2026-01-02T09:00:00Z",
+    event_title: "第一階段企業午餐日",
+    event_location: "台北總部多功能廳",
+    event_starts_at: "2026-01-10T10:00:00Z",
+    employee_name: "陳雅莉",
+    qr_payload: "mocked-qr-token",
+    signed_token: "mocked-token",
+  },
+];
 
 export const sampleEvent = {
   event_id: "evt-cets-001",
@@ -53,34 +62,8 @@ export const sampleEvent = {
   waitlist_count: 0,
   remaining_capacity: 228,
   current_user_status: "confirmed",
-  current_user_ticket: {
-    ticket_id: "ticket-001",
-    registration_id: "reg-001",
-    event_id: "evt-cets-001",
-    employee_id: "E1001",
-    status: "active",
-    issued_at: "2026-01-02T09:00:00Z",
-    qr_payload: "mocked-qr-token",
-    signed_token: "mocked-token",
-  },
+  current_user_ticket: sampleTickets[0],
 };
-
-export const sampleTickets = [
-  {
-    ticket_id: "ticket-001",
-    registration_id: "reg-001",
-    event_id: "evt-cets-001",
-    employee_id: "E1001",
-    status: "active",
-    issued_at: "2026-01-02T09:00:00Z",
-    event_title: "第一階段企業午餐日",
-    event_location: "台北總部多功能廳",
-    event_starts_at: "2026-01-10T10:00:00Z",
-    employee_name: "陳雅莉",
-    qr_payload: "mocked-qr-token",
-    signed_token: "mocked-token",
-  },
-];
 
 export type EventFixture = Record<string, unknown> & { event_id: string };
 

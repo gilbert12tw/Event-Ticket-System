@@ -118,7 +118,7 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 	assertEnvelope(t, logs.String(), `"trace_id":"trace-test-123"`, `"path":"/api/v1/admin/events"`, `"status":201`)
 }
 
-func TestIndexServesDemoUI(t *testing.T) {
+func TestIndexServesFallbackUIWithoutGeneratedAssets(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -131,7 +131,49 @@ func TestIndexServesDemoUI(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
-	assertEnvelope(t, rec.Body.String(), "企業活動票務系統", `id="root"`, `type="module"`, `/assets/`)
+	assertEnvelope(t, rec.Body.String(), "企業活動票務系統", `id="root"`)
+	assert.NotContains(t, rec.Body.String(), `type="module"`)
+	assert.NotContains(t, rec.Body.String(), `/assets/`)
+}
+
+func TestGeneratedIndexAndAssetsAreServedWhenBuilt(t *testing.T) {
+	originalStaticRoot := staticRoot
+	tempDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(tempDir, "assets"), 0o755))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(tempDir, "index.html"),
+			[]byte(`<!doctype html><div id="root"></div><script type="module" src="/assets/app.js"></script>`),
+			0o644,
+		),
+	)
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(tempDir, "assets", "app.js"), []byte(`console.log("built")`), 0o644),
+	)
+	staticRoot = os.DirFS(tempDir)
+	t.Cleanup(func() {
+		staticRoot = originalStaticRoot
+	})
+
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RequestTimeout: time.Second,
+	})
+
+	indexReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	indexRec := httptest.NewRecorder()
+	router.ServeHTTP(indexRec, indexReq)
+	require.Equal(t, http.StatusOK, indexRec.Code)
+	assertEnvelope(t, indexRec.Body.String(), `id="root"`, `type="module"`, `/assets/app.js`)
+
+	assetReq := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	assetRec := httptest.NewRecorder()
+	router.ServeHTTP(assetRec, assetReq)
+	require.Equal(t, http.StatusOK, assetRec.Code)
+	assert.Contains(t, assetRec.Body.String(), `console.log("built")`)
 }
 
 func TestReactSPARoutesServeIndex(t *testing.T) {
@@ -168,31 +210,15 @@ func TestReactSPARoutesServeIndex(t *testing.T) {
 	}
 }
 
-func TestStaticAssetIsServedAndMissingAssets404(t *testing.T) {
+func TestMissingGeneratedAssets404(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		RequestTimeout: time.Second,
 	})
-	entries, err := os.ReadDir("static/assets")
-	require.NoError(t, err)
-	var script string
-	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".js") {
-			script = "/assets/" + entry.Name()
-			break
-		}
-	}
-	require.NotEmpty(t, script, "expected generated React script asset")
 
-	req := httptest.NewRequest(http.MethodGet, script, nil)
+	req := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Code)
-	assertEnvelope(t, rec.Body.String(), "React root node is missing")
-
-	req = httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
-	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
@@ -214,11 +240,9 @@ func TestUnknownAPIPathDoesNotServeSPA(t *testing.T) {
 }
 
 func TestReactSourceKeepsPhase1UIContracts(t *testing.T) {
-	html, err := os.ReadFile("static/index.html")
-	require.NoError(t, err)
 	source, err := readReactSourceTree(filepath.Join("..", "..", "..", "..", "apps", "web", "src"))
 	require.NoError(t, err)
-	content := string(html) + "\n" + source
+	content := fallbackIndexHTML + "\n" + source
 
 	required := []string{
 		"/employee/events",

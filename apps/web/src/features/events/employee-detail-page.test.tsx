@@ -8,7 +8,7 @@ import {
   listEvents,
 } from "@/lib/api";
 import { EmployeeEventDetailPage } from "./employee-detail-page";
-import { claims, eventFixture } from "./employee-pages-test-helpers";
+import { claims, eventFixture } from "@/test/event-fixtures";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");

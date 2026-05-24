@@ -57,18 +57,6 @@
   --border: var(--line);
   --input: var(--line);
   --ring: var(--accent);
-  --chart-1: var(--accent);
-  --chart-2: var(--success);
-  --chart-3: var(--warn);
-  --chart-4: var(--danger);
-  --chart-5: var(--muted);
-  --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--accent);
-  --sidebar-primary-foreground: var(--accent-text);
-  --sidebar-accent: var(--surface-raised);
-  --sidebar-accent-foreground: var(--ink);
-  --sidebar-border: var(--line);
-  --sidebar-ring: var(--accent);
 }
 
 * {

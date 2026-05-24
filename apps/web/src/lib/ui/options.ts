@@ -13,319 +13,291 @@ export type StatusView = {
   tone: Tone;
 };
 
-export const capacityTypeOptions: Option[] = [
-  {
-    value: "limited",
-    label: "限量票",
-    helper: "本人一張票，容量會扣庫存。",
-  },
-  {
-    value: "unlimited",
-    label: "不限量",
-    helper: "不扣庫存，可記錄家屬人數。",
-  },
+type OptionSeed = readonly [value: string, label: string, helper?: string];
+type ViewSeed = readonly [
+  value: string,
+  label: string,
+  tone: Tone,
+  helper?: string,
 ];
 
-export const eventStatusOptions: Option[] = [
-  { value: "draft", label: "草稿" },
-  { value: "published", label: "已發布" },
-  { value: "closed", label: "已關閉" },
-  { value: "cancelled", label: "已取消" },
-  { value: "archived", label: "已封存" },
-];
+const toOptions = (rows: readonly OptionSeed[]): Option[] =>
+  rows.map(([value, label, helper]) =>
+    helper ? { value, label, helper } : { value, label },
+  );
 
-export const eligibilityDepartmentOptions: Option[] = [
-  { value: "*", label: "所有部門" },
-  { value: "Engineering", label: "工程部" },
-  { value: "Sales", label: "業務部" },
-];
+const toStatusOptions = (rows: readonly ViewSeed[]): Option[] =>
+  rows.map((row) =>
+    row[3]
+      ? { value: row[0], label: row[1], helper: row[3] }
+      : { value: row[0], label: row[1] },
+  );
 
-export const eligibilitySiteOptions: Option[] = [
-  { value: "*", label: "所有廠區" },
-  { value: "Taipei", label: "台北" },
-];
+function viewMap(rows: readonly ViewSeed[]): Record<string, StatusView> {
+  const result: Record<string, StatusView> = {};
+  for (const [value, label, tone] of rows) result[value] = { label, tone };
+  return result;
+}
 
+function labelMap(rows: readonly OptionSeed[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [value, label] of rows) result[value] = label;
+  return result;
+}
+
+const eventStatusRows = [
+  ["draft", "草稿", "neutral"],
+  ["published", "已發布", "ok"],
+  ["closed", "已關閉", "warn"],
+  ["cancelled", "已取消", "fail"],
+  ["archived", "已封存", "neutral"],
+] as const satisfies readonly ViewSeed[];
+
+const registrationStatusRows = [
+  ["confirmed", "已報名", "ok"],
+  ["waitlisted", "候補中", "warn"],
+  ["cancelled", "已取消", "fail"],
+  ["rejected", "已拒絕", "fail"],
+] as const satisfies readonly ViewSeed[];
+
+const ticketStatusRows = [
+  ["active", "可使用", "ok"],
+  ["revoked", "已撤銷", "fail"],
+  ["redeemed", "已核銷", "neutral"],
+] as const satisfies readonly ViewSeed[];
+
+const deliveryStatusRows = [
+  ["pending", "待處理", "warn"],
+  ["failed", "失敗", "fail"],
+  ["dead_letter", "投遞終止", "fail"],
+  ["sent", "已送達", "ok"],
+  ["suppressed", "已抑制", "info"],
+] as const satisfies readonly ViewSeed[];
+
+const reviewStatusRows = [
+  ["open", "待處理", "warn"],
+  ["pending", "待處理", "warn"],
+  ["resolved", "已處理", "ok"],
+] as const satisfies readonly ViewSeed[];
+
+const roleRows = [
+  ["employee", "員工"],
+  ["activity_admin", "活動主辦"],
+  ["checkin_staff", "驗票人員"],
+  ["hr_admin", "人資管理員"],
+  ["system_admin", "系統管理員"],
+] as const satisfies readonly OptionSeed[];
+
+const entityRows = [
+  ["event", "活動"],
+  ["registration", "報名"],
+  ["ticket", "票券"],
+  ["checkin", "驗票"],
+  ["report_export", "報表匯出"],
+  ["offline_checkin_batch", "離線驗票批次"],
+] as const satisfies readonly OptionSeed[];
+
+const departmentRows = [
+  ["Engineering", "工程部"],
+  ["Operations", "營運部"],
+  ["Sales", "業務部"],
+] as const satisfies readonly OptionSeed[];
+
+const siteRows = [
+  ["HQ", "總部"],
+  ["Taipei", "台北"],
+  ["Taipei HQ", "台北總部"],
+  ["Taipei HQ Auditorium", "台北總部禮堂"],
+] as const satisfies readonly OptionSeed[];
+
+const employmentStatusRows = [
+  ["active", "在職"],
+  ["inactive", "離職"],
+] as const satisfies readonly OptionSeed[];
+
+const channelRows = [
+  ["email", "電子郵件"],
+  ["in-app", "站內通知"],
+  ["in_app", "站內通知"],
+] as const satisfies readonly OptionSeed[];
+
+export const capacityTypeOptions = toOptions([
+  ["limited", "限量票", "本人一張票，容量會扣庫存。"],
+  ["unlimited", "不限量", "不扣庫存，可記錄家屬人數。"],
+]);
+
+export const eventStatusOptions = toStatusOptions(eventStatusRows);
+export const eligibilityDepartmentOptions = toOptions([
+  ["*", "所有部門"],
+  ["Engineering", "工程部"],
+  ["Sales", "業務部"],
+]);
+export const eligibilitySiteOptions = toOptions([
+  ["*", "所有廠區"],
+  ["Taipei", "台北"],
+]);
 export const gradeOptions: Option[] = Array.from({ length: 10 }, (_, index) => {
   const grade = String(index + 1);
   return { value: grade, label: `G${grade}+` };
 });
+export const employmentStatusOptions = toOptions([
+  ["*", "所有雇用狀態"],
+  ["active", "在職"],
+]);
+export const entryMethodOptions = toOptions([
+  ["qr", "二維碼驗票"],
+  ["manual", "人工名單"],
+]);
+export const visibilityOptions = toOptions([
+  ["eligible", "僅符合資格者"],
+  ["internal", "內部可見"],
+]);
+export const categoryOptions = toOptions([
+  ["", "不分類"],
+  ["family", "家庭活動"],
+  ["sports", "運動活動"],
+  ["learning", "學習活動"],
+  ["wellness", "健康活動"],
+]);
 
-export const employmentStatusOptions: Option[] = [
-  { value: "*", label: "所有雇用狀態" },
-  { value: "active", label: "在職" },
-];
+export const eventTemplateOptions = toOptions([
+  ["family", "家庭活動", "不限量或大容量，預設開放家屬與 QR 入場。"],
+  ["learning", "學習課程", "限量座位，適合部門或職等條件。"],
+  ["wellness", "健康活動", "中等容量，適合跨部門活動。"],
+  ["sports", "運動活動", "限量名額，保留候補治理。"],
+  ["company", "全公司活動", "所有部門與廠區可見，預設草稿。"],
+]);
 
-export const entryMethodOptions: Option[] = [
-  { value: "qr", label: "二維碼驗票" },
-  { value: "manual", label: "人工名單" },
-];
+export const schedulePresetOptions = toOptions([
+  ["open-now", "立即開放，活動前 24 小時截止", "適合短期公告與一般員工活動。"],
+  ["one-week", "一週報名期", "今天開放，一週後截止，活動安排在 10 天後。"],
+  ["next-week", "下週開放，週五截止", "適合先準備草稿再發布。"],
+  ["custom", "自訂時間", "保留目前手動輸入值。"],
+]);
 
-export const visibilityOptions: Option[] = [
-  { value: "eligible", label: "僅符合資格者" },
-  { value: "internal", label: "內部可見" },
-];
+export const venueOptions = toOptions([
+  ["台北總部禮堂", "台北總部禮堂", "Taipei"],
+  ["台北總部多功能廳", "台北總部多功能廳", "Taipei"],
+  ["台北總部訓練教室", "台北總部訓練教室", "Taipei"],
+  ["線上會議室", "線上會議室", "不限廠區"],
+]);
 
-export const categoryOptions: Option[] = [
-  { value: "", label: "不分類" },
-  { value: "family", label: "家庭活動" },
-  { value: "sports", label: "運動活動" },
-  { value: "learning", label: "學習活動" },
-  { value: "wellness", label: "健康活動" },
-];
+export const devicePresetOptions = toOptions([
+  ["gate-1", "Gate 1", "主要入口"],
+  ["gate-2", "Gate 2", "備援入口"],
+  ["gate-mobile", "Mobile tablet", "行動驗票設備"],
+  ["gate-offline-1", "Offline gate 1", "離線名單同步"],
+  ["custom", "自訂裝置", "必要時再手動輸入。"],
+]);
 
-export const eventTemplateOptions: Option[] = [
-  {
-    value: "family",
-    label: "家庭活動",
-    helper: "不限量或大容量，預設開放家屬與 QR 入場。",
-  },
-  {
-    value: "learning",
-    label: "學習課程",
-    helper: "限量座位，適合部門或職等條件。",
-  },
-  {
-    value: "wellness",
-    label: "健康活動",
-    helper: "中等容量，適合跨部門活動。",
-  },
-  {
-    value: "sports",
-    label: "運動活動",
-    helper: "限量名額，保留候補治理。",
-  },
-  {
-    value: "company",
-    label: "全公司活動",
-    helper: "所有部門與廠區可見，預設草稿。",
-  },
-];
+export const tagSuggestionOptions = toOptions([
+  ["家庭活動", "家庭活動"],
+  ["台北", "台北"],
+  ["學習", "學習"],
+  ["健康", "健康"],
+  ["運動", "運動"],
+  ["全公司", "全公司"],
+]);
 
-export const schedulePresetOptions: Option[] = [
-  {
-    value: "open-now",
-    label: "立即開放，活動前 24 小時截止",
-    helper: "適合短期公告與一般員工活動。",
-  },
-  {
-    value: "one-week",
-    label: "一週報名期",
-    helper: "今天開放，一週後截止，活動安排在 10 天後。",
-  },
-  {
-    value: "next-week",
-    label: "下週開放，週五截止",
-    helper: "適合先準備草稿再發布。",
-  },
-  { value: "custom", label: "自訂時間", helper: "保留目前手動輸入值。" },
-];
+export const auditRoleOptions = toOptions([["", "所有角色"], ...roleRows]);
+export const auditActionOptions = toOptions([
+  ["", "所有操作"],
+  ["event.created", "活動建立"],
+  ["event.updated", "活動更新"],
+  ["event.state_changed", "活動狀態變更"],
+  ["registration.confirmed", "報名確認"],
+  ["registration.waitlisted", "加入候補"],
+  ["registration.cancelled", "報名取消"],
+  ["waitlist.promoted", "候補提升"],
+  ["ticket.issued", "票券發行"],
+  ["ticket.redeemed", "票券核銷"],
+  ["checkin.rejected", "驗票拒絕"],
+  ["offline_checkin.conflict", "離線衝突"],
+  ["report.export.requested", "報表匯出"],
+  ["eligibility_impact.created", "資格影響"],
+  ["hr_sync.completed", "人資同步"],
+]);
+export const auditEntityTypeOptions = toOptions([
+  ["", "所有物件"],
+  ...entityRows,
+]);
+export const auditLimitOptions = toOptions([
+  ["25", "25 筆"],
+  ["50", "50 筆"],
+  ["100", "100 筆"],
+  ["200", "200 筆"],
+]);
+export const deliveryStatusOptions = toOptions([
+  ["all", "全部"],
+  ...deliveryStatusRows,
+]);
+export const hrReviewStatusOptions = toOptions([
+  ["open", "待處理"],
+  ["resolved", "已處理"],
+  ["all", "全部"],
+]);
+export const cancellationReasonOptions = toOptions([
+  ["employee cancellation", "個人行程變更"],
+  ["duplicate registration", "重複報名"],
+  ["manager request", "主管要求"],
+  ["other", "其他原因"],
+]);
+export const revocationReasonOptions = toOptions([
+  ["ticket issued by mistake", "票券誤發"],
+  ["eligibility changed", "資格異動"],
+  ["security review", "安全審核"],
+  ["manager request", "主管要求"],
+]);
+export const resolutionReasonOptions = toOptions([
+  ["人資已人工處置影響項目。", "人資已人工處置"],
+  ["票券與資格狀態已確認。", "票券與資格已確認"],
+  ["已通知活動主辦追蹤。", "已通知主辦追蹤"],
+  ["custom", "自訂處置原因"],
+]);
+export const reportPresetOptions = toOptions([
+  ["participation", "參與彙總", "報名、票券、入場率。"],
+  ["waitlist", "候補壓力", "優先查看候補量。"],
+  ["capacity", "容量利用", "剩餘名額與使用率。"],
+  ["exceptions", "驗票例外", "低到場與異常活動。"],
+]);
 
-export const venueOptions: Option[] = [
-  { value: "台北總部禮堂", label: "台北總部禮堂", helper: "Taipei" },
-  { value: "台北總部多功能廳", label: "台北總部多功能廳", helper: "Taipei" },
-  { value: "台北總部訓練教室", label: "台北總部訓練教室", helper: "Taipei" },
-  { value: "線上會議室", label: "線上會議室", helper: "不限廠區" },
-];
+const eventStatuses = viewMap(eventStatusRows);
+const registrationStatuses = viewMap(registrationStatusRows);
+const ticketStatuses = viewMap(ticketStatusRows);
+const deliveryStatuses = viewMap(deliveryStatusRows);
+const reportExportStatuses = viewMap([
+  ["pending", "準備中", "warn"],
+  ["ready", "已完成", "ok"],
+  ["failed", "失敗", "fail"],
+]);
+const reviewStatuses = viewMap(reviewStatusRows);
+const auditActions = viewMap([
+  ["booking.confirmed", "報名確認", "ok"],
+  ["booking.waitlisted", "加入候補", "warn"],
+  ["event.created", "活動建立", "info"],
+  ["event.updated", "活動更新", "info"],
+  ["event.state_changed", "活動狀態變更", "warn"],
+  ["registration.confirmed", "報名確認", "ok"],
+  ["registration.waitlisted", "加入候補", "warn"],
+  ["registration.cancelled", "報名取消", "warn"],
+  ["waitlist.promoted", "候補提升", "ok"],
+  ["waitlist.promotion_noop", "候補無可提升", "neutral"],
+  ["ticket.issued", "票券核發", "ok"],
+  ["ticket.redeemed", "票券核銷", "ok"],
+  ["ticket.revoked", "票券撤銷", "fail"],
+  ["checkin.rejected", "驗票拒絕", "fail"],
+  ["offline_checkin.conflict", "離線驗票衝突", "warn"],
+  ["report.export.requested", "報表匯出請求", "info"],
+  ["eligibility_impact.created", "資格影響建立", "warn"],
+  ["hr_sync.completed", "人資同步完成", "ok"],
+]);
 
-export const devicePresetOptions: Option[] = [
-  { value: "gate-1", label: "Gate 1", helper: "主要入口" },
-  { value: "gate-2", label: "Gate 2", helper: "備援入口" },
-  { value: "gate-mobile", label: "Mobile tablet", helper: "行動驗票設備" },
-  { value: "gate-offline-1", label: "Offline gate 1", helper: "離線名單同步" },
-  { value: "custom", label: "自訂裝置", helper: "必要時再手動輸入。" },
-];
-
-export const tagSuggestionOptions: Option[] = [
-  { value: "家庭活動", label: "家庭活動" },
-  { value: "台北", label: "台北" },
-  { value: "學習", label: "學習" },
-  { value: "健康", label: "健康" },
-  { value: "運動", label: "運動" },
-  { value: "全公司", label: "全公司" },
-];
-
-export const auditRoleOptions: Option[] = [
-  { value: "", label: "所有角色" },
-  { value: "employee", label: "員工" },
-  { value: "activity_admin", label: "活動主辦" },
-  { value: "checkin_staff", label: "驗票人員" },
-  { value: "hr_admin", label: "人資管理員" },
-  { value: "system_admin", label: "系統管理員" },
-];
-
-export const auditActionOptions: Option[] = [
-  { value: "", label: "所有操作" },
-  { value: "event.created", label: "活動建立" },
-  { value: "event.updated", label: "活動更新" },
-  { value: "event.state_changed", label: "活動狀態變更" },
-  { value: "registration.confirmed", label: "報名確認" },
-  { value: "registration.waitlisted", label: "加入候補" },
-  { value: "registration.cancelled", label: "報名取消" },
-  { value: "waitlist.promoted", label: "候補提升" },
-  { value: "ticket.issued", label: "票券發行" },
-  { value: "ticket.redeemed", label: "票券核銷" },
-  { value: "checkin.rejected", label: "驗票拒絕" },
-  { value: "offline_checkin.conflict", label: "離線衝突" },
-  { value: "report.export.requested", label: "報表匯出" },
-  { value: "eligibility_impact.created", label: "資格影響" },
-  { value: "hr_sync.completed", label: "人資同步" },
-];
-
-export const auditEntityTypeOptions: Option[] = [
-  { value: "", label: "所有物件" },
-  { value: "event", label: "活動" },
-  { value: "registration", label: "報名" },
-  { value: "ticket", label: "票券" },
-  { value: "checkin", label: "驗票" },
-  { value: "report_export", label: "報表匯出" },
-];
-
-export const auditLimitOptions: Option[] = [
-  { value: "25", label: "25 筆" },
-  { value: "50", label: "50 筆" },
-  { value: "100", label: "100 筆" },
-  { value: "200", label: "200 筆" },
-];
-
-export const deliveryStatusOptions: Option[] = [
-  { value: "all", label: "全部" },
-  { value: "pending", label: "待處理" },
-  { value: "failed", label: "失敗" },
-  { value: "dead_letter", label: "投遞終止" },
-  { value: "sent", label: "已送達" },
-  { value: "suppressed", label: "已抑制" },
-];
-
-export const hrReviewStatusOptions: Option[] = [
-  { value: "open", label: "待處理" },
-  { value: "resolved", label: "已處理" },
-  { value: "all", label: "全部" },
-];
-
-export const cancellationReasonOptions: Option[] = [
-  { value: "employee cancellation", label: "個人行程變更" },
-  { value: "duplicate registration", label: "重複報名" },
-  { value: "manager request", label: "主管要求" },
-  { value: "other", label: "其他原因" },
-];
-
-export const revocationReasonOptions: Option[] = [
-  { value: "ticket issued by mistake", label: "票券誤發" },
-  { value: "eligibility changed", label: "資格異動" },
-  { value: "security review", label: "安全審核" },
-  { value: "manager request", label: "主管要求" },
-];
-
-export const resolutionReasonOptions: Option[] = [
-  { value: "人資已人工處置影響項目。", label: "人資已人工處置" },
-  { value: "票券與資格狀態已確認。", label: "票券與資格已確認" },
-  { value: "已通知活動主辦追蹤。", label: "已通知主辦追蹤" },
-  { value: "custom", label: "自訂處置原因" },
-];
-
-export const reportPresetOptions: Option[] = [
-  { value: "participation", label: "參與彙總", helper: "報名、票券、入場率。" },
-  { value: "waitlist", label: "候補壓力", helper: "優先查看候補量。" },
-  { value: "capacity", label: "容量利用", helper: "剩餘名額與使用率。" },
-  { value: "exceptions", label: "驗票例外", helper: "低到場與異常活動。" },
-];
-
-const eventStatuses: Record<string, StatusView> = {
-  draft: { label: "草稿", tone: "neutral" },
-  published: { label: "已發布", tone: "ok" },
-  closed: { label: "已關閉", tone: "warn" },
-  cancelled: { label: "已取消", tone: "fail" },
-  archived: { label: "已封存", tone: "neutral" },
-};
-
-const registrationStatuses: Record<string, StatusView> = {
-  confirmed: { label: "已報名", tone: "ok" },
-  waitlisted: { label: "候補中", tone: "warn" },
-  cancelled: { label: "已取消", tone: "fail" },
-  rejected: { label: "已拒絕", tone: "fail" },
-};
-
-const deliveryStatuses: Record<string, StatusView> = {
-  sent: { label: "已送達", tone: "ok" },
-  pending: { label: "待處理", tone: "warn" },
-  failed: { label: "失敗", tone: "fail" },
-  dead_letter: { label: "投遞終止", tone: "fail" },
-  suppressed: { label: "已抑制", tone: "info" },
-};
-
-const auditActions: Record<string, StatusView> = {
-  "booking.confirmed": { label: "報名確認", tone: "ok" },
-  "booking.waitlisted": { label: "加入候補", tone: "warn" },
-  "event.created": { label: "活動建立", tone: "info" },
-  "event.updated": { label: "活動更新", tone: "info" },
-  "event.state_changed": { label: "活動狀態變更", tone: "warn" },
-  "registration.confirmed": { label: "報名確認", tone: "ok" },
-  "registration.waitlisted": { label: "加入候補", tone: "warn" },
-  "registration.cancelled": { label: "報名取消", tone: "warn" },
-  "waitlist.promoted": { label: "候補提升", tone: "ok" },
-  "waitlist.promotion_noop": { label: "候補無可提升", tone: "neutral" },
-  "ticket.issued": { label: "票券核發", tone: "ok" },
-  "ticket.redeemed": { label: "票券核銷", tone: "ok" },
-  "ticket.revoked": { label: "票券撤銷", tone: "fail" },
-  "checkin.rejected": { label: "驗票拒絕", tone: "fail" },
-  "offline_checkin.conflict": { label: "離線驗票衝突", tone: "warn" },
-  "report.export.requested": { label: "報表匯出請求", tone: "info" },
-  "eligibility_impact.created": { label: "資格影響建立", tone: "warn" },
-  "hr_sync.completed": { label: "人資同步完成", tone: "ok" },
-};
-
-const entityTypes: Record<string, string> = {
-  event: "活動",
-  registration: "報名",
-  ticket: "票券",
-  checkin: "驗票",
-  report_export: "報表匯出",
-  offline_checkin_batch: "離線驗票批次",
-};
-
-const roleLabels: Record<string, string> = {
-  employee: "員工",
-  activity_admin: "活動主辦",
-  checkin_staff: "驗票人員",
-  hr_admin: "人資管理員",
-  system_admin: "系統管理員",
-};
-
-const departmentLabels: Record<string, string> = {
-  Engineering: "工程部",
-  Operations: "營運部",
-  Sales: "業務部",
-};
-
-const siteLabels: Record<string, string> = {
-  HQ: "總部",
-  Taipei: "台北",
-  "Taipei HQ": "台北總部",
-  "Taipei HQ Auditorium": "台北總部禮堂",
-};
-
-const employmentStatusLabels: Record<string, string> = {
-  active: "在職",
-  inactive: "離職",
-};
-
-const channelLabels: Record<string, string> = {
-  email: "電子郵件",
-  "in-app": "站內通知",
-  in_app: "站內通知",
-};
-
-const reportExportStatuses: Record<string, StatusView> = {
-  pending: { label: "準備中", tone: "warn" },
-  ready: { label: "已完成", tone: "ok" },
-  failed: { label: "失敗", tone: "fail" },
-};
-
-const reviewStatuses: Record<string, StatusView> = {
-  open: { label: "待處理", tone: "warn" },
-  pending: { label: "待處理", tone: "warn" },
-  resolved: { label: "已處理", tone: "ok" },
-};
+const entityTypes = labelMap(entityRows);
+const roleLabels = labelMap(roleRows);
+const departmentLabels = labelMap(departmentRows);
+const siteLabels = labelMap(siteRows);
+const employmentStatusLabels = labelMap(employmentStatusRows);
+const channelLabels = labelMap(channelRows);
 
 export function eventStatusView(status: string): StatusView {
   return eventStatuses[status] || { label: status || "未知", tone: "info" };
@@ -338,10 +310,7 @@ export function registrationStatusView(status: string): StatusView {
 }
 
 export function ticketStatusView(status: string): StatusView {
-  if (status === "active") return { label: "可使用", tone: "ok" };
-  if (status === "revoked") return { label: "已撤銷", tone: "fail" };
-  if (status === "redeemed") return { label: "已核銷", tone: "neutral" };
-  return { label: status || "未知", tone: "neutral" };
+  return ticketStatuses[status] || { label: status || "未知", tone: "neutral" };
 }
 
 export function deliveryStatusView(status: string): StatusView {
@@ -419,9 +388,7 @@ export function eligibilityReasonLabel(
     return `部門 ${departmentLabel(departmentMatch[1])} 不符合資格`;
   }
   const siteMatch = /^site (.+) is not eligible$/.exec(trimmed);
-  if (siteMatch) {
-    return `廠區 ${siteLabel(siteMatch[1])} 不符合資格`;
-  }
+  if (siteMatch) return `廠區 ${siteLabel(siteMatch[1])} 不符合資格`;
   const employmentMatch = /^employment status (.+) is not eligible$/.exec(
     trimmed,
   );

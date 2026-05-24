@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bookEvent, cancelMyRegistration, listEvents } from "@/lib/api";
 import { EmployeeEventsPage } from "./employee-pages";
-import { claims, eventFixture } from "./employee-pages-test-helpers";
+import { claims, eventFixture } from "@/test/event-fixtures";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");

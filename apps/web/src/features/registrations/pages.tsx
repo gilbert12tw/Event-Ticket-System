@@ -39,12 +39,6 @@ import {
 import { GovernanceActionButton } from "./governance-action-button";
 import { AllocationTab } from "./allocation-tab";
 
-type RegistrationTab =
-  | "registrations"
-  | "waitlist"
-  | "allocation"
-  | "tickets"
-  | "history";
 const registrationTabs = [
   "registrations",
   "waitlist",
@@ -52,6 +46,7 @@ const registrationTabs = [
   "tickets",
   "history",
 ] as const;
+type RegistrationTab = (typeof registrationTabs)[number];
 type GovernanceAction =
   | { kind: "cancel-registration" | "cancel-waitlist"; row: RegistrationDetail }
   | { kind: "revoke-ticket"; row: RegistrationDetail; ticket: Ticket };
@@ -92,14 +87,16 @@ export function AdminRegistrationsPage() {
     void refresh();
   }, []);
 
-  async function promote() {
-    if (!eventID) return;
+  async function runGovernance(
+    action: () => Promise<string>,
+    nextEventID = eventID,
+  ) {
     setBusy(true);
     setMessage("");
     try {
-      const result = await promoteWaitlist(eventID);
-      setMessage(localizedMessage(result.message));
-      await refresh(eventID);
+      const nextMessage = await action();
+      await refresh(nextEventID);
+      setMessage((current) => current || nextMessage);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -107,37 +104,31 @@ export function AdminRegistrationsPage() {
     }
   }
 
+  async function promote() {
+    if (!eventID) return;
+    await runGovernance(async () => {
+      const result = await promoteWaitlist(eventID);
+      return localizedMessage(result.message);
+    });
+  }
+
   async function cancel(row: RegistrationDetail, reason: string) {
-    setBusy(true);
-    setMessage("");
-    try {
+    await runGovernance(async () => {
       const result = await cancelRegistration(
         row.event_id,
         row.registration_id,
         reason,
         `cancel-${row.registration_id}`,
       );
-      setMessage(localizedMessage(result.message));
-      await refresh(row.event_id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
+      return localizedMessage(result.message);
+    }, row.event_id);
   }
 
   async function revoke(ticket: Ticket, reason: string) {
-    setBusy(true);
-    setMessage("");
-    try {
+    await runGovernance(async () => {
       await revokeTicket(ticket.ticket_id, reason);
-      setMessage("票券已撤銷。");
-      await refresh(ticket.event_id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
+      return "票券已撤銷。";
+    }, ticket.event_id);
   }
 
   async function confirmGovernanceAction() {
@@ -157,6 +148,16 @@ export function AdminRegistrationsPage() {
     setPendingGovernanceAction(action);
     setPendingReason("");
   }
+
+  const renderCancellationAction =
+    (kind: "cancel-registration" | "cancel-waitlist", buttonLabel: string) =>
+    (row: RegistrationDetail) => (
+      <GovernanceActionButton
+        buttonLabel={buttonLabel}
+        disabled={busy || row.status === "cancelled"}
+        onClick={() => openGovernanceAction({ kind, row })}
+      />
+    );
 
   const confirmedRows = rows.filter((row) => row.status === "confirmed");
   const waitlistRows = rows.filter((row) => row.status === "waitlisted");
@@ -230,17 +231,9 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={confirmedRows}
             emptyTitle="尚無已報名資料"
-            renderAction={(row) => (
-              <GovernanceActionButton
-                buttonLabel="取消"
-                disabled={busy || row.status === "cancelled"}
-                onClick={() =>
-                  openGovernanceAction({
-                    kind: "cancel-registration",
-                    row,
-                  })
-                }
-              />
+            renderAction={renderCancellationAction(
+              "cancel-registration",
+              "取消",
             )}
           />
         </TabsContent>
@@ -258,17 +251,9 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={waitlistRows}
             emptyTitle="尚無候補名單"
-            renderAction={(row) => (
-              <GovernanceActionButton
-                buttonLabel="取消候補"
-                disabled={busy || row.status === "cancelled"}
-                onClick={() =>
-                  openGovernanceAction({
-                    kind: "cancel-waitlist",
-                    row,
-                  })
-                }
-              />
+            renderAction={renderCancellationAction(
+              "cancel-waitlist",
+              "取消候補",
             )}
           />
         </TabsContent>

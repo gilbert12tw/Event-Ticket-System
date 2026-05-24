@@ -1,4 +1,0 @@
-interface:
-  display_name: "Event Ticketing Requirements Reviewer"
-  short_description: "Ticketing system requirement review rubric"
-  default_prompt: "Use $event-ticketing-requirements-reviewer to review my corporate event ticketing system requirements draft."

@@ -139,6 +139,22 @@ async function apiList<T>(path: string, options: RequestOptions = {}) {
   return (await api<T[] | null>(path, options)) ?? [];
 }
 
+function encoded(value: string) {
+  return encodeURIComponent(value);
+}
+
+function eventPath(eventID: string, suffix = "") {
+  return `/api/v1/events/${encoded(eventID)}${suffix}`;
+}
+
+function adminEventPath(eventID: string, suffix = "") {
+  return `/api/v1/admin/events/${encoded(eventID)}${suffix}`;
+}
+
+function postEmpty<T>(path: string) {
+  return api<T>(path, { method: "POST", body: {} });
+}
+
 function logApi(
   label: string,
   status: number | "ERR",
@@ -194,10 +210,7 @@ export async function selectMockProfile(
 export const clearProviderToken = () => setProviderToken(null);
 
 export function seedDemo() {
-  return api<{ status: string }>("/api/v1/admin/seed-demo", {
-    method: "POST",
-    body: {},
-  });
+  return postEmpty<{ status: string }>("/api/v1/admin/seed-demo");
 }
 
 export function createEvent(body: CreateEventRequest) {
@@ -213,23 +226,15 @@ export const listAdminEvents = () =>
 export const listEvents = () => apiList<EventSummary>("/api/v1/events");
 
 export function getEvent(eventID: string) {
-  return api<EventSummary>(`/api/v1/events/${encodeURIComponent(eventID)}`);
+  return api<EventSummary>(eventPath(eventID));
 }
 
 export function checkEligibility(eventID: string) {
-  return api<EligibilityDecision>(
-    `/api/v1/events/${encodeURIComponent(eventID)}/eligibility`,
-  );
+  return api<EligibilityDecision>(eventPath(eventID, "/eligibility"));
 }
 
 export function updateEvent(eventID: string, body: UpdateEventRequest) {
-  return api<EventSummary>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}`,
-    {
-      method: "PATCH",
-      body,
-    },
-  );
+  return api<EventSummary>(adminEventPath(eventID), { method: "PATCH", body });
 }
 
 export function changeEventState(
@@ -237,32 +242,18 @@ export function changeEventState(
   status: string,
   reason: string,
 ) {
-  return api<EventSummary>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/state`,
-    {
-      method: "POST",
-      body: { status, reason },
-    },
-  );
+  return api<EventSummary>(adminEventPath(eventID, "/state"), {
+    method: "POST",
+    body: { status, reason },
+  });
 }
 
 export function duplicateEvent(eventID: string) {
-  return api<EventSummary>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/duplicate`,
-    {
-      method: "POST",
-      body: {},
-    },
-  );
+  return postEmpty<EventSummary>(adminEventPath(eventID, "/duplicate"));
 }
 
 export function archiveEvent(eventID: string) {
-  return api<EventSummary>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}`,
-    {
-      method: "DELETE",
-    },
-  );
+  return api<EventSummary>(adminEventPath(eventID), { method: "DELETE" });
 }
 
 export function previewEligibility(
@@ -270,11 +261,8 @@ export function previewEligibility(
   body: EligibilityPreviewRequest,
 ) {
   return api<EligibilityPreviewResponse>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/eligibility/preview`,
-    {
-      method: "POST",
-      body,
-    },
+    adminEventPath(eventID, "/eligibility/preview"),
+    { method: "POST", body },
   );
 }
 
@@ -283,11 +271,8 @@ export function updateEligibility(
   body: UpdateEligibilityRequest,
 ) {
   return api<EligibilityPreviewResponse>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/eligibility`,
-    {
-      method: "PUT",
-      body,
-    },
+    adminEventPath(eventID, "/eligibility"),
+    { method: "PUT", body },
   );
 }
 
@@ -302,7 +287,7 @@ export function resolveEligibilityImpactReview(
   body: ResolveImpactReviewRequest,
 ) {
   return api<EligibilityImpactReview>(
-    `/api/v1/admin/eligibility-impact-reviews/${encodeURIComponent(reviewID)}/resolve`,
+    `/api/v1/admin/eligibility-impact-reviews/${encoded(reviewID)}/resolve`,
     {
       method: "POST",
       body,
@@ -315,16 +300,13 @@ export function bookEvent(
   idempotencyKey: string,
   familyCount = 0,
 ) {
-  return api<BookingResponse>(
-    `/api/v1/events/${encodeURIComponent(eventID)}/bookings`,
-    {
-      method: "POST",
-      body: {
-        idempotency_key: idempotencyKey,
-        family_count: familyCount,
-      },
+  return api<BookingResponse>(eventPath(eventID, "/bookings"), {
+    method: "POST",
+    body: {
+      idempotency_key: idempotencyKey,
+      family_count: familyCount,
     },
-  );
+  });
 }
 
 export function cancelMyRegistration(
@@ -333,7 +315,7 @@ export function cancelMyRegistration(
   idempotencyKey: string,
 ) {
   return api<BookingResponse>(
-    `/api/v1/me/registrations/${encodeURIComponent(registrationID)}/cancel`,
+    `/api/v1/me/registrations/${encoded(registrationID)}/cancel`,
     {
       method: "POST",
       body: {
@@ -351,7 +333,7 @@ export function cancelRegistration(
   idempotencyKey: string,
 ) {
   return api<BookingResponse>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations/${encodeURIComponent(registrationID)}/cancel`,
+    adminEventPath(eventID, `/registrations/${encoded(registrationID)}/cancel`),
     {
       method: "POST",
       body: {
@@ -363,35 +345,26 @@ export function cancelRegistration(
 }
 
 export function listRegistrations(eventID: string) {
-  return apiList<RegistrationDetail>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/registrations`,
-  );
+  return apiList<RegistrationDetail>(adminEventPath(eventID, "/registrations"));
 }
 
 export function promoteWaitlist(eventID: string) {
-  return api<PromoteWaitlistResponse>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/waitlist/promote`,
-    {
-      method: "POST",
-      body: {},
-    },
+  return postEmpty<PromoteWaitlistResponse>(
+    adminEventPath(eventID, "/waitlist/promote"),
   );
 }
 
 export function runLottery(eventID: string, body: LotteryRunRequest) {
-  return api<LotteryRun>(
-    `/api/v1/admin/events/${encodeURIComponent(eventID)}/lottery-runs`,
-    {
-      method: "POST",
-      body,
-    },
-  );
+  return api<LotteryRun>(adminEventPath(eventID, "/lottery-runs"), {
+    method: "POST",
+    body,
+  });
 }
 
 export const listTickets = () => apiList<Ticket>("/api/v1/me/tickets");
 
 export function getTicket(ticketID: string) {
-  return api<Ticket>(`/api/v1/tickets/${encodeURIComponent(ticketID)}`);
+  return api<Ticket>(`/api/v1/tickets/${encoded(ticketID)}`);
 }
 
 export function checkIn(
@@ -415,13 +388,10 @@ export function checkIn(
 }
 
 export function revokeTicket(ticketID: string, reason: string) {
-  return api<Ticket>(
-    `/api/v1/admin/tickets/${encodeURIComponent(ticketID)}/revoke`,
-    {
-      method: "POST",
-      body: { reason },
-    },
-  );
+  return api<Ticket>(`/api/v1/admin/tickets/${encoded(ticketID)}/revoke`, {
+    method: "POST",
+    body: { reason },
+  });
 }
 
 export function offlineCheckinPackage(eventID: string, deviceID: string) {
@@ -429,7 +399,7 @@ export function offlineCheckinPackage(eventID: string, deviceID: string) {
   if (deviceID.trim()) params.set("device_id", deviceID.trim());
   const query = params.toString();
   return api<OfflineCheckinPackage>(
-    `/api/v1/checkins/events/${encodeURIComponent(eventID)}/offline-package${query ? `?${query}` : ""}`,
+    `/api/v1/checkins/events/${encoded(eventID)}/offline-package${query ? `?${query}` : ""}`,
   );
 }
 
@@ -460,12 +430,8 @@ export function listNotificationDeliveries() {
 }
 
 export function retryNotificationDelivery(deliveryID: string) {
-  return api<NotificationDelivery>(
-    `/api/v1/admin/notifications/deliveries/${encodeURIComponent(deliveryID)}/retry`,
-    {
-      method: "POST",
-      body: {},
-    },
+  return postEmpty<NotificationDelivery>(
+    `/api/v1/admin/notifications/deliveries/${encoded(deliveryID)}/retry`,
   );
 }
 
@@ -480,7 +446,7 @@ export function createReportExport(body: ReportExportRequest) {
 
 export function getReportExport(exportID: string) {
   return api<ReportExport>(
-    `/api/v1/admin/reports/exports/${encodeURIComponent(exportID)}`,
+    `/api/v1/admin/reports/exports/${encoded(exportID)}`,
   );
 }
 

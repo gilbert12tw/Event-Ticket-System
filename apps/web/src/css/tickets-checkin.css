@@ -113,8 +113,7 @@
 }
 
 .ticket-detail h2,
-.ticket-detail dd,
-.token-safety span {
+.ticket-detail dd {
   min-width: 0;
   overflow-wrap: anywhere;
 }

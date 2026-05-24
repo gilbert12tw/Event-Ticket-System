@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   expectNoHorizontalOverflow,
   expectNotificationControlsCompact,
@@ -13,6 +13,17 @@ import {
 } from "./core-role-routes.fixtures";
 import { ensureSessionRoutes, loginAs } from "./core-role-routes.mocks";
 
+async function openRoute(
+  page: Page,
+  principalID: Parameters<typeof ensureSessionRoutes>[1],
+  path: string,
+  options?: Parameters<typeof ensureSessionRoutes>[2],
+) {
+  await ensureSessionRoutes(page, principalID, options);
+  await loginAs(page, principalID);
+  await page.goto(path, { waitUntil: "domcontentloaded" });
+}
+
 for (const roleCase of roleCases) {
   for (const route of roleCase.routes) {
     test.describe(`${roleCase.name}: ${route.path}`, () => {
@@ -23,9 +34,7 @@ for (const roleCase of roleCases) {
         page.on("console", (message) => {
           if (message.type() === "error") consoleErrors.push(message.text());
         });
-        await ensureSessionRoutes(page, roleCase.principalID);
-        await loginAs(page, roleCase.principalID);
-        await page.goto(route.path, { waitUntil: "domcontentloaded" });
+        await openRoute(page, roleCase.principalID, route.path);
         await expect(
           page
             .getByRole("heading", { name: route.heading, exact: true })
@@ -47,9 +56,7 @@ for (const roleCase of roleCases) {
 test("shows explicit unauthorized state for forbidden deep links", async ({
   page,
 }) => {
-  await ensureSessionRoutes(page, "staff-1");
-  await loginAs(page, "staff-1");
-  await page.goto("/admin/events", { waitUntil: "domcontentloaded" });
+  await openRoute(page, "staff-1", "/admin/events");
   await expect(page.getByRole("heading", { name: "權限不足" })).toBeVisible();
   await expect(page.getByText("目前登入角色無法進入")).toBeVisible();
   await expectNoHorizontalOverflow(page);
@@ -57,9 +64,7 @@ test("shows explicit unauthorized state for forbidden deep links", async ({
 
 for (const routeCase of forbiddenRouteCases) {
   test(`${routeCase.name}`, async ({ page }) => {
-    await ensureSessionRoutes(page, routeCase.principalID);
-    await loginAs(page, routeCase.principalID);
-    await page.goto(routeCase.path, { waitUntil: "domcontentloaded" });
+    await openRoute(page, routeCase.principalID, routeCase.path);
     await expect(page.getByRole("heading", { name: "權限不足" })).toBeVisible();
     await expect(
       page.locator(".desktop-sidebar .workspace-switch"),
@@ -71,9 +76,7 @@ for (const routeCase of forbiddenRouteCases) {
 test("employee tickets open exact detail only after list click", async ({
   page,
 }) => {
-  await ensureSessionRoutes(page, "E1001");
-  await loginAs(page, "E1001");
-  await page.goto("/user/tickets", { waitUntil: "domcontentloaded" });
+  await openRoute(page, "E1001", "/user/tickets");
 
   await expect(page.getByRole("heading", { name: "票券清單" })).toBeVisible();
   await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
@@ -111,12 +114,10 @@ test("employee booking CTAs keep primary visual treatment", async ({
     remaining_capacity: 0,
   };
 
-  await ensureSessionRoutes(page, "E1001", {
+  await openRoute(page, "E1001", "/user/events", {
     eventDetail: bookableEvent,
     events: [bookableEvent, waitlistEvent],
   });
-  await loginAs(page, "E1001");
-  await page.goto("/user/events", { waitUntil: "domcontentloaded" });
 
   await expectPrimaryCtaTreatment(page.getByRole("link", { name: /立即報名/ }));
   await expectPrimaryCtaTreatment(page.getByRole("link", { name: /加入候補/ }));
@@ -133,11 +134,7 @@ test("employee booking CTAs keep primary visual treatment", async ({
 test("employee ticket detail missing state is recoverable", async ({
   page,
 }) => {
-  await ensureSessionRoutes(page, "E1001");
-  await loginAs(page, "E1001");
-  await page.goto("/user/tickets?ticket_id=missing", {
-    waitUntil: "domcontentloaded",
-  });
+  await openRoute(page, "E1001", "/user/tickets?ticket_id=missing");
 
   await expect(page.getByText("找不到票券。")).toBeVisible();
   await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
@@ -183,6 +180,53 @@ test("employee cancellation requires confirmation before API call", async ({
   await page.getByRole("button", { name: "確認取消報名" }).click();
   await expect(page.getByText("報名已取消").first()).toBeVisible();
   expect(cancelRequests).toBe(1);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("admin governance actions keep selected reason feedback", async ({
+  page,
+}) => {
+  const requestBodies = {
+    cancel: [] as Record<string, unknown>[],
+    revoke: [] as Record<string, unknown>[],
+  };
+  await ensureSessionRoutes(page, "admin-1");
+  page.on("request", (request) => {
+    const pathName = new URL(request.url()).pathname;
+    const body = JSON.parse(request.postData() || "{}") as Record<
+      string,
+      unknown
+    >;
+    if (
+      /\/api\/v1\/admin\/events\/[^/]+\/registrations\/[^/]+\/cancel$/.test(
+        pathName,
+      )
+    ) {
+      requestBodies.cancel.push(body);
+    }
+    if (/\/api\/v1\/admin\/tickets\/[^/]+\/revoke$/.test(pathName)) {
+      requestBodies.revoke.push(body);
+    }
+  });
+  await loginAs(page, "admin-1");
+  await page.goto("/admin/registrations", { waitUntil: "domcontentloaded" });
+
+  await page.getByRole("button", { name: "取消" }).click();
+  await page.getByRole("combobox", { name: "處置原因" }).click();
+  await page.getByRole("option", { name: "主管要求" }).click();
+  await page.getByRole("button", { name: "確認取消報名" }).click();
+  await expect(page.getByText("報名已取消。")).toBeVisible();
+  expect(requestBodies.cancel).toEqual([
+    { reason: "manager request", idempotency_key: "cancel-reg-001" },
+  ]);
+
+  await page.getByRole("tab", { name: "票券狀態" }).click();
+  await page.getByRole("button", { name: "撤銷票券" }).click();
+  await page.getByRole("combobox", { name: "處置原因" }).click();
+  await page.getByRole("option", { name: "安全審核" }).click();
+  await page.getByRole("button", { name: "確認撤銷" }).click();
+  await expect(page.getByText("票券已撤銷。")).toBeVisible();
+  expect(requestBodies.revoke).toEqual([{ reason: "security review" }]);
   await expectNoHorizontalOverflow(page);
 });
 

@@ -9,6 +9,11 @@
 .idea/
 .vscode/
 
+# Local agent tooling
+.agents/skills/
+.claude/skills
+skills-lock.json
+
 # Logs and temporary files
 *.log
 pnpm-debug.log*
@@ -22,6 +27,8 @@ node_modules/
 .turbo/
 .vite/
 apps/web/node_modules/.tmp/
+services/api/internal/httpapi/static/*
+!services/api/internal/httpapi/static/placeholder.txt
 dist/
 build/
 coverage/

@@ -14,6 +14,141 @@ import {
   type Session,
 } from "./core-role-routes.fixtures";
 
+type PathMatcher = string | RegExp;
+
+type MockRoute = readonly [
+  method: string,
+  matcher: PathMatcher,
+  data: () => unknown,
+];
+
+const eventBookingPath = /^\/api\/v1\/events\/[^/]+\/bookings$/;
+const eventDetailPath = /^\/api\/v1\/events\/[^/]+$/;
+const eventEligibilityPath = /^\/api\/v1\/events\/[^/]+\/eligibility$/;
+const adminEventDetailPath = /^\/api\/v1\/admin\/events\/[^/]+$/;
+const adminRegistrationPath =
+  /^\/api\/v1\/admin\/events\/[^/]+\/registrations$/;
+const adminRegistrationCancelPath =
+  /^\/api\/v1\/admin\/events\/[^/]+\/registrations\/[^/]+\/cancel$/;
+const adminEventEligibilityPath =
+  /^\/api\/v1\/admin\/events\/[^/]+\/eligibility$/;
+const ticketPath = /^\/api\/v1\/tickets\/[^/]+$/;
+
+function pathMatches(matcher: PathMatcher, pathName: string) {
+  return typeof matcher === "string"
+    ? matcher === pathName
+    : matcher.test(pathName);
+}
+
+function eventIDFromPath(pathName: string) {
+  return decodeURIComponent(pathName.split("/").pop() || "");
+}
+
+function registration(status = "confirmed") {
+  return {
+    registration_id: "reg-001",
+    event_id: "evt-cets-001",
+    employee_id: "E1001",
+    status,
+    idempotency_key: "book-evt-cets-001-E1001",
+    created_at: "2026-01-02T09:00:00Z",
+  };
+}
+
+function registrationRow() {
+  return {
+    ...registration(),
+    employee_name: "陳雅莉",
+    family_count: 0,
+    ticket: sampleTickets[0],
+  };
+}
+
+function defaultBookingResponse() {
+  return {
+    registration: registration(),
+    ticket: sampleTickets[0],
+    remaining_capacity: 227,
+    message: "booking confirmed",
+  };
+}
+
+function defaultCancelResponse() {
+  return {
+    registration: {
+      ...registration("cancelled"),
+      cancel_idempotency_key: "cancel-reg-001-E1001",
+      cancel_reason: "employee cancellation",
+      cancelled_at: "2026-01-04T09:00:00Z",
+    },
+    ticket: { ...sampleTickets[0], status: "revoked" },
+    remaining_capacity: 228,
+    message: "registration cancelled",
+  };
+}
+
+function notificationPreferences() {
+  return {
+    employee_id: "E1001",
+    email_enabled: true,
+    in_app_enabled: true,
+    opted_out_categories: [],
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+function holder() {
+  return {
+    display_name: "陳雅莉",
+    department: "Engineering",
+    city: "Taipei",
+  };
+}
+
+function acceptedCheckin() {
+  return {
+    checkin_id: "checkin-001",
+    ticket_id: "ticket-001",
+    event_id: "evt-cets-001",
+    event_title: "Corporate Family Day",
+    employee_id: "E1001",
+    status: "accepted",
+    reason_code: "accepted",
+    scanned_at: "2026-01-10T10:10:00Z",
+    duplicate: false,
+    holder: holder(),
+    family_count: 0,
+  };
+}
+
+function eligibilityResult(matchCount: number) {
+  return {
+    event_id: "evt-cets-001",
+    match_count: matchCount,
+    zero_match: false,
+  };
+}
+
+function offlinePackage() {
+  return {
+    batch_id: "batch-001",
+    event_id: "evt-cets-001",
+    device_id: "gate-offline-1",
+    valid_until: "2026-12-31T23:59:59Z",
+    package_signature: "sig-001",
+    ticket_count: 1,
+    tickets: [
+      {
+        ticket_id: "ticket-001",
+        employee_id: "E1001",
+        token_hash: "hash-001",
+        holder: holder(),
+        family_count: 0,
+      },
+    ],
+  };
+}
+
 export async function ensureSessionRoutes(
   page: Page,
   principalID: keyof typeof sessions,
@@ -59,27 +194,28 @@ export async function ensureSessionRoutes(
     } catch {
       body = {};
     }
+    const ok = (data: unknown) => route.fulfill({ json: envelope(data) });
+    const failure = (status: number, message: string) =>
+      route.fulfill({ status, json: envelope(null, false, message) });
+    const routeData = (routes: MockRoute[]) => {
+      const match = routes.find(
+        ([routeMethod, matcher]) =>
+          routeMethod === method && pathMatches(matcher, pathName),
+      );
+      return match ? ok(match[2]()) : undefined;
+    };
 
     const hasCallerEmployeeID =
       url.searchParams.has("employee_id") ||
       Object.prototype.hasOwnProperty.call(body, "employee_id");
     const ownDataRequest =
       (pathName === "/api/v1/events" && method === "GET") ||
-      (/^\/api\/v1\/events\/[^/]+$/.test(pathName) && method === "GET") ||
-      (/^\/api\/v1\/events\/[^/]+\/eligibility$/.test(pathName) &&
-        method === "GET") ||
-      (/^\/api\/v1\/events\/[^/]+\/bookings$/.test(pathName) &&
-        method === "POST") ||
+      (eventDetailPath.test(pathName) && method === "GET") ||
+      (eventEligibilityPath.test(pathName) && method === "GET") ||
+      (eventBookingPath.test(pathName) && method === "POST") ||
       (pathName === "/api/v1/me/tickets" && method === "GET");
     if (ownDataRequest && hasCallerEmployeeID) {
-      return route.fulfill({
-        status: 400,
-        json: envelope(
-          null,
-          false,
-          "employee_id is derived from provider claims",
-        ),
-      });
+      return failure(400, "employee_id is derived from provider claims");
     }
 
     if (pathName === "/api/v1/auth/mock-provider-token" && method === "POST") {
@@ -101,133 +237,69 @@ export async function ensureSessionRoutes(
         options.mockProfiles &&
         !authorization.startsWith("Bearer mock-provider-")
       ) {
-        return route.fulfill({
-          status: 401,
-          json: envelope(null, false, "authentication required"),
-        });
+        return failure(401, "authentication required");
       }
-      return route.fulfill({
-        json: envelope(claimsFromSession(currentSession)),
-      });
+      return ok(claimsFromSession(currentSession));
     }
 
     if (pathName === "/api/v1/auth/bootstrap" && method === "GET") {
-      return route.fulfill({
-        json: envelope({
-          mock_profiles_enabled: Boolean(options.mockProfiles),
-          mock_profiles: mockProfiles(),
-          debug_chrome_enabled: true,
-        }),
+      return ok({
+        mock_profiles_enabled: Boolean(options.mockProfiles),
+        mock_profiles: mockProfiles(),
+        debug_chrome_enabled: true,
       });
     }
 
-    if (pathName === "/healthz" || pathName === "/readyz") {
-      return route.fulfill({ json: envelope({ status: "ok" }) });
+    if (ticketPath.test(pathName) && method === "GET") {
+      const ticketID = eventIDFromPath(pathName);
+      const ticket = sampleTickets.find((item) => item.ticket_id === ticketID);
+      if (!ticket) {
+        return failure(404, "ticket not found");
+      }
+      return ok(ticket);
     }
 
-    if (pathName === "/api/v1/events" && method === "GET") {
-      return route.fulfill({ json: envelope(eventRows) });
-    }
-
-    if (/^\/api\/v1\/events\/[^/]+$/.test(pathName) && method === "GET") {
-      const eventID = decodeURIComponent(pathName.split("/").pop() || "");
-      return route.fulfill({
-        json: envelope(
-          eventRows.find((event) => event.event_id === eventID) ??
-            fallbackEventDetail,
-        ),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/events\/[^/]+\/bookings$/.test(pathName) &&
-      method === "POST"
-    ) {
-      return route.fulfill({
-        json: envelope(
-          options.bookingResponse ?? {
-            registration: {
-              registration_id: "reg-001",
-              event_id: "evt-cets-001",
-              employee_id: "E1001",
-              status: "confirmed",
-              idempotency_key: "book-evt-cets-001-E1001",
-              created_at: "2026-01-02T09:00:00Z",
-            },
-            ticket: sampleTickets[0],
-            remaining_capacity: 227,
-            message: "booking confirmed",
-          },
-        ),
-      });
-    }
-
-    if (pathName === "/api/v1/admin/events" && method === "GET") {
-      return route.fulfill({ json: envelope(eventRows) });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+$/.test(pathName) &&
-      method === "GET"
-    ) {
-      return route.fulfill({ json: envelope(fallbackEventDetail) });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/registrations$/.test(pathName) &&
-      method === "GET"
-    ) {
-      return route.fulfill({
-        json: envelope([
-          {
-            registration_id: "reg-001",
-            event_id: "evt-cets-001",
-            employee_id: "E1001",
-            employee_name: "陳雅莉",
-            status: "confirmed",
-            idempotency_key: "book-evt-cets-001-E1001",
-            family_count: 0,
-            created_at: "2026-01-02T09:00:00Z",
-            ticket: sampleTickets[0],
-          },
-        ]),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/eligibility\/preview$/.test(
-        pathName,
-      ) &&
-      method === "POST"
-    ) {
-      return route.fulfill({
-        json: envelope({
-          event_id: "evt-cets-001",
-          match_count: body?.rule ? 2 : 0,
-          zero_match: false,
-        }),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/eligibility$/.test(pathName) &&
-      method === "PUT"
-    ) {
-      return route.fulfill({
-        json: envelope({
-          event_id: "evt-cets-001",
-          match_count: 2,
-          zero_match: false,
-        }),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/lottery-runs$/.test(pathName) &&
-      method === "POST"
-    ) {
-      return route.fulfill({
-        json: envelope({
+    const simpleResponse = routeData([
+      ["GET", "/healthz", () => ({ status: "ok" })],
+      ["GET", "/readyz", () => ({ status: "ok" })],
+      ["GET", "/api/v1/events", () => eventRows],
+      [
+        "GET",
+        eventDetailPath,
+        () =>
+          eventRows.find(
+            (event) => event.event_id === eventIDFromPath(pathName),
+          ) ?? fallbackEventDetail,
+      ],
+      [
+        "POST",
+        eventBookingPath,
+        () => options.bookingResponse ?? defaultBookingResponse(),
+      ],
+      ["GET", "/api/v1/admin/events", () => eventRows],
+      ["GET", adminEventDetailPath, () => fallbackEventDetail],
+      ["POST", /^\/api\/v1\/admin\/events\/[^/]+\/state$/, () => sampleEvent],
+      ["GET", adminRegistrationPath, () => [registrationRow()]],
+      [
+        "POST",
+        adminRegistrationCancelPath,
+        () => options.cancelResponse ?? defaultCancelResponse(),
+      ],
+      [
+        "POST",
+        /^\/api\/v1\/admin\/tickets\/[^/]+\/revoke$/,
+        () => ({ ...sampleTickets[0], status: "revoked" }),
+      ],
+      [
+        "POST",
+        /^\/api\/v1\/admin\/events\/[^/]+\/eligibility\/preview$/,
+        () => eligibilityResult(body.rule ? 2 : 0),
+      ],
+      ["PUT", adminEventEligibilityPath, () => eligibilityResult(2)],
+      [
+        "POST",
+        /^\/api\/v1\/admin\/events\/[^/]+\/lottery-runs$/,
+        () => ({
           run_id: "lottery-001",
           event_id: "evt-cets-001",
           seed: String(body.seed || "seed"),
@@ -236,161 +308,46 @@ export async function ensureSessionRoutes(
           created_by: currentSession.actor.id,
           created_at: "2026-01-04T10:00:00Z",
         }),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/waitlist\/promote$/.test(pathName) &&
-      method === "POST"
-    ) {
-      return route.fulfill({
-        json: envelope({ message: "promoted", remaining_capacity: 229 }),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/state$/.test(pathName) &&
-      method === "POST"
-    ) {
-      return route.fulfill({ json: envelope(sampleEvent) });
-    }
-
-    if (
-      pathName === "/api/v1/admin/notifications/deliveries" &&
-      method === "GET"
-    ) {
-      return route.fulfill({ json: envelope(notificationDeliveries) });
-    }
-
-    if (pathName === "/api/v1/admin/reports" && method === "GET") {
-      return route.fulfill({ json: envelope(reportRows) });
-    }
-
-    if (
-      pathName === "/api/v1/admin/eligibility-impact-reviews" &&
-      method === "GET"
-    ) {
-      return route.fulfill({ json: envelope(impactReviews) });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/notifications\/deliveries\/[^/]+\/retry$/.test(
-        pathName,
-      ) &&
-      method === "POST"
-    ) {
-      return route.fulfill({ json: envelope(notificationDeliveries[0]) });
-    }
-
-    if (pathName === "/api/v1/checkins" && method === "POST") {
-      return route.fulfill({
-        json: envelope({
-          checkin_id: "checkin-001",
-          ticket_id: "ticket-001",
-          event_id: "evt-cets-001",
-          event_title: "Corporate Family Day",
-          employee_id: "E1001",
-          status: "accepted",
-          reason_code: "accepted",
-          scanned_at: "2026-01-10T10:10:00Z",
-          duplicate: false,
-          holder: {
-            display_name: "陳雅莉",
-            department: "Engineering",
-            city: "Taipei",
-          },
-          family_count: 0,
-        }),
-      });
-    }
-
-    if (
-      /^\/api\/v1\/checkins\/events\/[^/]+\/offline-package/.test(pathName) &&
-      method === "GET"
-    ) {
-      return route.fulfill({
-        json: envelope({
-          batch_id: "batch-001",
-          event_id: "evt-cets-001",
-          device_id: "gate-offline-1",
-          valid_until: "2026-12-31T23:59:59Z",
-          package_signature: "sig-001",
-          ticket_count: 1,
-          tickets: [
-            {
-              ticket_id: "ticket-001",
-              employee_id: "E1001",
-              token_hash: "hash-001",
-              holder: {
-                display_name: "陳雅莉",
-                department: "Engineering",
-                city: "Taipei",
-              },
-              family_count: 0,
-            },
-          ],
-        }),
-      });
-    }
-
-    if (pathName === "/api/v1/checkins/offline-sync" && method === "POST") {
-      return route.fulfill({
-        json: envelope({
+      ],
+      [
+        "POST",
+        /^\/api\/v1\/admin\/events\/[^/]+\/waitlist\/promote$/,
+        () => ({ message: "promoted", remaining_capacity: 229 }),
+      ],
+      [
+        "POST",
+        /^\/api\/v1\/admin\/notifications\/deliveries\/[^/]+\/retry$/,
+        () => notificationDeliveries[0],
+      ],
+      [
+        "GET",
+        "/api/v1/admin/notifications/deliveries",
+        () => notificationDeliveries,
+      ],
+      ["GET", "/api/v1/admin/reports", () => reportRows],
+      ["GET", "/api/v1/admin/eligibility-impact-reviews", () => impactReviews],
+      ["POST", "/api/v1/checkins", acceptedCheckin],
+      [
+        "GET",
+        /^\/api\/v1\/checkins\/events\/[^/]+\/offline-package/,
+        offlinePackage,
+      ],
+      [
+        "POST",
+        "/api/v1/checkins/offline-sync",
+        () => ({
           batch_id: "batch-001",
           accepted: 0,
           duplicate: 0,
           conflict: 0,
           results: [],
         }),
-      });
-    }
-
-    if (pathName === "/api/v1/me/tickets" && method === "GET") {
-      return route.fulfill({ json: envelope(sampleTickets) });
-    }
-
-    if (/^\/api\/v1\/tickets\/[^/]+$/.test(pathName) && method === "GET") {
-      const ticketID = decodeURIComponent(pathName.split("/").pop() || "");
-      const ticket = sampleTickets.find((item) => item.ticket_id === ticketID);
-      if (!ticket) {
-        return route.fulfill({
-          status: 404,
-          contentType: "application/json",
-          body: JSON.stringify(envelope(null, false, "ticket not found")),
-        });
-      }
-      return route.fulfill({ json: envelope(ticket) });
-    }
-
-    if (
-      /^\/api\/v1\/me\/registrations\/[^/]+\/cancel$/.test(pathName) &&
-      method === "POST"
-    ) {
-      return route.fulfill({
-        json: envelope(
-          options.cancelResponse ?? {
-            registration: {
-              registration_id: "reg-001",
-              event_id: "evt-cets-001",
-              employee_id: "E1001",
-              status: "cancelled",
-              idempotency_key: "book-evt-cets-001-E1001",
-              cancel_idempotency_key: "cancel-reg-001-E1001",
-              cancel_reason: "employee cancellation",
-              cancelled_at: "2026-01-04T09:00:00Z",
-              created_at: "2026-01-02T09:00:00Z",
-            },
-            ticket: { ...sampleTickets[0], status: "revoked" },
-            remaining_capacity: 228,
-            message: "registration cancelled",
-          },
-        ),
-      });
-    }
-
-    if (pathName === "/api/v1/admin/reports/exports" && method === "POST") {
-      return route.fulfill({
-        json: envelope({
+      ],
+      ["GET", "/api/v1/me/tickets", () => sampleTickets],
+      [
+        "POST",
+        "/api/v1/admin/reports/exports",
+        () => ({
           export_id: "export-001",
           requested_by: "admin-1",
           report_type: "events",
@@ -398,68 +355,30 @@ export async function ensureSessionRoutes(
           object_key: "reports/export-001.zip",
           created_at: "2026-01-06T10:00:00Z",
         }),
-      });
+      ],
+      ["GET", /^\/api\/v1\/admin\/audit-logs/, () => auditRows],
+      ["GET", "/api/v1/notifications/preferences", notificationPreferences],
+      ["PUT", "/api/v1/notifications/preferences", notificationPreferences],
+      [
+        "POST",
+        /^\/api\/v1\/me\/registrations\/[^/]+\/cancel$/,
+        () => options.cancelResponse ?? defaultCancelResponse(),
+      ],
+      ["POST", "/api/v1/admin/seed-demo", () => ({ status: "seeded" })],
+      ["POST", "/api/v1/admin/events", () => sampleEvent],
+      ["PATCH", /^\/api\/v1\/admin\/events\//, () => sampleEvent],
+      [
+        "POST",
+        /^\/api\/v1\/admin\/events\/[^/]+\/duplicate$/,
+        () => sampleEvent,
+      ],
+      ["DELETE", /^\/api\/v1\/admin\/events\/[^/]+$/, () => sampleEvent],
+    ]);
+    if (simpleResponse) {
+      return simpleResponse;
     }
 
-    if (pathName.startsWith("/api/v1/admin/audit-logs") && method === "GET") {
-      return route.fulfill({ json: envelope(auditRows) });
-    }
-
-    if (pathName === "/api/v1/notifications/preferences" && method === "GET") {
-      return route.fulfill({
-        json: envelope({
-          employee_id: "E1001",
-          email_enabled: true,
-          in_app_enabled: true,
-          opted_out_categories: [],
-          updated_at: "2026-01-01T00:00:00Z",
-        }),
-      });
-    }
-
-    if (pathName === "/api/v1/notifications/preferences" && method === "PUT") {
-      return route.fulfill({
-        json: envelope({
-          employee_id: "E1001",
-          email_enabled: true,
-          in_app_enabled: true,
-          opted_out_categories: [],
-          updated_at: "2026-01-01T00:00:00Z",
-        }),
-      });
-    }
-
-    if (pathName === "/api/v1/admin/seed-demo" && method === "POST") {
-      return route.fulfill({ json: envelope({ status: "seeded" }) });
-    }
-
-    if (pathName === "/api/v1/admin/events" && method === "POST") {
-      return route.fulfill({ json: envelope(sampleEvent) });
-    }
-
-    if (pathName.startsWith("/api/v1/admin/events/") && method === "PATCH") {
-      return route.fulfill({ json: envelope(sampleEvent) });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+\/duplicate$/.test(pathName) &&
-      method === "POST"
-    ) {
-      return route.fulfill({ json: envelope(sampleEvent) });
-    }
-
-    if (
-      /^\/api\/v1\/admin\/events\/[^/]+$/.test(pathName) &&
-      method === "DELETE"
-    ) {
-      return route.fulfill({ json: envelope(sampleEvent) });
-    }
-
-    return route.fulfill({
-      status: 404,
-      contentType: "application/json",
-      body: JSON.stringify(envelope(null, false, "not mocked")),
-    });
+    return failure(404, "not mocked");
   });
 }
 

@@ -54,7 +54,7 @@ func TestHandwrittenWebFilesStayUnderLimit(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || !isWebSource(path) || isVendoredWebSource(path) {
+		if entry.IsDir() || !isWebSource(path) {
 			return nil
 		}
 		data, err := os.ReadFile(path)
@@ -312,9 +312,4 @@ func isWebSource(path string) bool {
 		}
 	}
 	return false
-}
-
-func isVendoredWebSource(path string) bool {
-	normalized := filepath.ToSlash(path)
-	return strings.HasSuffix(normalized, "apps/web/src/components/ui/sidebar.tsx")
 }

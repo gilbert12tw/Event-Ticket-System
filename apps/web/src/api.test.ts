@@ -3,6 +3,7 @@ import {
   ApiError,
   auditLogs,
   bookEvent,
+  cancelRegistration,
   checkIn,
   checkEligibility,
   createReportExport,
@@ -20,6 +21,7 @@ import {
   previewEligibility,
   resolveEligibilityImpactReview,
   retryNotificationDelivery,
+  revokeTicket,
   runLottery,
   setApiObserver,
   setProviderToken,
@@ -60,11 +62,7 @@ describe("api client", () => {
 
   function mockSuccess(data: unknown = {}) {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        success: true,
-        data,
-        error: null,
-      }),
+      jsonResponse({ success: true, data, error: null }),
     );
   }
 
@@ -78,25 +76,33 @@ describe("api client", () => {
     return { path, init, body };
   }
 
+  type RequestCase = [number, string, unknown?, string?];
+
+  function expectRequest([index, path, body, method]: RequestCase) {
+    expect(fetchCall(index)).toMatchObject({
+      path,
+      ...(body === undefined ? {} : { body }),
+      ...(method ? { init: { method } } : {}),
+    });
+  }
+
+  function expectRequests(requests: RequestCase[]) {
+    for (const request of requests) expectRequest(request);
+  }
+
   it("returns envelope data and redacts ticket tokens in API logs", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        success: true,
-        data: [
-          {
-            ticket_id: "T-1",
-            registration_id: "R-1",
-            event_id: "EVT-1",
-            employee_id: "E1001",
-            status: "issued",
-            signed_token: "ticket-secret",
-            qr_payload: "qr-secret",
-            issued_at: "2026-05-06T10:00:00Z",
-          },
-        ],
-        error: null,
-      }),
-    );
+    mockSuccess([
+      {
+        ticket_id: "T-1",
+        registration_id: "R-1",
+        event_id: "EVT-1",
+        employee_id: "E1001",
+        status: "issued",
+        signed_token: "ticket-secret",
+        qr_payload: "qr-secret",
+        issued_at: "2026-05-06T10:00:00Z",
+      },
+    ]);
 
     const tickets = await listTickets();
 
@@ -184,14 +190,17 @@ describe("api client", () => {
     mockSuccess([]);
     await listTickets();
 
-    expect(fetchCall(0).path).toBe("/api/v1/events");
-    expect(fetchCall(1).path).toBe("/api/v1/events/evt%2F1");
-    expect(fetchCall(2).path).toBe("/api/v1/events/evt%2F1/eligibility");
-    expect(fetchCall(3)).toMatchObject({
-      path: "/api/v1/events/evt%2F1/bookings",
-      body: { idempotency_key: "book-1", family_count: 0 },
-    });
-    expect(fetchCall(4).path).toBe("/api/v1/me/tickets");
+    expectRequests([
+      [0, "/api/v1/events"],
+      [1, "/api/v1/events/evt%2F1"],
+      [2, "/api/v1/events/evt%2F1/eligibility"],
+      [
+        3,
+        "/api/v1/events/evt%2F1/bookings",
+        { idempotency_key: "book-1", family_count: 0 },
+      ],
+      [4, "/api/v1/me/tickets"],
+    ]);
     for (let index = 0; index < 5; index += 1) {
       expect(fetchCall(index).path).not.toContain("employee_id");
       expect(JSON.stringify(fetchCall(index).body ?? {})).not.toContain(
@@ -227,19 +236,13 @@ describe("api client", () => {
   });
 
   it("redacts provider token fields in API log response bodies", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        success: true,
-        data: {
-          provider_token: "provider-token-secret",
-          expires_at: "2026-05-06T18:00:00Z",
-          nested: {
-            token: "nested-token-secret",
-          },
-        },
-        error: null,
-      }),
-    );
+    mockSuccess({
+      provider_token: "provider-token-secret",
+      expires_at: "2026-05-06T18:00:00Z",
+      nested: {
+        token: "nested-token-secret",
+      },
+    });
 
     await mockProviderToken("E1001");
 
@@ -251,29 +254,23 @@ describe("api client", () => {
   });
 
   it("logs redacted request and response bodies separately", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        success: true,
-        data: {
-          batch_id: "off_1",
-          accepted: 1,
-          duplicate: 0,
-          conflict: 0,
-          results: [],
-          provider_token: "provider-token-secret",
-          signed_token: "ticket-secret",
-          qr_payload: "qr-secret",
-          qr_token: "qr-token-secret",
-          token_hash: "hash-secret",
-          signed_token_hash: "signed-hash-secret",
-          package_signature: "package-signature-secret",
-          nested: {
-            token: "nested-token-secret",
-          },
-        },
-        error: null,
-      }),
-    );
+    mockSuccess({
+      batch_id: "off_1",
+      accepted: 1,
+      duplicate: 0,
+      conflict: 0,
+      results: [],
+      provider_token: "provider-token-secret",
+      signed_token: "ticket-secret",
+      qr_payload: "qr-secret",
+      qr_token: "qr-token-secret",
+      token_hash: "hash-secret",
+      signed_token_hash: "signed-hash-secret",
+      package_signature: "package-signature-secret",
+      nested: {
+        token: "nested-token-secret",
+      },
+    });
 
     await syncOfflineCheckins({
       batch_id: "off_1",
@@ -322,15 +319,16 @@ describe("api client", () => {
 
     await checkIn("signed-token", "gate-1", "evt_1", "photo mismatch");
 
-    expect(fetchCall(0)).toMatchObject({
-      path: "/api/v1/checkins",
-      body: {
+    expectRequest([
+      0,
+      "/api/v1/checkins",
+      {
         signed_token: "signed-token",
         device_id: "gate-1",
         event_id: "evt_1",
         holder_mismatch_reason: "photo mismatch",
       },
-    });
+    ]);
   });
 
   it("calls production eligibility, lottery, ticket, report, and audit endpoints", async () => {
@@ -362,6 +360,10 @@ describe("api client", () => {
     await runLottery("evt/1", { seed: "seed-1" });
     mockSuccess({ ticket_id: "tkt/1" });
     await getTicket("tkt/1");
+    mockSuccess({ message: "registration cancelled" });
+    await cancelRegistration("evt/1", "reg/1", "manager request", "cancel-1");
+    mockSuccess({ ticket_id: "tkt/1", status: "revoked" });
+    await revokeTicket("tkt/1", "security review");
     mockSuccess({ export_id: "exp_1", status: "ready" });
     await createReportExport({ report_type: "participation" });
     mockSuccess({ export_id: "exp/1", status: "ready" });
@@ -373,39 +375,45 @@ describe("api client", () => {
       cursor: "2026-05-06T10:00:00Z",
     });
 
-    expect(fetchCall(0)).toMatchObject({
-      path: "/api/v1/admin/events/evt%2F1/eligibility/preview",
-      body: { rule },
-    });
-    expect(fetchCall(0).init).toMatchObject({ method: "POST" });
-    expect(fetchCall(1)).toMatchObject({
-      path: "/api/v1/admin/events/evt%2F1/eligibility",
-      body: { rule, allow_zero_match: true },
-    });
-    expect(fetchCall(1).init).toMatchObject({ method: "PUT" });
-    expect(fetchCall(2).path).toBe("/api/v1/admin/eligibility-impact-reviews");
-    expect(fetchCall(3)).toMatchObject({
-      path: "/api/v1/admin/eligibility-impact-reviews/rev%2F1/resolve",
-      body: { reason: "reviewed" },
-    });
-    expect(fetchCall(4).path).toBe("/api/v1/events/evt%2F1/eligibility");
+    expectRequests([
+      [0, "/api/v1/admin/events/evt%2F1/eligibility/preview", { rule }, "POST"],
+      [
+        1,
+        "/api/v1/admin/events/evt%2F1/eligibility",
+        { rule, allow_zero_match: true },
+        "PUT",
+      ],
+      [2, "/api/v1/admin/eligibility-impact-reviews"],
+      [
+        3,
+        "/api/v1/admin/eligibility-impact-reviews/rev%2F1/resolve",
+        { reason: "reviewed" },
+      ],
+      [4, "/api/v1/events/evt%2F1/eligibility"],
+    ]);
     expect(eligibility).toMatchObject({
       event_id: "evt/1",
       can_book: true,
       warnings: [],
     });
-    expect(fetchCall(5)).toMatchObject({
-      path: "/api/v1/admin/events/evt%2F1/lottery-runs",
-      body: { seed: "seed-1" },
-    });
-    expect(fetchCall(6).path).toBe("/api/v1/tickets/tkt%2F1");
-    expect(fetchCall(7)).toMatchObject({
-      path: "/api/v1/admin/reports/exports",
-      body: { report_type: "participation" },
-    });
-    expect(fetchCall(8).path).toBe("/api/v1/admin/reports/exports/exp%2F1");
-    expect(fetchCall(9).path).toContain("/api/v1/admin/audit-logs?");
-    expect(fetchCall(9).path).toContain("cursor=2026-05-06T10%3A00%3A00Z");
+    expectRequests([
+      [5, "/api/v1/admin/events/evt%2F1/lottery-runs", { seed: "seed-1" }],
+      [6, "/api/v1/tickets/tkt%2F1"],
+      [
+        7,
+        "/api/v1/admin/events/evt%2F1/registrations/reg%2F1/cancel",
+        { reason: "manager request", idempotency_key: "cancel-1" },
+      ],
+      [
+        8,
+        "/api/v1/admin/tickets/tkt%2F1/revoke",
+        { reason: "security review" },
+      ],
+      [9, "/api/v1/admin/reports/exports", { report_type: "participation" }],
+      [10, "/api/v1/admin/reports/exports/exp%2F1"],
+    ]);
+    expect(fetchCall(11).path).toContain("/api/v1/admin/audit-logs?");
+    expect(fetchCall(11).path).toContain("cursor=2026-05-06T10%3A00%3A00Z");
   });
 
   it("calls production offline check-in and notification endpoints", async () => {
@@ -450,36 +458,38 @@ describe("api client", () => {
     mockSuccess({ delivery_id: "del/1", status: "pending" });
     await retryNotificationDelivery("del/1");
 
-    expect(fetchCall(0).path).toBe(
-      "/api/v1/checkins/events/evt%2F1/offline-package?device_id=gate+1",
-    );
-    expect(fetchCall(1)).toMatchObject({
-      path: "/api/v1/checkins/offline-sync",
-      body: {
-        batch_id: "off_1",
-        event_id: "evt/1",
-        device_id: "gate-1",
-        package_signature: "package-signature",
-        scans: [
-          { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
-        ],
-      },
-    });
-    expect(fetchCall(1).init).toMatchObject({ method: "POST" });
-    expect(fetchCall(2).path).toBe("/api/v1/notifications/preferences");
-    expect(fetchCall(3)).toMatchObject({
-      path: "/api/v1/notifications/preferences",
-      body: {
-        email_enabled: false,
-        in_app_enabled: true,
-        opted_out_categories: ["booking"],
-      },
-    });
-    expect(fetchCall(3).init).toMatchObject({ method: "PUT" });
-    expect(fetchCall(4).path).toBe("/api/v1/admin/notifications/deliveries");
-    expect(fetchCall(5)).toMatchObject({
-      path: "/api/v1/admin/notifications/deliveries/del%2F1/retry",
-      body: {},
-    });
+    expectRequests([
+      [0, "/api/v1/checkins/events/evt%2F1/offline-package?device_id=gate+1"],
+      [
+        1,
+        "/api/v1/checkins/offline-sync",
+        {
+          batch_id: "off_1",
+          event_id: "evt/1",
+          device_id: "gate-1",
+          package_signature: "package-signature",
+          scans: [
+            {
+              signed_token: "ticket-secret",
+              scanned_at: "2026-05-06T10:00:00Z",
+            },
+          ],
+        },
+        "POST",
+      ],
+      [2, "/api/v1/notifications/preferences"],
+      [
+        3,
+        "/api/v1/notifications/preferences",
+        {
+          email_enabled: false,
+          in_app_enabled: true,
+          opted_out_categories: ["booking"],
+        },
+        "PUT",
+      ],
+      [4, "/api/v1/admin/notifications/deliveries"],
+      [5, "/api/v1/admin/notifications/deliveries/del%2F1/retry", {}],
+    ]);
   });
 });
