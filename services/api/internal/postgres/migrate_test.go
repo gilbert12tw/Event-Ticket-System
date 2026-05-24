@@ -62,14 +62,14 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		// PH2-41: reporting projection tables
 		"CREATE TABLE IF NOT EXISTS reporting_event_summary",
 		"department_breakdown JSONB",
-		"last_event_offset    BIGINT",
+		"last_processed_at    TIMESTAMPTZ",
 		"reporting_event_summary_confirmed_count_check",
 		"reporting_event_summary_cancelled_count_check",
 		"reporting_event_summary_waitlist_count_check",
 		"reporting_event_summary_total_capacity_check",
 		"idx_reporting_event_summary_updated_at",
 		"CREATE TABLE IF NOT EXISTS reporting_projection_offsets",
-		"last_processed_outbox_id BIGINT",
+		"last_processed_at TIMESTAMPTZ",
 		"INSERT INTO reporting_projection_offsets",
 		// booking-ban
 		"CREATE TABLE IF NOT EXISTS booking_bans",
@@ -425,14 +425,14 @@ func TestReportingProjectionOffsetsSeedRowExists(t *testing.T) {
 	require.NoError(t, Migrate(ctx, pool))
 
 	var name string
-	var offset int64
+	var offsetText string
 	err := pool.QueryRow(ctx,
-		`SELECT projection_name, last_processed_outbox_id
+		`SELECT projection_name, last_processed_at::text
 		   FROM reporting_projection_offsets
-		  WHERE projection_name = 'event_summary'`).Scan(&name, &offset)
+		  WHERE projection_name = 'event_summary'`).Scan(&name, &offsetText)
 	require.NoError(t, err, "seed row for 'event_summary' must exist after migration")
 	assert.Equal(t, "event_summary", name)
-	assert.Equal(t, int64(0), offset)
+	assert.Equal(t, "-infinity", offsetText, "seed value must be -infinity so the worker picks up all historical outbox events on first run")
 
 	// Running Migrate a second time must not create a duplicate row.
 	require.NoError(t, Migrate(ctx, pool))

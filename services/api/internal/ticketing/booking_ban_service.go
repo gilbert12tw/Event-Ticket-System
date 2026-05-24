@@ -7,7 +7,7 @@ import (
 )
 
 // checkBookingBanTx queries whether there is an active ban for this employee on this event.
-// It is intended to be called within the booking transaction, before the UNIQUE constrain
+// It is intended to be called within the booking transaction, before the UNIQUE constraint
 // check, to provide a clear business error.
 func (s *Service) checkBookingBanTx(ctx context.Context, tx pgx.Tx, eventID, employeeID string) error {
 	var banID string
