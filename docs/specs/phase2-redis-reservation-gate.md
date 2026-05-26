@@ -25,7 +25,7 @@ The booking application service must execute the gate in this order:
 
 1. Authorize the actor and validate request shape.
 2. Reject limited-event family-count requests before any reservation.
-3. Look up the booking idempotency record scoped to `(operation, event_id, actor_id, idempotency_key_hash)`.
+3. Look up the booking idempotency record scoped to `(operation, event_id, actor_id, idempotency_key_hash)`. This composite scope refines the existing Phase 1 `booking_idempotency_results` columns `(idempotency_key, event_id, employee_id)` without changing the key shape or breaking replay semantics; the hash ensures raw client keys never appear in Redis or logs.
 4. Return the stored result if it exists, including prior conflict, waitlist, or throttle outcomes.
 5. For unlimited events, bypass capacity reservation and continue to the existing DB transaction.
 6. For limited events with `BOOKING_PREADMISSION=on`, call the Redis reservation script.
@@ -151,9 +151,9 @@ Audit:
 
 - Set `BOOKING_PREADMISSION=off` to route all booking traffic through the Phase 1 DB-only path.
 - Keep the compiled Redis code path and tests in place until a follow-up removal spec exists.
-- Leave existing Redis keys to expire or let `reservation_compensation` drain them; do not delete keys manually during active booking windows.
+- Leave existing Redis keys to expire or let the `compensation` worker drain them; do not delete keys manually during active booking windows.
 - If Redis causes operational instability while the gate is on, set `REDIS_OUTAGE_MODE=degrade` before disabling worker compensation.
-- Omit `reservation_compensation` from `WORKER_KINDS` only after active holds have drained or manual reconciliation has verified zero pending holds.
+- Omit `compensation` from `WORKER_KINDS` only after active holds have drained or manual reconciliation has verified zero pending holds.
 - Rollback must not require schema rollback or destructive data changes.
 
 ## 12. Non-Goals

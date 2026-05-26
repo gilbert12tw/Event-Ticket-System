@@ -125,7 +125,7 @@ This endpoint is read-only, derived, never the booking commit authority.
 
 - **Config**: New env vars include `BOOKING_PREADMISSION`, `RESERVATION_TTL_SECONDS`, `RESERVATION_TTL_GRACE_SECONDS`, `RESERVATION_COMPENSATION_INTERVAL_SECONDS`, `REDIS_OPERATION_TIMEOUT_MS`, `BOOKING_RESERVATION_HASH_SECRET`, `BOOKING_RATE_LIMIT_RPS_PER_ACTOR`, `BOOKING_RATE_LIMIT_RPS_PER_EVENT`, and `REDIS_OUTAGE_MODE=degrade|fail`. Defaults and rollout rules are defined by `PH2-20`; runtime PRs must add them to `services/api/deploy/.env.example`.
 - **Backing services**: Redis is already an attached resource; this WS upgrades its role from optional cache to required pre-admission gate when `REDIS_OUTAGE_MODE=fail`. Connection injected via `REDIS_URL` (unchanged).
-- **Build / release / run**: Same Go binary; no new process types. Compensation runs inside the existing same-binary worker as a new kind (`worker_kind=reservation_compensation`) — WS4 owns kind config (`PH2-31`).
+- **Build / release / run**: Same Go binary; no new process types. Compensation runs inside the existing same-binary worker as a new kind (`worker_kind=compensation`) — WS4 owns kind config (`PH2-31`).
 - **Processes**: Stateless; reservation state lives in Redis + DB. No in-memory authoritative state.
 - **Logs**: Structured JSON to stdout; fields per WS2 §6. No idempotency key values, no Redis keys containing PII, no signed tokens.
 - **Admin processes**: New one-off `cets ops reservation-reconcile --event-id=...` for manual compensation; documented but rarely needed.
