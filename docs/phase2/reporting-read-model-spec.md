@@ -48,18 +48,25 @@ The projection worker consumes two kinds of sources:
 
 | Source | Kind | Fields Consumed |
 |---|---|---|
-| `booking.confirmed` | Outbox event (incremental) | `event_id`, `registration_id`, `employee_department`, `occurred_at` |
+| `booking.confirmed` | Outbox event (incremental) | `event_id`, `registration_id`, `employee_id`, `occurred_at` |
 | `registration.cancelled` | Outbox event (incremental) | `event_id`, `registration_id`, `occurred_at` |
 | `booking.waitlisted` | Outbox event (incremental) | `event_id`, `registration_id`, `occurred_at` |
-| `waitlist.promoted` | Outbox event (incremental) | `event_id`, `registration_id`, `employee_department`, `occurred_at` |
+| `waitlist.promoted` | Outbox event (incremental) | `event_id`, `registration_id`, `employee_id`, `occurred_at` |
 | `events` | OLTP direct read (rebuild only) | `event_id`, `title`, `starts_at`, `capacity_type`, `capacity` |
 | `registrations` | OLTP direct read (rebuild only) | `registration_id`, `event_id`, `status`, `employee_id`, `created_at` |
-| `employees` | OLTP direct read (rebuild only) | `employee_id`, `department` (for department breakdown aggregation only) |
+| `employees` | OLTP direct read (rebuild + incremental department lookup) | `employee_id`, `department` (for department breakdown aggregation only) |
 
 `total_capacity` has no incremental outbox source: the Phase 1/2 producers emit no
 capacity-change event (a capacity edit writes only an audit entry, not an `outbox_events`
 row). It is therefore maintained on the **rebuild path only** — read from `events` (§5 step 4).
 A capacity edit between rebuilds is reflected in the projection only after the next rebuild.
+
+Current booking and promotion outbox payloads carry `employee_id`, not a department label.
+Incremental updates that affect `department_breakdown` resolve `employees.department` by
+`employee_id` with a read-only point lookup, then persist only the aggregate department label
+and count. The worker must not read or persist employee names, email addresses, or ticket
+tokens. If PH2-30 later adds a projection-safe department label to the outbox envelope, the
+worker may use that label instead of the point lookup.
 
 **Incremental path (normal operation):** the worker polls `outbox_events` using a composite
 cursor `(last_processed_at, last_processed_outbox_id)` stored in
@@ -95,9 +102,9 @@ The following fields must never appear in a projection-bound query or payload:
 >
 > **PH2-41 drift note:** PH2-41 already merged these tables with a `last_processed_at`-only
 > cursor (no `last_processed_outbox_id` column, and the offset row seeded with
-> `(projection_name, last_processed_at)` only). The `last_processed_outbox_id` column below is
-> part of the composite-cursor upgrade and must be added via a follow-up `ALTER TABLE` (with a
-> backfill to `''`) before the PH2-42 projection worker is built.
+> `(projection_name, last_processed_at)` only). The `last_processed_outbox_id` columns below are
+> part of the composite-cursor upgrade and must be added via follow-up `ALTER TABLE` statements
+> (with a backfill to `''`) before the PH2-42 projection worker is built.
 
 ### `reporting_event_summary`
 
@@ -190,17 +197,20 @@ locked.
    No OLTP table is touched.
 
 4. **Replay from OLTP:**
+   - Capture the rebuild high-water cursor from the same repeatable-read snapshot used for
+     the OLTP reads:
+     `SELECT created_at, outbox_id FROM outbox_events ORDER BY created_at DESC, outbox_id DESC LIMIT 1`.
+     If `outbox_events` is empty in that snapshot, use the seed cursor (`'-infinity'`, `''`).
    - Read all `registrations` rows, joined to `employees` for department only.
    - Aggregate `confirmed_count`, `cancelled_count`, `waitlist_count`,
      `department_breakdown` per `event_id` in-process.
    - Read `events` for `total_capacity`.
    - Bulk-insert into `reporting_event_summary` using `INSERT … ON CONFLICT DO UPDATE`.
 
-5. **Advance offset:** after replay completes, set `last_processed_at` to
-   `SELECT MAX(created_at) FROM outbox_events` and `last_processed_outbox_id` to the
-   `outbox_id` of that row, so incremental processing resumes from the right position
-   and does not redundantly re-apply events already reflected in the OLTP snapshot.
-   If `outbox_events` is empty, leave both at their seed values (`'-infinity'`, `''`).
+5. **Advance offset:** after replay completes, set `last_processed_at` and
+   `last_processed_outbox_id` to the captured rebuild high-water cursor. Do not compute the
+   cursor from a fresh post-replay snapshot: events committed during the rebuild must remain
+   greater than the stored cursor so the incremental worker processes them after rebuild.
 
 6. **Resume incremental processing:** the worker's normal poll loop continues from the new
    offset.
