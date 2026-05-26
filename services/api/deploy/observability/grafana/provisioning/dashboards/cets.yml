@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: CETS
+    orgId: 1
+    folder: Corporate Event Ticketing
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

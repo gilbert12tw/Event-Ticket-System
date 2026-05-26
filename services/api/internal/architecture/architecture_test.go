@@ -102,6 +102,29 @@ func TestTicketingDoesNotImportHTTPAPI(t *testing.T) {
 	assert.Empty(t, offenders, "ticketing must not import httpapi: %s", strings.Join(offenders, ", "))
 }
 
+func TestPostgresMigrationDDLStaysInVersionedSQL(t *testing.T) {
+	root := repoRoot(t)
+	migratePath := filepath.Join(root, "services", "api", "internal", "postgres", "migrate.go")
+	migrateCode, err := os.ReadFile(migratePath)
+	require.NoError(t, err)
+
+	for _, fragment := range []string{
+		"CREATE TABLE",
+		"CREATE INDEX",
+		"CREATE UNIQUE INDEX",
+		"ALTER TABLE",
+		"INSERT INTO",
+	} {
+		assert.NotContains(t, string(migrateCode), fragment,
+			"database DDL belongs in versioned SQL files, not Go constants")
+	}
+
+	schemaPath := filepath.Join(root, "services", "api", "internal", "postgres", "schema.sql")
+	schema, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(schema), "CREATE TABLE IF NOT EXISTS events")
+}
+
 func TestPhase1DocsDoNotClaimDeferredInfrastructureIsComplete(t *testing.T) {
 	root := repoRoot(t)
 	forbidden := []string{

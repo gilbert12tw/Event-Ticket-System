@@ -12,8 +12,12 @@ on:
       - "AGENTS.md"
       - "apps/web/**"
       - "docs/ARCHITECTURE.md"
+      - "docs/agent-rules/**"
+      - "docs/DESIGN.md"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
+      - "docs/principles/**"
+      - "docs/PRODUCT.md"
       - "docs/specs/**"
       - "eslint.config.mjs"
       - "go.work"
@@ -38,8 +42,12 @@ on:
       - "AGENTS.md"
       - "apps/web/**"
       - "docs/ARCHITECTURE.md"
+      - "docs/agent-rules/**"
+      - "docs/DESIGN.md"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
+      - "docs/principles/**"
+      - "docs/PRODUCT.md"
       - "docs/specs/**"
       - "eslint.config.mjs"
       - "go.work"
@@ -338,15 +346,24 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true' || env.ACT == 'true'
         run: |
           if [[ "${ACT:-}" == "true" ]]; then
-            pnpm --filter cets-web exec playwright install --with-deps chromium
+            rm -rf "$HOME/.cache/ms-playwright"
+            pnpm --filter cets-web exec playwright install --with-deps --force chromium
           else
             pnpm --filter cets-web exec playwright install chromium
           fi
       - name: Run mocked Playwright viewport checks
         run: pnpm --filter cets-web test:e2e
+      - name: Clean local act frontend outputs
+        if: success() && env.ACT == 'true'
+        run: |
+          rm -rf \
+            services/api/internal/httpapi/static/assets \
+            services/api/internal/httpapi/static/index.html \
+            services/api/internal/httpapi/static/favicon.svg \
+            apps/web/test-results \
+            apps/web/playwright-report
 
   live-gates:
     needs:
@@ -395,15 +412,18 @@ jobs:
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true' || env.ACT == 'true'
         run: |
           if [[ "${ACT:-}" == "true" ]]; then
-            pnpm --filter cets-web exec playwright install --with-deps chromium
+            rm -rf "$HOME/.cache/ms-playwright"
+            pnpm --filter cets-web exec playwright install --with-deps --force chromium
           else
             pnpm --filter cets-web exec playwright install chromium
           fi
       - name: Validate Docker Compose config
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
+      - name: Reset local act live volumes
+        if: env.ACT == 'true'
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml down --volumes --remove-orphans
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Build release image
@@ -465,6 +485,17 @@ jobs:
             apps/web/playwright-report
             apps/web/playwright-live-report
             apps/web/test-results
+      - name: Clean local act live artifacts
+        if: success() && env.ACT == 'true'
+        run: |
+          rm -rf \
+            apps/web/test-results \
+            apps/web/playwright-live-report
       - name: Stop API services
         if: always()
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml down
+        run: |
+          down_args=()
+          if [[ "${ACT:-}" == "true" ]]; then
+            down_args+=(--volumes --remove-orphans)
+          fi
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml down "${down_args[@]}"

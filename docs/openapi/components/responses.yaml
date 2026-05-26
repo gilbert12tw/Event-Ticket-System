@@ -34,3 +34,12 @@ InternalServerError:
     application/json:
       schema:
         "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"
+BookingBanned:
+  description: >
+    Employee is banned from re-booking this event after cancelling a confirmed
+    registration. The error_code field will be "BOOKING_BANNED". An admin must
+    call the lift-ban endpoint before the employee can book again.
+  content:
+    application/json:
+      schema:
+        "$ref": "./schemas/common.yaml#/ApiErrorEnvelope"

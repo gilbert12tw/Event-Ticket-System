@@ -101,7 +101,76 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 	assertEnvelope(t, logs.String(), `"trace_id":"trace-test-123"`, `"path":"/api/v1/admin/events"`, `"status":201`)
 }
 
+func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testRouter(Dependencies{Ticketing: service})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/evt_secret_token", nil)
+	authorizeRequest(t, req, ticketing.RoleEmployee)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	router.ServeHTTP(metricsRec, metricsReq)
+
+	require.Equal(t, http.StatusOK, metricsRec.Code)
+	assert.Equal(t, "text/plain; version=0.0.4; charset=utf-8", metricsRec.Header().Get("Content-Type"))
+	assertEnvelope(t, metricsRec.Body.String(),
+		`cets_http_requests_total{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"} 1`,
+		`cets_http_request_seconds_bucket{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"`,
+	)
+	assert.NotContains(t, metricsRec.Body.String(), "evt_secret_token")
+}
+
+func TestMetricsEndpointCollapsesUnmatchedRoutesToBoundedLabel(t *testing.T) {
+	var logs bytes.Buffer
+	router := testRouter(Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodDelete, "/wp-login-secret", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	router.ServeHTTP(metricsRec, metricsReq)
+
+	require.Equal(t, http.StatusOK, metricsRec.Code)
+	assertEnvelope(t, metricsRec.Body.String(),
+		`cets_http_requests_total{route="/unknown",method="DELETE",status_class="4xx"} 1`,
+		`cets_http_request_seconds_bucket{route="/unknown",method="DELETE",status_class="4xx"`,
+	)
+	assertEnvelope(t, logs.String(), `"route":"/unknown"`, `"path":"/wp-login-secret"`)
+	assert.NotContains(t, metricsRec.Body.String(), "wp-login-secret")
+}
+
+func TestMetricsEndpointNormalizesHeadRoutesFromGetPatterns(t *testing.T) {
+	var logs bytes.Buffer
+	router := testRouter(Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodHead, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	router.ServeHTTP(metricsRec, metricsReq)
+
+	require.Equal(t, http.StatusOK, metricsRec.Code)
+	assertEnvelope(t, metricsRec.Body.String(),
+		`cets_http_requests_total{route="/healthz",method="HEAD",status_class="2xx"} 1`,
+		`cets_http_request_seconds_bucket{route="/healthz",method="HEAD",status_class="2xx"`,
+	)
+	assertEnvelope(t, logs.String(), `"method":"HEAD"`, `"route":"/healthz"`)
+	assert.NotContains(t, metricsRec.Body.String(), `route="GET /healthz"`)
+	assert.NotContains(t, logs.String(), `"route":"GET /healthz"`)
+}
+
 func TestIndexServesFallbackUIWithoutGeneratedAssets(t *testing.T) {
+	useEmptyStaticRoot(t)
 	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -110,9 +179,26 @@ func TestIndexServesFallbackUIWithoutGeneratedAssets(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
-	assertEnvelope(t, rec.Body.String(), "企業活動票務系統", `id="root"`)
+	assertEnvelope(t, rec.Body.String(),
+		"企業活動票務系統",
+		`id="root"`,
+		"Frontend assets are not built",
+	)
 	assert.NotContains(t, rec.Body.String(), `type="module"`)
 	assert.NotContains(t, rec.Body.String(), `/assets/`)
+}
+
+func TestIndexWithoutGeneratedAssetsFailsOutsideLocalEnvironments(t *testing.T) {
+	useEmptyStaticRoot(t)
+	router := testRouter(Dependencies{AppEnv: "production"})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assertEnvelope(t, rec.Body.String(), `"success":false`, `"frontend assets are not built"`)
+	assert.NotContains(t, rec.Body.String(), `id="root"`)
 }
 
 func TestGeneratedIndexAndAssetsAreServedWhenBuilt(t *testing.T) {
@@ -229,6 +315,7 @@ func TestReactSourceKeepsPhase1UIContracts(t *testing.T) {
 		"身分宣告",
 		"Authorization",
 		"credentials: \"same-origin\"",
+		"Frontend assets are not built",
 		"員工工作區",
 		"管理工作台",
 		"稽核中繼資料",
@@ -288,6 +375,15 @@ func readReactSourceTree(root string) (string, error) {
 	return content.String(), err
 }
 
+func useEmptyStaticRoot(t *testing.T) {
+	t.Helper()
+	originalStaticRoot := staticRoot
+	staticRoot = os.DirFS(t.TempDir())
+	t.Cleanup(func() {
+		staticRoot = originalStaticRoot
+	})
+}
+
 func TestReadyzOK(t *testing.T) {
 	router := testRouter(Dependencies{DB: fakeSchemaPinger{schemaReady: true}})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -308,6 +404,10 @@ func TestReadyzRejectsUnmigratedDatabase(t *testing.T) {
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":false`, `"database schema is not ready"`)
+}
+
+func TestReadyzRequiresBookingBanSchema(t *testing.T) {
+	assert.Contains(t, requiredSchemaReadyQuery, "to_regclass('public.booking_bans')")
 }
 
 func TestReadyzDatabaseUnavailable(t *testing.T) {

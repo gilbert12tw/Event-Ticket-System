@@ -35,6 +35,21 @@ LotteryRunResponse:
       properties:
         data:
           "$ref": "#/LotteryRun"
+LiftBookingBanResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/LiftBookingBanResult"
+LiftBookingBanResult:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      const: ok
 CreateBookingRequest:
   type: object
   required:

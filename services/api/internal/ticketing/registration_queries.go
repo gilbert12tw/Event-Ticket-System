@@ -53,7 +53,7 @@ func (s *Service) findRegistrationByEmployee(ctx context.Context, eventID string
 	var reg Registration
 	err := s.db.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
 			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE event_id = $1 AND employee_id = $2`, eventID, employeeID).
+		FROM registrations WHERE event_id = $1 AND employee_id = $2 AND status <> 'cancelled'`, eventID, employeeID).
 		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
@@ -72,7 +72,7 @@ func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, e
 	var reg Registration
 	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
 			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE event_id = $1 AND employee_id = $2`, eventID, employeeID).
+		FROM registrations WHERE event_id = $1 AND employee_id = $2 AND status <> 'cancelled'`, eventID, employeeID).
 		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil

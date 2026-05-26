@@ -37,7 +37,7 @@
 | Phase | 架構選擇 | 容量目標 | 重點 |
 | --- | --- | --- | --- |
 | Phase 1 production | Docker Compose + modular monolith + PostgreSQL；Redis / MinIO / Mailhog 作為 attached backing services；same-binary worker 消費 PostgreSQL outbox | 約 36 App RPS、5 Booking TPS、320 concurrent users | 防超賣、離線驗票邊界、通知重試、報表匯出、Playwright/k6 production gate。 |
-| Phase 2 成長期 (process-first) | 保留 Phase 1 modular monolith；以同一 Go binary 拆分 process：`app` (HTTP) + 多個 same-binary worker process by kind (`notification`、`projection`、`compensation`、`reservation_compensation`)；Redis 作為 booking pre-admission gate；PostgreSQL 仍是 booking / ticket / check-in / audit 的 final truth；Reporting 由 outbox-derived projection 提供 read model | 約 270 App RPS、35 Booking TPS、2,400 concurrent users | 尖峰報名削峰 (Redis pre-admission + idempotency)、worker kind isolation、reporting read model + freshness contract、ops 控制平面；Registration / Notification / Reporting 是否獨立部署為 deferred decision-gate，需 `docs/specs/phase2-scale-hardening.md` §2 證據才能升級。 |
+| Phase 2 成長期 (process-first) | 保留 Phase 1 modular monolith；以同一 Go binary 拆分 process：`app` (HTTP) + 多個 same-binary worker process by kind (`notification`、`projection`、`compensation`、`export`)；Redis 作為 booking pre-admission gate，reservation cleanup 歸在 `compensation` kind；PostgreSQL 仍是 booking / ticket / check-in / audit 的 final truth；Reporting 由 outbox-derived projection 提供 read model | 約 270 App RPS、35 Booking TPS、2,400 concurrent users | 尖峰報名削峰 (Redis pre-admission + idempotency)、worker kind isolation、reporting read model + freshness contract、ops 控制平面；Registration / Notification / Reporting 是否獨立部署為 deferred decision-gate，需 `docs/specs/phase2-scale-hardening.md` §2 證據才能升級。 |
 | Phase 3 高流量 | 強化 Ticket / Check-in、offline sync、資料分區、跨 AZ HA；評估 container platform 等更重的營運模式 | 約 1,000 App RPS、120 Booking TPS、10,000 concurrent users | 多入口驗票、高可用、DB failover、分區與營運成熟度。 |
 
 > Phase 2 預設仍是 “one codebase, process-first evolution”。Kafka、Kubernetes、service mesh、cross-region HA、完整微服務在 Phase 2 一律視為 deferred decision-gate topics — 不列為 Phase 2 必交付，docs guard (`TestPhase2DocsDoNotClaimDeferredInfraIsRequired`) 會在 docs 出現「Phase 2 已完成 / 已導入 / 已落地」等語言時失敗。Phase 2 acceptance matrix 與 non-goals 詳見 `docs/specs/phase2-scale-hardening.md`；hot-path / async / reporting / ops 子規格見 `docs/specs/phase2-ws{1,2,3,4,5}-*.md`。
@@ -101,6 +101,9 @@ flowchart LR
 - migration、seed、修復腳本以 one-off admin process 執行，例如未來可用 `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml run --rm app <migration command>`。
 
 ### 4.3 Phase 1 Connectivity Acceptance
+
+- `GET /metrics` exposes Prometheus-style operational metrics on the app port. The current Phase 2 slice includes HTTP RED metrics by route pattern / method / status class, PostgreSQL pool acquire wait counters, current lock-waiting sessions, and outbox backlog / oldest-lag gauges. Route labels must use patterns such as `/api/v1/events/{event_id}` rather than raw IDs or tokens.
+- The optional Compose `observability` profile starts Prometheus and Grafana from `services/api/deploy/observability/` so reviewers can inspect RED, DB pool/lock, and outbox lag panels without adding a required production backing service.
 
 - `GET /readyz` 回 200 代表 app 已透過 `DATABASE_URL` 連到 PostgreSQL；PostgreSQL 停止時 `/readyz` 必須回 503。
 - `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml ps` 代表 Redis、MinIO、Mailhog 已作為 local backing services 啟動；production gate 還必須通過 app/worker behavior tests。
@@ -486,6 +489,8 @@ Phase 1 文件不把任何雲供應商作為必備前提。Compose 中的 backin
 
 ### 13.1 Phase 1 可觀測性
 
+Current scrape surface: `/metrics` is unauthenticated operational telemetry for local/CI scraping. It must stay additive, bounded-cardinality, and free of full PII, signed tokens, QR payloads, provider tokens, and raw path identifiers.
+
 | 類別 | 指標 / 紀錄 |
 | --- | --- |
 | Logs | JSON structured logs，包含 `trace_id`、masked `user_id`、`event_id`、`action`、`status`，不記錄完整 PII。 |
@@ -535,8 +540,7 @@ Phase 2 預設仍是 Phase 1 modular monolith；scale lever 是 **process model*
 | `app` | 同一 Go binary (`cets serve`) | HTTP API + React SPA + admin ops endpoints | App RPS / latency 觸發水平加 process |
 | Worker — `notification` | 同一 Go binary (`cets worker`) with `WORKER_KINDS=notification` | 消費 outbox 通知事件、SMTP/in-app delivery、retry、dead-letter | 通知 backlog / SMTP 延遲 |
 | Worker — `projection` | 同一 binary，`WORKER_KINDS=projection` | 消費 outbox 並更新 reporting read model | Reporting freshness lag |
-| Worker — `compensation` | 同一 binary，`WORKER_KINDS=compensation` | Side-effect 補償 (報表匯出失敗重試、停滯任務再起) | Dead-letter / 補償 backlog |
-| Worker — `reservation_compensation` | 同一 binary，`WORKER_KINDS=reservation_compensation` | 回收逾時 Redis reservation、修補 ghost reservation | Redis reservation TTL 過期積壓 |
+| Worker — `compensation` | 同一 binary，`WORKER_KINDS=compensation` | Side-effect 補償與 reservation cleanup (報表匯出失敗重試、停滯任務再起、逾時 Redis reservation 回收、ghost reservation 修補) | Dead-letter / 補償 backlog、Redis reservation TTL 過期積壓 |
 
 所有 worker 共用同一 binary，不是新部署單位；kind 切分由 env 決定。詳見 `docs/specs/phase2-ws4-async-notification.md` (envelope v2、worker kind split、retry / dead-letter / replay)。
 
@@ -545,7 +549,7 @@ Phase 2 預設仍是 Phase 1 modular monolith；scale lever 是 **process model*
 | 元件 | 角色 | 真相邊界 |
 | --- | --- | --- |
 | Redis Lua reservation | Pre-admission：尖峰時段在進入 DB transaction 前 atomic `CHECK → DECR → SET TTL`；失敗者立即被 shed，不打到 DB row lock。 | **Pre-admission only。Redis reservation 成功 ≠ booking 成功。** |
-| `reservation_compensation` worker | TTL 過期 / DB rollback / Redis crash 後回收 Redis counter，避免 ghost reservation 累積。 | 不修改 booking 結果。 |
+| `compensation` worker | TTL 過期 / DB rollback / Redis crash 後回收 Redis counter，避免 ghost reservation 累積。 | 不修改 booking 結果。 |
 | PostgreSQL booking transaction | Final truth：仍重做 eligibility、event state、capacity、booking window、idempotency check，並寫入 registration / ticket / audit / outbox。 | **PostgreSQL 為 booking、ticket、check-in、audit 的唯一 source of truth。** |
 
 詳見 `docs/specs/phase2-ws3-registration-hot-path.md` (reservation spec、TTL + 補償、contention reduction、Redis-outage / TTL-expiry / DB-rollback 回歸測試)。

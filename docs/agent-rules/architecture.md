@@ -28,7 +28,7 @@ Phase 1 uses Docker Compose backing services and a modular monolith to deliver a
 
 Phase 2 defaults to **process-first scale hardening on the Phase 1 modular monolith**:
 
-- Same Go binary; scale by splitting processes, not services. `app` + same-binary worker processes selected by env (`WORKER_KINDS=notification,projection,compensation,reservation_compensation`).
+- Same Go binary; scale by splitting processes, not services. `app` + same-binary worker processes selected by env (`WORKER_KINDS=notification,projection,compensation,export`); reservation cleanup runs under the WS4-owned `compensation` kind.
 - Redis is a booking pre-admission gate only; PostgreSQL remains the final truth for booking, ticket, check-in, and audit state.
 - Reporting projections are derived, disposable, and rebuildable from the outbox; they must never be used as booking, eligibility, ticket redemption, check-in, authorization, or audit truth.
 - Extracting Registration, Notification, or Reporting into a separately deployed service is a **deferred decision-gate** and requires baseline evidence per `docs/specs/phase2-scale-hardening.md` §2 / §4. It is not a Phase 2 default deliverable.

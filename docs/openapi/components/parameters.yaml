@@ -40,3 +40,9 @@ ExportId:
   schema:
     type: string
     format: uuid
+TargetEmployeeId:
+  name: target_employee_id
+  in: path
+  required: true
+  schema:
+    type: string

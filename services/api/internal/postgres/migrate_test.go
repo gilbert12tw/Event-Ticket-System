@@ -31,7 +31,7 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS eligibility_rule_versions",
 		"CREATE TABLE IF NOT EXISTS hr_sync_batches",
 		"CREATE TABLE IF NOT EXISTS eligibility_impact_reviews",
-		"UNIQUE (event_id, employee_id)",
+		"registrations_unique_active_employee",
 		"idempotency_key TEXT NOT NULL UNIQUE",
 		"CREATE TABLE IF NOT EXISTS booking_idempotency_results",
 		"remaining_capacity INTEGER NOT NULL DEFAULT 0",
@@ -74,6 +74,10 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS reporting_projection_offsets",
 		"last_processed_at TIMESTAMPTZ",
 		"INSERT INTO reporting_projection_offsets",
+		// booking-ban
+		"CREATE TABLE IF NOT EXISTS booking_bans",
+		"booking_bans_unique_active",
+		"idx_booking_bans_employee",
 	}
 
 	for _, fragment := range required {
@@ -106,6 +110,8 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 		// PH2-41
 		"reporting_event_summary",
 		"reporting_projection_offsets",
+		// booking-ban
+		"booking_bans",
 	}
 	for _, table := range requiredTables {
 		var exists bool
@@ -205,6 +211,7 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 
 func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS
+		booking_bans,
 		reporting_projection_offsets,
 		reporting_event_summary,
 		report_exports,
@@ -233,8 +240,32 @@ func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	return err
 }
 
+// booking-ban schema tests --------------------------------------------------
+
+// TestBookingBansHasNoPIIColumns asserts that booking_bans does not contain
+// PII. Although it has employee_id, it must not duplicate names or emails.
+func TestBookingBansHasNoPIIColumns(t *testing.T) {
+	ctx, pool := newMigrationTest(t, 10*time.Second)
+
+	require.NoError(t, Migrate(ctx, pool))
+
+	columns := migrationColumnNames(t, ctx, pool, "booking_bans")
+	for _, banned := range []string{
+		"employee_name",
+		"full_name",
+		"email",
+		"token",
+		"signed_token",
+		"qr_payload",
+		"provider_token",
+	} {
+		assert.NotContains(t, columns, banned, "booking_bans contains PII column %q", banned)
+	}
+}
+
 func newMigrationTest(t *testing.T, timeout time.Duration) (context.Context, *pgxpool.Pool) {
 	t.Helper()
+
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -246,6 +277,12 @@ func newMigrationTest(t *testing.T, timeout time.Duration) (context.Context, *pg
 	return ctx, pool
 }
 
+// PH2-41 schema tests -------------------------------------------------------
+
+// TestReportingProjectionTablesHaveNoPIIColumns asserts that
+// reporting_event_summary does not contain any column that could identify an
+// individual employee. If this test fails, a privacy violation has been
+// introduced in the schema.
 func TestReportingProjectionTablesHaveNoPIIColumns(t *testing.T) {
 	ctx, pool := newMigrationTest(t, 10*time.Second)
 

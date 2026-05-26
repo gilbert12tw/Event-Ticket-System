@@ -71,6 +71,8 @@ paths:
     "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1registrations~1{registration_id}~1cancel"
   "/admin/events/{event_id}/waitlist/promote":
     "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1waitlist~1promote"
+  "/admin/events/{event_id}/bans/{target_employee_id}":
+    "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1bans~1{target_employee_id}"
   "/admin/events/{event_id}/lottery-runs":
     "$ref": "./openapi/paths/registration-governance.yaml#/~1admin~1events~1{event_id}~1lottery-runs"
   "/me/tickets":
@@ -128,6 +130,8 @@ components:
       "$ref": "./openapi/components/parameters.yaml#/DeliveryId"
     ExportId:
       "$ref": "./openapi/components/parameters.yaml#/ExportId"
+    TargetEmployeeId:
+      "$ref": "./openapi/components/parameters.yaml#/TargetEmployeeId"
   schemas:
     ApiSuccessEnvelope:
       "$ref": "./openapi/components/schemas/common.yaml#/ApiSuccessEnvelope"

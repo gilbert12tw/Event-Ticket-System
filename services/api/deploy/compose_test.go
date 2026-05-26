@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,64 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	for _, fragment := range required {
 		assert.Contains(t, combined, fragment, "compose/env contract is missing %q", fragment)
 	}
+}
+
+func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
+	compose, err := os.ReadFile("compose.yaml")
+	require.NoError(t, err)
+	envExample, err := os.ReadFile(".env.example")
+	require.NoError(t, err)
+	combined := string(compose) + "\n" + string(envExample)
+
+	required := []string{
+		"prometheus:",
+		"image: prom/prometheus:v3.6.0",
+		`profiles: ["observability"]`,
+		"--config.file=/etc/prometheus/prometheus.yml",
+		"${PROMETHEUS_PORT:-9090}:9090",
+		"./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+		"grafana:",
+		"image: grafana/grafana:12.2.0",
+		"GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}",
+		"GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}",
+		"${GRAFANA_PORT:-3000}:3000",
+		"./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro",
+		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
+		"PROMETHEUS_PORT=9090",
+		"GRAFANA_PORT=3000",
+	}
+	for _, fragment := range required {
+		assert.Contains(t, combined, fragment, "optional observability contract is missing %q", fragment)
+	}
+}
+
+func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
+	prometheus, err := os.ReadFile("observability/prometheus.yml")
+	require.NoError(t, err)
+	datasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
+	require.NoError(t, err)
+	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
+	require.NoError(t, err)
+
+	combined := string(prometheus) + "\n" + string(datasource) + "\n" + string(dashboardFile)
+	required := []string{
+		"job_name: cets-app",
+		"metrics_path: /metrics",
+		"app:8080",
+		"url: http://prometheus:9090",
+		"cets_http_requests_total",
+		"cets_http_request_seconds_bucket",
+		"cets_db_pool_conns",
+		"cets_db_lock_waiting_sessions",
+		"cets_outbox_oldest_lag_seconds",
+	}
+	for _, fragment := range required {
+		assert.Contains(t, combined, fragment, "observability provisioning is missing %q", fragment)
+	}
+
+	var dashboard map[string]interface{}
+	require.NoError(t, json.Unmarshal(dashboardFile, &dashboard))
+	assert.Equal(t, "CETS Observability", dashboard["title"])
 }
 
 func TestComposePassesNoShowPolicyConfig(t *testing.T) {

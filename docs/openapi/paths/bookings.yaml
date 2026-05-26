@@ -32,6 +32,8 @@
         "$ref": "../components/responses.yaml#/NotFound"
       "409":
         "$ref": "../components/responses.yaml#/Conflict"
+      "422":
+        "$ref": "../components/responses.yaml#/BookingBanned"
 "/me/registrations/{registration_id}/cancel":
   post:
     tags:
