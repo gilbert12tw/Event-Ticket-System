@@ -324,7 +324,7 @@ export function HrReportsPage() {
                 </div>
                 <div>
                   <dt>完成時間</dt>
-                  <dd>{lastExport.completed_at || "尚未完成"}</dd>
+                  <dd>{reportExportCompletedAt(lastExport)}</dd>
                 </div>
                 <div>
                   <dt>物件 key</dt>
@@ -355,6 +355,12 @@ function reportPresetMatches(row: ReportRow, preset: string) {
     );
   }
   return true;
+}
+
+function reportExportCompletedAt(reportExport: ReportExport) {
+  const completedAt = reportExport.completed_at?.trim();
+  if (!completedAt || completedAt.startsWith("0001-")) return "尚未完成";
+  return completedAt;
 }
 
 function capacityLabel(row: ReportRow) {

@@ -15,7 +15,7 @@
             "$ref": "../components/schemas/checkins.yaml#/CreateCheckInRequest"
     responses:
       "200":
-        description: Check-in accepted, duplicated, rejected, or conflicted.
+        description: Check-in accepted.
         content:
           application/json:
             schema:
@@ -29,7 +29,11 @@
       "404":
         "$ref": "../components/responses.yaml#/NotFound"
       "409":
-        "$ref": "../components/responses.yaml#/Conflict"
+        description: Resolved duplicate or rejected check-in failure with response data.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/checkins.yaml#/CheckInErrorResponse"
 "/checkins/events/{event_id}/offline-package":
   get:
     tags:

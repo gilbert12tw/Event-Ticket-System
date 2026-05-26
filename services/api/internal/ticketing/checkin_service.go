@@ -20,9 +20,13 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 	if strings.TrimSpace(req.DeviceID) == "" {
 		return CheckinResponse{}, badRequest("device_id is required")
 	}
+	requestEventID := strings.TrimSpace(req.EventID)
+	if requestEventID == "" {
+		return CheckinResponse{}, badRequest("event_id is required")
+	}
 	claims, err := s.signer.Verify(req.SignedToken)
 	if err != nil {
-		if auditErr := s.insertCheckinRejectionAudit(ctx, actor, "", "", req.DeviceID, "invalid_ticket_token", ""); auditErr != nil {
+		if auditErr := s.insertCheckinRejectionAudit(ctx, actor, "", requestEventID, req.DeviceID, "invalid_ticket_token", ""); auditErr != nil {
 			return CheckinResponse{}, auditErr
 		}
 		return CheckinResponse{}, badRequest("invalid ticket token")
@@ -47,7 +51,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 		Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber,
 			&ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if auditErr := insertCheckinRejectionAuditTx(ctx, tx, actor, "", claims.EventID, req.DeviceID, "ticket_not_found", ""); auditErr != nil {
+		if auditErr := insertCheckinRejectionAuditTx(ctx, tx, actor, "", requestEventID, req.DeviceID, "ticket_not_found", ""); auditErr != nil {
 			return CheckinResponse{}, auditErr
 		}
 		if commitErr := tx.Commit(ctx); commitErr != nil {
@@ -80,7 +84,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 			FamilyCount:      ticket.FamilyCount,
 		}, badRequest("ticket token claims do not match")
 	}
-	if requestEventID := strings.TrimSpace(req.EventID); requestEventID != "" && requestEventID != ticket.EventID {
+	if requestEventID != ticket.EventID {
 		if err := insertCheckinRejectionAuditTx(ctx, tx, actor, ticket.TicketID, ticket.EventID, req.DeviceID, "event_mismatch", requestEventID); err != nil {
 			return CheckinResponse{}, err
 		}
@@ -223,7 +227,7 @@ func (s *Service) CheckIn(ctx context.Context, actor Actor, req CheckinRequest) 
 	if err := insertAudit(ctx, tx, auditID, actor, "ticket.redeemed", "ticket", ticket.TicketID, map[string]interface{}{"event_id": ticket.EventID, "device_id": req.DeviceID}); err != nil {
 		return CheckinResponse{}, err
 	}
-	if err := insertOutbox(ctx, tx, "ticket.redeemed", ticket.TicketID, map[string]interface{}{"ticket_id": ticket.TicketID, "event_id": ticket.EventID}); err != nil {
+	if err := insertOutbox(ctx, tx, "ticket.redeemed", ticket.TicketID, ticketOutboxPayload(ticket, nil)); err != nil {
 		return CheckinResponse{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -257,7 +261,7 @@ func (s *Service) expireTicketTx(ctx context.Context, tx pgx.Tx, actor Actor, ti
 	if err := insertAudit(ctx, tx, auditID, actor, "ticket.expired", "ticket", ticket.TicketID, map[string]interface{}{"event_id": ticket.EventID, "device_id": deviceID}); err != nil {
 		return err
 	}
-	return insertOutbox(ctx, tx, "ticket.expired", ticket.TicketID, map[string]interface{}{"ticket_id": ticket.TicketID, "event_id": ticket.EventID})
+	return insertOutbox(ctx, tx, "ticket.expired", ticket.TicketID, ticketOutboxPayload(ticket, nil))
 }
 
 func (s *Service) insertCheckinRejectionAudit(ctx context.Context, actor Actor, ticketID string, eventID string, deviceID string, reason string, detail string) error {

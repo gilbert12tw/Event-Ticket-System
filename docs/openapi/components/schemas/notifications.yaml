@@ -11,14 +11,9 @@ NotificationDeliveryListResponse:
     - type: object
       properties:
         data:
-          type: object
-          required:
-            - deliveries
-          properties:
-            deliveries:
-              type: array
-              items:
-                "$ref": "#/NotificationDelivery"
+          type: array
+          items:
+            "$ref": "#/NotificationDelivery"
 NotificationDeliveryResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -29,10 +24,13 @@ NotificationDeliveryResponse:
 NotificationPreferences:
   type: object
   required:
+    - employee_id
     - email_enabled
     - in_app_enabled
     - opted_out_categories
   properties:
+    employee_id:
+      type: string
     email_enabled:
       type: boolean
     in_app_enabled:
@@ -74,12 +72,12 @@ NotificationDelivery:
   properties:
     delivery_id:
       type: string
-      format: uuid
+      pattern: "^del_[a-f0-9]{32}$"
     outbox_id:
       type:
         - string
         - "null"
-      format: uuid
+      pattern: "^out_[a-f0-9]{32}$"
     employee_ref:
       type:
         - string

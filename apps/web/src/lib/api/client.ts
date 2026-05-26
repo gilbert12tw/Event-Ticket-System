@@ -394,13 +394,23 @@ export function getTicket(ticketID: string) {
   return api<Ticket>(`/api/v1/tickets/${encodeURIComponent(ticketID)}`);
 }
 
-export function checkIn(signedToken: string, deviceID: string) {
+export function checkIn(
+  signedToken: string,
+  deviceID: string,
+  eventID: string,
+  holderMismatchReason = "",
+) {
+  const body: Record<string, string> = {
+    signed_token: signedToken,
+    device_id: deviceID,
+    event_id: eventID.trim(),
+  };
+  if (holderMismatchReason.trim()) {
+    body.holder_mismatch_reason = holderMismatchReason.trim();
+  }
   return api<CheckinResponse>("/api/v1/checkins", {
     method: "POST",
-    body: {
-      signed_token: signedToken,
-      device_id: deviceID,
-    },
+    body,
   });
 }
 

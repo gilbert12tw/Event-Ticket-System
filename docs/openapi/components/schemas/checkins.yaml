@@ -5,6 +5,21 @@ CheckInResponse:
       properties:
         data:
           "$ref": "#/CheckInResult"
+CheckInErrorResponse:
+  type: object
+  required:
+    - success
+    - data
+    - error
+  properties:
+    success:
+      type: boolean
+      const: false
+    data:
+      "$ref": "#/CheckInResult"
+    error:
+      type: string
+      minLength: 1
 OfflineCheckInPackageResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -23,6 +38,7 @@ CreateCheckInRequest:
   type: object
   required:
     - signed_token
+    - event_id
     - device_id
   additionalProperties: false
   properties:
@@ -33,11 +49,6 @@ CreateCheckInRequest:
       format: uuid
     device_id:
       type: string
-    scanned_at:
-      type:
-        - string
-        - "null"
-      format: date-time
     holder_mismatch_reason:
       type:
         - string
@@ -276,10 +287,6 @@ OfflineCheckInScanInput:
     scanned_at:
       type: string
       format: date-time
-    local_scan_id:
-      type:
-        - string
-        - "null"
 OfflineCheckInSyncResult:
   type: object
   required:

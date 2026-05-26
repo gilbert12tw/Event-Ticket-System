@@ -18,14 +18,9 @@ EligibilityImpactReviewListResponse:
     - type: object
       properties:
         data:
-          type: object
-          required:
-            - reviews
-          properties:
-            reviews:
-              type: array
-              items:
-                "$ref": "#/EligibilityImpactReview"
+          type: array
+          items:
+            "$ref": "#/EligibilityImpactReview"
 EligibilityImpactReviewResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -129,6 +124,7 @@ EligibilityImpactReview:
   required:
     - review_id
     - event_id
+    - employee_ref
     - status
     - reason
     - created_at
@@ -157,9 +153,8 @@ EligibilityImpactReview:
     status:
       type: string
       enum:
-        - open
+        - pending
         - resolved
-        - ignored
     reason:
       type: string
     created_at:

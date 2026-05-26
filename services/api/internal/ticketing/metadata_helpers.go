@@ -61,3 +61,11 @@ func appendMetadataString(metadata map[string]interface{}, key string, value str
 	}
 	metadata[key] = value
 }
+
+func ticketOutboxPayload(ticket Ticket, fields map[string]interface{}) map[string]interface{} {
+	return mergeMetadata(map[string]interface{}{
+		"ticket_id":   ticket.TicketID,
+		"event_id":    ticket.EventID,
+		"employee_id": ticket.EmployeeID,
+	}, fields)
+}

@@ -77,4 +77,5 @@ func TestRevokeTicketWritesOutbox(t *testing.T) {
 	var outboxCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.revoked' AND aggregate_id = $1`, booking.Ticket.TicketID).Scan(&outboxCount))
 	assert.Equal(t, 1, outboxCount)
+	assertTicketOutboxPayload(t, service, ctx, "ticket.revoked", *booking.Ticket)
 }

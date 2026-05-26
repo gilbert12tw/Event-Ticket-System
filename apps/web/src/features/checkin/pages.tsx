@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ApiError, checkIn, reports } from "@/lib/api";
-import type { CheckinResponse, ReportRow } from "@/lib/api";
+import { ApiError, checkIn, listAdminEvents } from "@/lib/api";
+import type { CheckinResponse, EventSummary } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
 import {
   Alert,
@@ -35,14 +35,20 @@ export function CheckinPage() {
   );
   const [devicePreset, setDevicePreset] = useState("gate-1");
   const [customDeviceID, setCustomDeviceID] = useState("");
+  const [holderMismatchReason, setHolderMismatchReason] = useState("");
   const [result, setResult] = useState<CheckinResponse | null>(null);
   const [message, setMessage] = useState("");
-  const [rows, setRows] = useState<ReportRow[]>([]);
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [eventID, setEventID] = useState("");
   const [busy, setBusy] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
   const recentToken = hasDemoCheckinToken() ? getDemoCheckinToken() : "";
   const deviceID =
     devicePreset === "custom" ? customDeviceID.trim() : devicePreset;
+  const selectedEventID = eventID || events[0]?.event_id || "";
+  const selectedEvent = events.find(
+    (event) => event.event_id === selectedEventID,
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,11 +56,13 @@ export function CheckinPage() {
     setMessage("");
     setResult(null);
     try {
-      const response = await checkIn(token.trim(), deviceID);
+      const response = await checkIn(
+        token.trim(),
+        deviceID,
+        selectedEventID.trim(),
+        holderMismatchReason.trim(),
+      );
       setResult(response);
-      void reports()
-        .then(setRows)
-        .catch(() => setRows([]));
     } catch (error) {
       if (error instanceof ApiError && error.response.data) {
         setResult(error.response.data as CheckinResponse);
@@ -81,28 +89,33 @@ export function CheckinPage() {
   }
 
   useEffect(() => {
-    reports()
-      .then(setRows)
-      .catch(() => setRows([]));
+    listAdminEvents()
+      .then((nextEvents) => {
+        setEvents(nextEvents);
+        setEventID((current) =>
+          nextEvents.some((event) => event.event_id === current) ? current : "",
+        );
+      })
+      .catch((error) => setMessage(errorMessage(error)));
   }, []);
 
   useEffect(() => {
     if (result || message) resultRef.current?.focus();
   }, [message, result]);
 
-  const total = rows.reduce(
-    (acc, row) => ({
-      capacity: acc.capacity + (row.capacity ?? 0),
-      checkedIn: acc.checkedIn + row.checkin_count,
-    }),
-    { capacity: 0, checkedIn: 0 },
-  );
-  const tokenReady = token.trim().length > 0 && deviceID.length > 0;
+  const eventOptions = [
+    { value: "", label: "請選擇活動" },
+    ...events.map((event) => ({
+      value: event.event_id,
+      label: event.title,
+      helper: event.status,
+    })),
+  ];
+  const tokenReady =
+    token.trim().length > 0 &&
+    deviceID.length > 0 &&
+    selectedEventID.trim().length > 0;
   const tokenOnlyReady = token.trim().length > 0;
-  const checkinRate =
-    total.capacity > 0
-      ? `${Math.round((total.checkedIn / total.capacity) * 100)}%`
-      : "0%";
 
   return (
     <section className="content-grid checkin-workspace">
@@ -117,12 +130,19 @@ export function CheckinPage() {
           <MobileQrScanner onTokenDetected={setToken} />
           <CompactStatsBar
             items={[
-              { label: "已入場", value: total.checkedIn },
-              { label: "總名額", value: total.capacity },
-              { label: "入場率", value: checkinRate },
+              { label: "活動", value: selectedEvent?.title || "未選擇" },
+              { label: "狀態", value: selectedEvent?.status || "未載入" },
               { label: "裝置", value: deviceID || "未設定" },
+              { label: "模式", value: "線上" },
             ]}
             label="驗票摘要"
+          />
+          <SelectField
+            label="驗票活動"
+            value={selectedEventID}
+            options={eventOptions}
+            onChange={setEventID}
+            required
           />
           <Field
             autoComplete="off"
@@ -151,6 +171,12 @@ export function CheckinPage() {
                 onChange={setToken}
                 rows={5}
               />
+              <TextareaField
+                label="持票人不符原因"
+                value={holderMismatchReason}
+                onChange={setHolderMismatchReason}
+                rows={3}
+              />
             </div>
           </details>
           <SelectField
@@ -174,10 +200,12 @@ export function CheckinPage() {
             label={tokenReady ? "可驗票" : "資料未齊"}
             message={
               tokenReady
-                ? "已偵測簽章碼與裝置代號，可以送出驗票。"
-                : tokenOnlyReady
-                  ? "請選擇或填寫裝置代號。"
-                  : "請掃描或貼上票券簽章碼。"
+                ? "已偵測活動、簽章碼與裝置代號，可以送出驗票。"
+                : !selectedEventID.trim()
+                  ? "請先選擇驗票活動，避免核銷其他活動票券。"
+                  : tokenOnlyReady
+                    ? "請選擇或填寫裝置代號。"
+                    : "請掃描或貼上票券簽章碼。"
             }
           />
           <div className="helper-strip">
@@ -214,8 +242,8 @@ export function CheckinPage() {
       >
         <h2 id="checkin-result-title">驗票結果</h2>
         <div className="kpi-row">
-          <Kpi label="已入場" value={total.checkedIn} />
-          <Kpi label="總名額" value={total.capacity} />
+          <Kpi label="活動" value={selectedEvent?.title || "未選擇"} />
+          <Kpi label="裝置" value={deviceID || "未設定"} />
         </div>
         {message && (
           <Alert tone={message.includes("已核銷") ? "warn" : "fail"}>

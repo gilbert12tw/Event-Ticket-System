@@ -77,6 +77,7 @@ AuthBootstrap:
   required:
     - mock_profiles_enabled
     - mock_profiles
+    - debug_chrome_enabled
   properties:
     mock_profiles_enabled:
       type: boolean
@@ -84,6 +85,8 @@ AuthBootstrap:
       type: array
       items:
         "$ref": "#/MockProfile"
+    debug_chrome_enabled:
+      type: boolean
 MockProfile:
   type: object
   required:
@@ -94,6 +97,8 @@ MockProfile:
     - department
     - site
     - city
+    - grade
+    - employment_status
   properties:
     profile_id:
       type: string
@@ -117,6 +122,10 @@ MockProfile:
       type: string
     city:
       type: string
+    grade:
+      type: integer
+    employment_status:
+      type: string
 EmployeeClaims:
   type: object
   required:
@@ -127,6 +136,8 @@ EmployeeClaims:
     - department
     - site
     - city
+    - grade
+    - employment_status
     - claims_status
   properties:
     employee_id:
@@ -150,6 +161,10 @@ EmployeeClaims:
     site:
       type: string
     city:
+      type: string
+    grade:
+      type: integer
+    employment_status:
       type: string
     claims_status:
       type: string
@@ -189,11 +204,10 @@ BookingStatus:
 TicketStatus:
   type: string
   enum:
-    - unused
-    - checked_in
-    - cancelled
-    - expired
+    - active
+    - redeemed
     - revoked
+    - expired
 NotificationDeliveryStatus:
   type: string
   enum:
@@ -211,7 +225,7 @@ ReportExportStatus:
 AllocationMode:
   type: string
   enum:
-    - first_come_first_served
+    - fcfs
     - lottery
 Warning:
   type: object

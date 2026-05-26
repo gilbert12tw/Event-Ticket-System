@@ -116,6 +116,11 @@ func TestEventCapacityTypesValidateAndExposeSummaries(t *testing.T) {
 	_, err = service.UpdateEvent(ctx, admin, unlimited.EventID, UpdateEventRequest{CapacityType: &limitedType})
 	require.Error(t, err, "invalid update to limited without capacity should error")
 	assert.Equal(t, 400, ErrorStatus(err))
+	familyLimitedCapacity := 3
+	disallowFamily := false
+	_, err = service.UpdateEvent(ctx, admin, unlimited.EventID, UpdateEventRequest{CapacityType: &limitedType, Capacity: &familyLimitedCapacity, AllowsFamily: &disallowFamily})
+	require.Error(t, err, "unlimited event with family registrations should not become limited")
+	assert.Equal(t, 409, ErrorStatus(err))
 	allowFamily := true
 	_, err = service.UpdateEvent(ctx, admin, legacy.EventID, UpdateEventRequest{AllowsFamily: &allowFamily})
 	require.Error(t, err, "invalid limited family update should error")
@@ -247,7 +252,7 @@ func TestProviderRoleRBACMatrix(t *testing.T) {
 				RoleCheckinStaff: 400,
 			},
 			run: func(actor Actor) error {
-				_, err := service.CheckIn(ctx, actor, CheckinRequest{SignedToken: "invalid.token", DeviceID: "gate-rbac"})
+				_, err := service.CheckIn(ctx, actor, CheckinRequest{SignedToken: "invalid.token", EventID: event.EventID, DeviceID: "gate-rbac"})
 				return err
 			},
 		},
@@ -311,7 +316,7 @@ func TestInvalidCheckinAttemptsAreAuditedWithoutTokenLeak(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	_, err := service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "bad.token.secret", DeviceID: "gate-1"})
+	_, err := service.CheckIn(ctx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, CheckinRequest{SignedToken: "bad.token.secret", EventID: "evt-invalid", DeviceID: "gate-1"})
 	require.Error(t, err, "expected bad token 400")
 	assert.Equal(t, 400, ErrorStatus(err))
 	var metadata string

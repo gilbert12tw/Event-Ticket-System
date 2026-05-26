@@ -18,10 +18,14 @@ type fakeTicketingService struct {
 	bookActor             ticketing.Actor
 	bookCalled            bool
 	bookRequest           ticketing.BookingRequest
+	cancelMyActor         ticketing.Actor
+	cancelMyRegistration  string
+	cancelMyRequest       ticketing.CancelRegistrationRequest
 	listTicketsActor      ticketing.Actor
 	listTicketsEmployeeID string
 	checkinActor          ticketing.Actor
 	checkinErr            error
+	offlineSyncActor      ticketing.Actor
 	reportsActor          ticketing.Actor
 	auditActor            ticketing.Actor
 	auditQuery            []ticketing.AuditLogQuery
@@ -83,11 +87,11 @@ func (s *fakeTicketingService) UpdateEligibility(context.Context, ticketing.Acto
 }
 
 func (s *fakeTicketingService) EligibilityImpactReviews(context.Context, ticketing.Actor) ([]ticketing.EligibilityImpactReview, error) {
-	return []ticketing.EligibilityImpactReview{{ReviewID: "rev_1"}}, nil
+	return []ticketing.EligibilityImpactReview{{ReviewID: "rev_1", EmployeeRef: "E100****"}}, nil
 }
 
 func (s *fakeTicketingService) ResolveEligibilityImpactReview(context.Context, ticketing.Actor, string, ticketing.ResolveImpactReviewRequest) (ticketing.EligibilityImpactReview, error) {
-	return ticketing.EligibilityImpactReview{ReviewID: "rev_1", Status: "resolved"}, nil
+	return ticketing.EligibilityImpactReview{ReviewID: "rev_1", EmployeeRef: "E100****", Status: "resolved"}, nil
 }
 
 func (s *fakeTicketingService) Book(_ context.Context, actor ticketing.Actor, _ string, req ticketing.BookingRequest) (ticketing.BookingResponse, error) {
@@ -105,7 +109,10 @@ func (s *fakeTicketingService) CancelRegistration(context.Context, ticketing.Act
 	return ticketing.BookingResponse{Registration: ticketing.Registration{RegistrationID: "reg_1", Status: ticketing.RegistrationCancelled}}, nil
 }
 
-func (s *fakeTicketingService) CancelMyRegistration(context.Context, ticketing.Actor, string, ticketing.CancelRegistrationRequest) (ticketing.BookingResponse, error) {
+func (s *fakeTicketingService) CancelMyRegistration(_ context.Context, actor ticketing.Actor, registrationID string, req ticketing.CancelRegistrationRequest) (ticketing.BookingResponse, error) {
+	s.cancelMyActor = actor
+	s.cancelMyRegistration = registrationID
+	s.cancelMyRequest = req
 	return ticketing.BookingResponse{Registration: ticketing.Registration{RegistrationID: "reg_1", Status: ticketing.RegistrationCancelled}}, nil
 }
 
@@ -144,7 +151,8 @@ func (s *fakeTicketingService) OfflineCheckinPackage(context.Context, ticketing.
 	return ticketing.OfflineCheckinPackage{BatchID: "off_1", EventID: "evt_1", PackageSignature: "sig_1", TicketCount: 1}, nil
 }
 
-func (s *fakeTicketingService) SyncOfflineCheckins(context.Context, ticketing.Actor, ticketing.OfflineCheckinSyncRequest) (ticketing.OfflineCheckinSyncResponse, error) {
+func (s *fakeTicketingService) SyncOfflineCheckins(_ context.Context, actor ticketing.Actor, _ ticketing.OfflineCheckinSyncRequest) (ticketing.OfflineCheckinSyncResponse, error) {
+	s.offlineSyncActor = actor
 	return ticketing.OfflineCheckinSyncResponse{BatchID: "off_1", Accepted: 1}, nil
 }
 
@@ -157,7 +165,7 @@ func (s *fakeTicketingService) UpdateNotificationPreferences(context.Context, ti
 }
 
 func (s *fakeTicketingService) NotificationDeliveries(context.Context, ticketing.Actor) ([]ticketing.NotificationDelivery, error) {
-	return []ticketing.NotificationDelivery{{DeliveryID: "del_1"}}, nil
+	return []ticketing.NotificationDelivery{{DeliveryID: "del_1", EmployeeRef: "E100****"}}, nil
 }
 
 func (s *fakeTicketingService) RetryNotificationDelivery(context.Context, ticketing.Actor, string) (ticketing.NotificationDelivery, error) {
@@ -170,11 +178,11 @@ func (s *fakeTicketingService) Reports(_ context.Context, actor ticketing.Actor)
 }
 
 func (s *fakeTicketingService) CreateReportExport(context.Context, ticketing.Actor, ticketing.ReportExportRequest) (ticketing.ReportExport, error) {
-	return ticketing.ReportExport{ExportID: "exp_1", Status: "ready"}, nil
+	return ticketing.ReportExport{ExportID: "exp_1", ReportType: ticketing.ReportExportTypeParticipation, Format: ticketing.ReportExportFormatCSV, Status: "ready"}, nil
 }
 
 func (s *fakeTicketingService) GetReportExport(context.Context, ticketing.Actor, string) (ticketing.ReportExport, error) {
-	return ticketing.ReportExport{ExportID: "exp_1", Status: "ready", ObjectKey: "exports/exp_1.csv"}, nil
+	return ticketing.ReportExport{ExportID: "exp_1", ReportType: ticketing.ReportExportTypeParticipation, Format: ticketing.ReportExportFormatCSV, Status: "ready", ObjectKey: "exports/exp_1.csv"}, nil
 }
 
 func (s *fakeTicketingService) AuditLogs(_ context.Context, actor ticketing.Actor, query ...ticketing.AuditLogQuery) ([]ticketing.AuditLog, error) {

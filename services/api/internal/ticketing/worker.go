@@ -20,9 +20,10 @@ const (
 )
 
 type DeliveryMessage struct {
-	To      string
-	Subject string
-	Body    string
+	To             string
+	Subject        string
+	Body           string
+	IdempotencyKey string
 }
 
 type NotificationSender interface {
@@ -105,7 +106,16 @@ func (s SMTPNotificationSender) deliveryRecipient(message DeliveryMessage) strin
 }
 
 func (s SMTPNotificationSender) deliveryBody(message DeliveryMessage, recipient string) string {
-	return fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n", s.From, recipient, message.Subject, message.Body)
+	headers := []string{
+		fmt.Sprintf("From: %s", s.From),
+		fmt.Sprintf("To: %s", recipient),
+		fmt.Sprintf("Subject: %s", message.Subject),
+	}
+	if key := strings.TrimSpace(message.IdempotencyKey); key != "" {
+		headers = append(headers, fmt.Sprintf("Message-ID: <%s@cets.local>", key))
+		headers = append(headers, fmt.Sprintf("X-Idempotency-Key: %s", key))
+	}
+	return fmt.Sprintf("%s\r\n\r\n%s\r\n", strings.Join(headers, "\r\n"), message.Body)
 }
 
 func (s *Service) ProcessOutboxOnce(ctx context.Context, sender NotificationSender, maxAttempts int) (int, error) {
@@ -189,39 +199,42 @@ func (s *Service) processOneOutbox(ctx context.Context, options OutboxProcessorO
 		return 0, err
 	}
 	emailStatus := ""
+	var emailDelivery notificationDeliveryState
 	if options.Sender != nil {
 		desiredEmailStatus, emailReason := deliveryStatusForPreference(prefs.emailEnabled, categorySuppressed, deliveryStatusPending)
-		emailStatus, err = ensureNotificationDelivery(ctx, tx, claim.outboxID, employeeID, "email", desiredEmailStatus, emailReason)
+		emailDelivery, err = ensureNotificationDelivery(ctx, tx, claim.outboxID, employeeID, "email", desiredEmailStatus, emailReason)
 		if err != nil {
 			return 0, err
 		}
+		emailStatus = emailDelivery.status
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
 	}
 
 	var sendErr error
+	lastError := ""
 	if options.Sender != nil && emailStatus == deliveryStatusPending {
 		if err := ctx.Err(); err != nil {
 			return 1, err
 		}
 		message := deliveryMessageForOutbox(claim.eventType, employeeID, payload)
+		message.IdempotencyKey = emailDelivery.deliveryID
 		sendErr = options.Sender.Send(ctx, message)
 		status := deliveryStatusSent
-		lastError := ""
 		if sendErr != nil {
 			status = deliveryStatusFailed
 			if claim.attempts >= maxAttempts {
 				status = deliveryStatusDeadLetter
 			}
-			lastError = sendErr.Error()
+			lastError = redactNotificationDeliveryError(sendErr.Error(), employeeID)
 		}
 		if err := s.updateEmailDeliveryAfterSend(ctx, claim.outboxID, status, lastError); err != nil {
 			return 1, err
 		}
 	}
 	if sendErr != nil {
-		return 1, s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, sendErr)
+		return 1, s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, lastError)
 	}
 	return 1, s.markOutboxPublished(ctx, claim.outboxID)
 }
@@ -247,6 +260,11 @@ const (
 	deliveryStatusSuppressed = "suppressed"
 	deliveryStatusDeadLetter = "dead_letter"
 )
+
+type notificationDeliveryState struct {
+	deliveryID string
+	status     string
+}
 
 func claimOutboxEvent(ctx context.Context, tx pgx.Tx) (outboxClaim, error) {
 	var claim outboxClaim
@@ -329,12 +347,12 @@ func deliveryStatusForPreference(enabled bool, categorySuppressed bool, enabledS
 	return enabledStatus, ""
 }
 
-func ensureNotificationDelivery(ctx context.Context, tx pgx.Tx, outboxID string, employeeID string, channel string, status string, lastError string) (string, error) {
+func ensureNotificationDelivery(ctx context.Context, tx pgx.Tx, outboxID string, employeeID string, channel string, status string, lastError string) (notificationDeliveryState, error) {
 	deliveryID, err := newID("del")
 	if err != nil {
-		return "", err
+		return notificationDeliveryState{}, err
 	}
-	var currentStatus string
+	var current notificationDeliveryState
 	err = tx.QueryRow(ctx, `INSERT INTO notification_deliveries
 		(delivery_id, outbox_id, employee_id, channel, status, attempts, last_error)
 		VALUES ($1,$2,$3,$4,$5,0,$6)
@@ -352,9 +370,9 @@ func ensureNotificationDelivery(ctx context.Context, tx pgx.Tx, outboxID string,
 				WHEN notification_deliveries.status IN ('sent', 'suppressed') THEN notification_deliveries.updated_at
 				ELSE now()
 			END
-		RETURNING status`, deliveryID, outboxID, employeeID, channel, status, lastError).
-		Scan(&currentStatus)
-	return currentStatus, err
+		RETURNING delivery_id, status`, deliveryID, outboxID, employeeID, channel, status, lastError).
+		Scan(&current.deliveryID, &current.status)
+	return current, err
 }
 
 func markOutboxPublishedInTx(ctx context.Context, tx pgx.Tx, outboxID string) error {
@@ -385,7 +403,7 @@ func (s *Service) updateEmailDeliveryAfterSend(ctx context.Context, outboxID str
 	return err
 }
 
-func (s *Service) updateOutboxAfterSendFailure(ctx context.Context, outboxID string, attempts int, maxAttempts int, sendErr error) error {
+func (s *Service) updateOutboxAfterSendFailure(ctx context.Context, outboxID string, attempts int, maxAttempts int, lastError string) error {
 	status := "pending"
 	if attempts >= maxAttempts {
 		status = "dead_letter"
@@ -394,7 +412,7 @@ func (s *Service) updateOutboxAfterSendFailure(ctx context.Context, outboxID str
 		SET publish_status = $1,
 			last_error = $2,
 			available_at = now() + ($3::double precision * interval '1 second')
-		WHERE outbox_id = $4`, status, sendErr.Error(), outboxRetryBackoff(attempts).Seconds(), outboxID)
+		WHERE outbox_id = $4`, status, lastError, outboxRetryBackoff(attempts).Seconds(), outboxID)
 	return err
 }
 

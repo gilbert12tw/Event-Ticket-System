@@ -146,8 +146,27 @@ func TestProcessOutboxOnceMarksReportExportFailureRetryable(t *testing.T) {
 	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{ReportStore: store, MaxAttempts: 3})
 	require.NoError(t, err)
 	assert.Equal(t, 1, processed)
-	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusFailed, true)
+	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusPending, false)
 	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "pending", 1)
+}
+
+func TestProcessOutboxOnceMarksReportExportFailedAtMaxAttempts(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	export, err := service.CreateReportExport(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, ReportExportRequest{ReportType: "participation"})
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `UPDATE outbox_events SET attempts = 2 WHERE aggregate_id = $1 AND event_type = $2`, export.ExportID, outboxEventReportExportRequested)
+	require.NoError(t, err)
+	store := &recordingReportStore{err: errors.New("object store unavailable")}
+
+	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{ReportStore: store, MaxAttempts: 3})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusFailed, true)
+	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "dead_letter", 3)
 }
 
 func assertReportExportState(t *testing.T, service *Service, ctx context.Context, exportID string, wantStatus string, wantCompleted bool) {

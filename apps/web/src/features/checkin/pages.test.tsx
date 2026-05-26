@@ -1,7 +1,8 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, checkIn, reports } from "@/lib/api";
+import { checkIn, listAdminEvents, reports } from "@/lib/api";
+import type { EventSummary } from "@/lib/api";
 import { CheckinPage } from "./pages";
 
 const zxingMocks = vi.hoisted(() => ({
@@ -28,16 +29,47 @@ vi.mock("@/lib/api", async () => {
 });
 
 const mockCheckIn = vi.mocked(checkIn);
+const mockListAdminEvents = vi.mocked(listAdminEvents);
 const mockReports = vi.mocked(reports);
 const originalMediaDevices = navigator.mediaDevices;
+
+const checkinEvent: EventSummary = {
+  event_id: "evt-live",
+  title: "Live Check-in",
+  description: "",
+  location: "Taipei HQ",
+  starts_at: "2026-05-16T10:00:00Z",
+  registration_start: "2026-05-01T10:00:00Z",
+  registration_close: "2026-05-15T10:00:00Z",
+  capacity_type: "limited",
+  capacity: 40,
+  allows_family: false,
+  status: "published",
+  allocation_mode: "fcfs",
+  created_by: "admin-1",
+  created_at: "2026-05-01T09:00:00Z",
+  updated_at: "2026-05-01T09:00:00Z",
+  rule: {
+    department: "Engineering",
+    site: "Taipei HQ",
+    min_grade: 5,
+    employment_status: "active",
+  },
+  confirmed_count: 1,
+  waitlist_count: 0,
+  remaining_capacity: 39,
+  current_user_status: "",
+};
 
 describe("CheckinPage", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/admin/checkin");
     localStorage.clear();
     mockCheckIn.mockClear();
+    mockListAdminEvents.mockReset();
     mockReports.mockClear();
     zxingMocks.decodeFromConstraints.mockReset();
+    mockListAdminEvents.mockResolvedValue([checkinEvent]);
     mockCameraAvailable();
   });
 
@@ -50,7 +82,6 @@ describe("CheckinPage", () => {
   });
 
   it("prefills token from navigation state and ignores production localStorage tokens by default", async () => {
-    mockReports.mockResolvedValue([]);
     localStorage.setItem("cets:lastTicketToken", "legacy-token");
 
     window.history.pushState(
@@ -60,6 +91,7 @@ describe("CheckinPage", () => {
     );
     render(<CheckinPage />);
 
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
     const tokenField = (await screen.findByLabelText(
       /掃描或貼上票券/,
     )) as HTMLInputElement;
@@ -67,13 +99,14 @@ describe("CheckinPage", () => {
     expect(
       screen.getByRole("button", { name: "使用最近票券" }),
     ).toHaveAttribute("disabled");
+    expect(mockReports).not.toHaveBeenCalled();
   });
 
   it("shows empty token input when no handoff source exists", async () => {
     window.history.pushState({}, "", "/admin/checkin");
-    mockReports.mockResolvedValue([]);
     render(<CheckinPage />);
 
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
     const tokenField = (await screen.findByLabelText(
       /掃描或貼上票券/,
     )) as HTMLInputElement;
@@ -81,16 +114,10 @@ describe("CheckinPage", () => {
     expect(
       screen.getByRole("button", { name: "使用最近票券" }),
     ).toHaveAttribute("disabled");
+    expect(mockReports).not.toHaveBeenCalled();
   });
 
-  it("keeps accepted check-in visible when summary refresh is forbidden", async () => {
-    mockReports.mockRejectedValue(
-      new ApiError(403, {
-        success: false,
-        data: null,
-        error: "role is not allowed",
-      }),
-    );
+  it("keeps accepted check-in visible without requesting HR-only reports", async () => {
     mockCheckIn.mockResolvedValue({
       checkin_id: "chk-live",
       ticket_id: "tkt-live",
@@ -108,17 +135,73 @@ describe("CheckinPage", () => {
     });
 
     render(<CheckinPage />);
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
     await userEvent.type(
       await screen.findByLabelText(/掃描或貼上票券/),
       "signed-token",
     );
-    await userEvent.click(screen.getByRole("button", { name: "送出驗票" }));
+    const submitButton = screen.getByRole("button", { name: "送出驗票" });
+    await waitFor(() => expect(submitButton).not.toBeDisabled());
+    await userEvent.click(submitButton);
 
-    expect(mockCheckIn).toHaveBeenCalledWith("signed-token", "gate-1");
+    expect(mockCheckIn).toHaveBeenCalledWith(
+      "signed-token",
+      "gate-1",
+      "evt-live",
+      "",
+    );
     expect(
       await screen.findByRole("heading", { name: "驗票成功" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("role is not allowed")).not.toBeInTheDocument();
+    expect(mockReports).not.toHaveBeenCalled();
+  });
+
+  it("sends holder mismatch reason without redeeming blindly", async () => {
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "",
+      ticket_id: "tkt-live",
+      event_id: "evt-live",
+      employee_id: "E1001",
+      status: "rejected",
+      reason_code: "holder_mismatch",
+      scanned_at: "2026-05-16T10:00:00Z",
+      conflict_reason: "holder_mismatch",
+      rejection_message: "photo ID mismatch",
+      duplicate: false,
+      holder: {
+        display_name: "Ariel Chen",
+        department: "Engineering",
+        city: "Taipei",
+      },
+      family_count: 0,
+    });
+
+    render(<CheckinPage />);
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
+    await userEvent.type(
+      await screen.findByLabelText(/掃描或貼上票券/),
+      "signed-token",
+    );
+    await userEvent.click(screen.getByText("手動貼上"));
+    await userEvent.type(
+      await screen.findByLabelText("持票人不符原因"),
+      "photo ID mismatch",
+    );
+    const submitButton = screen.getByRole("button", { name: "送出驗票" });
+    await waitFor(() => expect(submitButton).not.toBeDisabled());
+    await userEvent.click(submitButton);
+
+    expect(mockCheckIn).toHaveBeenCalledWith(
+      "signed-token",
+      "gate-1",
+      "evt-live",
+      "photo ID mismatch",
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "驗票失敗，票券不可入場",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps manual fallback available when camera access is unsupported", async () => {

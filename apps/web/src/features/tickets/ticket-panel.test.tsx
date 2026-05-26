@@ -27,6 +27,7 @@ describe("TicketPanel", () => {
       department: "Engineering",
       city: "Taipei",
       family_count: 2,
+      non_transferable: true,
     };
 
     const { container } = render(<TicketPanel ticket={ticket} />);
@@ -61,6 +62,7 @@ describe("TicketPanel", () => {
       status: "active",
       signed_token: "signed-secret",
       issued_at: "2026-05-06T10:00:00Z",
+      non_transferable: true,
     };
 
     const { container } = render(<TicketPanel compact ticket={ticket} />);
@@ -86,6 +88,7 @@ describe("TicketPanel", () => {
       signed_token: "signed-secret",
       issued_at: "2026-05-06T10:00:00Z",
       event_title: "台北家庭電影夜",
+      non_transferable: true,
     };
 
     const { container } = render(<TicketPanel ticket={ticket} />);
@@ -108,6 +111,7 @@ describe("TicketPanel", () => {
       status: "active",
       issued_at: "2026-05-06T10:00:00Z",
       event_title: "台北家庭電影夜",
+      non_transferable: true,
     };
 
     const { container } = render(
@@ -128,7 +132,7 @@ describe("TicketPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not mark tickets as entry-ready before the event starts", () => {
+  it("shows issued QR without marking future tickets as entry-ready", () => {
     const ticket: Ticket = {
       ticket_id: "T-future",
       registration_id: "R-1",
@@ -149,7 +153,8 @@ describe("TicketPanel", () => {
       screen.getByText("活動尚未開始，請於開始時間到場後再出示二維碼驗票。"),
     ).toBeInTheDocument();
     expect(screen.queryByText("可入場")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(screen.queryByText("入場提示")).not.toBeInTheDocument();
   });
 
   it("keeps employees in their own workspace when opening event detail", async () => {
@@ -164,6 +169,7 @@ describe("TicketPanel", () => {
       event_title: "台北家庭電影夜",
       event_location: "Taipei HQ",
       employee_name: "Ariel Chen",
+      non_transferable: true,
     };
 
     const pushStateSpy = vi.spyOn(window.history, "pushState");

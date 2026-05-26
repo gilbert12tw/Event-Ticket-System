@@ -29,3 +29,11 @@ func assertNoSensitiveJSONValues(t *testing.T, metadata map[string]interface{}, 
 	assert.NotContains(t, raw, "qr_payload")
 	assert.NotContains(t, raw, "@")
 }
+
+func assertTicketOutboxPayload(t *testing.T, service *Service, ctx context.Context, eventType string, ticket Ticket) {
+	t.Helper()
+	payload := readJSONMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2`, eventType, ticket.TicketID)
+	assert.Equal(t, ticket.TicketID, payload["ticket_id"])
+	assert.Equal(t, ticket.EventID, payload["event_id"])
+	assert.Equal(t, ticket.EmployeeID, payload["employee_id"])
+}

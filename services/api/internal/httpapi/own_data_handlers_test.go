@@ -70,6 +70,7 @@ func TestOwnDataHandlersUseProviderClaimsIdentity(t *testing.T) {
 		{http.MethodGet, "/api/v1/events/evt_1", "", http.StatusOK},
 		{http.MethodGet, "/api/v1/events/evt_1/eligibility", "", http.StatusOK},
 		{http.MethodPost, "/api/v1/events/evt_1/bookings", `{"idempotency_key":"book-1"}`, http.StatusCreated},
+		{http.MethodPost, "/api/v1/me/registrations/reg_1/cancel", `{"idempotency_key":"cancel-1","reason":"plans changed"}`, http.StatusOK},
 		{http.MethodGet, "/api/v1/me/tickets", "", http.StatusOK},
 	}
 	for _, tt := range requests {
@@ -92,6 +93,11 @@ func TestOwnDataHandlersUseProviderClaimsIdentity(t *testing.T) {
 	assert.Equal(t, "E1001", service.bookActor.ID)
 	assert.Equal(t, ticketing.RoleEmployee, service.bookActor.Role)
 	assert.Empty(t, service.bookRequest.EmployeeID)
+	assert.Equal(t, "E1001", service.cancelMyActor.ID)
+	assert.Equal(t, ticketing.RoleEmployee, service.cancelMyActor.Role)
+	assert.Equal(t, "reg_1", service.cancelMyRegistration)
+	assert.Equal(t, "cancel-1", service.cancelMyRequest.IdempotencyKey)
+	assert.Equal(t, "plans changed", service.cancelMyRequest.Reason)
 	assert.Equal(t, "E1001", service.listTicketsActor.ID)
 	assert.Equal(t, ticketing.RoleEmployee, service.listTicketsActor.Role)
 }

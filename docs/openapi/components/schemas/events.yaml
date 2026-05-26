@@ -4,14 +4,9 @@ EventListResponse:
     - type: object
       properties:
         data:
-          type: object
-          required:
-            - events
-          properties:
-            events:
-              type: array
-              items:
-                "$ref": "#/EventSummary"
+          type: array
+          items:
+            "$ref": "#/EventSummary"
 EventDetailResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -25,7 +20,8 @@ EventSummary:
     - event_id
     - title
     - starts_at
-    - registration_closes_at
+    - registration_start
+    - registration_close
     - event_city
     - event_site
     - capacity_type
@@ -33,7 +29,10 @@ EventSummary:
     - remaining_capacity
     - allows_family
     - status
+    - allocation_mode
+    - rule
     - eligibility
+    - current_user_status
   properties:
     event_id:
       type: string
@@ -43,7 +42,10 @@ EventSummary:
     starts_at:
       type: string
       format: date-time
-    registration_closes_at:
+    registration_start:
+      type: string
+      format: date-time
+    registration_close:
       type: string
       format: date-time
     event_city:
@@ -69,9 +71,13 @@ EventSummary:
       description: Must be false for limited events; may be true for unlimited events.
     status:
       "$ref": "./common.yaml#/EventStatus"
+    allocation_mode:
+      "$ref": "./common.yaml#/AllocationMode"
+    rule:
+      "$ref": "./eligibility.yaml#/EligibilityRule"
     eligibility:
       "$ref": "./eligibility.yaml#/EligibilityDecision"
-    current_booking_status:
+    current_user_status:
       type:
         - string
         - "null"
@@ -105,17 +111,13 @@ EventDetail:
     - type: object
       required:
         - description
-        - registration_opens_at
-        - ticket_transfer_policy
+        - registration_start
       properties:
         description:
           type: string
-        registration_opens_at:
+        registration_start:
           type: string
           format: date-time
-        ticket_transfer_policy:
-          type: string
-          const: non_transferable
         tags:
           type: array
           items:
@@ -126,14 +128,14 @@ CreateEventRequest:
     - title
     - description
     - starts_at
-    - registration_opens_at
-    - registration_closes_at
+    - registration_start
+    - registration_close
     - event_city
     - event_site
     - capacity_type
     - capacity
     - allows_family
-    - eligibility_rule
+    - rule
   additionalProperties: false
   properties:
     title:
@@ -149,10 +151,10 @@ CreateEventRequest:
         - string
         - "null"
       format: date-time
-    registration_opens_at:
+    registration_start:
       type: string
       format: date-time
-    registration_closes_at:
+    registration_close:
       type: string
       format: date-time
     event_city:
@@ -172,9 +174,9 @@ CreateEventRequest:
       description: Must be false for limited events; may be true for unlimited events where bookings persist family_count.
     allocation_mode:
       "$ref": "./common.yaml#/AllocationMode"
-      default: first_come_first_served
+      default: fcfs
       description: Phase 1 supports first-come-first-served booking and deterministic lottery allocation for limited events.
-    eligibility_rule:
+    rule:
       "$ref": "./eligibility.yaml#/EligibilityRuleInput"
     category:
       type: string
@@ -205,10 +207,10 @@ UpdateEventRequest:
         - string
         - "null"
       format: date-time
-    registration_opens_at:
+    registration_start:
       type: string
       format: date-time
-    registration_closes_at:
+    registration_close:
       type: string
       format: date-time
     event_city:
