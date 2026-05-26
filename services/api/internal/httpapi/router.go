@@ -169,10 +169,12 @@ func routePattern(r *http.Request) string {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			return "/api/unknown"
 		}
-		return r.URL.Path
+		return "/unknown"
 	}
-	prefix := r.Method + " "
-	return strings.TrimPrefix(pattern, prefix)
+	if _, route, ok := strings.Cut(pattern, " "); ok && strings.HasPrefix(route, "/") {
+		return route
+	}
+	return pattern
 }
 
 func statusClass(status int) string {

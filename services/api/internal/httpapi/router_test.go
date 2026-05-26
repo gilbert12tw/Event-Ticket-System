@@ -148,6 +148,59 @@ func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
 	assert.NotContains(t, metricsRec.Body.String(), "evt_secret_token")
 }
 
+func TestMetricsEndpointCollapsesUnmatchedRoutesToBoundedLabel(t *testing.T) {
+	var logs bytes.Buffer
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
+		RequestTimeout: time.Second,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/wp-login-secret", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	router.ServeHTTP(metricsRec, metricsReq)
+
+	require.Equal(t, http.StatusOK, metricsRec.Code)
+	assertEnvelope(t, metricsRec.Body.String(),
+		`cets_http_requests_total{route="/unknown",method="DELETE",status_class="4xx"} 1`,
+		`cets_http_request_seconds_bucket{route="/unknown",method="DELETE",status_class="4xx"`,
+	)
+	assertEnvelope(t, logs.String(), `"route":"/unknown"`, `"path":"/wp-login-secret"`)
+	assert.NotContains(t, metricsRec.Body.String(), "wp-login-secret")
+}
+
+func TestMetricsEndpointNormalizesHeadRoutesFromGetPatterns(t *testing.T) {
+	var logs bytes.Buffer
+	router := NewRouter(Dependencies{
+		DB:             fakePinger{},
+		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
+		RequestTimeout: time.Second,
+	})
+	req := httptest.NewRequest(http.MethodHead, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	router.ServeHTTP(metricsRec, metricsReq)
+
+	require.Equal(t, http.StatusOK, metricsRec.Code)
+	assertEnvelope(t, metricsRec.Body.String(),
+		`cets_http_requests_total{route="/healthz",method="HEAD",status_class="2xx"} 1`,
+		`cets_http_request_seconds_bucket{route="/healthz",method="HEAD",status_class="2xx"`,
+	)
+	assertEnvelope(t, logs.String(), `"method":"HEAD"`, `"route":"/healthz"`)
+	assert.NotContains(t, metricsRec.Body.String(), `route="GET /healthz"`)
+	assert.NotContains(t, logs.String(), `"route":"GET /healthz"`)
+}
+
 func TestIndexServesDemoUI(t *testing.T) {
 	router := NewRouter(Dependencies{
 		DB:             fakePinger{},
