@@ -18,7 +18,7 @@ data) are NOT retroactively penalised.
 | AC-1 | Employee cancels a confirmed booking → a ban record is created for `(event_id, employee_id)` |
 | AC-2 | Employee attempts to re-book the banned event → HTTP 422 with `"error_code": "BOOKING_BANNED"` |
 | AC-3 | Waitlist cancellation → no ban record created |
-| AC-4 | Admin calls lift-ban endpoint → ban record removed; employee can re-book |
+| AC-4 | Admin calls lift-ban endpoint → active ban is lifted; employee can create a new booking for the event |
 | AC-5 | Audit log entries on ban creation, ban lift |
 | AC-6 | Phase 1 data (pre-existing confirmed-then-cancelled rows) → no retroactive bans |
 | AC-7 | Idempotent ban creation: cancelling the same already-banned registration a second time (idempotent cancel) does not create a duplicate ban row |
@@ -64,9 +64,21 @@ CREATE INDEX IF NOT EXISTS idx_booking_bans_employee
   A ban is **active** when `lifted_at IS NULL`.
 - `registration_id` links back to the originating cancellation for auditability.
 
-### No OLTP table is altered
+### Registration active-uniqueness change
 
-No `ALTER TABLE` on any Phase 1 table. The new table stands alone.
+The old full `UNIQUE(event_id, employee_id)` registration constraint is removed and replaced
+with an active-registration partial unique index:
+
+```sql
+ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_event_id_employee_id_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_active_employee
+    ON registrations (event_id, employee_id)
+    WHERE status <> 'cancelled';
+```
+
+Cancelled rows remain as immutable history, but they no longer block a new confirmed or
+waitlisted registration after an active booking ban has been lifted.
 
 ---
 
@@ -74,15 +86,15 @@ No `ALTER TABLE` on any Phase 1 table. The new table stands alone.
 
 | File | Change |
 |---|---|
-| `services/api/internal/postgres/migrate.go` | Append `booking_bans` DDL + index to `SchemaStatements` |
-| `services/api/internal/postgres/migrate_test.go` | Assert `booking_bans` exists after migration; assert `booking_bans_unique_active` partial index is in schema; add PII-column absence test for `booking_bans`; add `dropSchema` entry |
+| `services/api/internal/postgres/migrate.go` | Append `booking_bans` DDL + index to `SchemaStatements`; replace full registration uniqueness with active-registration partial uniqueness |
+| `services/api/internal/postgres/migrate_test.go` | Assert `booking_bans` exists after migration; assert ban and active-registration partial indexes are in schema; add PII-column absence test for `booking_bans`; add `dropSchema` entry |
 | `services/api/internal/ticketing/errors.go` | Add `AppError.Code string` field + `bookedBanned()` constructor returning 422 + `"BOOKING_BANNED"` |
 | `services/api/internal/httpapi/response.go` | Update `envelope` struct to include `"error_code"` field; propagate code from `AppError` in `writeError` / `writeServiceError` |
 | `services/api/internal/ticketing/registration_models.go` | Add `BookingBan` struct |
-| `services/api/internal/ticketing/registrations_service.go` | In `Book()`: after idempotency check, before eligibility check, call `checkBookingBanTx(ctx, tx, eventID, employeeID)` |
+| `services/api/internal/ticketing/registrations_service.go` | In `Book()`: after idempotency check and event lock, before eligibility and duplicate active-registration handling, call `checkBookingBanTx(ctx, tx, eventID, employeeID)` |
 | `services/api/internal/ticketing/registrations_admin_service.go` | In `CancelRegistration()`: after status update, when `wasConfirmed`, call `createBookingBanTx(ctx, tx, ...)` |
 | `services/api/internal/ticketing/booking_ban_service.go` | **New file.** Contains `checkBookingBanTx`, `createBookingBanTx`, `LiftBookingBan` |
-| `services/api/internal/httpapi/handlers_registrations.go` | Add `DELETE /events/{event_id}/bans/{employee_id}` handler calling `LiftBookingBan` |
+| `services/api/internal/httpapi/handlers_registrations.go` | Add `DELETE /admin/events/{event_id}/bans/{target_employee_id}` handler calling `LiftBookingBan` |
 | `services/api/internal/httpapi/routes.go` | Register the new lift-ban route |
 | `services/api/internal/ticketing/booking_ban_service_test.go` | **New file.** Integration tests (see Test Cases below) |
 
@@ -115,8 +127,8 @@ Insert audit log: action `"booking.ban_created"`, entity_type `"booking_ban"`, e
 
 ### 2. Ban check (inside `Book`)
 
-Location: `registrations_service.go`, after the idempotency-key check (line ~48), before
-eligibility evaluation:
+Location: `registrations_service.go`, after the idempotency-key check and event lock, before
+eligibility evaluation and before checking for an existing active registration:
 
 ```
 SELECT ban_id FROM booking_bans
@@ -125,9 +137,9 @@ WHERE event_id = $1 AND employee_id = $2 AND lifted_at IS NULL
 
 If a row is found → return `bookingBanned("you are banned from booking this event")`.
 
-**Position rationale:** must be inside the transaction so that it sees the same snapshot as the
-capacity check. Must come before the `UNIQUE (event_id, employee_id)` duplicate-registration
-check — banning is a stronger gate than duplicate detection.
+**Position rationale:** must be inside the event-locked transaction so that a concurrent cancel
+cannot create a stale-read gap. It must also come before duplicate active-registration handling
+so banning remains a stronger gate than duplicate detection.
 
 ### 3. Ban lift (`LiftBookingBan`)
 
@@ -180,8 +192,8 @@ func bookingBanned(message string) AppError {
 | Admin lifts a ban that does not exist | Return 404. |
 | Admin calls lift-ban twice | Second call: no row with `lifted_at IS NULL` found → 404. |
 | Phase 1 data: employee has an old confirmed-then-cancelled registration | The `booking_bans` table is empty on migration. No retroactive ban. The new code path only fires when `CancelRegistration` executes post-deploy. |
-| `Book()` is called concurrently for the same `(event_id, employee_id)` | `SELECT … FOR UPDATE` via `lockEventWithRule` serialises within the event. Ban check inside the same tx sees consistent state. |
-| Ban exists, employee changes department, event eligibility rule updated | Ban is not affected. Eligibility is checked before the ban check; if the employee is now ineligible for a different reason, they see that error first. If eligible but banned, they see `BOOKING_BANNED`. |
+| `Book()` is called concurrently for the same `(event_id, employee_id)` | `SELECT … FOR UPDATE` via `lockEventWithRule` serialises within the event. Ban check inside the same tx sees consistent state. The active-registration partial index rejects a second active row. |
+| Ban exists, employee changes department, event eligibility rule updated | Ban is not affected. The ban check runs before eligibility; active bans return `BOOKING_BANNED`. |
 
 ---
 
@@ -221,7 +233,8 @@ All tests use isolated schemas via `newMigrationTestPool`.
    - Create ban (test 2 flow).
    - Call `LiftBookingBan(ctx, activityAdmin, eventID, employeeID)`.
    - Assert: `lifted_at IS NOT NULL`.
-   - Call `Book()` again → succeeds (confirmed or waitlisted depending on capacity).
+   - Call `Book()` again → creates a new confirmed or waitlisted registration rather than
+     returning the historical cancelled row.
 
 7. `TestLiftBanNotFoundReturns404`
    - Call `LiftBookingBan` with an `(event_id, employee_id)` pair that has no active ban.
@@ -242,6 +255,12 @@ All tests use isolated schemas via `newMigrationTestPool`.
     - After confirmed-cancel, assert `audit_logs` contains a row with
       `action = 'booking.ban_created'`.
     - After lift, assert `action = 'booking.ban_lifted'`.
+
+11. `TestLiftBanRebookAndConfirmedCancelCreatesSecondBan`
+    - Book → cancel → lift → rebook through the public service path.
+    - Assert the rebook creates a new registration and ticket.
+    - Cancel the new confirmed registration.
+    - Assert two ban history rows exist and exactly one is active.
 
 ---
 

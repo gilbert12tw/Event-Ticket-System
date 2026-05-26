@@ -31,7 +31,7 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS eligibility_rule_versions",
 		"CREATE TABLE IF NOT EXISTS hr_sync_batches",
 		"CREATE TABLE IF NOT EXISTS eligibility_impact_reviews",
-		"UNIQUE (event_id, employee_id)",
+		"registrations_unique_active_employee",
 		"idempotency_key TEXT NOT NULL UNIQUE",
 		"CREATE TABLE IF NOT EXISTS booking_idempotency_results",
 		"remaining_capacity INTEGER NOT NULL DEFAULT 0",

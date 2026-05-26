@@ -183,8 +183,13 @@ func TestLiftBanAllowsRebook(t *testing.T) {
 	// Verify ban is lifted
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NOT NULL`, "E1001", 1)
 
-	_, err = service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lb-rebook"})
-	require.NoError(t, err) // booking succeeds
+	rebook, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lb-rebook"})
+	require.NoError(t, err)
+	require.Equal(t, RegistrationConfirmed, rebook.Registration.Status)
+	require.NotNil(t, rebook.Ticket)
+	assert.False(t, rebook.Duplicate)
+	assert.NotEqual(t, booking.Registration.RegistrationID, rebook.Registration.RegistrationID)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND employee_id = 'E1001'`, event.EventID, 2)
 }
 
 func TestLiftBanNotFoundReturns404(t *testing.T) {
@@ -304,13 +309,7 @@ func TestAuditLogWrittenOnBanAndLift(t *testing.T) {
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_lifted", 1)
 }
 
-// TestLiftBanAndRebookGetsExistingCancelledRegistration documents the Phase 1 API behaviour:
-// after a ban is lifted the employee can call Book() again, but because registrations enforces
-// UNIQUE(event_id, employee_id) the service returns the existing cancelled row (Duplicate=true)
-// rather than creating a new confirmed registration. A second ban is therefore not triggered via
-// the normal API path in Phase 1. This test asserts the observed behaviour explicitly so any
-// future schema change (e.g. allow re-registration) is caught by CI.
-func TestLiftBanAndRebookGetsExistingCancelledRegistration(t *testing.T) {
+func TestLiftBanRebookAndConfirmedCancelCreatesSecondBan(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -344,19 +343,27 @@ func TestLiftBanAndRebookGetsExistingCancelledRegistration(t *testing.T) {
 	require.NoError(t, service.LiftBookingBan(ctx, admin, event.EventID, "E1001"))
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 0)
 
-	// Phase 1: Book() returns the existing cancelled row (UNIQUE constraint prevents a new one).
+	// Rebook creates a new active registration rather than returning the historical cancelled row.
 	rebook, err := service.Book(ctx, employee, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lrb-book-2"})
 	require.NoError(t, err)
-	assert.Equal(t, "cancelled", string(rebook.Registration.Status), "Phase 1: Book returns cancelled row, not a new confirmed registration")
-	// No second ban was created — the cancelled row was returned, not a new confirmed booking.
-	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1`, "E1001", 1)
+	require.Equal(t, RegistrationConfirmed, rebook.Registration.Status)
+	require.NotNil(t, rebook.Ticket)
+	assert.False(t, rebook.Duplicate)
+	assert.NotEqual(t, booking1.Registration.RegistrationID, rebook.Registration.RegistrationID)
+
+	_, err = service.CancelMyRegistration(ctx, employee, rebook.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "lrb-cancel-2", Reason: "sick again"})
+	require.NoError(t, err)
+
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND employee_id = 'E1001'`, event.EventID, 2)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1`, "E1001", 2)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, "E1001", 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = $1 AND entity_type = 'booking_ban'`, "booking.ban_created", 2)
 }
 
 // TestCreateBookingBanTxInsertsNewRowAfterLiftedBan verifies that the partial unique index
 // (WHERE lifted_at IS NULL) allows a second INSERT to succeed after the first ban has been
 // lifted. This directly tests the database behaviour that makes re-banning possible via the
-// service layer — without relying on the API path which is blocked by registrations' own
-// UNIQUE(event_id, employee_id) constraint in Phase 1.
+// service layer.
 func TestCreateBookingBanTxInsertsNewRowAfterLiftedBan(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

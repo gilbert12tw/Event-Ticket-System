@@ -126,8 +126,7 @@ var SchemaStatements = []string{
 		cancel_reason TEXT NOT NULL DEFAULT '',
 		cancelled_at TIMESTAMPTZ,
 		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		UNIQUE (event_id, employee_id)
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
 	`CREATE TABLE IF NOT EXISTS tickets (
 		ticket_id TEXT PRIMARY KEY,
@@ -344,6 +343,10 @@ var SchemaStatements = []string{
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_family_count_check`,
 	`ALTER TABLE registrations ADD CONSTRAINT registrations_family_count_check CHECK (family_count BETWEEN 0 AND 10)`,
+	`ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_event_id_employee_id_key`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_active_employee
+		ON registrations (event_id, employee_id)
+		WHERE status <> 'cancelled'`,
 	`CREATE TABLE IF NOT EXISTS booking_idempotency_results (
 		idempotency_key TEXT PRIMARY KEY,
 		event_id TEXT NOT NULL,
