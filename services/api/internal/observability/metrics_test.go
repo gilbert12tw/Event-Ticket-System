@@ -24,6 +24,30 @@ func TestHTTPMetricsExposeREDSignalsWithBoundedLabels(t *testing.T) {
 	assert.NotContains(t, metrics, "evt_secret")
 }
 
+func TestHTTPMetricsCollapseUnknownMethodsToBoundedLabel(t *testing.T) {
+	registry := NewRegistry()
+
+	registry.ObserveHTTPRequest("/unknown", "FOOBAR-SCANNER-TOKEN", 404, 5*time.Millisecond)
+
+	var body bytes.Buffer
+	registry.WritePrometheus(context.Background(), &body, nil)
+	metrics := body.String()
+
+	assert.Contains(t, metrics, `cets_http_requests_total{route="/unknown",method="UNKNOWN",status_class="4xx"} 1`)
+	assert.NotContains(t, metrics, "FOOBAR-SCANNER-TOKEN")
+}
+
+func TestHTTPMetricsNormalizeKnownMethodCase(t *testing.T) {
+	registry := NewRegistry()
+
+	registry.ObserveHTTPRequest("/healthz", "get", 200, time.Millisecond)
+
+	var body bytes.Buffer
+	registry.WritePrometheus(context.Background(), &body, nil)
+
+	assert.Contains(t, body.String(), `method="GET"`)
+}
+
 func TestHTTPMetricsEscapeLabels(t *testing.T) {
 	registry := NewRegistry()
 
