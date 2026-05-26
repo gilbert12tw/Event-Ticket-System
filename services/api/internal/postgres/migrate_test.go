@@ -31,7 +31,7 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS eligibility_rule_versions",
 		"CREATE TABLE IF NOT EXISTS hr_sync_batches",
 		"CREATE TABLE IF NOT EXISTS eligibility_impact_reviews",
-		"UNIQUE (event_id, employee_id)",
+		"registrations_unique_active_employee",
 		"idempotency_key TEXT NOT NULL UNIQUE",
 		"CREATE TABLE IF NOT EXISTS booking_idempotency_results",
 		"remaining_capacity INTEGER NOT NULL DEFAULT 0",
@@ -74,6 +74,10 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS reporting_projection_offsets",
 		"last_processed_at TIMESTAMPTZ",
 		"INSERT INTO reporting_projection_offsets",
+		// booking-ban
+		"CREATE TABLE IF NOT EXISTS booking_bans",
+		"booking_bans_unique_active",
+		"idx_booking_bans_employee",
 	}
 
 	for _, fragment := range required {
@@ -115,6 +119,8 @@ func TestMigrateAppliesToEmptyDatabase(t *testing.T) {
 		// PH2-41
 		"reporting_event_summary",
 		"reporting_projection_offsets",
+		// booking-ban
+		"booking_bans",
 	}
 	for _, table := range requiredTables {
 		var exists bool
@@ -241,6 +247,7 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 
 func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS
+		booking_bans,
 		reporting_projection_offsets,
 		reporting_event_summary,
 		report_exports,
@@ -267,6 +274,53 @@ func dropSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		employees
 		CASCADE`)
 	return err
+}
+
+// booking-ban schema tests --------------------------------------------------
+
+// TestBookingBansHasNoPIIColumns asserts that booking_bans does not contain
+// PII. Although it has employee_id, it must not duplicate names or emails.
+func TestBookingBansHasNoPIIColumns(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, cleanup := newMigrationTestPool(t, ctx, databaseURL)
+	defer cleanup()
+
+	require.NoError(t, Migrate(ctx, pool))
+
+	var cols []string
+	rows, err := pool.Query(ctx,
+		`SELECT column_name FROM information_schema.columns
+		 WHERE table_name = 'booking_bans'
+		   AND table_schema = current_schema()`)
+	require.NoError(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		require.NoError(t, rows.Scan(&col))
+		cols = append(cols, col)
+	}
+	require.NoError(t, rows.Err())
+
+	prohibited := []string{
+		"employee_name",
+		"full_name",
+		"email",
+		"token",
+		"signed_token",
+		"qr_payload",
+		"provider_token",
+	}
+	for _, banned := range prohibited {
+		assert.NotContains(t, cols, banned,
+			"booking_bans must never contain column %q (PII violation)", banned)
+	}
 }
 
 // PH2-41 schema tests -------------------------------------------------------

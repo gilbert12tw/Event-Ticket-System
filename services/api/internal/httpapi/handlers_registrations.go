@@ -72,3 +72,14 @@ func handleRunLottery(service TicketingService) http.HandlerFunc {
 		writeServiceResult(w, http.StatusCreated, result, err)
 	}
 }
+
+func handleLiftBookingBan(service TicketingService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := service.LiftBookingBan(r.Context(), actorFromRequest(r), r.PathValue("event_id"), r.PathValue("target_employee_id"))
+		if err != nil {
+			writeErrorWithCode(w, ticketing.ErrorStatus(err), ticketing.ErrorMessage(err), ticketing.ErrorCode(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}

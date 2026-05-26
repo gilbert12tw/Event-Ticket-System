@@ -124,6 +124,10 @@ func (s *fakeTicketingService) RunLottery(context.Context, ticketing.Actor, stri
 	return ticketing.LotteryRun{RunID: "lot_1", Status: "completed"}, nil
 }
 
+func (s *fakeTicketingService) LiftBookingBan(context.Context, ticketing.Actor, string, string) error {
+	return nil
+}
+
 func (s *fakeTicketingService) ListTickets(_ context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.Ticket, error) {
 	s.listTicketsActor = actor
 	s.listTicketsEmployeeID = employeeID

@@ -116,6 +116,13 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	reg.CancelKey = cancelID
 	reg.CancelReason = req.Reason
 	reg.CancelledAt = cancelledAt
+
+	if wasConfirmed {
+		if err := s.createBookingBanTx(ctx, tx, actor, eventID, reg.EmployeeID, registrationID, req.Reason); err != nil {
+			return BookingResponse{}, err
+		}
+	}
+
 	if _, err := tx.Exec(ctx, `UPDATE tickets SET status = 'revoked', revoked_reason = $1 WHERE registration_id = $2 AND status = 'active'`, "registration cancelled", registrationID); err != nil {
 		return BookingResponse{}, err
 	}

@@ -8,7 +8,7 @@ import (
 
 func writeServiceResult(w http.ResponseWriter, successStatus int, result interface{}, err error) {
 	if err != nil {
-		writeError(w, ticketing.ErrorStatus(err), ticketing.ErrorMessage(err))
+		writeErrorWithCode(w, ticketing.ErrorStatus(err), ticketing.ErrorMessage(err), ticketing.ErrorCode(err))
 		return
 	}
 	writeJSON(w, successStatus, result)

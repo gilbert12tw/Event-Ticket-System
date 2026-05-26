@@ -53,6 +53,13 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err != nil {
 		return BookingResponse{}, err
 	}
+
+	// checkBookingBanTx is called after lockEventWithRule so that the ban row
+	// written by a concurrent cancel transaction is visible under the same lock;
+	// a check before the lock would be a stale-read race.
+	if err := s.checkBookingBanTx(ctx, tx, eventID, employeeID); err != nil {
+		return BookingResponse{}, err
+	}
 	if event.Status != EventStatusPublished {
 		return BookingResponse{}, conflict("event is not open for booking")
 	}

@@ -126,8 +126,7 @@ var SchemaStatements = []string{
 		cancel_reason TEXT NOT NULL DEFAULT '',
 		cancelled_at TIMESTAMPTZ,
 		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		UNIQUE (event_id, employee_id)
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
 	`CREATE TABLE IF NOT EXISTS tickets (
 		ticket_id TEXT PRIMARY KEY,
@@ -344,6 +343,10 @@ var SchemaStatements = []string{
 	`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_family_count_check`,
 	`ALTER TABLE registrations ADD CONSTRAINT registrations_family_count_check CHECK (family_count BETWEEN 0 AND 10)`,
+	`ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_event_id_employee_id_key`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_active_employee
+		ON registrations (event_id, employee_id)
+		WHERE status <> 'cancelled'`,
 	`CREATE TABLE IF NOT EXISTS booking_idempotency_results (
 		idempotency_key TEXT PRIMARY KEY,
 		event_id TEXT NOT NULL,
@@ -414,6 +417,28 @@ var SchemaStatements = []string{
 	`INSERT INTO reporting_projection_offsets (projection_name, last_processed_at)
 		VALUES ('event_summary', '-infinity')
 		ON CONFLICT DO NOTHING`,
+
+	// booking-ban: per-event re-booking block after a confirmed-cancel.
+	// A ban is active when lifted_at IS NULL.
+	// booking_bans_unique_active is a PARTIAL unique index on (event_id, employee_id)
+	// WHERE lifted_at IS NULL. This allows the same employee to be re-banned after a lift
+	// (lift→rebook→confirmed-cancel creates a new active row; the old lifted row remains
+	// as an immutable audit trail).
+	`CREATE TABLE IF NOT EXISTS booking_bans (
+		ban_id          TEXT        NOT NULL PRIMARY KEY,
+		event_id        TEXT        NOT NULL REFERENCES events(event_id)        ON DELETE CASCADE,
+		employee_id     TEXT        NOT NULL REFERENCES employees(employee_id),
+		registration_id TEXT        NOT NULL REFERENCES registrations(registration_id) ON DELETE CASCADE,
+		reason          TEXT        NOT NULL DEFAULT '',
+		banned_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+		lifted_at       TIMESTAMPTZ,
+		lifted_by       TEXT
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS booking_bans_unique_active
+		ON booking_bans (event_id, employee_id)
+		WHERE lifted_at IS NULL`,
+	`CREATE INDEX IF NOT EXISTS idx_booking_bans_employee
+		ON booking_bans (employee_id)`,
 }
 
 func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
