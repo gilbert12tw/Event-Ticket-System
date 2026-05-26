@@ -39,13 +39,14 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	}
 	defer rollback(ctx, tx)
 
-	if existing, found, err := s.findRegistrationByIdempotencyKey(ctx, tx, req.IdempotencyKey, eventID, employeeID); err != nil {
+	if snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount); err != nil {
 		return BookingResponse{}, err
 	} else if found {
-		if existing.Registration.FamilyCount != req.FamilyCount {
-			return BookingResponse{}, conflict("idempotency key belongs to a different booking request")
+		response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+		if err != nil {
+			return BookingResponse{}, err
 		}
-		return existing, tx.Commit(ctx)
+		return response, tx.Commit(ctx)
 	}
 
 	event, rule, err := s.lockEventWithRule(ctx, tx, eventID)
@@ -103,16 +104,16 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 
 	if reg, ticket, found, err := s.findRegistrationByEmployeeTx(ctx, tx, eventID, employeeID); err != nil {
 		return BookingResponse{}, err
-	} else if found && reg.Status != RegistrationCancelled {
-		// Only return the existing row as a duplicate if it is still active
-		// (confirmed or waitlisted). A cancelled registration means the ban was
-		// lifted and the employee is re-booking: fall through to create a fresh
-		// registration, ticket, outbox event, and booking audit.
+	} else if found {
 		remaining, err := s.remainingForResponseTx(ctx, tx, event)
 		if err != nil {
 			return BookingResponse{}, err
 		}
-		return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}, tx.Commit(ctx)
+		response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}
+		if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, response); err != nil {
+			return BookingResponse{}, err
+		}
+		return response, tx.Commit(ctx)
 	}
 
 	status := RegistrationConfirmed
@@ -132,43 +133,32 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		}
 	}
 
-	// Use an upsert that handles two distinct cases:
-	//  1. Fresh booking (no prior row)   → INSERT succeeds, RETURNING yields regID.
-	//  2. Re-book after ban lift (a cancelled row exists for this event+employee) → ON
-	//     CONFLICT updates the cancelled row in-place and RETURNING yields the old
-	//     registration_id that was reused (we overwrite regID so downstream code is
-	//     consistent).
-	//  3. Duplicate active/waitlisted booking → the WHERE status='cancelled' predicate
-	//     does not match, DO UPDATE fires but RETURNING yields no row (pgx.ErrNoRows),
-	//     so we return a conflict error rather than silently returning the stale row.
 	regID, err := newID("reg")
 	if err != nil {
 		return BookingResponse{}, err
 	}
-	err = tx.QueryRow(ctx, `
-		INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key, family_count, cancelled_at, cancel_idempotency_key, cancel_reason)
-		VALUES ($1,$2,$3,$4,$5,$6, NULL, NULL, '')
-		ON CONFLICT (event_id, employee_id) DO UPDATE
-			SET registration_id       = EXCLUDED.registration_id,
-			    status                = EXCLUDED.status,
-			    idempotency_key       = EXCLUDED.idempotency_key,
-			    family_count          = EXCLUDED.family_count,
-			    cancelled_at          = NULL,
-			    cancel_idempotency_key = NULL,
-			    cancel_reason         = ''
-			WHERE registrations.status = 'cancelled'
-		RETURNING registration_id`,
-		regID, eventID, employeeID, status, req.IdempotencyKey, req.FamilyCount).Scan(&regID)
-	if err == pgx.ErrNoRows {
-		// Conflict row exists but is not cancelled — duplicate active booking.
-		return BookingResponse{}, conflict("employee already has an active or waitlisted registration for this event")
-	}
+	_, err = tx.Exec(ctx, `INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key, family_count)
+		VALUES ($1,$2,$3,$4,$5,$6)`, regID, eventID, employeeID, status, req.IdempotencyKey, req.FamilyCount)
 	if err != nil {
+		if isUniqueViolation(err) {
+			existing, found, findErr := s.findRegistrationByIdempotencyKey(ctx, tx, req.IdempotencyKey, eventID, employeeID)
+			if findErr != nil {
+				return BookingResponse{}, findErr
+			}
+			if found {
+				if existing.Registration.FamilyCount != req.FamilyCount {
+					return BookingResponse{}, conflict("idempotency key belongs to a different booking request")
+				}
+				if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, existing); err != nil {
+					return BookingResponse{}, err
+				}
+				return existing, tx.Commit(ctx)
+			}
+		}
 		return BookingResponse{}, err
 	}
 
 	reg := Registration{RegistrationID: regID, EventID: eventID, EmployeeID: employeeID, Status: status, IdempotencyKey: req.IdempotencyKey, FamilyCount: req.FamilyCount, CreatedAt: now}
-
 	var ticket *Ticket
 	if status == RegistrationConfirmed {
 		created, err := s.createTicketTx(ctx, tx, reg, employee)
@@ -195,14 +185,21 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err := insertOutbox(ctx, tx, action, regID, bookingNotificationPayload(reg, event, actor)); err != nil {
 		return BookingResponse{}, err
 	}
+	response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remainingForNewBooking(event, status, capacity, confirmedCount), Message: bookingMessage(status)}
+	if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, response); err != nil {
+		return BookingResponse{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return BookingResponse{}, err
 	}
 
-	remaining := 0
-	if event.CapacityType == CapacityTypeLimited && status == RegistrationConfirmed {
-		remaining = max(capacity-confirmedCount-1, 0)
-	}
 	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", action, "status", status, "event_id", eventID, "actor_role", actor.Role)
-	return BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(status)}, nil
+	return response, nil
+}
+
+func remainingForNewBooking(event Event, status string, capacity int, confirmedCount int) int {
+	if event.CapacityType == CapacityTypeLimited && status == RegistrationConfirmed {
+		return max(capacity-confirmedCount-1, 0)
+	}
+	return 0
 }
