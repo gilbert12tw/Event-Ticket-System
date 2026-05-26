@@ -13,7 +13,7 @@ PostgreSQL remains the only source of truth for confirmed bookings. Redis is pre
 
 In scope (`PH2-20`..`PH2-27`):
 
-- `PH2-20` Redis reservation gate spec — semantics, invariants, failure modes.
+- `PH2-20` Redis reservation gate spec — semantics, invariants, failure modes. Dedicated spec: `docs/specs/phase2-redis-reservation-gate.md`.
 - `PH2-21` Event/actor rate-limit middleware (token bucket or sliding window; per `(event_id, employee_id)` and per `(event_id, *)`).
 - `PH2-22` Redis Lua pre-admission reservation (atomic check + decrement + TTL set).
 - `PH2-23` Reservation TTL and compensation (lapsed reservation returns capacity without admin action; reconciliation worker handles edge gaps).
@@ -72,14 +72,15 @@ Out of scope:
 
 ## 6. Minimal API / Data Contract
 
-Reservation gate (Redis side, normative for `PH2-22`):
+Reservation gate (Redis side; detailed normative contract lives in `docs/specs/phase2-redis-reservation-gate.md`):
 
 ```text
-Key shape:    cets:resv:{event_id}
-Counter:      cets:resv:count:{event_id}            # remaining slots mirror, NOT authority
-Lua script:   atomic CHECK count > 0 → DECR → SET reservation:{event_id}:{idempotency_key} TTL=N → return token
-Outcome:      "granted" | "exhausted" | "duplicate"
-TTL:          configurable via RESERVATION_TTL_SECONDS (default proposed by PH2-20)
+Counter:      cets:v1:resv:{event_id}:remaining     # remaining slots mirror, NOT authority
+Hold:         cets:v1:resv:{event_id}:hold:{idempotency_hash}
+Pending:      cets:v1:resv:{event_id}:pending
+Lua script:   atomic CHECK count > 0 → DECR → SET hold TTL=N → ZADD pending → return reservation_id
+Outcome:      "granted" | "exhausted" | "duplicate" | "misconfigured"
+TTL:          configurable via RESERVATION_TTL_SECONDS (default defined by PH2-20)
 Compensation: scheduled worker reconciles ghost reservations beyond TTL + grace
 ```
 
@@ -122,9 +123,9 @@ This endpoint is read-only, derived, never the booking commit authority.
 
 ## 7. 12-Factor Notes
 
-- **Config**: New env vars: `RESERVATION_TTL_SECONDS`, `RESERVATION_COMPENSATION_INTERVAL_SECONDS`, `BOOKING_RATE_LIMIT_RPS_PER_ACTOR`, `BOOKING_RATE_LIMIT_RPS_PER_EVENT`, `REDIS_OUTAGE_MODE=degrade|fail`. All have safe defaults; documented in `services/api/deploy/.env.example`.
+- **Config**: New env vars include `BOOKING_PREADMISSION`, `RESERVATION_TTL_SECONDS`, `RESERVATION_TTL_GRACE_SECONDS`, `RESERVATION_COMPENSATION_INTERVAL_SECONDS`, `REDIS_OPERATION_TIMEOUT_MS`, `BOOKING_RESERVATION_HASH_SECRET`, `BOOKING_RATE_LIMIT_RPS_PER_ACTOR`, `BOOKING_RATE_LIMIT_RPS_PER_EVENT`, and `REDIS_OUTAGE_MODE=degrade|fail`. Defaults and rollout rules are defined by `PH2-20`; runtime PRs must add them to `services/api/deploy/.env.example`.
 - **Backing services**: Redis is already an attached resource; this WS upgrades its role from optional cache to required pre-admission gate when `REDIS_OUTAGE_MODE=fail`. Connection injected via `REDIS_URL` (unchanged).
-- **Build / release / run**: Same Go binary; no new process types. Compensation runs inside the existing same-binary worker as a new kind (`worker_kind=reservation_compensation`) — WS4 owns kind config (`PH2-31`).
+- **Build / release / run**: Same Go binary; no new process types. Compensation runs inside the existing same-binary worker as a new kind (`worker_kind=compensation`) — WS4 owns kind config (`PH2-31`).
 - **Processes**: Stateless; reservation state lives in Redis + DB. No in-memory authoritative state.
 - **Logs**: Structured JSON to stdout; fields per WS2 §6. No idempotency key values, no Redis keys containing PII, no signed tokens.
 - **Admin processes**: New one-off `cets ops reservation-reconcile --event-id=...` for manual compensation; documented but rarely needed.
