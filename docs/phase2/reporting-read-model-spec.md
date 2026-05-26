@@ -1,7 +1,10 @@
 # Phase 2 Reporting Read Model — Specification
 
 **Issue:** PH2-40  
-**Status:** Draft — pending reviewer sign-off before PH2-41 is merged  
+**Status:** Draft — pending reviewer sign-off. PH2-41 has already merged the
+`reporting_event_summary` / `reporting_projection_offsets` tables with a
+`last_processed_at`-only cursor; the composite-cursor column in §3 is a required
+follow-up `ALTER TABLE` (see §3).  
 **Reviewers:**
 - Person A (WS1): privacy whitelist compliance, non-authoritative language, non-goals completeness
 - Person B (WS2): freshness SLA measurability, load-test criteria, baseline alignment
@@ -49,10 +52,14 @@ The projection worker consumes two kinds of sources:
 | `registration.cancelled` | Outbox event (incremental) | `event_id`, `registration_id`, `occurred_at` |
 | `booking.waitlisted` | Outbox event (incremental) | `event_id`, `registration_id`, `occurred_at` |
 | `waitlist.promoted` | Outbox event (incremental) | `event_id`, `registration_id`, `employee_department`, `occurred_at` |
-| `event.capacity_updated` | Outbox event (incremental) | `event_id`, `total_capacity`, `occurred_at` |
 | `events` | OLTP direct read (rebuild only) | `event_id`, `title`, `starts_at`, `capacity_type`, `capacity` |
 | `registrations` | OLTP direct read (rebuild only) | `registration_id`, `event_id`, `status`, `employee_id`, `created_at` |
 | `employees` | OLTP direct read (rebuild only) | `employee_id`, `department` (for department breakdown aggregation only) |
+
+`total_capacity` has no incremental outbox source: the Phase 1/2 producers emit no
+capacity-change event (a capacity edit writes only an audit entry, not an `outbox_events`
+row). It is therefore maintained on the **rebuild path only** — read from `events` (§5 step 4).
+A capacity edit between rebuilds is reflected in the projection only after the next rebuild.
 
 **Incremental path (normal operation):** the worker polls `outbox_events` using a composite
 cursor `(last_processed_at, last_processed_outbox_id)` stored in
@@ -85,13 +92,19 @@ The following fields must never appear in a projection-bound query or payload:
 ## 3. Projection Keys and Schema Sketch
 
 > DDL belongs in PH2-41. This section defines the logical shape only.
+>
+> **PH2-41 drift note:** PH2-41 already merged these tables with a `last_processed_at`-only
+> cursor (no `last_processed_outbox_id` column, and the offset row seeded with
+> `(projection_name, last_processed_at)` only). The `last_processed_outbox_id` column below is
+> part of the composite-cursor upgrade and must be added via a follow-up `ALTER TABLE` (with a
+> backfill to `''`) before the PH2-42 projection worker is built.
 
 ### `reporting_event_summary`
 
 | Column | Type | Notes |
 |---|---|---|
 | `event_id` | TEXT (PK) | References OLTP `events.event_id`; no FK constraint (projection is disposable) |
-| `total_capacity` | INTEGER ≥ 0 | 0 for unlimited events |
+| `total_capacity` | INTEGER ≥ 0 | 0 for unlimited events; maintained on rebuild only (no incremental capacity event — see §2) |
 | `confirmed_count` | INTEGER ≥ 0 | Count of registrations with status `confirmed` |
 | `cancelled_count` | INTEGER ≥ 0 | Count of registrations with status `cancelled` |
 | `waitlist_count` | INTEGER ≥ 0 | Count of registrations with status `waitlisted` |
@@ -113,9 +126,10 @@ OLTP's responsibility.
 | `last_processed_outbox_id` | TEXT | `outbox_id` of the last `outbox_events` row successfully applied; tiebreaker for the composite cursor |
 | `updated_at` | TIMESTAMPTZ | Wall-clock time of last offset commit |
 
-One row per projection. Seeded at migration time with `last_processed_at = '-infinity'` and
-`last_processed_outbox_id = ''`, ensuring the first poll's tuple comparison `(created_at,
-outbox_id) > ('-infinity', '')` picks up all existing outbox events.
+One row per projection. The shipped PH2-41 migration seeds `last_processed_at = '-infinity'`.
+Once `last_processed_outbox_id` is added (see drift note above), it must be backfilled to `''`
+so the first poll's tuple comparison `(created_at, outbox_id) > ('-infinity', '')` picks up all
+existing outbox events.
 
 ---
 
@@ -168,9 +182,9 @@ locked.
    Role required: `system_admin`.
 
 2. **Reset offset:** the worker updates `reporting_projection_offsets` SET
-   `last_processed_at = '-infinity'`, `updated_at = now()` WHERE `projection_name =
-   'event_summary'`. This causes the incremental poll loop to resume from the beginning
-   of the outbox after rebuild completes.
+   `last_processed_at = '-infinity'`, `last_processed_outbox_id = ''`, `updated_at = now()`
+   WHERE `projection_name = 'event_summary'`. This causes the incremental poll loop to resume
+   from the beginning of the outbox after rebuild completes.
 
 3. **Truncate projection:** the worker executes `TRUNCATE reporting_event_summary`.  
    No OLTP table is touched.
