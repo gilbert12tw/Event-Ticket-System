@@ -310,7 +310,7 @@
 .segmented-filter-item strong {
   min-width: 22px;
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink-soft);
   font-size: 0.76rem;

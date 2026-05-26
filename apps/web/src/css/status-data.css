@@ -113,7 +113,7 @@
 .progress-track {
   height: 8px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
 }
 
@@ -132,7 +132,7 @@
   min-height: 24px;
   padding: 3px 8px;
   border: 1px solid var(--tone-line, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--tone-bg, transparent);
   color: var(--tone-fg, inherit);
   font-size: 0.72rem;

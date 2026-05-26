@@ -36,8 +36,8 @@ Use `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe 
 
 - **Shell:** Desktop uses a persistent left navigation, a bounded central workspace, and a quiet API activity rail. Under 1240px the API rail moves below content. Under 900px the shell becomes a stacked product workspace with horizontal-safe navigation.
 - **Navigation:** Active route uses a filled wash, a clear icon container, and enough contrast to survive scanning. User and Admin areas stay visually distinct through labels and context blocks, not separate apps.
-- **Buttons:** 7px radius, stable height, Lucide icons, visible focus rings, and consistent disabled treatment. Primary actions use Operations Blue. Secondary actions use neutral surfaces. Icon-only buttons require an accessible label on the button.
-- **Panels and Rows:** Avoid same-weight card piles. Use panels for bounded tools, rows for repeated event and ticket items, and full-width context bands for workspace state. Do not nest decorative cards.
+- **Buttons:** 3-4px radius, stable height, Lucide icons, visible focus rings, and consistent disabled treatment. Primary actions use Operations Blue. Secondary actions use neutral surfaces. Icon-only buttons require an accessible label on the button.
+- **Panels and Rows:** Avoid same-weight card piles and pill-heavy framing. Use crisp 3-4px corners for bounded tools, rows for repeated event and ticket items, and full-width context bands for workspace state. Do not nest decorative cards.
 - **Forms:** Group fields by intent, keep labels visible, mark required fields, and place readiness or helper strips near the action they affect. Date, number, select, and textarea controls retain native behavior.
 - **Tables:** Dense rows, sticky-feeling header hierarchy, clear hover state, selected row state, and horizontal overflow inside `.table-scroll` only.
 - **Status Vocabulary:** Badges pair text with semantic tints for OK, warning, fail, info, and neutral. Alerts use the same tone system and live regions.
