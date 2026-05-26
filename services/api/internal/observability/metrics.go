@@ -53,7 +53,7 @@ func (r *Registry) ObserveHTTPRequest(route string, method string, status int, d
 	}
 	key := httpKey{
 		Route:       boundedLabel(route, "unknown"),
-		Method:      boundedLabel(method, "UNKNOWN"),
+		Method:      boundedMethod(method),
 		StatusClass: statusClass(status),
 	}
 	seconds := duration.Seconds()
@@ -231,6 +231,31 @@ func boundedLabel(value string, fallback string) string {
 		return value[:160]
 	}
 	return value
+}
+
+// allowedMethods is the fixed set of HTTP methods the method label may take.
+// Go's net/http accepts any RFC 7230 token as a method and reaches the handler
+// even for unmatched requests, so collapsing anything outside this set keeps the
+// method label bounded-cardinality and prevents an unauthenticated scanner from
+// minting unbounded metric series via arbitrary method tokens.
+var allowedMethods = map[string]struct{}{
+	http.MethodGet:     {},
+	http.MethodHead:    {},
+	http.MethodPost:    {},
+	http.MethodPut:     {},
+	http.MethodPatch:   {},
+	http.MethodDelete:  {},
+	http.MethodConnect: {},
+	http.MethodOptions: {},
+	http.MethodTrace:   {},
+}
+
+func boundedMethod(method string) string {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if _, ok := allowedMethods[method]; ok {
+		return method
+	}
+	return "UNKNOWN"
 }
 
 func escapeLabel(value string) string {
