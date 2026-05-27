@@ -5,11 +5,88 @@ import {
   currentRoute,
   defaultAdminRouteForRole,
   defaultRouteForRole,
+  roleRouteAccess,
+  routeAliases,
   routeKeyForPath,
   routePath,
+  routes,
   ticketDetailPath,
   userRoutes,
 } from "./routes";
+import routeData from "./routes-data.json";
+
+const expectedUserRouteKeys = [
+  "user-events",
+  "user-event-detail",
+  "user-tickets",
+  "user-notifications",
+] as const;
+const expectedAdminRouteKeys = [
+  "admin-events",
+  "admin-registrations",
+  "admin-notifications",
+  "admin-checkin",
+  "admin-offline-checkin",
+  "admin-reports",
+  "admin-hr-settings",
+  "admin-audit",
+  "admin-demo",
+] as const;
+const expectedRouteKeys = new Set([
+  ...expectedUserRouteKeys,
+  ...expectedAdminRouteKeys,
+]);
+const iconNames = new Set([
+  "activity",
+  "audit",
+  "bell",
+  "calendar",
+  "chart",
+  "play",
+  "scan",
+  "send",
+  "settings",
+  "ticket",
+  "users",
+  "wifiOff",
+]);
+const allowedMobileExtraKeys = new Set(["mobileOverflow", "mobilePrimary"]);
+const expectedRouteAliases = {
+  "/": "user-events",
+  "/employee/events": "user-events",
+  "/employee/tickets": "user-tickets",
+  "/admin/events/new": "admin-events",
+  "/checkin": "admin-checkin",
+  "/admin/offline-checkin": "admin-offline-checkin",
+  "/admin/checkin/offline": "admin-offline-checkin",
+  "/hr/reports": "admin-reports",
+  "/admin/hr-sync": "admin-hr-settings",
+  "/admin/settings": "admin-hr-settings",
+  "/demo": "admin-demo",
+  "/admin/demo": "admin-demo",
+} as const;
+const expectedRoleRouteAccess = {
+  employee: [
+    "user-events",
+    "user-event-detail",
+    "user-tickets",
+    "user-notifications",
+  ],
+  activity_admin: [
+    "admin-events",
+    "admin-registrations",
+    "admin-notifications",
+    "admin-demo",
+  ],
+  checkin_staff: ["admin-checkin", "admin-offline-checkin"],
+  hr_admin: ["admin-reports", "admin-hr-settings", "admin-audit"],
+  system_admin: [
+    "admin-reports",
+    "admin-hr-settings",
+    "admin-audit",
+    "admin-notifications",
+  ],
+} as const;
 
 describe("route guards", () => {
   it("keeps employee routes separate from admin routes", () => {
@@ -17,6 +94,35 @@ describe("route guards", () => {
     expect(adminRoutes.map((route) => route.key)).toContain("admin-events");
     expect(canAccessRoute("user-events", "employee")).toBe(true);
     expect(canAccessRoute("admin-events", "employee")).toBe(false);
+  });
+
+  it("keeps route data inside the known route contract", () => {
+    expect(routeData.userRouteSeeds.map((seed) => seed[0])).toEqual(
+      expectedUserRouteKeys,
+    );
+    expect(routeData.adminRouteSeeds.map((seed) => seed[0])).toEqual(
+      expectedAdminRouteKeys,
+    );
+    expect(routes.map((route) => route.key)).toEqual([
+      ...expectedUserRouteKeys,
+      ...expectedAdminRouteKeys,
+    ]);
+
+    for (const seed of [
+      ...routeData.userRouteSeeds,
+      ...routeData.adminRouteSeeds,
+    ]) {
+      expect([8, 9]).toContain(seed.length);
+      expect(expectedRouteKeys.has(seed[0])).toBe(true);
+      expect(iconNames.has(seed[6])).toBe(true);
+      expect(Array.isArray(seed[7])).toBe(true);
+      for (const [key, value] of Object.entries(seed[8] ?? {})) {
+        expect(allowedMobileExtraKeys.has(key)).toBe(true);
+        expect(typeof value).toBe("boolean");
+      }
+    }
+    expect(routeAliases).toEqual(expectedRouteAliases);
+    expect(roleRouteAccess).toEqual(expectedRoleRouteAccess);
   });
 
   it("resolves default routes and paths per role", () => {

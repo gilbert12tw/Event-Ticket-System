@@ -1,0 +1,219 @@
+{
+  "eventStatuses": [
+    ["draft", "草稿", "neutral"],
+    ["published", "已發布", "ok"],
+    ["closed", "已關閉", "warn"],
+    ["cancelled", "已取消", "fail"],
+    ["archived", "已封存", "neutral"]
+  ],
+  "registrationStatuses": [
+    ["confirmed", "已報名", "ok"],
+    ["waitlisted", "候補中", "warn"],
+    ["cancelled", "已取消", "fail"],
+    ["rejected", "已拒絕", "fail"]
+  ],
+  "ticketStatuses": [
+    ["active", "可使用", "ok"],
+    ["revoked", "已撤銷", "fail"],
+    ["redeemed", "已核銷", "neutral"]
+  ],
+  "deliveryStatuses": [
+    ["pending", "待處理", "warn"],
+    ["failed", "失敗", "fail"],
+    ["dead_letter", "投遞終止", "fail"],
+    ["sent", "已送達", "ok"],
+    ["suppressed", "已抑制", "info"]
+  ],
+  "reviewStatuses": [
+    ["open", "待處理", "warn"],
+    ["pending", "待處理", "warn"],
+    ["resolved", "已處理", "ok"]
+  ],
+  "roles": [
+    ["employee", "員工"],
+    ["activity_admin", "活動主辦"],
+    ["checkin_staff", "驗票人員"],
+    ["hr_admin", "人資管理員"],
+    ["system_admin", "系統管理員"]
+  ],
+  "entities": [
+    ["event", "活動"],
+    ["registration", "報名"],
+    ["ticket", "票券"],
+    ["checkin", "驗票"],
+    ["report_export", "報表匯出"],
+    ["offline_checkin_batch", "離線驗票批次"]
+  ],
+  "departments": [
+    ["Engineering", "工程部"],
+    ["Operations", "營運部"],
+    ["Sales", "業務部"]
+  ],
+  "sites": [
+    ["HQ", "總部"],
+    ["Taipei", "台北"],
+    ["Taipei HQ", "台北總部"],
+    ["Taipei HQ Auditorium", "台北總部禮堂"]
+  ],
+  "employmentStatuses": [
+    ["active", "在職"],
+    ["inactive", "離職"]
+  ],
+  "channels": [
+    ["email", "電子郵件"],
+    ["in-app", "站內通知"],
+    ["in_app", "站內通知"]
+  ],
+  "capacityTypes": [
+    ["limited", "限量票", "本人一張票，容量會扣庫存。"],
+    ["unlimited", "不限量", "不扣庫存，可記錄家屬人數。"]
+  ],
+  "eligibilityDepartments": [
+    ["*", "所有部門"],
+    ["Engineering", "工程部"],
+    ["Sales", "業務部"]
+  ],
+  "eligibilitySites": [
+    ["*", "所有廠區"],
+    ["Taipei", "台北"]
+  ],
+  "employmentStatusFilters": [
+    ["*", "所有雇用狀態"],
+    ["active", "在職"]
+  ],
+  "entryMethods": [
+    ["qr", "二維碼驗票"],
+    ["manual", "人工名單"]
+  ],
+  "visibilities": [
+    ["eligible", "僅符合資格者"],
+    ["internal", "內部可見"]
+  ],
+  "categories": [
+    ["", "不分類"],
+    ["family", "家庭活動"],
+    ["sports", "運動活動"],
+    ["learning", "學習活動"],
+    ["wellness", "健康活動"]
+  ],
+  "eventTemplates": [
+    ["family", "家庭活動", "不限量或大容量，預設開放家屬與 QR 入場。"],
+    ["learning", "學習課程", "限量座位，適合部門或職等條件。"],
+    ["wellness", "健康活動", "中等容量，適合跨部門活動。"],
+    ["sports", "運動活動", "限量名額，保留候補治理。"],
+    ["company", "全公司活動", "所有部門與廠區可見，預設草稿。"]
+  ],
+  "schedulePresets": [
+    [
+      "open-now",
+      "立即開放，活動前 24 小時截止",
+      "適合短期公告與一般員工活動。"
+    ],
+    ["one-week", "一週報名期", "今天開放，一週後截止，活動安排在 10 天後。"],
+    ["next-week", "下週開放，週五截止", "適合先準備草稿再發布。"],
+    ["custom", "自訂時間", "保留目前手動輸入值。"]
+  ],
+  "venues": [
+    ["台北總部禮堂", "台北總部禮堂", "Taipei"],
+    ["台北總部多功能廳", "台北總部多功能廳", "Taipei"],
+    ["台北總部訓練教室", "台北總部訓練教室", "Taipei"],
+    ["線上會議室", "線上會議室", "不限廠區"]
+  ],
+  "devicePresets": [
+    ["gate-1", "Gate 1", "主要入口"],
+    ["gate-2", "Gate 2", "備援入口"],
+    ["gate-mobile", "Mobile tablet", "行動驗票設備"],
+    ["gate-offline-1", "Offline gate 1", "離線名單同步"],
+    ["custom", "自訂裝置", "必要時再手動輸入。"]
+  ],
+  "tagSuggestions": [
+    ["家庭活動", "家庭活動"],
+    ["台北", "台北"],
+    ["學習", "學習"],
+    ["健康", "健康"],
+    ["運動", "運動"],
+    ["全公司", "全公司"]
+  ],
+  "auditActions": [
+    ["", "所有操作"],
+    ["event.created", "活動建立"],
+    ["event.updated", "活動更新"],
+    ["event.state_changed", "活動狀態變更"],
+    ["registration.confirmed", "報名確認"],
+    ["registration.waitlisted", "加入候補"],
+    ["registration.cancelled", "報名取消"],
+    ["waitlist.promoted", "候補提升"],
+    ["ticket.issued", "票券發行"],
+    ["ticket.redeemed", "票券核銷"],
+    ["checkin.rejected", "驗票拒絕"],
+    ["offline_checkin.conflict", "離線衝突"],
+    ["report.export.requested", "報表匯出"],
+    ["eligibility_impact.created", "資格影響"],
+    ["hr_sync.completed", "人資同步"]
+  ],
+  "auditLimits": [
+    ["25", "25 筆"],
+    ["50", "50 筆"],
+    ["100", "100 筆"],
+    ["200", "200 筆"]
+  ],
+  "hrReviewStatuses": [
+    ["open", "待處理"],
+    ["resolved", "已處理"],
+    ["all", "全部"]
+  ],
+  "cancellationReasons": [
+    ["employee cancellation", "個人行程變更"],
+    ["duplicate registration", "重複報名"],
+    ["manager request", "主管要求"],
+    ["other", "其他原因"]
+  ],
+  "revocationReasons": [
+    ["ticket issued by mistake", "票券誤發"],
+    ["eligibility changed", "資格異動"],
+    ["security review", "安全審核"],
+    ["manager request", "主管要求"]
+  ],
+  "resolutionReasons": [
+    ["人資已人工處置影響項目。", "人資已人工處置"],
+    ["票券與資格狀態已確認。", "票券與資格已確認"],
+    ["已通知活動主辦追蹤。", "已通知主辦追蹤"],
+    ["custom", "自訂處置原因"]
+  ],
+  "reportPresets": [
+    ["participation", "參與彙總", "報名、票券、入場率。"],
+    ["waitlist", "候補壓力", "優先查看候補量。"],
+    ["capacity", "容量利用", "剩餘名額與使用率。"],
+    ["exceptions", "驗票例外", "低到場與異常活動。"]
+  ],
+  "reportExportStatuses": [
+    ["pending", "準備中", "warn"],
+    ["ready", "已完成", "ok"],
+    ["failed", "失敗", "fail"]
+  ],
+  "checkinStatuses": [
+    ["duplicate", "重複掃描", "warn"],
+    ["accepted", "驗票成功", "ok"],
+    ["rejected", "驗票拒絕", "fail"]
+  ],
+  "auditActionViews": [
+    ["booking.confirmed", "報名確認", "ok"],
+    ["booking.waitlisted", "加入候補", "warn"],
+    ["event.created", "活動建立", "info"],
+    ["event.updated", "活動更新", "info"],
+    ["event.state_changed", "活動狀態變更", "warn"],
+    ["registration.confirmed", "報名確認", "ok"],
+    ["registration.waitlisted", "加入候補", "warn"],
+    ["registration.cancelled", "報名取消", "warn"],
+    ["waitlist.promoted", "候補提升", "ok"],
+    ["waitlist.promotion_noop", "候補無可提升", "neutral"],
+    ["ticket.issued", "票券核發", "ok"],
+    ["ticket.redeemed", "票券核銷", "ok"],
+    ["ticket.revoked", "票券撤銷", "fail"],
+    ["checkin.rejected", "驗票拒絕", "fail"],
+    ["offline_checkin.conflict", "離線驗票衝突", "warn"],
+    ["report.export.requested", "報表匯出請求", "info"],
+    ["eligibility_impact.created", "資格影響建立", "warn"],
+    ["hr_sync.completed", "人資同步完成", "ok"]
+  ]
+}

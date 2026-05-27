@@ -63,7 +63,7 @@
   min-height: 28px;
   padding: 4px 9px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface-inset);
   color: var(--muted);
   font-size: 0.78rem;
@@ -71,9 +71,11 @@
 }
 
 .compact-stat dd {
+  min-width: 0;
   margin: 0;
   color: var(--ink);
   font-weight: 820;
+  overflow-wrap: anywhere;
 }
 
 .span-4 {

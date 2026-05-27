@@ -21,7 +21,7 @@
   height: 30px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface-inset);
   color: var(--muted);
   font-size: 0.76rem;

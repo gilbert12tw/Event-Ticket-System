@@ -2,7 +2,12 @@ import type { KeyboardEvent } from "react";
 import type { AuditLog } from "@/lib/api";
 import { formatDate } from "@/lib/formatting";
 import { Button } from "@/components/ui/button";
-import { EmptyState, ResponsiveTable, StatusBadge } from "@/components/shared";
+import {
+  EmptyState,
+  MetaList,
+  ResponsiveTable,
+  StatusBadge,
+} from "@/components/shared";
 import {
   auditActionView,
   entityTypeLabel,
@@ -184,22 +189,24 @@ function AuditMobileCard({
           {auditActionView(row.action).label}
         </StatusBadge>
       </div>
-      <dl className="meta-list vertical">
-        <div>
-          <dt>執行者</dt>
-          <dd>
-            {row.actor_id}
-            <span className="table-muted">{roleViewLabel(row.role)}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>物件</dt>
-          <dd>
-            {entityTypeLabel(row.entity_type)}
-            <span className="table-muted mono-cell">{row.entity_id}</span>
-          </dd>
-        </div>
-      </dl>
+      <MetaList
+        rows={[
+          [
+            "執行者",
+            <>
+              {row.actor_id}
+              <span className="table-muted">{roleViewLabel(row.role)}</span>
+            </>,
+          ],
+          [
+            "物件",
+            <>
+              {entityTypeLabel(row.entity_type)}
+              <span className="table-muted mono-cell">{row.entity_id}</span>
+            </>,
+          ],
+        ]}
+      />
       <Button
         aria-pressed={selected}
         variant="outline"

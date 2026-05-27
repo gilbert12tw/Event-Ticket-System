@@ -1,4 +1,3 @@
-import type { MouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { navigate, ticketDetailPath } from "@/app/routes";
 import {
@@ -14,6 +13,7 @@ import type {
   Ticket,
 } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
+import { runClientNavigation } from "@/lib/navigation";
 import {
   Alert,
   EmptyState,
@@ -343,11 +343,11 @@ function TicketHandoff({ ticket }: { ticket: Ticket }) {
       <Button asChild variant="outline">
         <a
           href={ticketDetailPath(ticket.ticket_id)}
-          onClick={(event) => {
-            if (shouldUseNativeNavigation(event)) return;
-            event.preventDefault();
-            navigate(ticketDetailPath(ticket.ticket_id));
-          }}
+          onClick={(event) =>
+            runClientNavigation(event, () =>
+              navigate(ticketDetailPath(ticket.ticket_id)),
+            )
+          }
         >
           <Icon name="ticket" />
           查看這張票券
@@ -362,14 +362,4 @@ function cancellationResultCopy(event: EventSummary) {
     ? "已核發票券會同步失效。"
     : "目前沒有已核發票券。";
   return `報名已取消。${ticketCopy}名額與候補可能更新；若需恢復或重新報名，請聯絡活動主辦。`;
-}
-
-function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
-  );
 }

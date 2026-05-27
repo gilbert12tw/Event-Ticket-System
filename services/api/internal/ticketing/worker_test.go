@@ -140,11 +140,7 @@ func TestNotificationCategorySuppressedMatchesLabelsCaseInsensitive(t *testing.T
 }
 
 func TestProcessOutboxOnceSuppressesDisabledPreferences(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	_, err := service.UpdateNotificationPreferences(ctx, Actor{ID: "E1001", Role: RoleEmployee}, NotificationPreferences{
 		EmailEnabled: false,
 		InAppEnabled: false,
@@ -164,10 +160,7 @@ func TestProcessOutboxOnceSuppressesDisabledPreferences(t *testing.T) {
 }
 
 func TestProcessOutboxOncePublishesEventsWithoutRecipient(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	service, ctx := newWorkerTest(t)
 	insertWorkerOutboxPayload(t, service, ctx, "out-no-recipient", "event.updated", "pending", 0, `{"event_id":"evt_1"}`)
 	sender := &recordingNotificationSender{}
 
@@ -181,10 +174,7 @@ func TestProcessOutboxOncePublishesEventsWithoutRecipient(t *testing.T) {
 }
 
 func TestProcessOutboxOnceSuppressesOptedOutEventCategory(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	service, ctx := newWorkerTest(t)
 	require.NoError(t, service.SeedDemoData(ctx))
 	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
 		Title:    "Family Day",
@@ -217,11 +207,7 @@ func TestProcessOutboxOnceSuppressesOptedOutEventCategory(t *testing.T) {
 }
 
 func TestProcessOutboxOnceProcessesConfiguredBatch(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutbox(t, service, ctx, "out-batch-1", "pending", 0)
 	insertWorkerOutbox(t, service, ctx, "out-batch-2", "pending", 0)
 	insertWorkerOutbox(t, service, ctx, "out-batch-3", "pending", 0)
@@ -241,11 +227,7 @@ func TestProcessOutboxOnceProcessesConfiguredBatch(t *testing.T) {
 }
 
 func TestProcessOutboxOnceSendsGovernanceEventContext(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutboxPayload(t, service, ctx, "out-governance-context", "registration.cancelled", "pending", 0, `{
 		"employee_id":"E1001",
 		"event_id":"evt-context",
@@ -264,11 +246,7 @@ func TestProcessOutboxOnceSendsGovernanceEventContext(t *testing.T) {
 }
 
 func TestProcessOutboxOnceClaimsStaleProcessingOutbox(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutbox(t, service, ctx, "out-stale-processing", "processing", 1)
 	sender := &recordingNotificationSender{}
 
@@ -282,11 +260,7 @@ func TestProcessOutboxOnceClaimsStaleProcessingOutbox(t *testing.T) {
 }
 
 func TestProcessOutboxOnceDoesNotResendAlreadySentEmail(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutbox(t, service, ctx, "out-recovered-sent", "processing", 1)
 	insertWorkerDelivery(t, service, ctx, "del-existing-email", "out-recovered-sent", "email", deliveryStatusSent)
 	sender := &recordingNotificationSender{}
@@ -301,11 +275,7 @@ func TestProcessOutboxOnceDoesNotResendAlreadySentEmail(t *testing.T) {
 }
 
 func TestProcessOutboxOnceMarksFailedEmailForRetry(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutbox(t, service, ctx, "out-email-failed", "pending", 0)
 	sender := &recordingNotificationSender{err: errors.New("smtp unavailable")}
 
@@ -352,11 +322,7 @@ func TestProcessOutboxOnceUsesStableEmailIdempotencyKeyAfterSendFailure(t *testi
 }
 
 func TestProcessOutboxOnceRedactsFailedDeliveryError(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutbox(t, service, ctx, "out-email-redacted", "pending", 0)
 	sender := &recordingNotificationSender{err: errors.New("550 rejected e1001@cets.local for E1001")}
 
@@ -380,11 +346,7 @@ func TestProcessOutboxOnceRedactsFailedDeliveryError(t *testing.T) {
 }
 
 func TestProcessOutboxOnceMarksDeadLetterAtMaxAttempts(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	seedWorkerEmployee(t, service, ctx)
+	service, ctx := newSeededWorkerTest(t)
 	insertWorkerOutbox(t, service, ctx, "out-email-dead-letter", "pending", 2)
 	sender := &recordingNotificationSender{err: errors.New("smtp unavailable")}
 
@@ -394,6 +356,22 @@ func TestProcessOutboxOnceMarksDeadLetterAtMaxAttempts(t *testing.T) {
 	statuses := workerDeliveryStatuses(t, service, ctx, "out-email-dead-letter")
 	assert.Equal(t, deliveryStatusDeadLetter, statuses["email"])
 	assertWorkerOutboxStatus(t, service, ctx, "out-email-dead-letter", "dead_letter", 3)
+}
+
+func newSeededWorkerTest(t *testing.T) (*Service, context.Context) {
+	t.Helper()
+	service, ctx := newWorkerTest(t)
+	seedWorkerEmployee(t, service, ctx)
+	return service, ctx
+}
+
+func newWorkerTest(t *testing.T) (*Service, context.Context) {
+	t.Helper()
+	service, cleanup := newIntegrationService(t)
+	t.Cleanup(cleanup)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	return service, ctx
 }
 
 func seedWorkerEmployee(t *testing.T, service *Service, ctx context.Context) {

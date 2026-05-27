@@ -13,6 +13,7 @@ import {
   Alert,
   CompactStatsBar,
   EmptyState,
+  MetaList,
   ResponsiveTable,
   SegmentedFilter,
   SkeletonRows,
@@ -141,17 +142,7 @@ export function UserNotificationsPage() {
                   <h3>{row.title}</h3>
                   <p className="table-muted">{row.kind}</p>
                 </div>
-                <StatusBadge
-                  tone={
-                    row.kind === "票券"
-                      ? ticketStatusView(row.status).tone
-                      : registrationStatusView(row.status).tone
-                  }
-                >
-                  {row.kind === "票券"
-                    ? ticketStatusView(row.status).label
-                    : registrationStatusView(row.status).label}
-                </StatusBadge>
+                <NotificationStatusBadge kind={row.kind} status={row.status} />
                 <p>{row.detail}</p>
               </article>
             ))}
@@ -170,17 +161,10 @@ export function UserNotificationsPage() {
                   <td>{row.kind}</td>
                   <td>{row.title}</td>
                   <td>
-                    <StatusBadge
-                      tone={
-                        row.kind === "票券"
-                          ? ticketStatusView(row.status).tone
-                          : registrationStatusView(row.status).tone
-                      }
-                    >
-                      {row.kind === "票券"
-                        ? ticketStatusView(row.status).label
-                        : registrationStatusView(row.status).label}
-                    </StatusBadge>
+                    <NotificationStatusBadge
+                      kind={row.kind}
+                      status={row.status}
+                    />
                   </td>
                   <td>{row.detail}</td>
                 </tr>
@@ -197,6 +181,17 @@ export function UserNotificationsPage() {
       </Card>
     </section>
   );
+}
+
+type NotificationStatusProps = { kind: string; status?: string };
+
+function NotificationStatusBadge({
+  kind,
+  status = "",
+}: NotificationStatusProps) {
+  const view =
+    kind === "票券" ? ticketStatusView(status) : registrationStatusView(status);
+  return <StatusBadge tone={view.tone}>{view.label}</StatusBadge>;
 }
 
 export function NotificationDeliveryPage() {
@@ -247,26 +242,21 @@ export function NotificationDeliveryPage() {
   const filteredDeliveries = deliveries.filter(
     (delivery) => statusFilter === "all" || delivery.status === statusFilter,
   );
+  const deliveryCounts = deliveries.reduce<Record<string, number>>(
+    (counts, delivery) => {
+      counts.all += 1;
+      counts[delivery.status] = (counts[delivery.status] ?? 0) + 1;
+      return counts;
+    },
+    { all: 0, pending: 0, failed: 0, dead_letter: 0, sent: 0, suppressed: 0 },
+  );
   const deliveryStats = {
-    total: deliveries.length,
-    failed: deliveries.filter((delivery) => delivery.status === "failed")
-      .length,
-    deadLetter: deliveries.filter(
-      (delivery) => delivery.status === "dead_letter",
-    ).length,
-    pending: deliveries.filter((delivery) => delivery.status === "pending")
-      .length,
+    total: deliveryCounts.all,
+    pending: deliveryCounts.pending,
+    failed: deliveryCounts.failed,
+    deadLetter: deliveryCounts.dead_letter,
   };
-  const deliveryCounts = {
-    all: deliveries.length,
-    pending: deliveryStats.pending,
-    failed: deliveryStats.failed,
-    dead_letter: deliveryStats.deadLetter,
-    sent: deliveries.filter((delivery) => delivery.status === "sent").length,
-    suppressed: deliveries.filter(
-      (delivery) => delivery.status === "suppressed",
-    ).length,
-  };
+  const retryActionProps = { loading, retrying, onRetry: setPendingRetry };
 
   return (
     <section className="content-grid">
@@ -318,45 +308,16 @@ export function NotificationDeliveryPage() {
                 <h3 className="mono-cell">{row.delivery_id}</h3>
                 <p className="table-muted">{row.outbox_id}</p>
               </div>
-              <StatusBadge tone={deliveryStatusView(row.status).tone}>
-                {deliveryStatusView(row.status).label}
-              </StatusBadge>
-              <dl className="meta-list vertical">
-                <div>
-                  <dt>員工</dt>
-                  <dd>{row.employee_ref || "系統"}</dd>
-                </div>
-                <div>
-                  <dt>通道</dt>
-                  <dd>{channelLabel(row.channel)}</dd>
-                </div>
-                <div>
-                  <dt>嘗試次數</dt>
-                  <dd>{row.attempts}</dd>
-                </div>
-                <div>
-                  <dt>最後錯誤</dt>
-                  <dd>
-                    {row.last_error ? localizedMessage(row.last_error) : "—"}
-                  </dd>
-                </div>
-              </dl>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={
-                  loading ||
-                  !canRetryDelivery(row) ||
-                  retrying === row.delivery_id
-                }
-                onClick={() => setPendingRetry(row)}
-              >
-                {retryButtonLabel(row, retrying === row.delivery_id)}
-              </Button>
-              {!canRetryDelivery(row) && (
-                <span className="table-muted">{retryDisabledReason(row)}</span>
-              )}
+              <DeliveryStatusBadge status={row.status} />
+              <MetaList
+                rows={[
+                  ["員工", row.employee_ref || "系統"],
+                  ["通道", channelLabel(row.channel)],
+                  ["嘗試次數", row.attempts],
+                  ["最後錯誤", deliveryError(row)],
+                ]}
+              />
+              <DeliveryRetryAction row={row} {...retryActionProps} />
             </article>
           ))}
         >
@@ -380,33 +341,12 @@ export function NotificationDeliveryPage() {
                 <td>{row.employee_ref || "系統"}</td>
                 <td>{channelLabel(row.channel)}</td>
                 <td>
-                  <StatusBadge tone={deliveryStatusView(row.status).tone}>
-                    {deliveryStatusView(row.status).label}
-                  </StatusBadge>
+                  <DeliveryStatusBadge status={row.status} />
                 </td>
                 <td>{row.attempts}</td>
+                <td>{deliveryError(row)}</td>
                 <td>
-                  {row.last_error ? localizedMessage(row.last_error) : "—"}
-                </td>
-                <td>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    disabled={
-                      loading ||
-                      !canRetryDelivery(row) ||
-                      retrying === row.delivery_id
-                    }
-                    onClick={() => setPendingRetry(row)}
-                  >
-                    {retryButtonLabel(row, retrying === row.delivery_id)}
-                  </Button>
-                  {!canRetryDelivery(row) && (
-                    <span className="table-muted">
-                      {retryDisabledReason(row)}
-                    </span>
-                  )}
+                  <DeliveryRetryAction row={row} {...retryActionProps} />
                 </td>
               </tr>
             ))}
@@ -427,6 +367,47 @@ export function NotificationDeliveryPage() {
       />
     </section>
   );
+}
+
+type RetryActionProps = {
+  loading: boolean;
+  retrying: string;
+  row: NotificationDelivery;
+  onRetry: (delivery: NotificationDelivery) => void;
+};
+
+function DeliveryStatusBadge({ status }: { status: string }) {
+  const view = deliveryStatusView(status);
+  return <StatusBadge tone={view.tone}>{view.label}</StatusBadge>;
+}
+
+function DeliveryRetryAction({
+  loading,
+  retrying,
+  row,
+  onRetry,
+}: RetryActionProps) {
+  const isRetrying = retrying === row.delivery_id;
+  const disabledReason = canRetryDelivery(row) ? "" : retryDisabledReason(row);
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        disabled={loading || Boolean(disabledReason) || isRetrying}
+        onClick={() => onRetry(row)}
+      >
+        {retryButtonLabel(row, isRetrying)}
+      </Button>
+      {disabledReason && <span className="table-muted">{disabledReason}</span>}
+    </>
+  );
+}
+
+function deliveryError(row: NotificationDelivery) {
+  return row.last_error ? localizedMessage(row.last_error) : "—";
 }
 
 function RetryDeliveryDialog({
@@ -453,20 +434,13 @@ function RetryDeliveryDialog({
           </DialogDescription>
         </DialogHeader>
         {delivery && (
-          <dl className="meta-list vertical">
-            <div>
-              <dt>投遞編號</dt>
-              <dd>{delivery.delivery_id}</dd>
-            </div>
-            <div>
-              <dt>投遞批次</dt>
-              <dd>{delivery.outbox_id}</dd>
-            </div>
-            <div>
-              <dt>下一次嘗試</dt>
-              <dd>第 {delivery.attempts + 1} 次</dd>
-            </div>
-          </dl>
+          <MetaList
+            rows={[
+              ["投遞編號", delivery.delivery_id],
+              ["投遞批次", delivery.outbox_id],
+              ["下一次嘗試", `第 ${delivery.attempts + 1} 次`],
+            ]}
+          />
         )}
         <DialogFooter>
           <Button

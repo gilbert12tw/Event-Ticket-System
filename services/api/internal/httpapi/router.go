@@ -45,7 +45,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", handleIndex)
+	mux.HandleFunc("GET /", handleIndex(deps.AppEnv))
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /readyz", handleReady(deps.DB, deps.RequestTimeout))
 	mux.Handle("GET /metrics", deps.Metrics.Handler(deps.DB))
@@ -94,6 +94,7 @@ const requiredSchemaReadyQuery = `SELECT
 	to_regclass('public.audit_logs') IS NOT NULL AND
 	to_regclass('public.outbox_events') IS NOT NULL AND
 	to_regclass('public.notification_deliveries') IS NOT NULL AND
+	to_regclass('public.booking_bans') IS NOT NULL AND
 	to_regclass('public.offline_checkin_batches') IS NOT NULL AND
 	to_regclass('public.report_exports') IS NOT NULL AND
 	to_regclass('public.lottery_results') IS NOT NULL`

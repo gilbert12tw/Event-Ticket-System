@@ -4,7 +4,7 @@
 **Status:** Draft — pending reviewer sign-off. PH2-41 has already merged the
 `reporting_event_summary` / `reporting_projection_offsets` tables with a
 `last_processed_at`-only cursor; the composite-cursor column in §3 is a required
-follow-up `ALTER TABLE` (see §3).  
+follow-up `ALTER TABLE` (see §3).
 **Reviewers:**
 - Person A (WS1): privacy whitelist compliance, non-authoritative language, non-goals completeness
 - Person B (WS2): freshness SLA measurability, load-test criteria, baseline alignment

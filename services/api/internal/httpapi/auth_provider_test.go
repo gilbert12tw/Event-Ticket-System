@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,13 +15,7 @@ import (
 
 func TestProviderBearerMeReturnsCompleteClaims(t *testing.T) {
 	secret := providerTestSecret()
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		ProviderAuth:   ProviderAuthConfig{Secret: secret},
-	})
+	router := testRouter(Dependencies{AppEnv: "production"})
 	token := signProviderClaims(t, secret, validProviderClaims(ticketing.RoleEmployee))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -56,14 +48,7 @@ func TestBearerTokenRejectsNonBearerAuthorizationScheme(t *testing.T) {
 func TestProtectedAPIsRequireProviderBearerInProduction(t *testing.T) {
 	service := &fakeTicketingService{}
 	secret := providerTestSecret()
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		ProviderAuth:   ProviderAuthConfig{Secret: secret},
-	})
+	router := testRouter(Dependencies{Ticketing: service, AppEnv: "production"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", bytes.NewBufferString(eventRequestBody()))
 	req.Header.Set("X-Actor-ID", "admin-1")
@@ -153,14 +138,7 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.role, func(t *testing.T) {
 			service := &fakeTicketingService{}
-			router := NewRouter(Dependencies{
-				DB:             fakePinger{},
-				Ticketing:      service,
-				Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-				RequestTimeout: time.Second,
-				AppEnv:         "production",
-				ProviderAuth:   ProviderAuthConfig{Secret: secret},
-			})
+			router := testRouter(Dependencies{Ticketing: service, AppEnv: "production"})
 			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Authorization", "Bearer "+signProviderClaims(t, secret, validProviderClaims(tt.role)))
 			rec := httptest.NewRecorder()
@@ -176,14 +154,7 @@ func TestProviderBearerMapsAllRolesToProtectedActors(t *testing.T) {
 func TestProviderBearerRejectsMalformedClaimsBeforeMutatingEndpoint(t *testing.T) {
 	service := &fakeTicketingService{}
 	secret := providerTestSecret()
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		ProviderAuth:   ProviderAuthConfig{Secret: secret},
-	})
+	router := testRouter(Dependencies{Ticketing: service, AppEnv: "production"})
 	token := signProviderClaims(t, secret, func() providerClaims {
 		claims := validProviderClaims(ticketing.RoleActivityAdmin)
 		claims.Department = ""
@@ -201,13 +172,7 @@ func TestProviderBearerRejectsMalformedClaimsBeforeMutatingEndpoint(t *testing.T
 
 func TestProviderBearerRejectsInvalidClaims(t *testing.T) {
 	secret := providerTestSecret()
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		ProviderAuth:   ProviderAuthConfig{Secret: secret},
-	})
+	router := testRouter(Dependencies{AppEnv: "production"})
 
 	tests := []struct {
 		name   string
@@ -270,14 +235,7 @@ func TestProviderBearerRejectsInvalidClaims(t *testing.T) {
 }
 
 func TestLocalSSOLoginAndLogoutRoutesAreRemoved(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      &fakeTicketingService{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(&fakeTicketingService{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"admin-1"}`))
 	rec := httptest.NewRecorder()
 
@@ -303,12 +261,7 @@ func TestAuthBootstrapReportsMockProfiles(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.appEnv, func(t *testing.T) {
-			router := NewRouter(Dependencies{
-				DB:             fakePinger{},
-				Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-				RequestTimeout: time.Second,
-				AppEnv:         tt.appEnv,
-			})
+			router := testRouter(Dependencies{AppEnv: tt.appEnv})
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/bootstrap", nil)
 			rec := httptest.NewRecorder()
 
@@ -321,14 +274,7 @@ func TestAuthBootstrapReportsMockProfiles(t *testing.T) {
 }
 
 func TestMockProviderTokenUsesProviderBearerPath(t *testing.T) {
-	secret := providerTestSecret()
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: secret},
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"staff-1"}`))
 	rec := httptest.NewRecorder()
 
@@ -339,13 +285,7 @@ func TestMockProviderTokenUsesProviderBearerPath(t *testing.T) {
 
 	productionReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"staff-1"}`))
 	productionRec := httptest.NewRecorder()
-	NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-		ProviderAuth:   ProviderAuthConfig{Secret: secret},
-	}).ServeHTTP(productionRec, productionReq)
+	testRouter(Dependencies{AppEnv: "production"}).ServeHTTP(productionRec, productionReq)
 	assert.Equal(t, http.StatusNotFound, productionRec.Code)
 }
 

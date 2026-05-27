@@ -138,10 +138,7 @@
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
+              "$ref": "../components/schemas/bookings.yaml#/LiftBookingBanResponse"
       "400":
         "$ref": "../components/responses.yaml#/BadRequest"
       "401":

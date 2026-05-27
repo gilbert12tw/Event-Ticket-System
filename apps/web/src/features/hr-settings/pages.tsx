@@ -12,6 +12,7 @@ import {
   CompactStatsBar,
   EmptyState,
   Field,
+  MetaList,
   ResponsiveTable,
   SelectField,
   StatusBadge,
@@ -219,24 +220,14 @@ export function HrSyncSettingsPage() {
             />
           ) : (
             <div className="summary-block">
-              <dl className="meta-list vertical">
-                <div>
-                  <dt>審核編號</dt>
-                  <dd className="mono-cell">{selected.review_id}</dd>
-                </div>
-                <div>
-                  <dt>員工</dt>
-                  <dd>{selected.employee_ref}</dd>
-                </div>
-                <div>
-                  <dt>票券</dt>
-                  <dd>{selected.ticket_id}</dd>
-                </div>
-                <div>
-                  <dt>理由</dt>
-                  <dd>{selected.reason}</dd>
-                </div>
-              </dl>
+              <MetaList
+                rows={[
+                  ["審核編號", selected.review_id, "mono-cell"],
+                  ["員工", selected.employee_ref],
+                  ["票券", selected.ticket_id],
+                  ["理由", selected.reason],
+                ]}
+              />
               {selected.status === "resolved" ? (
                 <StatusBadge tone="ok">已處理</StatusBadge>
               ) : (

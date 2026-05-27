@@ -1,8 +1,4 @@
-import type {
-  InputHTMLAttributes,
-  KeyboardEventHandler,
-  ReactNode,
-} from "react";
+import type { InputHTMLAttributes, ReactNode } from "react";
 import { type Option, type Tone } from "@/lib/ui/options";
 import { Alert as UiAlert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +30,94 @@ import { Table } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 export * from "./identity";
+export * from "./meta-list";
 export * from "./product";
+
+type BaseFieldProps = {
+  className?: string;
+  id?: string;
+  label: string;
+  name?: string;
+  required?: boolean;
+  hint?: string;
+  invalid?: boolean;
+};
+
+type ValueFieldProps = BaseFieldProps & {
+  value: string;
+  onChange: (value: string) => void;
+};
+
+type ChildrenProps = { children: ReactNode };
+type EmptyStateProps = { title: string; action: string };
+type LabelValueProps = { label: string; value: number | string };
+type ReadinessMessageProps = { label: string; message: string; tone: Tone };
+type ToneChildrenProps = ChildrenProps & { tone: Tone };
+
+type FieldProps = ValueFieldProps &
+  Pick<
+    InputHTMLAttributes<HTMLInputElement>,
+    "autoComplete" | "inputMode" | "max" | "min" | "onKeyDown" | "placeholder"
+  > & { type?: string };
+
+type TextareaFieldProps = ValueFieldProps & {
+  autoComplete?: string;
+  rows?: number;
+};
+
+type SelectFieldProps = ValueFieldProps & { options: Option[] };
+
+type ProgressMeterProps = {
+  label: string;
+  value: number;
+  max: number;
+  helper: string;
+  compact?: boolean;
+};
+
+type ResponsiveTableProps = ChildrenProps & {
+  label?: string;
+  mobileCards?: ReactNode;
+};
+
+type ControlFieldProps = BaseFieldProps & {
+  suffix: string;
+  children: (
+    fieldID: string,
+    controlName: string,
+    descriptionID: string | undefined,
+  ) => ReactNode;
+};
+
+function ControlField({
+  children,
+  className,
+  hint,
+  id,
+  invalid = false,
+  label,
+  name,
+  required = false,
+  suffix,
+}: ControlFieldProps) {
+  const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-${suffix}`;
+  const descriptionID = hint ? `${fieldID}-hint` : undefined;
+  return (
+    <UiField className={className} data-invalid={invalid || undefined}>
+      <FieldLabel htmlFor={fieldID}>
+        {label}
+        {required && <em aria-label="必填"> *</em>}
+      </FieldLabel>
+      {children(fieldID, name ?? fieldID, descriptionID)}
+      {hint &&
+        (invalid ? (
+          <FieldError id={descriptionID}>{hint}</FieldError>
+        ) : (
+          <FieldDescription id={descriptionID}>{hint}</FieldDescription>
+        ))}
+    </UiField>
+  );
+}
 
 export function Field({
   autoComplete,
@@ -53,57 +136,29 @@ export function Field({
   required = false,
   hint,
   invalid = false,
-}: {
-  autoComplete?: string;
-  className?: string;
-  id?: string;
-  inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];
-  label: string;
-  max?: InputHTMLAttributes<HTMLInputElement>["max"];
-  min?: InputHTMLAttributes<HTMLInputElement>["min"];
-  name?: string;
-  onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
-  placeholder?: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  required?: boolean;
-  hint?: string;
-  invalid?: boolean;
-}) {
-  const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-field`;
-  const descriptionID = `${fieldID}-hint`;
-  const autoCompleteValue = autoComplete ?? "off";
-  const controlName = name ?? fieldID;
+}: FieldProps) {
+  const fieldProps = { className, hint, id, invalid, label, name, required };
   return (
-    <UiField className={className} data-invalid={invalid || undefined}>
-      <FieldLabel htmlFor={fieldID}>
-        {label}
-        {required && <em aria-label="必填"> *</em>}
-      </FieldLabel>
-      <Input
-        autoComplete={autoCompleteValue}
-        id={fieldID}
-        inputMode={inputMode}
-        max={max}
-        min={min}
-        name={controlName}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        required={required}
-        aria-invalid={invalid || undefined}
-        aria-describedby={hint ? descriptionID : undefined}
-      />
-      {hint &&
-        (invalid ? (
-          <FieldError id={descriptionID}>{hint}</FieldError>
-        ) : (
-          <FieldDescription id={descriptionID}>{hint}</FieldDescription>
-        ))}
-    </UiField>
+    <ControlField {...fieldProps} suffix="field">
+      {(fieldID, controlName, descriptionID) => (
+        <Input
+          autoComplete={autoComplete ?? "off"}
+          id={fieldID}
+          inputMode={inputMode}
+          max={max}
+          min={min}
+          name={controlName}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          required={required}
+          aria-invalid={invalid || undefined}
+          aria-describedby={descriptionID}
+        />
+      )}
+    </ControlField>
   );
 }
 
@@ -119,47 +174,24 @@ export function TextareaField({
   hint,
   invalid = false,
   rows,
-}: {
-  autoComplete?: string;
-  className?: string;
-  id?: string;
-  label: string;
-  name?: string;
-  value: string;
-  onChange: (value: string) => void;
-  required?: boolean;
-  hint?: string;
-  invalid?: boolean;
-  rows?: number;
-}) {
-  const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-textarea`;
-  const descriptionID = `${fieldID}-hint`;
-  const autoCompleteValue = autoComplete ?? "off";
-  const controlName = name ?? fieldID;
+}: TextareaFieldProps) {
+  const fieldProps = { className, hint, id, invalid, label, name, required };
   return (
-    <UiField className={className} data-invalid={invalid || undefined}>
-      <FieldLabel htmlFor={fieldID}>
-        {label}
-        {required && <em aria-label="必填"> *</em>}
-      </FieldLabel>
-      <Textarea
-        autoComplete={autoCompleteValue}
-        id={fieldID}
-        name={controlName}
-        rows={rows}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        required={required}
-        aria-invalid={invalid || undefined}
-        aria-describedby={hint ? descriptionID : undefined}
-      />
-      {hint &&
-        (invalid ? (
-          <FieldError id={descriptionID}>{hint}</FieldError>
-        ) : (
-          <FieldDescription id={descriptionID}>{hint}</FieldDescription>
-        ))}
-    </UiField>
+    <ControlField {...fieldProps} suffix="textarea">
+      {(fieldID, controlName, descriptionID) => (
+        <Textarea
+          autoComplete={autoComplete ?? "off"}
+          id={fieldID}
+          name={controlName}
+          rows={rows}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          required={required}
+          aria-invalid={invalid || undefined}
+          aria-describedby={descriptionID}
+        />
+      )}
+    </ControlField>
   );
 }
 
@@ -174,70 +206,49 @@ export function SelectField({
   required = false,
   hint,
   invalid = false,
-}: {
-  id?: string;
-  className?: string;
-  label: string;
-  name?: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Option[];
-  required?: boolean;
-  hint?: string;
-  invalid?: boolean;
-}) {
+}: SelectFieldProps) {
+  const fieldProps = { className, hint, id, invalid, label, name, required };
   const emptyValue = "__empty";
   const triggerValue = value === "" ? emptyValue : value;
-  const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-select`;
-  const descriptionID = `${fieldID}-hint`;
-  const controlName = name ?? fieldID;
   const selectedOption = options.find(
     (option) => (option.value || emptyValue) === triggerValue,
   );
   return (
-    <UiField className={className} data-invalid={invalid || undefined}>
-      <FieldLabel htmlFor={fieldID}>
-        {label}
-        {required && <em aria-label="必填"> *</em>}
-      </FieldLabel>
-      <Select
-        name={controlName}
-        required={required}
-        value={triggerValue}
-        onValueChange={(next) => onChange(next === emptyValue ? "" : next)}
-      >
-        <SelectTrigger
-          className="w-full"
-          id={fieldID}
+    <ControlField {...fieldProps} suffix="select">
+      {(fieldID, controlName, descriptionID) => (
+        <Select
           name={controlName}
-          aria-label={label}
-          aria-invalid={invalid || undefined}
-          aria-describedby={hint ? descriptionID : undefined}
+          required={required}
+          value={triggerValue}
+          onValueChange={(next) => onChange(next === emptyValue ? "" : next)}
         >
-          <SelectValue placeholder={selectedOption?.label || label} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map((option) => (
-              <SelectItem
-                key={option.value || emptyValue}
-                helper={option.helper}
-                textValue={option.label}
-                value={option.value || emptyValue}
-              >
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      {hint &&
-        (invalid ? (
-          <FieldError id={descriptionID}>{hint}</FieldError>
-        ) : (
-          <FieldDescription id={descriptionID}>{hint}</FieldDescription>
-        ))}
-    </UiField>
+          <SelectTrigger
+            className="w-full"
+            id={fieldID}
+            name={controlName}
+            aria-label={label}
+            aria-invalid={invalid || undefined}
+            aria-describedby={descriptionID}
+          >
+            <SelectValue placeholder={selectedOption?.label || label} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {options.map((option) => (
+                <SelectItem
+                  key={option.value || emptyValue}
+                  helper={option.helper}
+                  textValue={option.label}
+                  value={option.value || emptyValue}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      )}
+    </ControlField>
   );
 }
 
@@ -245,11 +256,7 @@ export function ReadinessMessage({
   label,
   message,
   tone,
-}: {
-  label: string;
-  message: string;
-  tone: Tone;
-}) {
+}: ReadinessMessageProps) {
   return (
     <div className="publish-check" aria-live="polite">
       <StatusBadge tone={tone}>{label}</StatusBadge>
@@ -300,10 +307,7 @@ export function SegmentedFilter({
 export function Alert({
   children,
   tone,
-}: {
-  children: ReactNode;
-  tone: Exclude<Tone, "neutral">;
-}) {
+}: ChildrenProps & { tone: Exclude<Tone, "neutral"> }) {
   const urgent = tone === "fail" || tone === "warn";
   return (
     <UiAlert
@@ -316,13 +320,7 @@ export function Alert({
   );
 }
 
-export function StatusBadge({
-  children,
-  tone,
-}: {
-  children: ReactNode;
-  tone: Tone;
-}) {
+export function StatusBadge({ children, tone }: ToneChildrenProps) {
   return (
     <Badge
       className={`status-badge ${tone}`}
@@ -334,13 +332,7 @@ export function StatusBadge({
   );
 }
 
-export function Kpi({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}) {
+export function Kpi({ label, value }: LabelValueProps) {
   return (
     <Card className="kpi" size="sm">
       <strong>{value}</strong>
@@ -355,13 +347,7 @@ export function ProgressMeter({
   max,
   helper,
   compact = false,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  helper: string;
-  compact?: boolean;
-}) {
+}: ProgressMeterProps) {
   const ratio = max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0;
   return (
     <div
@@ -383,13 +369,7 @@ export function ProgressMeter({
   );
 }
 
-export function EmptyState({
-  title,
-  action,
-}: {
-  title: string;
-  action: string;
-}) {
+export function EmptyState({ title, action }: EmptyStateProps) {
   return (
     <UiEmpty className="empty-state">
       <EmptyHeader>
@@ -400,7 +380,7 @@ export function EmptyState({
   );
 }
 
-export function DangerZonePanel({ children }: { children: ReactNode }) {
+export function DangerZonePanel({ children }: ChildrenProps) {
   return <Card className="danger-zone-panel">{children}</Card>;
 }
 
@@ -408,11 +388,7 @@ export function ResponsiveTable({
   children,
   label = "資料表",
   mobileCards,
-}: {
-  children: ReactNode;
-  label?: string;
-  mobileCards?: ReactNode;
-}) {
+}: ResponsiveTableProps) {
   return (
     <div
       className={

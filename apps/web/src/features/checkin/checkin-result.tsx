@@ -1,6 +1,6 @@
 import type { CheckinResponse } from "@/lib/api";
 import { formatDate } from "@/lib/formatting";
-import { StatusBadge } from "@/components/shared";
+import { MetaList, StatusBadge } from "@/components/shared";
 import { checkinStatusView, localizedMessage } from "@/lib/ui/options";
 
 export function CheckinResult({ result }: { result: CheckinResponse }) {
@@ -24,74 +24,77 @@ export function CheckinResult({ result }: { result: CheckinResponse }) {
             ? "請核對持票人、部門、城市與同行人數後放行。"
             : "請依拒絕原因處理，必要時轉交主辦人工確認。"}
       </p>
-      <dl className="meta-list vertical">
-        <div>
-          <dt>持票人</dt>
-          <dd>
-            {holder?.display_name || result.employee_id || "未知"}
-            <span className="table-muted">
-              {[holder?.department, holder?.city].filter(Boolean).join(" / ") ||
-                "未提供部門與城市"}
-            </span>
-          </dd>
-        </div>
-        <div>
-          <dt>活動</dt>
-          <dd>
-            {result.event_title || result.event_id || "未提供"}
-            {result.event_title && (
-              <span className="table-muted">{result.event_id}</span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>同行人數</dt>
-          <dd>
-            {result.family_count ?? 0} 人
-            <span className="table-muted">隨持票員工入場，非轉讓票券。</span>
-          </dd>
-        </div>
-        {result.duplicate && (
-          <div>
-            <dt>首次核銷</dt>
-            <dd>
-              {formatDate(firstRedemptionAt)}
+      <MetaList
+        rows={[
+          [
+            "持票人",
+            <>
+              {holder?.display_name || result.employee_id || "未知"}
               <span className="table-muted">
-                裝置 {result.first_scanned_by || "未記錄"}
+                {[holder?.department, holder?.city]
+                  .filter(Boolean)
+                  .join(" / ") || "未提供部門與城市"}
               </span>
-            </dd>
-          </div>
-        )}
-        {result.status === "rejected" && (
-          <div>
-            <dt>處置建議</dt>
-            <dd>{recoveryCopy(reasonCode, result.rejection_message)}</dd>
-          </div>
-        )}
-        <div>
-          <dt>票券</dt>
-          <dd>{result.ticket_id}</dd>
-        </div>
-        <div>
-          <dt>員工</dt>
-          <dd>{result.employee_id}</dd>
-        </div>
-        <div>
-          <dt>掃描時間</dt>
-          <dd>{formatDate(result.scanned_at || result.first_scanned_at)}</dd>
-        </div>
-        {reasonCode && (
-          <div>
-            <dt>{result.duplicate ? "重複原因" : "拒絕原因"}</dt>
-            <dd>
-              {reasonCode}
-              <span className="table-muted">
-                {localizedMessage(result.rejection_message || reasonCode)}
-              </span>
-            </dd>
-          </div>
-        )}
-      </dl>
+            </>,
+          ],
+          [
+            "活動",
+            <>
+              {result.event_title || result.event_id || "未提供"}
+              {result.event_title && (
+                <span className="table-muted">{result.event_id}</span>
+              )}
+            </>,
+          ],
+          [
+            "同行人數",
+            <>
+              {result.family_count ?? 0} 人
+              <span className="table-muted">隨持票員工入場，非轉讓票券。</span>
+            </>,
+          ],
+          ...(result.duplicate
+            ? ([
+                [
+                  "首次核銷",
+                  <>
+                    {formatDate(firstRedemptionAt)}
+                    <span className="table-muted">
+                      裝置 {result.first_scanned_by || "未記錄"}
+                    </span>
+                  </>,
+                ],
+              ] as const)
+            : []),
+          ...(result.status === "rejected"
+            ? ([
+                [
+                  "處置建議",
+                  recoveryCopy(reasonCode, result.rejection_message),
+                ],
+              ] as const)
+            : []),
+          ["票券", result.ticket_id],
+          ["員工", result.employee_id],
+          [
+            "掃描時間",
+            formatDate(result.scanned_at || result.first_scanned_at),
+          ],
+          ...(reasonCode
+            ? ([
+                [
+                  result.duplicate ? "重複原因" : "拒絕原因",
+                  <>
+                    {reasonCode}
+                    <span className="table-muted">
+                      {localizedMessage(result.rejection_message || reasonCode)}
+                    </span>
+                  </>,
+                ],
+              ] as const)
+            : []),
+        ]}
+      />
     </div>
   );
 }

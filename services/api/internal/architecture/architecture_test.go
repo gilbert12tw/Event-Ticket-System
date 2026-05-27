@@ -54,7 +54,7 @@ func TestHandwrittenWebFilesStayUnderLimit(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || !isWebSource(path) || isVendoredWebSource(path) {
+		if entry.IsDir() || !isWebSource(path) {
 			return nil
 		}
 		data, err := os.ReadFile(path)
@@ -102,9 +102,31 @@ func TestTicketingDoesNotImportHTTPAPI(t *testing.T) {
 	assert.Empty(t, offenders, "ticketing must not import httpapi: %s", strings.Join(offenders, ", "))
 }
 
+func TestPostgresMigrationDDLStaysInVersionedSQL(t *testing.T) {
+	root := repoRoot(t)
+	migratePath := filepath.Join(root, "services", "api", "internal", "postgres", "migrate.go")
+	migrateCode, err := os.ReadFile(migratePath)
+	require.NoError(t, err)
+
+	for _, fragment := range []string{
+		"CREATE TABLE",
+		"CREATE INDEX",
+		"CREATE UNIQUE INDEX",
+		"ALTER TABLE",
+		"INSERT INTO",
+	} {
+		assert.NotContains(t, string(migrateCode), fragment,
+			"database DDL belongs in versioned SQL files, not Go constants")
+	}
+
+	schemaPath := filepath.Join(root, "services", "api", "internal", "postgres", "schema.sql")
+	schema, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(schema), "CREATE TABLE IF NOT EXISTS events")
+}
+
 func TestPhase1DocsDoNotClaimDeferredInfrastructureIsComplete(t *testing.T) {
 	root := repoRoot(t)
-	docsRoot := filepath.Join(root, "docs")
 	forbidden := []string{
 		"phase 1 uses microservices",
 		"phase 1 implements microservices",
@@ -116,36 +138,13 @@ func TestPhase1DocsDoNotClaimDeferredInfrastructureIsComplete(t *testing.T) {
 		"phase 1 has cross-region high availability",
 	}
 
-	var offenders []string
-	for _, path := range []string{filepath.Join(root, "AGENTS.md"), docsRoot} {
-		err := filepath.WalkDir(path, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() || !strings.HasSuffix(path, ".md") {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			content := strings.ToLower(string(data))
-			for _, phrase := range forbidden {
-				if strings.Contains(content, phrase) {
-					rel, _ := filepath.Rel(root, path)
-					offenders = append(offenders, rel+": "+phrase)
-				}
-			}
-			return nil
-		})
-		require.NoError(t, err)
-	}
+	offenders, err := forbiddenMarkdownPhrases(root, forbidden)
+	require.NoError(t, err)
 	assert.Empty(t, offenders, "Phase 1 docs claim deferred infrastructure is complete: %s", strings.Join(offenders, "; "))
 }
 
 func TestPhase2DocsDoNotClaimDeferredInfraIsRequired(t *testing.T) {
 	root := repoRoot(t)
-	docsRoot := filepath.Join(root, "docs")
 	forbidden := []string{
 		"phase 2 requires kafka",
 		"phase 2 uses kafka",
@@ -190,30 +189,8 @@ func TestPhase2DocsDoNotClaimDeferredInfraIsRequired(t *testing.T) {
 		"service mesh completed in phase 2",
 	}
 
-	var offenders []string
-	for _, path := range []string{filepath.Join(root, "AGENTS.md"), docsRoot} {
-		err := filepath.WalkDir(path, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() || !strings.HasSuffix(path, ".md") {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			content := strings.ToLower(string(data))
-			for _, phrase := range forbidden {
-				if strings.Contains(content, phrase) {
-					rel, _ := filepath.Rel(root, path)
-					offenders = append(offenders, rel+": "+phrase)
-				}
-			}
-			return nil
-		})
-		require.NoError(t, err)
-	}
+	offenders, err := forbiddenMarkdownPhrases(root, forbidden)
+	require.NoError(t, err)
 	assert.Empty(t, offenders, "Phase 2 docs claim deferred infrastructure is required: %s", strings.Join(offenders, "; "))
 }
 
@@ -293,6 +270,36 @@ func extractEventRegistryFromDoc(t *testing.T, content string) []string {
 	return types
 }
 
+func forbiddenMarkdownPhrases(root string, forbidden []string) ([]string, error) {
+	var offenders []string
+	for _, path := range []string{filepath.Join(root, "AGENTS.md"), filepath.Join(root, "docs")} {
+		err := filepath.WalkDir(path, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".md") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			content := strings.ToLower(string(data))
+			for _, phrase := range forbidden {
+				if strings.Contains(content, phrase) {
+					rel, _ := filepath.Rel(root, path)
+					offenders = append(offenders, rel+": "+phrase)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return offenders, nil
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
@@ -312,9 +319,4 @@ func isWebSource(path string) bool {
 		}
 	}
 	return false
-}
-
-func isVendoredWebSource(path string) bool {
-	normalized := filepath.ToSlash(path)
-	return strings.HasSuffix(normalized, "apps/web/src/components/ui/sidebar.tsx")
 }

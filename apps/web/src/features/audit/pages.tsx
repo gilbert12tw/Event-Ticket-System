@@ -7,6 +7,7 @@ import {
   CompactStatsBar,
   EmptyState,
   Field,
+  MetaList,
   SelectField,
   StatusBadge,
 } from "@/components/shared";
@@ -283,36 +284,36 @@ export function AdminAuditPage() {
             />
           )}
           {selected && (
-            <dl className="meta-list audit-detail">
-              <div>
-                <dt>稽核編號</dt>
-                <dd className="mono-cell id-cell">{selected.audit_id}</dd>
-              </div>
-              <div>
-                <dt>執行者</dt>
-                <dd>
-                  {selected.actor_id}
-                  <span className="table-muted">
-                    {roleViewLabel(selected.role)}
-                  </span>
-                </dd>
-              </div>
-              <div>
-                <dt>物件</dt>
-                <dd>
-                  {entityTypeLabel(selected.entity_type)}
-                  <span className="table-muted mono-cell">
-                    {selected.entity_id}
-                  </span>
-                </dd>
-              </div>
-              <div className="full">
-                <dt>稽核中繼資料，敏感值已由系統遮蔽</dt>
-                <dd>
-                  <AuditMetadata metadata={selected.metadata} />
-                </dd>
-              </div>
-            </dl>
+            <MetaList
+              className="audit-detail"
+              rows={[
+                ["稽核編號", selected.audit_id, "mono-cell id-cell"],
+                [
+                  "執行者",
+                  <>
+                    {selected.actor_id}
+                    <span className="table-muted">
+                      {roleViewLabel(selected.role)}
+                    </span>
+                  </>,
+                ],
+                [
+                  "物件",
+                  <>
+                    {entityTypeLabel(selected.entity_type)}
+                    <span className="table-muted mono-cell">
+                      {selected.entity_id}
+                    </span>
+                  </>,
+                ],
+                [
+                  "稽核中繼資料，敏感值已由系統遮蔽",
+                  <AuditMetadata metadata={selected.metadata} />,
+                  undefined,
+                  "full",
+                ],
+              ]}
+            />
           )}
         </aside>
       </Card>

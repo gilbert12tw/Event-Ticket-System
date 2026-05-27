@@ -29,7 +29,7 @@ data) are NOT retroactively penalised.
 
 ### New table: `booking_bans`
 
-Add to `SchemaStatements` in `services/api/internal/postgres/migrate.go`:
+Add to `services/api/internal/postgres/schema.sql`, the versioned schema source parsed by the migration runner:
 
 ```sql
 CREATE TABLE IF NOT EXISTS booking_bans (
@@ -86,7 +86,7 @@ waitlisted registration after an active booking ban has been lifted.
 
 | File | Change |
 |---|---|
-| `services/api/internal/postgres/migrate.go` | Append `booking_bans` DDL + index to `SchemaStatements`; replace full registration uniqueness with active-registration partial uniqueness |
+| `services/api/internal/postgres/schema.sql` | Append `booking_bans` DDL + index; replace full registration uniqueness with active-registration partial uniqueness |
 | `services/api/internal/postgres/migrate_test.go` | Assert `booking_bans` exists after migration; assert ban and active-registration partial indexes are in schema; add PII-column absence test for `booking_bans`; add `dropSchema` entry |
 | `services/api/internal/ticketing/errors.go` | Add `AppError.Code string` field + `bookedBanned()` constructor returning 422 + `"BOOKING_BANNED"` |
 | `services/api/internal/httpapi/response.go` | Update `envelope` struct to include `"error_code"` field; propagate code from `AppError` in `writeError` / `writeServiceError` |
@@ -96,12 +96,14 @@ waitlisted registration after an active booking ban has been lifted.
 | `services/api/internal/ticketing/booking_ban_service.go` | **New file.** Contains `checkBookingBanTx`, `createBookingBanTx`, `LiftBookingBan` |
 | `services/api/internal/httpapi/handlers_registrations.go` | Add `DELETE /admin/events/{event_id}/bans/{target_employee_id}` handler calling `LiftBookingBan` |
 | `services/api/internal/httpapi/routes.go` | Register the new lift-ban route |
-| `services/api/internal/ticketing/booking_ban_service_test.go` | **New file.** Integration tests (see Test Cases below) |
+| `services/api/internal/ticketing/booking_ban_service_test.go` | **New file.** Core booking-ban integration tests (see Test Cases below) |
+| `services/api/internal/ticketing/booking_ban_lift_service_test.go` | **New file.** Lift/re-ban integration tests (see Test Cases below) |
 
 ### New file size budget
 
 - `booking_ban_service.go`: target ≤ 80 lines (3 functions)
 - `booking_ban_service_test.go`: target ≤ 200 lines
+- `booking_ban_lift_service_test.go`: target ≤ 300 lines
 
 ---
 
@@ -201,7 +203,7 @@ func bookingBanned(message string) AppError {
 
 ### Unit / Static
 
-1. `TestSchemaIncludesBookingBans` — asserts `SchemaStatements` contains `booking_bans`,
+1. `TestSchemaIncludesBookingBans` — asserts the parsed versioned schema contains `booking_bans`,
    `booking_bans_unique_active` (partial index), and `idx_booking_bans_employee`.
 
 ### Integration (`TEST_DATABASE_URL` required)
@@ -276,7 +278,7 @@ All tests use isolated schemas via `newMigrationTestPool`.
 
 ## Implementation Order
 
-1. **`migrate.go`** — add `booking_bans` DDL + index.
+1. **`schema.sql`** — add `booking_bans` DDL + index.
 2. **`migrate_test.go`** — static schema assertion + `dropSchema` update.
 3. **`errors.go`** — add `Code` field to `AppError`; add `bookingBanned()`.
 4. **`response.go`** — propagate `error_code` in JSON envelope.
@@ -285,7 +287,7 @@ All tests use isolated schemas via `newMigrationTestPool`.
 7. **`registrations_service.go`** — call `checkBookingBanTx` inside `Book()`.
 8. **`registrations_admin_service.go`** — call `createBookingBanTx` inside `CancelRegistration()`.
 9. **`handlers_registrations.go` + `routes.go`** — `DELETE /events/{id}/bans/{employee_id}`.
-10. **`booking_ban_service_test.go`** — integration tests 2–10.
+10. **`booking_ban_service_test.go` + `booking_ban_lift_service_test.go`** — integration tests 2–11.
 11. **`migrate_test.go`** — integration tests for `booking_bans` table (test 1).
 
 Each step is independently compilable and committable. Steps 1–5 carry zero behaviour change.
@@ -301,5 +303,5 @@ Each step is independently compilable and committable. Steps 1–5 carry zero be
 - [ ] Audit log entries for both `booking.ban_created` and `booking.ban_lifted`.
 - [ ] `LiftBookingBan` requires `activity_admin` or `system_admin` role.
 - [ ] Phase 1 data retroactive ban test passes.
-- [ ] No OLTP table altered by the migration.
-- [ ] All 10 test cases covered.
+- [ ] No destructive OLTP data rewrite; the active-registration uniqueness migration is intentional and covered by schema tests.
+- [ ] All 11 test cases covered.

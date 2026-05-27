@@ -1,4 +1,4 @@
-import { EmptyState, StatusBadge } from "@/components/shared";
+import { EmptyState, MetaList, StatusBadge } from "@/components/shared";
 import type { EventSummary } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { departmentLabel, eventStatusView, siteLabel } from "@/lib/ui/options";
@@ -19,29 +19,26 @@ export function AdminCreateResult({ event }: { event: EventSummary | null }) {
             {eventStatusView(event.status).label}
           </StatusBadge>
           <h3>{event.title}</h3>
-          <dl className="meta-list vertical">
-            <div>
-              <dt>活動編號</dt>
-              <dd>{event.event_id}</dd>
-            </div>
-            <div>
-              <dt>票數類型</dt>
-              <dd>{event.capacity_type === "unlimited" ? "不限量" : "限量"}</dd>
-            </div>
-            <div>
-              <dt>容量</dt>
-              <dd>
-                {event.capacity_type === "unlimited" ? "不限" : event.capacity}
-              </dd>
-            </div>
-            <div>
-              <dt>規則</dt>
-              <dd>
-                {departmentLabel(event.rule.department)} /{" "}
-                {siteLabel(event.rule.site)} / G{event.rule.min_grade}+
-              </dd>
-            </div>
-          </dl>
+          <MetaList
+            rows={[
+              ["活動編號", event.event_id],
+              [
+                "票數類型",
+                event.capacity_type === "unlimited" ? "不限量" : "限量",
+              ],
+              [
+                "容量",
+                event.capacity_type === "unlimited" ? "不限" : event.capacity,
+              ],
+              [
+                "規則",
+                <>
+                  {departmentLabel(event.rule.department)} /{" "}
+                  {siteLabel(event.rule.site)} / G{event.rule.min_grade}+
+                </>,
+              ],
+            ]}
+          />
         </div>
       )}
     </Card>

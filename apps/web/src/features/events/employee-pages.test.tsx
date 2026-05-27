@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bookEvent, cancelMyRegistration, listEvents } from "@/lib/api";
 import { EmployeeEventsPage } from "./employee-pages";
-import { claims, eventFixture } from "./employee-pages-test-helpers";
+import { claims, eventFixture } from "@/test/event-fixtures";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -20,6 +20,12 @@ const mockListEvents = vi.mocked(listEvents);
 const mockBookEvent = vi.mocked(bookEvent);
 const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
 
+type EventOverrides = Parameters<typeof eventFixture>[0];
+
+function showEvents(...events: EventOverrides[]) {
+  mockListEvents.mockResolvedValue(events.map((event) => eventFixture(event)));
+}
+
 describe("EmployeeEventsPage", () => {
   beforeEach(() => {
     mockListEvents.mockReset();
@@ -29,24 +35,24 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("renders a compact formal event list without debug identity panels", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
+    showEvents(
+      {
         event_id: "evt-limited",
         title: "限量活動",
         capacity_type: "limited",
         capacity: 5,
         remaining_capacity: 3,
         current_user_status: "cancelled",
-      }),
-      eventFixture({
+      },
+      {
         event_id: "evt-unlimited",
         title: "不限量活動",
         capacity_type: "unlimited",
         capacity: null,
         remaining_capacity: null,
         allows_family: true,
-      }),
-    ]);
+      },
+    );
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -63,13 +69,11 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("blocks cancelled registrations from appearing as bookable actions", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
-        current_user_status: "cancelled",
-        event_id: "evt-cancelled",
-        title: "已取消活動",
-      }),
-    ]);
+    showEvents({
+      current_user_status: "cancelled",
+      event_id: "evt-cancelled",
+      title: "已取消活動",
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -88,33 +92,31 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("shows cooldown feedback and disables self-cancel after registration close", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
-        current_user_registration_id: "reg-closed",
-        current_user_status: "confirmed",
+    showEvents({
+      current_user_registration_id: "reg-closed",
+      current_user_status: "confirmed",
+      event_id: "evt-cooldown",
+      no_show_cooldown: {
+        active: true,
+        applies_to: "limited",
+        until: "2026-08-01T00:00:00Z",
+        reason: "no_show_cooldown",
+      },
+      registration_close: "2020-01-01T00:00:00Z",
+      title: "冷卻期活動",
+      eligibility: {
         event_id: "evt-cooldown",
+        eligible: true,
+        can_book: false,
+        reasons: [],
+        warnings: [],
         no_show_cooldown: {
           active: true,
-          applies_to: "limited",
           until: "2026-08-01T00:00:00Z",
           reason: "no_show_cooldown",
         },
-        registration_close: "2020-01-01T00:00:00Z",
-        title: "冷卻期活動",
-        eligibility: {
-          event_id: "evt-cooldown",
-          eligible: true,
-          can_book: false,
-          reasons: [],
-          warnings: [],
-          no_show_cooldown: {
-            active: true,
-            until: "2026-08-01T00:00:00Z",
-            reason: "no_show_cooldown",
-          },
-        },
-      }),
-    ]);
+      },
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -130,29 +132,27 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("renders cross-city warning and keeps booking link enabled when can_book=true", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
+    showEvents({
+      event_id: "evt-crosscity",
+      title: "Hsinchu Event",
+      event_city: "Hsinchu",
+      eligibility: {
         event_id: "evt-crosscity",
-        title: "Hsinchu Event",
-        event_city: "Hsinchu",
-        eligibility: {
-          event_id: "evt-crosscity",
-          eligible: true,
-          can_book: true,
-          reasons: [],
-          warnings: [
-            {
-              code: "cross_city",
-              message:
-                "This event is in Hsinchu; your registered city is Taipei.",
-              employee_city: "Taipei",
-              event_city: "Hsinchu",
-            },
-          ],
-          no_show_cooldown: { active: false },
-        },
-      }),
-    ]);
+        eligible: true,
+        can_book: true,
+        reasons: [],
+        warnings: [
+          {
+            code: "cross_city",
+            message:
+              "This event is in Hsinchu; your registered city is Taipei.",
+            employee_city: "Taipei",
+            event_city: "Hsinchu",
+          },
+        ],
+        no_show_cooldown: { active: false },
+      },
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -164,20 +164,18 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("disables booking and shows reason when can_book=false", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
+    showEvents({
+      event_id: "evt-ineligible",
+      title: "Legal Event",
+      eligibility: {
         event_id: "evt-ineligible",
-        title: "Legal Event",
-        eligibility: {
-          event_id: "evt-ineligible",
-          eligible: false,
-          can_book: false,
-          reasons: ["department does not match"],
-          warnings: [],
-          no_show_cooldown: { active: false },
-        },
-      }),
-    ]);
+        eligible: false,
+        can_book: false,
+        reasons: ["department does not match"],
+        warnings: [],
+        no_show_cooldown: { active: false },
+      },
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -191,14 +189,12 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("renders event without eligibility object without crashing", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
-        event_id: "evt-noelig",
-        title: "No Eligibility Event",
-        eligible: true,
-        eligibility_reason: "eligible",
-      }),
-    ]);
+    showEvents({
+      event_id: "evt-noelig",
+      title: "No Eligibility Event",
+      eligible: true,
+      eligibility_reason: "eligible",
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -206,14 +202,12 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("shows a disabled blocker action for unavailable event rows", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
-        eligible: false,
-        eligibility_reason: "department Sales is not eligible",
-        event_id: "evt-blocked",
-        title: "不可報名活動",
-      }),
-    ]);
+    showEvents({
+      eligible: false,
+      eligibility_reason: "department Sales is not eligible",
+      event_id: "evt-blocked",
+      title: "不可報名活動",
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -233,12 +227,11 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("opens event detail from list booking actions instead of submitting", async () => {
-    const event = eventFixture({
+    showEvents({
       event_id: "evt-open",
       title: "開放報名活動",
       remaining_capacity: 2,
     });
-    mockListEvents.mockResolvedValue([event]);
 
     render(<EmployeeEventsPage claims={claims} />);
 
@@ -252,13 +245,11 @@ describe("EmployeeEventsPage", () => {
   });
 
   it("dismisses cancellation confirmation without calling the API", async () => {
-    mockListEvents.mockResolvedValue([
-      eventFixture({
-        current_user_registration_id: "R-keep",
-        current_user_status: "confirmed",
-        title: "保留報名活動",
-      }),
-    ]);
+    showEvents({
+      current_user_registration_id: "R-keep",
+      current_user_status: "confirmed",
+      title: "保留報名活動",
+    });
 
     render(<EmployeeEventsPage claims={claims} />);
 

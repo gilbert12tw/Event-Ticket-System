@@ -9,19 +9,8 @@ import (
 )
 
 func TestUnlimitedEventBookingConfirmsAndPersistsFamilyCount(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:        "Open House",
-		Location:     "Taipei HQ",
-		CapacityType: CapacityTypeUnlimited,
-		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
+	service, ctx := newRegistrationTest(t)
+	event := createUnlimitedEvent(t, service, ctx)
 	assert.True(t, event.AllowsFamily, "unlimited create should auto-enable allows_family")
 
 	first, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-1", FamilyCount: 3})
@@ -43,20 +32,9 @@ func TestUnlimitedEventBookingConfirmsAndPersistsFamilyCount(t *testing.T) {
 }
 
 func TestUnlimitedBookingRejectsFamilyCountOverCap(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:        "Open House",
-		Location:     "Taipei HQ",
-		CapacityType: CapacityTypeUnlimited,
-		Status:       EventStatusPublished,
-		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
-	require.NoError(t, err)
-	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-cap", FamilyCount: 11})
+	service, ctx := newRegistrationTest(t)
+	event := createUnlimitedEvent(t, service, ctx)
+	_, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-cap", FamilyCount: 11})
 	require.Error(t, err, "family_count=11 should error")
 	assert.Equal(t, 400, ErrorStatus(err))
 	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-neg", FamilyCount: -1})
@@ -65,12 +43,8 @@ func TestUnlimitedBookingRejectsFamilyCountOverCap(t *testing.T) {
 }
 
 func TestLimitedBookingRejectsFamilyCount(t *testing.T) {
-	service, cleanup := newIntegrationService(t)
-	defer cleanup()
-	ctx := context.Background()
-	require.NoError(t, service.SeedDemoData(ctx))
-	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+	service, ctx := newRegistrationTest(t)
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
 		Title:    "Limited Hike",
 		Location: "Taipei HQ",
 		Capacity: 5,
@@ -89,12 +63,26 @@ func TestLimitedBookingRejectsFamilyCount(t *testing.T) {
 }
 
 func TestUnlimitedBookingCancelAndRebook(t *testing.T) {
+	service, ctx := newRegistrationTest(t)
+	event := createUnlimitedEvent(t, service, ctx)
+	booked, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-cancel", FamilyCount: 2})
+	require.NoError(t, err)
+	_, err = service.CancelRegistration(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, booked.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "cancel-1", Reason: "change of plans"})
+	require.NoError(t, err)
+}
+
+func newRegistrationTest(t *testing.T) (*Service, context.Context) {
+	t.Helper()
 	service, cleanup := newIntegrationService(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 	ctx := context.Background()
 	require.NoError(t, service.SeedDemoData(ctx))
-	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+	return service, ctx
+}
+
+func createUnlimitedEvent(t *testing.T, service *Service, ctx context.Context) EventSummary {
+	t.Helper()
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
 		Title:        "Open House",
 		Location:     "Taipei HQ",
 		CapacityType: CapacityTypeUnlimited,
@@ -102,8 +90,5 @@ func TestUnlimitedBookingCancelAndRebook(t *testing.T) {
 		Rule:         RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	booked, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "unl-cancel", FamilyCount: 2})
-	require.NoError(t, err)
-	_, err = service.CancelRegistration(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, booked.Registration.RegistrationID, CancelRegistrationRequest{IdempotencyKey: "cancel-1", Reason: "change of plans"})
-	require.NoError(t, err)
+	return event
 }

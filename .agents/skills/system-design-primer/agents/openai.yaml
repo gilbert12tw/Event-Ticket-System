@@ -1,4 +1,0 @@
-interface:
-  display_name: "System Design Primer"
-  short_description: "System design interview and architecture guide"
-  default_prompt: "Use $system-design-primer to work through a system design interview problem with requirements, estimates, architecture, tradeoffs, and scaling concerns."

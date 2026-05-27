@@ -76,15 +76,24 @@ Current implementation slice:
 - Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus and Grafana with a provisioned `CETS Observability` dashboard. This is a review/demo profile, not a required production backing service.
 
 ```text
-metrics (prometheus-style):
-  cets_db_pool_wait_seconds_bucket{le=...}
+current shipped metrics (prometheus-style):
+  cets_http_requests_total{route, method, status_class}
+  cets_http_request_seconds_bucket{route, method, status_class}
+  cets_db_pool_acquire_wait_seconds_total
+  cets_db_pool_acquire_count_total
+  cets_db_pool_conns{state}
+  cets_db_lock_waiting_sessions
+  cets_outbox_pending_total{event_type, status}
+  cets_outbox_oldest_lag_seconds{event_type, status}
+  cets_metrics_scrape_errors_total{collector}
+
+future WS2 target metrics:
   cets_db_lock_wait_seconds_bucket{le=...}
   cets_booking_tx_duration_seconds_bucket{outcome="confirmed|rejected|conflict"}
   cets_outbox_lag_seconds_bucket{event_type, worker_kind}
   cets_worker_process_seconds_bucket{worker_kind, outcome}
   cets_worker_retry_total{worker_kind, reason}
   cets_worker_deadletter_total{worker_kind}
-  cets_http_request_seconds_bucket{route, method, status_class}
 
 structured log fields (stdout JSON):
   ts, level, msg, trace_id, span_id, route, employee_id_hash,
@@ -105,8 +114,8 @@ cets seed --profile=phase2-50k [--events=N] [--eligibility-coverage=0.0..1.0]
 
 ## 7. 12-Factor Notes
 
-- **Config**: New env vars are read-only knobs — `METRICS_LISTEN_ADDR`, `K6_BASE_URL`, `K6_PROFILE`, `SEED_PROFILE`, optional `OTEL_EXPORTER_OTLP_ENDPOINT`. All documented in compose `.env.example`. No secrets.
-- **Backing services**: No new attached resources required. Metrics scrape is pull-based against the existing app/worker ports. Optional OTLP export is opt-in and treated as a backing service if enabled.
+- **Config**: The current metrics slice uses the existing app listener and adds only local observability profile knobs in compose (`PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`). Future k6, seed, or OTLP knobs must be added through typed config before their implementations land. No secrets.
+- **Backing services**: No required production backing service is added. Metrics scrape is pull-based against the existing app/worker ports; local Prometheus/Grafana are optional review/demo services.
 - **Build / release / run**: Same binary; metrics wiring is in-process. k6 runs from `grafana/k6:1.7.1-with-browser` (already used by Phase 1 gate).
 - **Processes**: No new process types; seed runs as `cets seed` admin one-off.
 - **Logs**: Structured JSON to stdout — additive fields only, never logging tokens or full PII. CI log-scan from Phase 1 (`ci.yml` "Scan live gate logs") stays green.
@@ -124,11 +133,11 @@ cets seed --profile=phase2-50k [--events=N] [--eligibility-coverage=0.0..1.0]
 
 ## 9. Rollback / Disable
 
-Runtime additions in WS2 are observability only — disable paths must exist before merge:
+Runtime additions in WS2 are observability only:
 
-- Metrics endpoint: disabled by `METRICS_LISTEN_ADDR=""` (no listener bound); does not affect booking, check-in, worker, or audit paths.
-- OTLP export: opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT`; unset → no exporter goroutine, zero overhead.
-- New histograms / counters: registered behind a guard so a metric-registration panic during startup logs + degrades rather than killing the app. Reviewer test asserts the guard.
+- Metrics endpoint: `GET /metrics` is mounted on the existing app listener for this slice. It has no separate `METRICS_LISTEN_ADDR` disable knob; rollback is reverting the additive route/instrumentation or disabling the Prometheus scrape target.
+- OTLP export: not implemented in this slice. If added later, it must be opt-in via typed env config before merge.
+- New scrape collectors: errors degrade into `cets_metrics_scrape_errors_total` samples rather than blocking booking, check-in, worker, or audit paths.
 - Seed profile: idempotent and re-runnable; rollback = `DROP TABLE`/`TRUNCATE` via existing migrate tooling, not a new admin process.
 - k6 CI gate: gated by workflow input / branch filter; disable by reverting the workflow change. No runtime impact.
 

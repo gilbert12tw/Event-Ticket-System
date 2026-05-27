@@ -3,12 +3,10 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"event-ticket-system/internal/ticketing"
 
@@ -18,14 +16,7 @@ import (
 
 func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	body := bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
 	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
@@ -40,14 +31,7 @@ func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
 
 func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	body := bytes.NewBufferString(`{
 		"title":"OpenAPI Event",
 		"description":"Demo",
@@ -93,14 +77,7 @@ func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 
 func TestBookHandlerRejectsMalformedJSON(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events/evt_1/bookings", bytes.NewBufferString(`{`))
 	authorizeRequest(t, req, ticketing.RoleEmployee)
 	rec := httptest.NewRecorder()
@@ -121,14 +98,7 @@ func TestWriteJSONEncodesNilSlicesAsEmptyArrays(t *testing.T) {
 
 func TestCheckinHandlerReturnsDuplicateDetailsOnConflict(t *testing.T) {
 	service := &fakeTicketingService{checkinErr: ticketing.AppError{Status: http.StatusConflict, Message: "ticket has already been redeemed"}}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkins", bytes.NewBufferString(`{"signed_token":"token","device_id":"gate-1"}`))
 	authorizeRequest(t, req, ticketing.RoleCheckinStaff)
 	rec := httptest.NewRecorder()
@@ -141,14 +111,7 @@ func TestCheckinHandlerReturnsDuplicateDetailsOnConflict(t *testing.T) {
 
 func TestCheckinHandlerRejectsScannedAtField(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	body := `{"signed_token":"token","event_id":"evt_1","device_id":"gate-1","scanned_at":"2026-05-06T10:00:00Z"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkins", bytes.NewBufferString(body))
 	authorizeRequest(t, req, ticketing.RoleCheckinStaff)
@@ -162,14 +125,7 @@ func TestCheckinHandlerRejectsScannedAtField(t *testing.T) {
 
 func TestOfflineCheckinSyncRejectsLocalScanIDField(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	body := `{"batch_id":"off_1","event_id":"evt_1","device_id":"gate-1","package_signature":"sig_1","scans":[{"signed_token":"token","scanned_at":"2026-05-06T10:00:00Z","local_scan_id":"scan-1"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkins/offline-sync", bytes.NewBufferString(body))
 	authorizeRequest(t, req, ticketing.RoleCheckinStaff)
@@ -183,14 +139,7 @@ func TestOfflineCheckinSyncRejectsLocalScanIDField(t *testing.T) {
 
 func TestNotificationPreferencesResponseIncludesEmployeeID(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/notifications/preferences", nil)
 	authorizeRequest(t, req, ticketing.RoleEmployee)
 	rec := httptest.NewRecorder()
@@ -203,14 +152,7 @@ func TestNotificationPreferencesResponseIncludesEmployeeID(t *testing.T) {
 
 func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	requests := []struct {
 		method string
 		path   string
@@ -237,14 +179,7 @@ func TestEventGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 
 func TestRegistrationAndTicketGovernanceHandlersExposeProductionRoutes(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	requests := []struct {
 		method string
 		path   string
@@ -269,14 +204,7 @@ func TestRegistrationAndTicketGovernanceHandlersExposeProductionRoutes(t *testin
 
 func TestProductionBoundaryHandlersExposeSpecRoutes(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	requests := []struct {
 		method string
 		path   string
@@ -313,14 +241,7 @@ func TestProductionBoundaryHandlersExposeSpecRoutes(t *testing.T) {
 
 func TestAuditHandlerParsesServerSideFilterQuery(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs?action=event.updated&entity_type=event&limit=25", nil)
 	authorizeRequest(t, req, ticketing.RoleHRAdmin)
 	rec := httptest.NewRecorder()
@@ -336,14 +257,7 @@ func TestAuditHandlerParsesServerSideFilterQuery(t *testing.T) {
 
 func TestNotificationDeliveriesResponseUsesRedactedEmployeeRef(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(service)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/notifications/deliveries", nil)
 	authorizeRequest(t, req, ticketing.RoleHRAdmin)
 	rec := httptest.NewRecorder()
@@ -363,13 +277,7 @@ func authorizeRequest(t *testing.T, req *http.Request, role string) {
 
 func TestSeedDemoHandlerIsHiddenOutsideLocalEnvironments(t *testing.T) {
 	service := &fakeTicketingService{}
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      service,
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "production",
-	})
+	router := testRouter(Dependencies{Ticketing: service, AppEnv: "production"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/seed-demo", bytes.NewBufferString(`{}`))
 	req.Header.Set("X-Actor-ID", "admin-1")
 	req.Header.Set("X-Role", ticketing.RoleActivityAdmin)
@@ -382,13 +290,7 @@ func TestSeedDemoHandlerIsHiddenOutsideLocalEnvironments(t *testing.T) {
 
 func TestMockProviderTokenIssuesBearerAndMeReadsClaims(t *testing.T) {
 	var logs bytes.Buffer
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testRouter(Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"E1001"}`))
 	rec := httptest.NewRecorder()
 
@@ -415,13 +317,7 @@ func TestMockProviderTokenIssuesBearerAndMeReadsClaims(t *testing.T) {
 }
 
 func TestMockProviderTokenRejectsUnknownProfile(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"unknown"}`))
 	rec := httptest.NewRecorder()
 
@@ -432,13 +328,7 @@ func TestMockProviderTokenRejectsUnknownProfile(t *testing.T) {
 }
 
 func TestMeRequiresProviderBearerAndLogoutRouteIsRemoved(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	rec := httptest.NewRecorder()
 
@@ -454,14 +344,7 @@ func TestMeRequiresProviderBearerAndLogoutRouteIsRemoved(t *testing.T) {
 }
 
 func TestLocalSSORoutesAreRemoved(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      &fakeTicketingService{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(&fakeTicketingService{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"principal_id":"admin-1"}`))
 	rec := httptest.NewRecorder()
 
@@ -471,14 +354,7 @@ func TestLocalSSORoutesAreRemoved(t *testing.T) {
 }
 
 func TestProtectedAPIRejectsTamperedBearerWithoutLegacyFallback(t *testing.T) {
-	router := NewRouter(Dependencies{
-		DB:             fakePinger{},
-		Ticketing:      &fakeTicketingService{},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestTimeout: time.Second,
-		AppEnv:         "test",
-		ProviderAuth:   ProviderAuthConfig{Secret: providerTestSecret()},
-	})
+	router := testTicketingRouter(&fakeTicketingService{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
 	req.Header.Set("Authorization", "Bearer tampered.provider")
 	req.Header.Set("X-Actor-ID", "E1001")
