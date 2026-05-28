@@ -84,7 +84,7 @@ func setupReportingTestWithService(t *testing.T) (*pgxpool.Pool, http.Handler, *
 }
 
 func TestReportsHandler_Fresh(t *testing.T) {
-	pool, _, cleanup := setupReportingTest(t)
+	pool, router, cleanup := setupReportingTest(t)
 	defer cleanup()
 	ctx := context.Background()
 
@@ -193,7 +193,7 @@ func TestReportsHandler_Unauthenticated(t *testing.T) {
 }
 
 func TestReportsHandler_ThresholdFromEnv(t *testing.T) {
-	pool, router, cleanup := setupReportingTest(t)
+	pool, _, cleanup := setupReportingTest(t)
 	defer cleanup()
 	ctx := context.Background()
 
