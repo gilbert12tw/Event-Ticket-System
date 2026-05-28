@@ -291,6 +291,8 @@ components:
       "$ref": "./openapi/components/schemas/reports.yaml#/ReportSummary"
     ReportRow:
       "$ref": "./openapi/components/schemas/reports.yaml#/ReportRow"
+    ReportMeta:
+      "$ref": "./openapi/components/schemas/reports.yaml#/ReportMeta"
     ReportExportRequest:
       "$ref": "./openapi/components/schemas/reports.yaml#/ReportExportRequest"
     ReportExport:

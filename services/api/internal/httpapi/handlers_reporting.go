@@ -1,15 +1,33 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"event-ticket-system/internal/ticketing"
 )
 
-func handleReports(service TicketingService) http.HandlerFunc {
+func handleReports(service TicketingService, threshold int, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.Reports(r.Context(), actorFromRequest(r))
-		writeServiceResult(w, http.StatusOK, result, err)
+		if err != nil {
+			writeServiceResult(w, http.StatusOK, nil, err)
+			return
+		}
+
+		meta := ticketing.FreshnessFromProjection(result.ProjectionUpdatedAt, threshold)
+
+		if logger != nil {
+			logger.InfoContext(r.Context(), "report served",
+				"is_stale", meta.IsStale,
+				"lag_seconds", meta.ReadModelLagSeconds,
+			)
+		}
+
+		writeServiceResult(w, http.StatusOK, map[string]any{
+			"report": result.Rows,
+			"meta":   meta,
+		}, nil)
 	}
 }
 
