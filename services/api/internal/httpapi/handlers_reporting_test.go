@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -49,6 +50,11 @@ func newTestDB(t *testing.T, ctx context.Context, databaseURL string) (*pgxpool.
 }
 
 func setupReportingTest(t *testing.T) (*pgxpool.Pool, http.Handler, func()) {
+	pool, router, _, cleanup := setupReportingTestWithService(t)
+	return pool, router, cleanup
+}
+
+func setupReportingTestWithService(t *testing.T) (*pgxpool.Pool, http.Handler, *ticketing.Service, func()) {
 	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -74,7 +80,7 @@ func setupReportingTest(t *testing.T) (*pgxpool.Pool, http.Handler, func()) {
 		ReportStaleThresholdSeconds: 60,
 	})
 
-	return pool, router, cleanupDB
+	return pool, router, service, cleanupDB
 }
 
 func TestReportsHandler_Fresh(t *testing.T) {
@@ -120,8 +126,22 @@ func TestReportsHandler_Stale(t *testing.T) {
 }
 
 func TestReportsHandler_MissingProjection(t *testing.T) {
-	_, router, cleanup := setupReportingTest(t) // DB is already cleared by setupReportingTest
+	_, router, service, cleanup := setupReportingTestWithService(t) // DB is already cleared by setupReportingTest
 	defer cleanup()
+	ctx := context.Background()
+
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := ticketing.Actor{ID: "admin-1", Role: ticketing.RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, ticketing.CreateEventRequest{
+		Title:     "Missing Projection",
+		EventCity: "Taipei",
+		Capacity:  1,
+		Status:    ticketing.EventStatusPublished,
+		Rule:      ticketing.RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	_, err = service.Book(ctx, ticketing.Actor{ID: "E1001", Role: ticketing.RoleEmployee}, event.EventID, ticketing.BookingRequest{EmployeeID: "E1001", IdempotencyKey: "missing-projection-book"})
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/reports", nil)
 	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
@@ -130,7 +150,19 @@ func TestReportsHandler_MissingProjection(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assertEnvelope(t, rec.Body.String(), `"is_stale":true`, `"source":"unavailable"`, `"read_model_lag_seconds":-1`, `"generated_at":null`, `"report":[`)
+	response := decodeReportsResponse(t, rec.Body.Bytes())
+	assert.True(t, response.Success)
+	assert.Equal(t, "unavailable", response.Data.Meta.Source)
+	assert.Equal(t, -1, response.Data.Meta.ReadModelLagSeconds)
+	assert.Nil(t, response.Data.Meta.GeneratedAt)
+	row := findReportRow(t, response.Data.Report, event.EventID)
+	assert.Equal(t, 0, row.ConfirmedCount)
+	assert.Equal(t, 0, row.WaitlistCount)
+	assert.Equal(t, 0, row.EmployeeCount)
+	assert.Equal(t, 0, row.FamilyCount)
+	assert.Equal(t, 0, row.TotalAttendeeCount)
+	assert.Equal(t, 0, row.TicketCount)
+	assert.Equal(t, 0, row.CheckinCount)
 }
 
 func TestReportsHandler_DeniedRole(t *testing.T) {
@@ -188,4 +220,30 @@ func TestReportsHandler_ThresholdFromEnv(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assertEnvelope(t, rec.Body.String(), `"is_stale":true`)
+}
+
+type reportsResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		Report []ticketing.ReportRow `json:"report"`
+		Meta   ticketing.ReportMeta  `json:"meta"`
+	} `json:"data"`
+}
+
+func decodeReportsResponse(t *testing.T, body []byte) reportsResponse {
+	t.Helper()
+	var response reportsResponse
+	require.NoError(t, json.Unmarshal(body, &response))
+	return response
+}
+
+func findReportRow(t *testing.T, rows []ticketing.ReportRow, eventID string) ticketing.ReportRow {
+	t.Helper()
+	for _, row := range rows {
+		if row.EventID == eventID {
+			return row
+		}
+	}
+	require.Failf(t, "report row not found", "event_id=%s", eventID)
+	return ticketing.ReportRow{}
 }
