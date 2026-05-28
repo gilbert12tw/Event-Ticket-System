@@ -90,7 +90,7 @@ func TestReportsHandler_Fresh(t *testing.T) {
 
 	// Seed fresh projection offset (10s ago, threshold is 60)
 	_, err := pool.Exec(ctx, `
-		INSERT INTO reporting_projection_offsets (projection_name, last_processed_at, updated_at) 
+		INSERT INTO reporting_projection_offsets (projection_name, last_processed_at, updated_at)
 		VALUES ('event_summary', now(), now() - interval '10 seconds')`)
 	require.NoError(t, err)
 
@@ -111,7 +111,7 @@ func TestReportsHandler_Stale(t *testing.T) {
 
 	// Seed stale projection offset (120s ago, threshold is 60)
 	_, err := pool.Exec(ctx, `
-		INSERT INTO reporting_projection_offsets (projection_name, last_processed_at, updated_at) 
+		INSERT INTO reporting_projection_offsets (projection_name, last_processed_at, updated_at)
 		VALUES ('event_summary', now(), now() - interval '120 seconds')`)
 	require.NoError(t, err)
 
@@ -208,7 +208,7 @@ func TestReportsHandler_ThresholdFromEnv(t *testing.T) {
 
 	// Seed projection offset 30s ago (stale against threshold 10)
 	_, err := pool.Exec(ctx, `
-		INSERT INTO reporting_projection_offsets (projection_name, last_processed_at, updated_at) 
+		INSERT INTO reporting_projection_offsets (projection_name, last_processed_at, updated_at)
 		VALUES ('event_summary', now(), now() - interval '30 seconds')`)
 	require.NoError(t, err)
 
