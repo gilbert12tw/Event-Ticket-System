@@ -59,7 +59,16 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return response, tx.Commit(ctx)
 	}
 
-	event, rule, err := s.lockEventWithRule(ctx, tx, eventID)
+	var event Event
+	var rule EligibilityRule
+	if hold.Outcome == reservation.OutcomeExhausted {
+		// PH2-22 fast path: Redis already determined this event is full. The
+		// booking commits a waitlist row, which has no capacity constraint,
+		// so the hot event-row lock is unnecessary.
+		event, rule, err = s.readEventWithRuleNoLockTx(ctx, tx, eventID)
+	} else {
+		event, rule, err = s.lockEventWithRule(ctx, tx, eventID)
+	}
 	if err != nil {
 		return BookingResponse{}, err
 	}
