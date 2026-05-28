@@ -78,7 +78,7 @@ func (s *Service) Reports(ctx context.Context, actor Actor) (ReportsResult, erro
 	var updatedAt *time.Time
 	err = s.db.QueryRow(ctx, `SELECT updated_at FROM reporting_projection_offsets WHERE projection_name = 'event_summary'`).Scan(&updatedAt)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		// Log the error but don't fail the request if it's just missing
+		s.logger.Warn("reporting projection offset lookup failed", "err", err)
 	}
 
 	return ReportsResult{

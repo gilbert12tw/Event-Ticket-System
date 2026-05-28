@@ -84,7 +84,7 @@ func setupReportingTestWithService(t *testing.T) (*pgxpool.Pool, http.Handler, *
 }
 
 func TestReportsHandler_Fresh(t *testing.T) {
-	pool, router, cleanup := setupReportingTest(t)
+	pool, _, cleanup := setupReportingTest(t)
 	defer cleanup()
 	ctx := context.Background()
 
@@ -200,7 +200,7 @@ func TestReportsHandler_ThresholdFromEnv(t *testing.T) {
 	// Override the testRouter threshold to 10s
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	service := ticketing.NewService(pool, ticketing.NewSigner("secret"), logger)
-	router = testRouter(Dependencies{
+	router := testRouter(Dependencies{
 		DB:                          pool,
 		Ticketing:                   service,
 		ReportStaleThresholdSeconds: 10,
