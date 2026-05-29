@@ -88,6 +88,37 @@ func TestProcessOutboxOnceAuditsDeadLetterStateOnFailedNotification(t *testing.T
 	assertNoSensitiveJSONValues(t, audit, "E1001", "e1001@cets.local", "550 rejected")
 }
 
+func TestProcessOutboxOnceAuditsRetryableInvalidPayloadAsRetryScheduled(t *testing.T) {
+	service, ctx := newSeededWorkerTest(t)
+	_, err := service.db.Exec(ctx, `INSERT INTO outbox_events
+		(outbox_id, aggregate_id, event_type, payload, publish_status, attempts, available_at)
+		VALUES ('out-bad-payload-retry-audit','out-bad-payload-retry-audit-aggregate','booking.confirmed','["E1001"]'::jsonb,'pending',0,now() - interval '1 minute')`)
+	require.NoError(t, err)
+	sender := &recordingNotificationSender{}
+
+	processed, err := service.ProcessOutboxOnce(ctx, sender, 3)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 0, sender.calls)
+	state := loadOutboxFailureState(t, service, ctx, "out-bad-payload-retry-audit")
+	assert.Equal(t, "pending", state.publishStatus)
+	assert.Equal(t, 1, state.attempts)
+	assert.Equal(t, 1, state.retryCount)
+	assert.False(t, state.deadLetterAt.Valid)
+	assert.Equal(t, "invalid outbox payload", state.lastError)
+	audit := readJSONMap(t, service, ctx, `SELECT metadata::text FROM audit_logs
+		WHERE action = 'outbox.retry_scheduled'
+			AND entity_type = 'outbox_event'
+			AND entity_id = $1`, "out-bad-payload-retry-audit")
+	assert.Equal(t, "booking.confirmed", audit["event_type"])
+	assert.Equal(t, "notification", audit["worker_kind"])
+	assert.Equal(t, float64(1), audit["retry_count"])
+	assert.Equal(t, float64(1), audit["schema_version"])
+	assert.Equal(t, "retryable_failure", audit["reason"])
+	assertNoSensitiveJSONValues(t, audit, "E1001")
+}
+
 func TestProcessOutboxOnceDeadLettersNonObjectPayload(t *testing.T) {
 	service, ctx := newSeededWorkerTest(t)
 	_, err := service.db.Exec(ctx, `INSERT INTO outbox_events

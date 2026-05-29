@@ -91,7 +91,7 @@ func markOutboxProcessingFailureInTx(ctx context.Context, tx pgx.Tx, claim outbo
 	if status == "dead_letter" {
 		return insertOutboxDeadLetterAuditInTx(ctx, tx, claim, outboxDeadLetterReasonInvalidPayload)
 	}
-	return insertOutboxRetryScheduledAuditInTx(ctx, tx, claim, outboxDeadLetterReasonInvalidPayload)
+	return insertOutboxRetryScheduledAuditInTx(ctx, tx, claim, outboxRetryReasonRetryableFailure)
 }
 
 func markInvalidOutboxPayloadAttempt(ctx context.Context, tx pgx.Tx, claim outboxClaim, retryPolicy OutboxRetryPolicy, logAttempt func(string)) (int, error) {
