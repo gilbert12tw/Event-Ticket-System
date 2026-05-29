@@ -2,7 +2,6 @@ package ticketing
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -15,7 +14,6 @@ import (
 
 const (
 	defaultOutboxMaxAttempts      = 3
-	outboxProcessingLease         = 5 * time.Minute
 	notificationSuppressedByPrefs = "suppressed by notification preferences"
 )
 
@@ -35,6 +33,9 @@ type OutboxProcessorOptions struct {
 	ReportStore ReportObjectStore
 	MaxAttempts int
 	BatchSize   int
+	WorkerKinds []string
+	LeaseTTL    time.Duration
+	RetryPolicy *OutboxRetryPolicy
 }
 
 type SMTPNotificationSender struct {
@@ -92,9 +93,7 @@ func (s SMTPNotificationSender) Send(ctx context.Context, message DeliveryMessag
 	if err := writer.Close(); err != nil {
 		return contextError(ctx, err)
 	}
-	if err := client.Quit(); err != nil {
-		return contextError(ctx, err)
-	}
+	_ = client.Quit()
 	return nil
 }
 
@@ -126,17 +125,15 @@ func (s *Service) ProcessOutboxOnce(ctx context.Context, sender NotificationSend
 }
 
 func (s *Service) ProcessOutboxOnceWithOptions(ctx context.Context, options OutboxProcessorOptions) (int, error) {
-	maxAttempts := options.MaxAttempts
-	if maxAttempts <= 0 {
-		maxAttempts = defaultOutboxMaxAttempts
-	}
+	retryPolicy := outboxRetryPolicyFromOptions(options)
+	leaseTTL := outboxLeaseTTLFromOptions(options)
 	batchSize := options.BatchSize
 	if batchSize <= 0 {
 		batchSize = 1
 	}
 	processed := 0
 	for processed < batchSize {
-		count, err := s.processOneOutbox(ctx, options, maxAttempts)
+		count, err := s.processOneOutbox(ctx, options, retryPolicy, leaseTTL)
 		processed += count
 		if err != nil || count == 0 {
 			return processed, err
@@ -148,103 +145,195 @@ func (s *Service) ProcessOutboxOnceWithOptions(ctx context.Context, options Outb
 	return processed, nil
 }
 
-func (s *Service) processOneOutbox(ctx context.Context, options OutboxProcessorOptions, maxAttempts int) (int, error) {
+func (s *Service) processOneOutbox(ctx context.Context, options OutboxProcessorOptions, retryPolicy OutboxRetryPolicy, leaseTTL time.Duration) (processed int, err error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer rollback(ctx, tx)
 
-	claim, err := claimOutboxEvent(ctx, tx)
+	claim, err := claimOutboxEvent(ctx, tx, options.WorkerKinds, leaseTTL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
 	}
 	if err != nil {
 		return 0, err
 	}
-
-	payload := map[string]interface{}{}
-	if err := json.Unmarshal([]byte(claim.payloadText), &payload); err != nil {
-		return 0, err
+	defer func() {
+		s.releaseOutboxLeaseAfterContextCancel(ctx, claim, err)
+	}()
+	startedAt := time.Now()
+	logAttempt := func(outcome string) {
+		s.logOutboxWorkerAttempt(ctx, claim, startedAt, outcome)
 	}
-	if claim.eventType == outboxEventReportExportRequested {
-		if err := tx.Commit(ctx); err != nil {
+
+	if !supportedOutboxSchemaVersion(claim.schemaVersion) {
+		s.logUnknownOutboxSchemaVersion(ctx, claim)
+		if err := markOutboxDeadLetterInTx(ctx, tx, claim, unsupportedOutboxSchemaVersionError(claim.schemaVersion)); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
-		if err := s.processReportExportOutbox(ctx, claim, options.ReportStore, maxAttempts); err != nil {
+		if err := tx.Commit(ctx); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
 			return 1, err
 		}
+		logAttempt(outboxAttemptOutcomeDeadLetter)
 		return 1, nil
 	}
-	employeeID := stringFromPayload(payload, "employee_id")
-	if employeeID == "" {
-		if err := markOutboxPublishedInTx(ctx, tx, claim.outboxID); err != nil {
+	if !supportedOutboxEventType(claim.eventType) {
+		s.logUnknownOutboxEventType(ctx, claim)
+		if err := markOutboxDeadLetterWithReasonInTx(ctx, tx, claim, unsupportedOutboxEventTypeError(claim.eventType), unknownOutboxEventTypeReason); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
-		return 1, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		logAttempt(outboxAttemptOutcomeDeadLetter)
+		return 1, nil
+	}
+
+	payload, validPayload := decodeOutboxPayload(claim.payloadText, claim)
+	if !validPayload {
+		if err := markOutboxProcessingFailureInTx(ctx, tx, claim, retryPolicy, invalidOutboxPayloadError); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 0, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		logAttempt(outboxFailureOutcome(claim, retryPolicy))
+		return 1, nil
+	}
+	if isReportExportRequestedEventType(claim.eventType) {
+		if err := tx.Commit(ctx); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 0, err
+		}
+		outcome, err := s.processReportExportOutbox(ctx, claim, options.ReportStore, retryPolicy)
+		if err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		logAttempt(outcome)
+		return 1, nil
+	}
+	employeeID := recipientEmployeeIDForOutbox(claim.eventType, payload)
+	if employeeID == "" {
+		if err := markOutboxPublishedInTx(ctx, tx, claim); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 0, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		logAttempt(outboxAttemptOutcomePublished)
+		return 1, nil
 	}
 
 	prefs, err := loadOutboxNotificationPreferences(ctx, tx, employeeID)
 	if err != nil {
+		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
 	category, err := notificationCategoryForOutbox(ctx, tx, claim.eventType, payload)
 	if err != nil {
+		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
 	categorySuppressed := notificationCategorySuppressed(prefs, claim.eventType, category)
+	deliveryChannels := deliveryChannelsForOutbox(claim.eventType, payload, options.Sender != nil)
+	if !deliveryChannels.valid {
+		return markInvalidOutboxPayloadAttempt(ctx, tx, claim, retryPolicy, logAttempt)
+	}
 
-	inAppStatus, inAppReason := deliveryStatusForPreference(prefs.inAppEnabled, categorySuppressed, deliveryStatusSent)
-	if _, err := ensureNotificationDelivery(ctx, tx, claim.outboxID, employeeID, "in_app", inAppStatus, inAppReason); err != nil {
-		return 0, err
+	if deliveryChannels.inApp {
+		inAppStatus, inAppReason := deliveryStatusForPreference(prefs.inAppEnabled, categorySuppressed, deliveryStatusSent)
+		if _, err := ensureNotificationDelivery(ctx, tx, claim.outboxID, employeeID, "in_app", inAppStatus, inAppReason); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 0, err
+		}
 	}
 	emailStatus := ""
 	var emailDelivery notificationDeliveryState
-	if options.Sender != nil {
+	if deliveryChannels.email {
 		desiredEmailStatus, emailReason := deliveryStatusForPreference(prefs.emailEnabled, categorySuppressed, deliveryStatusPending)
 		emailDelivery, err = ensureNotificationDelivery(ctx, tx, claim.outboxID, employeeID, "email", desiredEmailStatus, emailReason)
 		if err != nil {
+			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
 		emailStatus = emailDelivery.status
 	}
 	if err := tx.Commit(ctx); err != nil {
+		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
 
 	var sendErr error
 	lastError := ""
+	if emailStatus == deliveryStatusSending {
+		if err := s.deadLetterAmbiguousEmailDelivery(ctx, claim, emailDelivery.deliveryID, retryPolicy); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		logAttempt(outboxAttemptOutcomeDeadLetter)
+		return 1, nil
+	}
 	if options.Sender != nil && emailStatus == deliveryStatusPending {
 		if err := ctx.Err(); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
 			return 1, err
 		}
 		message := deliveryMessageForOutbox(claim.eventType, employeeID, payload)
 		message.IdempotencyKey = emailDelivery.deliveryID
-		sendErr = options.Sender.Send(ctx, message)
+		if err := s.markEmailDeliverySending(ctx, emailDelivery.deliveryID); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		sendErr = sendNotificationSafely(ctx, options.Sender, message)
 		status := deliveryStatusSent
 		if sendErr != nil {
 			status = deliveryStatusFailed
-			if claim.attempts >= maxAttempts {
+			if retryPolicy.exhausted(claim.attempts) {
 				status = deliveryStatusDeadLetter
 			}
 			lastError = redactNotificationDeliveryError(sendErr.Error(), employeeID)
 		}
 		if err := s.updateEmailDeliveryAfterSend(ctx, claim.outboxID, status, lastError); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
 			return 1, err
 		}
 	}
 	if sendErr != nil {
-		return 1, s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, lastError)
+		if err := s.updateOutboxAfterSendFailure(ctx, claim, retryPolicy, lastError); err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 1, err
+		}
+		logAttempt(outboxFailureOutcome(claim, retryPolicy))
+		return 1, nil
 	}
-	return 1, s.markOutboxPublished(ctx, claim.outboxID)
+	if err := s.markOutboxPublished(ctx, claim); err != nil {
+		logAttempt(outboxAttemptOutcomeError)
+		return 1, err
+	}
+	logAttempt(outboxAttemptOutcomePublished)
+	return 1, nil
 }
 
 type outboxClaim struct {
-	outboxID    string
-	aggregateID string
-	eventType   string
-	payloadText string
-	attempts    int
+	outboxID       string
+	aggregateID    string
+	eventType      string
+	payloadText    string
+	attempts       int
+	schemaVersion  int
+	idempotencyKey string
+	partitionKey   string
+	leaseStartedAt time.Time
 }
 
 type outboxNotificationPreferences struct {
@@ -255,6 +344,7 @@ type outboxNotificationPreferences struct {
 
 const (
 	deliveryStatusPending    = "pending"
+	deliveryStatusSending    = "sending"
 	deliveryStatusSent       = "sent"
 	deliveryStatusFailed     = "failed"
 	deliveryStatusSuppressed = "suppressed"
@@ -266,14 +356,23 @@ type notificationDeliveryState struct {
 	status     string
 }
 
-func claimOutboxEvent(ctx context.Context, tx pgx.Tx) (outboxClaim, error) {
+func claimOutboxEvent(ctx context.Context, tx pgx.Tx, workerKinds []string, leaseTTL time.Duration) (outboxClaim, error) {
 	var claim outboxClaim
 	err := tx.QueryRow(ctx, `WITH next_outbox AS (
 			SELECT outbox_id
 			FROM outbox_events
 			WHERE available_at <= now()
 				AND publish_status IN ('pending', 'processing')
-			ORDER BY CASE WHEN event_type = 'report.export.requested' THEN 0 ELSE 1 END,
+				AND (
+					cardinality($2::text[]) = 0
+					OR CASE
+						WHEN event_type IN ('report.export.requested', 'report.export.requested.v2') THEN 'export'
+						WHEN event_type = 'reporting.projection.update_required.v2' THEN 'projection'
+						WHEN event_type LIKE 'reservation.compensation.%' THEN 'compensation'
+						ELSE 'notification'
+					END = ANY($2::text[])
+				)
+			ORDER BY CASE WHEN event_type IN ('report.export.requested', 'report.export.requested.v2') THEN 0 ELSE 1 END,
 				created_at ASC,
 				outbox_id ASC
 			LIMIT 1
@@ -283,12 +382,25 @@ func claimOutboxEvent(ctx context.Context, tx pgx.Tx) (outboxClaim, error) {
 		SET publish_status = 'processing',
 			attempts = attempts + 1,
 			last_error = '',
-			available_at = now() + ($1::double precision * interval '1 second')
+			available_at = now() + ($1::double precision * interval '1 second'),
+			lease_started_at = now()
 		FROM next_outbox
 		WHERE outbox.outbox_id = next_outbox.outbox_id
-		RETURNING outbox.outbox_id, outbox.aggregate_id, outbox.event_type, outbox.payload::text, outbox.attempts`,
-		outboxProcessingLease.Seconds()).
-		Scan(&claim.outboxID, &claim.aggregateID, &claim.eventType, &claim.payloadText, &claim.attempts)
+		RETURNING outbox.outbox_id, outbox.aggregate_id, outbox.event_type, outbox.payload::text,
+			outbox.attempts, outbox.schema_version, COALESCE(outbox.idempotency_key, ''),
+			COALESCE(outbox.partition_key, ''), outbox.lease_started_at`,
+		leaseTTL.Seconds(), outboxWorkerKindFilter(workerKinds)).
+		Scan(
+			&claim.outboxID,
+			&claim.aggregateID,
+			&claim.eventType,
+			&claim.payloadText,
+			&claim.attempts,
+			&claim.schemaVersion,
+			&claim.idempotencyKey,
+			&claim.partitionKey,
+			&claim.leaseStartedAt,
+		)
 	return claim, err
 }
 
@@ -345,98 +457,4 @@ func deliveryStatusForPreference(enabled bool, categorySuppressed bool, enabledS
 		return deliveryStatusSuppressed, notificationSuppressedByPrefs
 	}
 	return enabledStatus, ""
-}
-
-func ensureNotificationDelivery(ctx context.Context, tx pgx.Tx, outboxID string, employeeID string, channel string, status string, lastError string) (notificationDeliveryState, error) {
-	deliveryID, err := newID("del")
-	if err != nil {
-		return notificationDeliveryState{}, err
-	}
-	var current notificationDeliveryState
-	err = tx.QueryRow(ctx, `INSERT INTO notification_deliveries
-		(delivery_id, outbox_id, employee_id, channel, status, attempts, last_error)
-		VALUES ($1,$2,$3,$4,$5,0,$6)
-		ON CONFLICT (outbox_id, channel) WHERE outbox_id IS NOT NULL DO UPDATE SET
-			employee_id = EXCLUDED.employee_id,
-			status = CASE
-				WHEN notification_deliveries.status IN ('sent', 'suppressed') THEN notification_deliveries.status
-				ELSE EXCLUDED.status
-			END,
-			last_error = CASE
-				WHEN notification_deliveries.status IN ('sent', 'suppressed') THEN notification_deliveries.last_error
-				ELSE EXCLUDED.last_error
-			END,
-			updated_at = CASE
-				WHEN notification_deliveries.status IN ('sent', 'suppressed') THEN notification_deliveries.updated_at
-				ELSE now()
-			END
-		RETURNING delivery_id, status`, deliveryID, outboxID, employeeID, channel, status, lastError).
-		Scan(&current.deliveryID, &current.status)
-	return current, err
-}
-
-func markOutboxPublishedInTx(ctx context.Context, tx pgx.Tx, outboxID string) error {
-	_, err := tx.Exec(ctx, `UPDATE outbox_events
-		SET publish_status = 'published',
-			last_error = '',
-			published_at = now()
-		WHERE outbox_id = $1`, outboxID)
-	return err
-}
-
-func (s *Service) markOutboxPublished(ctx context.Context, outboxID string) error {
-	_, err := s.db.Exec(ctx, `UPDATE outbox_events
-		SET publish_status = 'published',
-			last_error = '',
-			published_at = now()
-		WHERE outbox_id = $1`, outboxID)
-	return err
-}
-
-func (s *Service) updateEmailDeliveryAfterSend(ctx context.Context, outboxID string, status string, lastError string) error {
-	_, err := s.db.Exec(ctx, `UPDATE notification_deliveries
-		SET status = $1,
-			attempts = attempts + 1,
-			last_error = $2,
-			updated_at = now()
-		WHERE outbox_id = $3 AND channel = 'email' AND status = 'pending'`, status, lastError, outboxID)
-	return err
-}
-
-func (s *Service) updateOutboxAfterSendFailure(ctx context.Context, outboxID string, attempts int, maxAttempts int, lastError string) error {
-	status := "pending"
-	if attempts >= maxAttempts {
-		status = "dead_letter"
-	}
-	_, err := s.db.Exec(ctx, `UPDATE outbox_events
-		SET publish_status = $1,
-			last_error = $2,
-			available_at = now() + ($3::double precision * interval '1 second')
-		WHERE outbox_id = $4`, status, lastError, outboxRetryBackoff(attempts).Seconds(), outboxID)
-	return err
-}
-
-func outboxRetryBackoff(attempts int) time.Duration {
-	if attempts <= 0 {
-		attempts = 1
-	}
-	return time.Duration(attempts) * time.Minute
-}
-
-func contextError(ctx context.Context, err error) error {
-	if err == nil {
-		return nil
-	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-	return err
-}
-
-func stringFromPayload(payload map[string]interface{}, key string) string {
-	value, ok := payload[key]
-	if !ok || value == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprint(value))
 }

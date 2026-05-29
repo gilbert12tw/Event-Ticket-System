@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"event-ticket-system/internal/ticketing"
 
@@ -268,6 +269,68 @@ func TestNotificationDeliveriesResponseUsesRedactedEmployeeRef(t *testing.T) {
 	assertEnvelope(t, rec.Body.String(), `"employee_ref":"E100****"`)
 	assert.NotContains(t, rec.Body.String(), `"employee_id"`)
 	assert.NotContains(t, rec.Body.String(), `"E1001"`)
+}
+
+func TestOpsNotificationDeliveriesRouteRequiresFeatureFlag(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testTicketingRouter(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ops/notification-deliveries", nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Empty(t, service.notificationOpsQuery)
+}
+
+func TestOpsNotificationDeliveriesParsesQueryAndReturnsPage(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testRouter(Dependencies{Ticketing: service, OpsAPIEnabled: true})
+	cursorTime := time.Date(2026, 5, 28, 10, 30, 0, 0, time.UTC)
+	cursor := ticketing.EncodeNotificationDeliveryCursor(cursorTime, "del_cursor")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ops/notification-deliveries?status=dead_letter&limit=25&cursor="+cursor, nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, service.notificationOpsQuery, 1)
+	query := service.notificationOpsQuery[0]
+	assert.Equal(t, "dead_letter", query.Status)
+	assert.Equal(t, 25, query.Limit)
+	assert.Equal(t, cursorTime, query.Cursor)
+	assert.Equal(t, "del_cursor", query.CursorID)
+	assertEnvelope(t, rec.Body.String(), `"deliveries"`, `"recipient_redacted":"E100****"`, `"retry_eligible":true`, `"dead_letter_eligible":true`, `"next_cursor":"next-delivery-cursor"`)
+	assert.NotContains(t, rec.Body.String(), `"employee_id"`)
+	assert.NotContains(t, rec.Body.String(), "E1001")
+}
+
+func TestOpsNotificationDeliveriesRejectsMalformedCursor(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testRouter(Dependencies{Ticketing: service, OpsAPIEnabled: true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ops/notification-deliveries?cursor=2026-05-28T10:30:00Z", nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, service.notificationOpsQuery)
+}
+
+func TestOpsNotificationDeliveriesRejectsInvalidLimit(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testRouter(Dependencies{Ticketing: service, OpsAPIEnabled: true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/ops/notification-deliveries?limit=0", nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, service.notificationOpsQuery)
 }
 
 func authorizeRequest(t *testing.T, req *http.Request, role string) {

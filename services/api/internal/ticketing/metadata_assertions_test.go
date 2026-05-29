@@ -19,6 +19,16 @@ func readJSONMap(t *testing.T, service *Service, ctx context.Context, query stri
 	return got
 }
 
+func readOutboxPayloadMap(t *testing.T, service *Service, ctx context.Context, query string, args ...interface{}) map[string]interface{} {
+	t.Helper()
+	payload := readJSONMap(t, service, ctx, query, args...)
+	nested, ok := payload["payload"].(map[string]interface{})
+	if !ok {
+		return payload
+	}
+	return nested
+}
+
 func assertNoSensitiveJSONValues(t *testing.T, metadata map[string]interface{}, values ...string) {
 	t.Helper()
 	raw := fmt.Sprint(metadata)
@@ -32,7 +42,7 @@ func assertNoSensitiveJSONValues(t *testing.T, metadata map[string]interface{}, 
 
 func assertTicketOutboxPayload(t *testing.T, service *Service, ctx context.Context, eventType string, ticket Ticket) {
 	t.Helper()
-	payload := readJSONMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2`, eventType, ticket.TicketID)
+	payload := readOutboxPayloadMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2`, eventType, ticket.TicketID)
 	assert.Equal(t, ticket.TicketID, payload["ticket_id"])
 	assert.Equal(t, ticket.EventID, payload["event_id"])
 	assert.Equal(t, ticket.EmployeeID, payload["employee_id"])

@@ -5,21 +5,26 @@ This file is the concise entry point for coding agents and developers working in
 ## Source of Truth
 
 - Architecture decisions: follow `docs/ARCHITECTURE.md`.
-- Implementation discipline: follow this file and `docs/agent-rules/*.md`.
+- Implementation discipline: follow this file and task-relevant `docs/agent-rules/*.md`.
 - Product and design context: see `docs/PRODUCT.md` and `docs/DESIGN.md`.
 - Specs: use `docs/specs/` for task-specific acceptance criteria.
 - Backend directory refactors: start from `docs/specs/backend-directory-architecture.md`.
 - If architecture or implementation strategy changes, update the relevant docs before changing code.
 
-## Required Rule Reading
+## Progressive Rule Reading
 
-Before changing code, read the rule files relevant to the task:
+Start with this file. Do not preload every `docs/agent-rules/*.md` file. Open only the rule files triggered by the current task; if a task spans multiple domains, read each matching file before editing that domain:
 
-- `docs/agent-rules/architecture.md` for Phase 1 scope, modules, and evolution limits.
-- `docs/agent-rules/clean-code.md` for Google style, file size, cohesion, and coupling rules.
-- `docs/agent-rules/correctness.md` for ticketing correctness, idempotency, and audit rules.
-- `docs/agent-rules/development-workflow.md` for small tasks, tests, and commit rules.
-- `docs/agent-rules/local-environment.md` for Docker Compose, backing services, and verification.
+- Architecture, module, or deployment-shape changes -> `docs/agent-rules/architecture.md`.
+- Non-trivial implementation or review behavior -> `docs/agent-rules/llm-behavior.md`.
+- Code style, file-size, or refactor work -> `docs/agent-rules/clean-code.md`.
+- Ticketing correctness, idempotency, or audit work -> `docs/agent-rules/correctness.md`.
+- Multi-step tasks, tests, or commits -> `docs/agent-rules/development-workflow.md`.
+- Docker, local services, or runtime verification -> `docs/agent-rules/local-environment.md`.
+
+## Behavioral Guidelines
+
+Follow the complete, non-abridged behavioral guidelines in `docs/agent-rules/llm-behavior.md`.
 
 ## Project Context
 

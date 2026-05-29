@@ -73,9 +73,9 @@ func lotterySideEffectCounts(t *testing.T, service *Service, ctx context.Context
 		"lottery_results": `SELECT count(*) FROM lottery_results WHERE event_id = $1`,
 		"lottery_audits":  `SELECT count(*) FROM audit_logs WHERE entity_id = $1 AND action = 'lottery.completed'`,
 		"ticket_audits":   `SELECT count(*) FROM audit_logs WHERE action = 'ticket.issued' AND entity_id IN (SELECT ticket_id FROM tickets WHERE event_id = $1)`,
-		"lottery_outbox":  `SELECT count(*) FROM outbox_events WHERE event_type = 'lottery.completed' AND (payload->>'event_id') = $1`,
-		"ticket_outbox":   `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.issued' AND (payload->>'event_id') = $1`,
-		"redeemed_outbox": `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.redeemed' AND (payload->>'event_id') = $1`,
+		"lottery_outbox":  `SELECT count(*) FROM outbox_events WHERE event_type = 'lottery.completed' AND (payload->'payload'->>'event_id') = $1`,
+		"ticket_outbox":   `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.issued' AND (payload->'payload'->>'event_id') = $1`,
+		"redeemed_outbox": `SELECT count(*) FROM outbox_events WHERE event_type = 'ticket.redeemed' AND (payload->'payload'->>'event_id') = $1`,
 	}
 	for key, query := range queries {
 		var count int

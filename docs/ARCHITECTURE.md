@@ -24,7 +24,7 @@
 | --- | --- |
 | Spec-first | 需求、容量估算、分階段演進與風險邊界需在本文件與 `AGENTS.md` 內維護；實作前先讓文件與 acceptance criteria 一致。 |
 | Modular Monolith First | Event、Eligibility、Registration、Ticket、Check-in、Notification、Reporting 是同一應用內的模組，不是獨立部署單位。 |
-| Docker Compose First | `services/api/deploy/compose.yaml` 作為本地開發入口；目前啟動 Go app 與 backing services，worker 邊界保留在同一 codebase。 |
+| Docker Compose First | `services/api/deploy/compose.yaml` 作為本地開發入口；目前啟動 Go app 與 backing services，worker 邊界保留在同一 codebase。Phase 2 notification isolation 可用 `services/api/deploy/compose.worker-isolation.yaml` overlay 在本地/CI 驗證多個 same-binary worker process。 |
 | 12-Factor | 設定走環境變數、服務以 port binding 對外、日誌寫 stdout、狀態放 backing services。 |
 | Database as Source of Truth | 目前 business flow 以 PostgreSQL transaction / unique constraint 為準；Redis 不得成為 committed booking truth。 |
 | Async Where Safe | 核心 booking / ticket / check-in 先完成 DB transaction；notification、report export 等 side effects 透過 PostgreSQL `outbox_events` 與 same-binary worker 非同步處理。 |
@@ -79,7 +79,7 @@ flowchart LR
 
 ### 4.1 Compose 服務規劃
 
-目前已設定的 Compose 服務是 `app`、`worker`、`postgres`、`redis`、`minio` 與 `mailhog`。Phase 1 使用 PostgreSQL `outbox_events` 作為可靠佇列邊界；worker 與 app 使用同一份映像，只透過啟動 command 區分 process type。
+目前已設定的 Compose 服務是 `app`、`worker`、`postgres`、`redis`、`minio` 與 `mailhog`。Phase 1 使用 PostgreSQL `outbox_events` 作為可靠佇列邊界；worker 與 app 使用同一份映像，只透過啟動 command 區分 process type。Phase 2 本地/CI 可加上 `compose.worker-isolation.yaml` 與 `worker-isolation` profile，將 `notification`、`projection`、`compensation`、`export` 分成四個 same-binary worker process；預設 `compose.yaml` 仍保留單一 all-kinds worker 以維持 Phase 1 parity。
 
 | Compose service | 用途 | 12-Factor 對應 | Current connection status |
 | --- | --- | --- | --- |
@@ -544,7 +544,7 @@ Phase 2 預設仍是 Phase 1 modular monolith；scale lever 是 **process model*
 | Worker — `projection` | 同一 binary，`WORKER_KINDS=projection` | 消費 outbox 並更新 reporting read model | Reporting freshness lag |
 | Worker — `compensation` | 同一 binary，`WORKER_KINDS=compensation` | Side-effect 補償與 reservation cleanup (報表匯出失敗重試、停滯任務再起、逾時 Redis reservation 回收、ghost reservation 修補) | Dead-letter / 補償 backlog、Redis reservation TTL 過期積壓 |
 
-所有 worker 共用同一 binary，不是新部署單位；kind 切分由 env 決定。詳見 `docs/specs/phase2-ws4-async-notification.md` (envelope v2、worker kind split、retry / dead-letter / replay)。
+所有 worker 共用同一 binary，不是新部署單位；kind 切分由 env 決定。本地/CI 的 process-isolated 拓樸由 `services/api/deploy/compose.worker-isolation.yaml` 提供，使用 `worker-isolation` profile 啟動每個 kind 的 worker process，同時把 all-kinds worker 留在 `combined-worker` profile 作為 rollback / parity 選項。詳見 `docs/specs/phase2-ws4-async-notification.md` (envelope v2、worker kind split、retry / dead-letter / replay)。
 
 #### 15.1.2 Hot-Path 加固 — Redis pre-admission gate (WS3)
 

@@ -41,12 +41,20 @@ type Config struct {
 	TokenSigningSecret              string
 	ProviderTokenSecret             string
 	AutoMigrate                     bool
+	OpsAPIEnabled                   bool
 	RequestTimeout                  time.Duration
 	DatabaseTimeout                 time.Duration
 	ShutdownTimeout                 time.Duration
 	WorkerPollInterval              time.Duration
+	WorkerShutdownGrace             time.Duration
 	WorkerMaxAttempts               int
 	WorkerBatchSize                 int
+	OutboxLeaseTTL                  time.Duration
+	OutboxRetryMax                  int
+	OutboxBackoffBase               time.Duration
+	OutboxBackoffMax                time.Duration
+	WorkerKinds                     []string
+	WorkerConcurrency               map[string]int
 	NoShowThreshold                 int
 	NoShowCooldownDays              int
 	NoShowGraceHours                int
@@ -82,12 +90,20 @@ func Load() Config {
 		TokenSigningSecret:              getEnv("TOKEN_SIGNING_SECRET", localTokenSecret),
 		ProviderTokenSecret:             getEnv("PROVIDER_TOKEN_SECRET", localProviderSecret),
 		AutoMigrate:                     parseBoolEnv("AUTO_MIGRATE", "false", &loadErrors),
+		OpsAPIEnabled:                   parseBoolEnv("OPS_API_ENABLED", "false", &loadErrors),
 		RequestTimeout:                  parseDurationMSEnv("REQUEST_TIMEOUT_MS", "5000", &loadErrors),
 		DatabaseTimeout:                 parseDurationMSEnv("DATABASE_TIMEOUT_MS", "5000", &loadErrors),
 		ShutdownTimeout:                 parseDurationMSEnv("SHUTDOWN_TIMEOUT_MS", "10000", &loadErrors),
 		WorkerPollInterval:              parseDurationMSEnv("WORKER_POLL_INTERVAL_MS", "1000", &loadErrors),
+		WorkerShutdownGrace:             parseNonNegativeDurationSecondsEnv("WORKER_SHUTDOWN_GRACE_SECONDS", "30", &loadErrors),
 		WorkerMaxAttempts:               parsePositiveIntEnv("WORKER_MAX_ATTEMPTS", "3", &loadErrors),
-		WorkerBatchSize:                 parsePositiveIntEnv("WORKER_BATCH_SIZE", "25", &loadErrors),
+		WorkerBatchSize:                 parsePositiveIntEnvAlias("OUTBOX_BATCH_SIZE", "WORKER_BATCH_SIZE", "100", &loadErrors),
+		OutboxLeaseTTL:                  parsePositiveDurationSecondsEnv("OUTBOX_LEASE_TTL_SECONDS", "60", &loadErrors),
+		OutboxRetryMax:                  parseNonNegativeIntEnv("OUTBOX_RETRY_MAX", "10", &loadErrors),
+		OutboxBackoffBase:               parseDurationMSEnv("OUTBOX_BACKOFF_BASE_MS", "500", &loadErrors),
+		OutboxBackoffMax:                parseDurationMSEnv("OUTBOX_BACKOFF_MAX_MS", "60000", &loadErrors),
+		WorkerKinds:                     parseWorkerKindsEnv(&loadErrors),
+		WorkerConcurrency:               parseWorkerConcurrencyEnv(&loadErrors),
 		NoShowThreshold:                 parsePositiveIntEnv("NO_SHOW_THRESHOLD", "1", &loadErrors),
 		NoShowCooldownDays:              parsePositiveIntEnv("NO_SHOW_COOLDOWN_DAYS", "90", &loadErrors),
 		NoShowGraceHours:                parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
@@ -154,11 +170,35 @@ func (c Config) ValidateWorker() error {
 	if c.WorkerPollInterval <= 0 {
 		return errors.New("WORKER_POLL_INTERVAL_MS must be positive")
 	}
+	if c.WorkerShutdownGrace < 0 {
+		return errors.New("WORKER_SHUTDOWN_GRACE_SECONDS must be non-negative")
+	}
 	if c.WorkerMaxAttempts <= 0 {
 		return errors.New("WORKER_MAX_ATTEMPTS must be positive")
 	}
 	if c.WorkerBatchSize <= 0 {
-		return errors.New("WORKER_BATCH_SIZE must be positive")
+		return errors.New("OUTBOX_BATCH_SIZE must be positive")
+	}
+	if c.OutboxLeaseTTL <= 0 {
+		return errors.New("OUTBOX_LEASE_TTL_SECONDS must be positive")
+	}
+	if c.OutboxRetryMax < 0 {
+		return errors.New("OUTBOX_RETRY_MAX must be non-negative")
+	}
+	if c.OutboxBackoffBase <= 0 {
+		return errors.New("OUTBOX_BACKOFF_BASE_MS must be positive")
+	}
+	if c.OutboxBackoffMax <= 0 {
+		return errors.New("OUTBOX_BACKOFF_MAX_MS must be positive")
+	}
+	if c.OutboxBackoffMax < c.OutboxBackoffBase {
+		return errors.New("OUTBOX_BACKOFF_MAX_MS must be greater than or equal to OUTBOX_BACKOFF_BASE_MS")
+	}
+	if err := validateWorkerKinds(c.WorkerKinds); err != nil {
+		return err
+	}
+	if err := validateWorkerConcurrency(c.WorkerConcurrency); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.MailerHost) == "" {
 		return errors.New("MAILER_HOST is required")
@@ -272,6 +312,30 @@ func parseDurationMSEnv(key string, fallback string, loadErrors *[]string) time.
 	return time.Duration(ms) * time.Millisecond
 }
 
+func parseNonNegativeDurationSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
+	value := getEnv(key, fallback)
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 0 {
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a non-negative integer of seconds, got %q", key, value))
+		return 30 * time.Second
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func parsePositiveDurationSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
+	value := getEnv(key, fallback)
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of seconds, got %q", key, value))
+		fallbackValue, fallbackErr := strconv.Atoi(fallback)
+		if fallbackErr != nil || fallbackValue <= 0 {
+			return time.Second
+		}
+		return time.Duration(fallbackValue) * time.Second
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func parseSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
 	value := getEnv(key, fallback)
 	secs, err := strconv.Atoi(value)
@@ -303,6 +367,30 @@ func parsePositiveIntEnv(key string, fallback string, loadErrors *[]string) int 
 		fallbackValue, fallbackErr := strconv.Atoi(fallback)
 		if fallbackErr != nil || fallbackValue <= 0 {
 			return 1
+		}
+		return fallbackValue
+	}
+	return parsed
+}
+
+func parsePositiveIntEnvAlias(primary string, legacy string, fallback string, loadErrors *[]string) int {
+	if strings.TrimSpace(os.Getenv(primary)) != "" {
+		return parsePositiveIntEnv(primary, fallback, loadErrors)
+	}
+	if strings.TrimSpace(os.Getenv(legacy)) != "" {
+		return parsePositiveIntEnv(legacy, fallback, loadErrors)
+	}
+	return parsePositiveIntEnv(primary, fallback, loadErrors)
+}
+
+func parseNonNegativeIntEnv(key string, fallback string, loadErrors *[]string) int {
+	value := getEnv(key, fallback)
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a non-negative integer, got %q", key, value))
+		fallbackValue, fallbackErr := strconv.Atoi(fallback)
+		if fallbackErr != nil || fallbackValue < 0 {
+			return 0
 		}
 		return fallbackValue
 	}

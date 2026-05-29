@@ -85,7 +85,7 @@ func TestCancelRegistrationWritesSafeGovernanceMetadata(t *testing.T) {
 	assert.Equal(t, "capacity governance review", audit["reason"])
 	assertNoSensitiveJSONValues(t, audit, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
 
-	payload := readJSONMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, booking.Registration.RegistrationID)
+	payload := readOutboxPayloadMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, booking.Registration.RegistrationID)
 	assert.Equal(t, event.EventID, payload["event_id"])
 	assert.Equal(t, "Governance Cancellation", payload["event_title"])
 	assert.Equal(t, "E1001", payload["employee_id"])

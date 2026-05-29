@@ -20,12 +20,14 @@ type recordingRoundTripper struct {
 }
 
 func (t *recordingRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		return nil, err
+	if request.Body != nil {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		t.body = string(body)
 	}
 	t.request = request
-	t.body = string(body)
 	statusCode := t.statusCode
 	if statusCode == 0 {
 		statusCode = http.StatusOK
@@ -73,4 +75,42 @@ func TestS3CompatibleStorePutReturnsStorageError(t *testing.T) {
 	err := store.Put(context.Background(), "exports/report.csv", "text/csv", []byte("event_id,title\n"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "status=503")
+}
+
+func TestS3CompatibleStoreExistsSignsHeadRequest(t *testing.T) {
+	transport := &recordingRoundTripper{}
+	store := S3CompatibleStore{
+		Endpoint:  "http://minio:9000",
+		Bucket:    "cets-dev",
+		Region:    "us-east-1",
+		AccessKey: "minioadmin",
+		SecretKey: "minioadmin_dev_password",
+		Client:    &http.Client{Transport: transport},
+		now:       func() time.Time { return time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC) },
+	}
+
+	exists, err := store.Exists(context.Background(), "exports/report 1.csv")
+
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, http.MethodHead, transport.request.Method)
+	assert.Equal(t, "/cets-dev/exports/report%201.csv", transport.request.URL.EscapedPath())
+	assert.Contains(t, transport.request.Header.Get("Authorization"), "AWS4-HMAC-SHA256 Credential=minioadmin/20260506/us-east-1/s3/aws4_request")
+	assert.Empty(t, transport.body)
+}
+
+func TestS3CompatibleStoreExistsReturnsFalseOnNotFound(t *testing.T) {
+	transport := &recordingRoundTripper{statusCode: http.StatusNotFound}
+	store := S3CompatibleStore{
+		Endpoint:  "http://minio:9000",
+		Bucket:    "cets-dev",
+		AccessKey: "minioadmin",
+		SecretKey: "minioadmin_dev_password",
+		Client:    &http.Client{Transport: transport},
+	}
+
+	exists, err := store.Exists(context.Background(), "exports/missing.csv")
+
+	require.NoError(t, err)
+	assert.False(t, exists)
 }

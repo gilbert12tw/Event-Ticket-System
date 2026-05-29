@@ -1,0 +1,14 @@
+{
+  "event_id": "out_reservation_compensation_release_required_1",
+  "event_type": "reservation.compensation.release_required.v2",
+  "schema_version": 2,
+  "occurred_at": "2026-05-19T12:34:56Z",
+  "idempotency_key": "reservation.compensation.release_required:resv_01HXXX",
+  "partition_key": "evt_01HXXX",
+  "payload": {
+    "reservation_id": "resv_01HXXX",
+    "event_id": "evt_01HXXX",
+    "reason": "db_rollback",
+    "requested_at": "2026-05-19T12:34:56Z"
+  }
+}

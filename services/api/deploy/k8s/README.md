@@ -10,10 +10,12 @@ Apply the stack with:
 kubectl apply -k services/api/deploy/k8s
 ```
 
-The stack creates the API, worker, migration job, suspended seed job,
-PostgreSQL, Redis, MinIO, and Mailhog in the `cets` namespace. The API image
-defaults to `cets-api:dev`; override it with Kustomize before using a shared
-staging cluster.
+The stack creates the API, per-kind worker Deployments, migration job,
+suspended seed job, PostgreSQL, Redis, MinIO, and Mailhog in the `cets`
+namespace. The API and workers use the same `cets-api:dev` image; override it
+with Kustomize before using a shared staging cluster. Scale
+`cets-worker-notification`, `cets-worker-projection`,
+`cets-worker-compensation`, and `cets-worker-export` independently.
 
 The `cets-api-secret` manifest contains placeholder values only. Replace those
 values with cluster-managed secrets before shared staging use. The committed

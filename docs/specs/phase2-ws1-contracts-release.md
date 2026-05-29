@@ -69,10 +69,11 @@ OpenAPI delta scope (`PH2-02`, additive only):
 ```text
 GET    /api/v1/admin/ops/capacity-pressure        # consumed by WS5 ops UI, owned by WS3
 GET    /api/v1/admin/ops/queues                   # owned by WS4
-POST   /api/v1/admin/ops/queues/{kind}/replay     # owned by WS4
 GET    /api/v1/admin/ops/report-freshness         # owned by WS5
 GET    /api/v1/admin/reports?as_of=               # freshness envelope, owned by WS5
 ```
+
+WS4 queue replay is intentionally a same-binary one-off admin process (`cets ops replay`), not a long-lived HTTP endpoint.
 
 Report freshness envelope shape (`PH2-02`, normative):
 
