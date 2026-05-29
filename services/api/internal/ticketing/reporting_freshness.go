@@ -2,13 +2,18 @@ package ticketing
 
 import "time"
 
+const (
+	ReportSourceReportingProjection = "reporting_projection"
+	ReportSourceUnavailable         = "unavailable"
+)
+
 // ReportMeta carries freshness metadata for a read-model-backed report response.
 // It is included in every reports API response alongside the report data (AC-1).
 type ReportMeta struct {
-	Source              string     `json:"source"`
-	GeneratedAt         *time.Time `json:"generated_at"`
-	ReadModelLagSeconds int        `json:"read_model_lag_seconds"`
-	IsStale             bool       `json:"is_stale"`
+	AsOf       *time.Time `json:"as_of"`
+	LagSeconds int        `json:"lag_seconds"`
+	Degraded   bool       `json:"degraded"`
+	Source     string     `json:"source"`
 }
 
 // ReportsResult wraps report rows with their projection freshness timestamp.
@@ -24,17 +29,20 @@ type ReportsResult struct {
 func FreshnessFromProjection(updatedAt *time.Time, thresholdSeconds int) ReportMeta {
 	if updatedAt == nil {
 		return ReportMeta{
-			Source:              "unavailable",
-			GeneratedAt:         nil,
-			ReadModelLagSeconds: -1,
-			IsStale:             true,
+			AsOf:       nil,
+			LagSeconds: -1,
+			Degraded:   true,
+			Source:     ReportSourceUnavailable,
 		}
 	}
 	lag := int(time.Since(*updatedAt).Seconds())
+	if lag < 0 {
+		lag = 0
+	}
 	return ReportMeta{
-		Source:              "read_model",
-		GeneratedAt:         updatedAt,
-		ReadModelLagSeconds: lag,
-		IsStale:             lag >= thresholdSeconds,
+		AsOf:       updatedAt,
+		LagSeconds: lag,
+		Degraded:   lag > thresholdSeconds,
+		Source:     ReportSourceReportingProjection,
 	}
 }

@@ -101,7 +101,7 @@ func TestReportsHandler_Fresh(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assertEnvelope(t, rec.Body.String(), `"is_stale":false`, `"source":"read_model"`)
+	assertEnvelope(t, rec.Body.String(), `"degraded":false`, `"source":"reporting_projection"`)
 }
 
 func TestReportsHandler_Stale(t *testing.T) {
@@ -122,7 +122,7 @@ func TestReportsHandler_Stale(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assertEnvelope(t, rec.Body.String(), `"is_stale":true`, `"source":"read_model"`, `"report":[`)
+	assertEnvelope(t, rec.Body.String(), `"degraded":true`, `"source":"reporting_projection"`, `"data":[]`)
 }
 
 func TestReportsHandler_MissingProjection(t *testing.T) {
@@ -152,10 +152,10 @@ func TestReportsHandler_MissingProjection(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	response := decodeReportsResponse(t, rec.Body.Bytes())
 	assert.True(t, response.Success)
-	assert.Equal(t, "unavailable", response.Data.Meta.Source)
-	assert.Equal(t, -1, response.Data.Meta.ReadModelLagSeconds)
-	assert.Nil(t, response.Data.Meta.GeneratedAt)
-	row := findReportRow(t, response.Data.Report, event.EventID)
+	assert.Equal(t, ticketing.ReportSourceUnavailable, response.Meta.Source)
+	assert.Equal(t, -1, response.Meta.LagSeconds)
+	assert.Nil(t, response.Meta.AsOf)
+	row := findReportRow(t, response.Data, event.EventID)
 	assert.Equal(t, 0, row.ConfirmedCount)
 	assert.Equal(t, 0, row.WaitlistCount)
 	assert.Equal(t, 0, row.EmployeeCount)
@@ -219,15 +219,13 @@ func TestReportsHandler_ThresholdFromEnv(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assertEnvelope(t, rec.Body.String(), `"is_stale":true`)
+	assertEnvelope(t, rec.Body.String(), `"degraded":true`)
 }
 
 type reportsResponse struct {
-	Success bool `json:"success"`
-	Data    struct {
-		Report []ticketing.ReportRow `json:"report"`
-		Meta   ticketing.ReportMeta  `json:"meta"`
-	} `json:"data"`
+	Success bool                  `json:"success"`
+	Data    []ticketing.ReportRow `json:"data"`
+	Meta    ticketing.ReportMeta  `json:"meta"`
 }
 
 func decodeReportsResponse(t *testing.T, body []byte) reportsResponse {

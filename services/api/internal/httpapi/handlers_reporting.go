@@ -17,21 +17,18 @@ func handleReports(service TicketingService, threshold int, logger *slog.Logger)
 
 		meta := ticketing.FreshnessFromProjection(result.ProjectionUpdatedAt, threshold)
 		rows := result.Rows
-		if meta.Source == "unavailable" {
+		if meta.Source == ticketing.ReportSourceUnavailable {
 			rows = zeroReportRows(result.Rows)
 		}
 
 		if logger != nil {
 			logger.InfoContext(r.Context(), "report served",
-				"is_stale", meta.IsStale,
-				"lag_seconds", meta.ReadModelLagSeconds,
+				"degraded", meta.Degraded,
+				"lag_seconds", meta.LagSeconds,
 			)
 		}
 
-		writeServiceResult(w, http.StatusOK, map[string]any{
-			"report": rows,
-			"meta":   meta,
-		}, nil)
+		writeJSONWithMeta(w, http.StatusOK, rows, meta)
 	}
 }
 

@@ -14,11 +14,11 @@ func TestFreshnessFromProjection_Fresh(t *testing.T) {
 
 	meta := FreshnessFromProjection(&updatedAt, threshold)
 
-	assert.False(t, meta.IsStale)
-	assert.Equal(t, "read_model", meta.Source)
-	assert.GreaterOrEqual(t, meta.ReadModelLagSeconds, 29)
-	assert.LessOrEqual(t, meta.ReadModelLagSeconds, 31)
-	assert.Equal(t, &updatedAt, meta.GeneratedAt)
+	assert.False(t, meta.Degraded)
+	assert.Equal(t, ReportSourceReportingProjection, meta.Source)
+	assert.GreaterOrEqual(t, meta.LagSeconds, 29)
+	assert.LessOrEqual(t, meta.LagSeconds, 31)
+	assert.Equal(t, &updatedAt, meta.AsOf)
 }
 
 func TestFreshnessFromProjection_Stale(t *testing.T) {
@@ -28,20 +28,20 @@ func TestFreshnessFromProjection_Stale(t *testing.T) {
 
 	meta := FreshnessFromProjection(&updatedAt, threshold)
 
-	assert.True(t, meta.IsStale)
-	assert.Equal(t, "read_model", meta.Source)
-	assert.GreaterOrEqual(t, meta.ReadModelLagSeconds, 89)
-	assert.LessOrEqual(t, meta.ReadModelLagSeconds, 91)
-	assert.Equal(t, &updatedAt, meta.GeneratedAt)
+	assert.True(t, meta.Degraded)
+	assert.Equal(t, ReportSourceReportingProjection, meta.Source)
+	assert.GreaterOrEqual(t, meta.LagSeconds, 89)
+	assert.LessOrEqual(t, meta.LagSeconds, 91)
+	assert.Equal(t, &updatedAt, meta.AsOf)
 }
 
 func TestFreshnessFromProjection_Missing(t *testing.T) {
 	meta := FreshnessFromProjection(nil, 60)
 
-	assert.True(t, meta.IsStale)
-	assert.Equal(t, "unavailable", meta.Source)
-	assert.Equal(t, -1, meta.ReadModelLagSeconds)
-	assert.Nil(t, meta.GeneratedAt)
+	assert.True(t, meta.Degraded)
+	assert.Equal(t, ReportSourceUnavailable, meta.Source)
+	assert.Equal(t, -1, meta.LagSeconds)
+	assert.Nil(t, meta.AsOf)
 }
 
 func TestFreshnessThresholdRespected(t *testing.T) {
@@ -51,5 +51,5 @@ func TestFreshnessThresholdRespected(t *testing.T) {
 
 	meta := FreshnessFromProjection(&updatedAt, threshold)
 
-	assert.True(t, meta.IsStale)
+	assert.True(t, meta.Degraded)
 }

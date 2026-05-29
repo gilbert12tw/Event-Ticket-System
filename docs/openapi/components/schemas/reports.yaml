@@ -1,17 +1,12 @@
 ReportSummaryResponse:
   allOf:
-    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
     - type: object
       properties:
         data:
-          type: object
-          properties:
-            report:
-              type: array
-              items:
-                "$ref": "#/ReportRow"
-            meta:
-              "$ref": "#/ReportMeta"
+          type: array
+          items:
+            "$ref": "#/ReportRow"
 ReportExportResponse:
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessEnvelope"
@@ -177,19 +172,3 @@ ReportExport:
         - string
         - "null"
       format: date-time
-ReportMeta:
-  type: object
-  required: [source, generated_at, read_model_lag_seconds, is_stale]
-  properties:
-    source:
-      type: string
-      enum: [read_model, unavailable]
-    generated_at:
-      type: string
-      format: date-time
-      nullable: true
-    read_model_lag_seconds:
-      type: integer
-      description: "-1 when projection is unavailable"
-    is_stale:
-      type: boolean
