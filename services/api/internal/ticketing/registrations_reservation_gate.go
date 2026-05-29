@@ -46,7 +46,7 @@ func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventC
 // When the gate is disabled, the event is unlimited, or peek fails to find
 // the event, the returned Hold is granted and idempotencyHash is empty (the
 // caller skips gate finalization).
-func (s *Service) preadmitBooking(ctx context.Context, eventID, employeeID, idempotencyKey string) (reservation.Hold, string, error) {
+func (s *Service) preadmitBooking(ctx context.Context, eventID, employeeID, idempotencyKey string, familyCount int) (reservation.Hold, string, error) {
 	if !s.reservationGate.Enabled() {
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
@@ -58,13 +58,16 @@ func (s *Service) preadmitBooking(ctx context.Context, eventID, employeeID, idem
 	if peek.CapacityType != CapacityTypeLimited {
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
+	if familyCount > 0 {
+		return reservation.Hold{}, "", badRequest("limited events cannot accept family attendees")
+	}
 	idempotencyHash := reservation.Hash(s.reservationSecret, reservationOperation, eventID, employeeID, idempotencyKey)
 	actorHash := reservation.ActorHash(s.reservationSecret, employeeID)
 	probe := s.remainingCapacityProbe(eventID, peek)
 	hold, err := s.reservationGate.Reserve(ctx, eventID, idempotencyHash, actorHash, probe)
 	if err != nil {
 		if errors.Is(err, reservation.ErrUnavailable) {
-			return reservation.Hold{}, "", conflict("reservation gate unavailable; retry shortly")
+			return reservation.Hold{}, "", serviceUnavailable("RESERVATION_GATE_UNAVAILABLE", "reservation gate unavailable; retry shortly")
 		}
 		return reservation.Hold{}, "", err
 	}

@@ -259,8 +259,9 @@ func TestProviderRoleRBACMatrix(t *testing.T) {
 		{
 			name: "reports",
 			allowedFor: map[string]int{
-				RoleHRAdmin:     200,
-				RoleSystemAdmin: 200,
+				RoleActivityAdmin: 200,
+				RoleHRAdmin:       200,
+				RoleSystemAdmin:   200,
 			},
 			run: func(actor Actor) error {
 				_, err := service.Reports(ctx, actor)

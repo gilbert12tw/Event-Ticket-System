@@ -9,14 +9,19 @@ import (
 type envelope struct {
 	Success   bool        `json:"success"`
 	Data      interface{} `json:"data"`
+	Meta      interface{} `json:"meta,omitempty"`
 	Error     *string     `json:"error"`
 	ErrorCode string      `json:"error_code,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+	writeJSONWithMeta(w, status, data, nil)
+}
+
+func writeJSONWithMeta(w http.ResponseWriter, status int, data interface{}, meta interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(envelope{Success: true, Data: normalizeResponseData(data), Error: nil})
+	_ = json.NewEncoder(w).Encode(envelope{Success: true, Data: normalizeResponseData(data), Meta: meta, Error: nil})
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

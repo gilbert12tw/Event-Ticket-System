@@ -34,7 +34,11 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return BookingResponse{}, forbidden("employees may only book for themselves")
 	}
 
-	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, employeeID, req.IdempotencyKey)
+	if response, found, err := s.replayCompletedBooking(ctx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount); err != nil || found {
+		return response, err
+	}
+
+	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, employeeID, req.IdempotencyKey, req.FamilyCount)
 	if err != nil {
 		return BookingResponse{}, err
 	}
@@ -211,6 +215,24 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 
 	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", action, "status", status, "event_id", eventID, "actor_role", actor.Role)
 	return response, nil
+}
+
+func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, employeeID string, familyCount int) (BookingResponse, bool, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	defer rollback(ctx, tx)
+
+	snapshot, found, err := s.completedBookingIdempotencyResultTx(ctx, tx, key, eventID, employeeID, familyCount)
+	if err != nil || !found {
+		return BookingResponse{}, found, err
+	}
+	response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	return response, true, tx.Commit(ctx)
 }
 
 func remainingForNewBooking(event Event, status string, capacity int, confirmedCount int) int {

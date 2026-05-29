@@ -2,14 +2,18 @@ package ticketing
 
 import (
 	"context"
+	"errors"
 	"strings"
 
+	"time"
+
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error) {
-	if err := requireRole(actor, RoleHRAdmin); err != nil {
-		return nil, err
+func (s *Service) Reports(ctx context.Context, actor Actor) (ReportsResult, error) {
+	if err := requireAnyRole(actor, RoleActivityAdmin, RoleSystemAdmin, RoleHRAdmin); err != nil {
+		return ReportsResult{}, err
 	}
 	rows, err := s.db.Query(ctx, `SELECT
 			e.event_id, e.title, e.capacity_type, e.capacity, e.event_city, e.starts_at,
@@ -42,7 +46,7 @@ func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error)
 		) checkins ON checkins.event_id = e.event_id
 		ORDER BY e.starts_at DESC`)
 	if err != nil {
-		return nil, err
+		return ReportsResult{}, err
 	}
 	defer rows.Close()
 
@@ -56,7 +60,7 @@ func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error)
 			&row.ConfirmedCount, &row.WaitlistCount, &row.EmployeeCount, &row.FamilyCount,
 			&row.TicketCount, &row.CheckinCount,
 		); err != nil {
-			return nil, err
+			return ReportsResult{}, err
 		}
 		row.TotalAttendeeCount = row.EmployeeCount + row.FamilyCount
 		row.CityDistribution = map[string]int{reportCityKey(eventCity): row.TotalAttendeeCount}
@@ -67,7 +71,20 @@ func (s *Service) Reports(ctx context.Context, actor Actor) ([]ReportRow, error)
 		}
 		reports = append(reports, row)
 	}
-	return reports, rows.Err()
+	if err := rows.Err(); err != nil {
+		return ReportsResult{}, err
+	}
+
+	var updatedAt *time.Time
+	err = s.db.QueryRow(ctx, `SELECT updated_at FROM reporting_projection_offsets WHERE projection_name = 'event_summary'`).Scan(&updatedAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		s.logger.Warn("reporting projection offset lookup failed", "err", err)
+	}
+
+	return ReportsResult{
+		Rows:                reports,
+		ProjectionUpdatedAt: updatedAt,
+	}, nil
 }
 
 func reportCityKey(city string) string {

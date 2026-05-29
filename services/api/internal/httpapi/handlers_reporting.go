@@ -1,16 +1,71 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"event-ticket-system/internal/ticketing"
 )
 
-func handleReports(service TicketingService) http.HandlerFunc {
+func handleReports(service TicketingService, threshold int, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.Reports(r.Context(), actorFromRequest(r))
-		writeServiceResult(w, http.StatusOK, result, err)
+		if err != nil {
+			writeServiceResult(w, http.StatusOK, nil, err)
+			return
+		}
+
+		meta := ticketing.FreshnessFromProjection(result.ProjectionUpdatedAt, threshold)
+		rows := result.Rows
+		if meta.Source == ticketing.ReportSourceUnavailable {
+			rows = zeroReportRows(result.Rows)
+		}
+
+		if logger != nil {
+			logger.InfoContext(r.Context(), "report served",
+				"degraded", meta.Degraded,
+				"lag_seconds", meta.LagSeconds,
+			)
+		}
+
+		writeJSONWithMeta(w, http.StatusOK, rows, meta)
 	}
+}
+
+func zeroReportRows(rows []ticketing.ReportRow) []ticketing.ReportRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	zeroed := make([]ticketing.ReportRow, len(rows))
+	for i, row := range rows {
+		zeroed[i] = row
+		zeroed[i].ConfirmedCount = 0
+		zeroed[i].WaitlistCount = 0
+		zeroed[i].EmployeeCount = 0
+		zeroed[i].FamilyCount = 0
+		zeroed[i].TotalAttendeeCount = 0
+		zeroed[i].TicketCount = 0
+		zeroed[i].CheckinCount = 0
+		zeroed[i].CityDistribution = zeroCityDistribution(row.CityDistribution)
+		if row.Capacity != nil {
+			remaining := *row.Capacity
+			zeroed[i].RemainingCapacity = &remaining
+		} else {
+			zeroed[i].RemainingCapacity = nil
+		}
+	}
+	return zeroed
+}
+
+func zeroCityDistribution(distribution map[string]int) map[string]int {
+	if len(distribution) == 0 {
+		return map[string]int{}
+	}
+	zeroed := make(map[string]int, len(distribution))
+	for key := range distribution {
+		zeroed[key] = 0
+	}
+	return zeroed
 }
 
 func handleCreateReportExport(service TicketingService) http.HandlerFunc {
