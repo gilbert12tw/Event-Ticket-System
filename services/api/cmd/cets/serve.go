@@ -35,6 +35,7 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 			ProviderAuth: httpapi.ProviderAuthConfig{
 				Secret: cfg.ProviderTokenSecret,
 			},
+			ReportStaleThresholdSeconds: cfg.ReportStaleThresholdSeconds,
 		})
 
 		server := &http.Server{
