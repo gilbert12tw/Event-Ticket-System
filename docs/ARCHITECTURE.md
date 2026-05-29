@@ -103,7 +103,7 @@ flowchart LR
 ### 4.3 Phase 1 Connectivity Acceptance
 
 - `GET /metrics` exposes Prometheus-style operational metrics on the app port. The current Phase 2 slice includes HTTP RED metrics by route pattern / method / status class, PostgreSQL pool acquire wait counters, current lock-waiting sessions, and outbox backlog / oldest-lag gauges. Route labels must use patterns such as `/api/v1/events/{event_id}` rather than raw IDs or tokens.
-- The optional Compose `observability` profile starts Prometheus and Grafana from `services/api/deploy/observability/` so reviewers can inspect RED, DB pool/lock, and outbox lag panels without adding a required production backing service.
+- The optional Compose `observability` profile starts Prometheus, Loki, Promtail, Tempo, and Grafana from `services/api/deploy/observability/` so reviewers can inspect metrics, app/worker stdout logs, and a trace backend without adding required production backing services.
 
 - `GET /readyz` 回 200 代表 app 已透過 `DATABASE_URL` 連到 PostgreSQL；PostgreSQL 停止時 `/readyz` 必須回 503。
 - `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml ps` 代表 Redis、MinIO、Mailhog 已作為 local backing services 啟動；production gate 還必須通過 app/worker behavior tests。
@@ -375,7 +375,7 @@ sequenceDiagram
 | Object Storage | MinIO in Compose，未來可換 S3 compatible storage | Report export 已透過 S3-compatible adapter boundary 寫入 object storage；活動圖片、附件、票券 PDF 可沿用同一 adapter。 |
 | Queue | PostgreSQL outbox；未來可換 Redis stream 或 lightweight broker | Same-binary worker 已消費 `outbox_events`；如改外部 queue，必須保留 DB outbox 或等價可靠交付語義。 |
 | Local Dev | Docker Compose | 一鍵啟動 app 與 backing services，降低 mentor demo 與團隊 onboarding 成本。 |
-| Observability | JSON logs + basic metrics + trace_id | Phase 1 先能排查報名、票券、核銷流程；Phase 2/3 再導入完整 stack。 |
+| Observability | JSON logs + basic metrics + trace_id + optional local Loki/Tempo | Phase 1 先能排查報名、票券、核銷流程；Phase 2/3 再導入完整 stack。 |
 
 ### 8.2 Cloud-agnostic 對應
 
@@ -490,6 +490,8 @@ Phase 1 文件不把任何雲供應商作為必備前提。Compose 中的 backin
 ### 13.1 Phase 1 可觀測性
 
 Current scrape surface: `/metrics` is unauthenticated operational telemetry for local/CI scraping. It must stay additive, bounded-cardinality, and free of full PII, signed tokens, QR payloads, provider tokens, and raw path identifiers.
+
+The optional local observability profile also provisions Loki for app/worker stdout log search and Tempo as a local trace backend. This does not change app/worker runtime behavior: logs still go to stdout/stderr, and trace export remains a future opt-in app config change.
 
 | 類別 | 指標 / 紀錄 |
 | --- | --- |
