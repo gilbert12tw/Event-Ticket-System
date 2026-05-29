@@ -317,6 +317,58 @@ func TestBookingWithGateFailClosedUnavailableReturns503(t *testing.T) {
 	assert.Equal(t, "RESERVATION_GATE_UNAVAILABLE", ErrorCode(err))
 }
 
+func TestBookingWithGateExhaustedPathWaitsForEventStateLock(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	gate := &recordingReservationGate{outcome: reservation.OutcomeExhausted}
+	service.WithReservationGate(gate, []byte("reservation-test-secret"))
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Exhausted Path State Lock",
+		Capacity: 1,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+
+	lockTx, err := service.db.Begin(ctx)
+	require.NoError(t, err)
+	_, err = lockTx.Exec(ctx, `SELECT event_id FROM events WHERE event_id = $1 FOR UPDATE`, event.EventID)
+	require.NoError(t, err)
+
+	done := make(chan BookingResponse, 1)
+	errs := make(chan error, 1)
+	go func() {
+		res, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID,
+			BookingRequest{EmployeeID: "E1001", IdempotencyKey: "exhausted-state-lock"})
+		if err != nil {
+			errs <- err
+			return
+		}
+		done <- res
+	}()
+
+	select {
+	case res := <-done:
+		require.Failf(t, "booking completed while event row update lock was held", "status=%s", res.Registration.Status)
+	case err := <-errs:
+		require.Failf(t, "booking errored while event row update lock was held", "err=%v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	require.NoError(t, lockTx.Rollback(ctx))
+	select {
+	case res := <-done:
+		assert.Equal(t, RegistrationWaitlisted, res.Registration.Status)
+	case err := <-errs:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "booking did not finish after releasing event row lock")
+	}
+}
+
 type recordingReservationGate struct {
 	outcome      reservation.Outcome
 	err          error

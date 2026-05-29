@@ -19,8 +19,9 @@ type eventCapacityPeek struct {
 
 // peekEventCapacity reads the event capacity_type and capacity outside any
 // transaction. It is only consulted to decide whether the Redis reservation
-// gate applies; PostgreSQL still locks and rechecks the event row inside the
-// booking transaction (PH2-20 §3, §7).
+// gate applies; PostgreSQL still rechecks the event row inside the booking
+// transaction. Granted bookings use `FOR UPDATE`; exhausted bookings use a
+// shared lock because they can only create waitlist rows.
 func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventCapacityPeek, error) {
 	var peek eventCapacityPeek
 	var capacity *int
