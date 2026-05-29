@@ -1,8 +1,11 @@
 package httpapi
 
-import "net/http"
+import (
+	"log/slog"
+	"net/http"
+)
 
-func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEnv string, provider *ProviderVerifier, opsAPIEnabled bool) {
+func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEnv string, provider *ProviderVerifier, opsAPIEnabled bool, reportStaleThresholdSeconds int, logger *slog.Logger) {
 	protected := func(next http.HandlerFunc) http.HandlerFunc {
 		return requireActor(provider, requireService(service, next))
 	}
@@ -41,7 +44,7 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEn
 		mux.HandleFunc("GET /api/v1/admin/ops/queues", protected(handleOpsQueues(service)))
 		mux.HandleFunc("GET /api/v1/admin/ops/notification-deliveries", protected(handleOpsNotificationDeliveries(service)))
 	}
-	mux.HandleFunc("GET /api/v1/admin/reports", protected(handleReports(service)))
+	mux.HandleFunc("GET /api/v1/admin/reports", protected(handleReports(service, reportStaleThresholdSeconds, logger)))
 	mux.HandleFunc("POST /api/v1/admin/reports/exports", protected(handleCreateReportExport(service)))
 	mux.HandleFunc("GET /api/v1/admin/reports/exports/{export_id}", protected(handleGetReportExport(service)))
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", protected(handleAuditLogs(service)))

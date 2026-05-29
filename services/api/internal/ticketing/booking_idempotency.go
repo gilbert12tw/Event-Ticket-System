@@ -55,6 +55,30 @@ func (s *Service) lockBookingIdempotencyResultTx(
 	return result, true, nil
 }
 
+func (s *Service) completedBookingIdempotencyResultTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	key string,
+	eventID string,
+	employeeID string,
+	familyCount int,
+) (bookingIdempotencyResult, bool, error) {
+	result, err := s.bookingIdempotencyResultForUpdateTx(ctx, tx, key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return bookingIdempotencyResult{}, false, nil
+	}
+	if err != nil {
+		return bookingIdempotencyResult{}, false, err
+	}
+	if result.EventID != eventID || result.EmployeeID != employeeID || result.FamilyCount != familyCount {
+		return bookingIdempotencyResult{}, false, conflict("idempotency key belongs to a different booking request")
+	}
+	if result.RegistrationID == "" || result.CompletedAt.IsZero() {
+		return bookingIdempotencyResult{}, false, conflict("booking idempotency result is not ready")
+	}
+	return result, true, nil
+}
+
 func (s *Service) bookingIdempotencyResultForUpdateTx(ctx context.Context, tx pgx.Tx, key string) (bookingIdempotencyResult, error) {
 	var result bookingIdempotencyResult
 	var registrationID sql.NullString

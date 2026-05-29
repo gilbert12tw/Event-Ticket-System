@@ -69,7 +69,7 @@ type NotificationService interface {
 }
 
 type ReportingService interface {
-	Reports(ctx context.Context, actor ticketing.Actor) ([]ticketing.ReportRow, error)
+	Reports(ctx context.Context, actor ticketing.Actor) (ticketing.ReportsResult, error)
 	CreateReportExport(ctx context.Context, actor ticketing.Actor, req ticketing.ReportExportRequest) (ticketing.ReportExport, error)
 	GetReportExport(ctx context.Context, actor ticketing.Actor, exportID string) (ticketing.ReportExport, error)
 }

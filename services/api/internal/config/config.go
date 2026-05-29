@@ -23,83 +23,99 @@ const (
 )
 
 type Config struct {
-	AppAddr             string
-	AppEnv              string
-	AuthMode            string
-	DatabaseURL         string
-	RedisURL            string
-	QueueURL            string
-	ObjectEndpoint      string
-	ObjectBucket        string
-	ObjectRegion        string
-	ObjectAccessKey     string
-	ObjectSecretKey     string
-	MailerHost          string
-	MailerPort          int
-	MailerFrom          string
-	MailerRedirectTo    string
-	TokenSigningSecret  string
-	ProviderTokenSecret string
-	AutoMigrate         bool
-	OpsAPIEnabled       bool
-	RequestTimeout      time.Duration
-	DatabaseTimeout     time.Duration
-	ShutdownTimeout     time.Duration
-	WorkerPollInterval  time.Duration
-	WorkerShutdownGrace time.Duration
-	WorkerMaxAttempts   int
-	WorkerBatchSize     int
-	OutboxLeaseTTL      time.Duration
-	OutboxRetryMax      int
-	OutboxBackoffBase   time.Duration
-	OutboxBackoffMax    time.Duration
-	WorkerKinds         []string
-	WorkerConcurrency   map[string]int
-	NoShowThreshold     int
-	NoShowCooldownDays  int
-	NoShowGraceHours    int
-	loadErrors          []string
+	AppAddr                         string
+	AppEnv                          string
+	AuthMode                        string
+	DatabaseURL                     string
+	RedisURL                        string
+	QueueURL                        string
+	ObjectEndpoint                  string
+	ObjectBucket                    string
+	ObjectRegion                    string
+	ObjectAccessKey                 string
+	ObjectSecretKey                 string
+	MailerHost                      string
+	MailerPort                      int
+	MailerFrom                      string
+	MailerRedirectTo                string
+	TokenSigningSecret              string
+	ProviderTokenSecret             string
+	AutoMigrate                     bool
+	OpsAPIEnabled                   bool
+	RequestTimeout                  time.Duration
+	DatabaseTimeout                 time.Duration
+	ShutdownTimeout                 time.Duration
+	WorkerPollInterval              time.Duration
+	WorkerShutdownGrace             time.Duration
+	WorkerMaxAttempts               int
+	WorkerBatchSize                 int
+	OutboxLeaseTTL                  time.Duration
+	OutboxRetryMax                  int
+	OutboxBackoffBase               time.Duration
+	OutboxBackoffMax                time.Duration
+	WorkerKinds                     []string
+	WorkerConcurrency               map[string]int
+	NoShowThreshold                 int
+	NoShowCooldownDays              int
+	NoShowGraceHours                int
+	ReportStaleThresholdSeconds     int
+	ReportUnavailableTimeoutSeconds int
+	BookingPreadmission             bool
+	ReservationOutageMode           string
+	ReservationTTL                  time.Duration
+	ReservationGraceTTL             time.Duration
+	ReservationOperationTimeout     time.Duration
+	BookingReservationHashSecret    string
+	loadErrors                      []string
 }
 
 func Load() Config {
 	var loadErrors []string
 	return Config{
-		AppAddr:             getEnv("APP_ADDR", ":8080"),
-		AppEnv:              getEnv("APP_ENV", "local"),
-		AuthMode:            getEnv("AUTH_MODE", authModeExternalSSO),
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		RedisURL:            os.Getenv("REDIS_URL"),
-		QueueURL:            os.Getenv("QUEUE_URL"),
-		ObjectEndpoint:      os.Getenv("OBJECT_STORAGE_ENDPOINT"),
-		ObjectBucket:        os.Getenv("OBJECT_STORAGE_BUCKET"),
-		ObjectRegion:        getEnv("OBJECT_STORAGE_REGION", "us-east-1"),
-		ObjectAccessKey:     os.Getenv("OBJECT_STORAGE_ACCESS_KEY"),
-		ObjectSecretKey:     os.Getenv("OBJECT_STORAGE_SECRET_KEY"),
-		MailerHost:          getEnv("MAILER_HOST", "localhost"),
-		MailerPort:          parsePositiveIntEnv("MAILER_PORT", "1025", &loadErrors),
-		MailerFrom:          getEnv("MAILER_FROM", "no-reply@cets.local"),
-		MailerRedirectTo:    strings.TrimSpace(os.Getenv("MAILER_REDIRECT_TO")),
-		TokenSigningSecret:  getEnv("TOKEN_SIGNING_SECRET", localTokenSecret),
-		ProviderTokenSecret: getEnv("PROVIDER_TOKEN_SECRET", localProviderSecret),
-		AutoMigrate:         parseBoolEnv("AUTO_MIGRATE", "false", &loadErrors),
-		OpsAPIEnabled:       parseBoolEnv("OPS_API_ENABLED", "false", &loadErrors),
-		RequestTimeout:      parseDurationMSEnv("REQUEST_TIMEOUT_MS", "5000", &loadErrors),
-		DatabaseTimeout:     parseDurationMSEnv("DATABASE_TIMEOUT_MS", "5000", &loadErrors),
-		ShutdownTimeout:     parseDurationMSEnv("SHUTDOWN_TIMEOUT_MS", "10000", &loadErrors),
-		WorkerPollInterval:  parseDurationMSEnv("WORKER_POLL_INTERVAL_MS", "1000", &loadErrors),
-		WorkerShutdownGrace: parseNonNegativeDurationSecondsEnv("WORKER_SHUTDOWN_GRACE_SECONDS", "30", &loadErrors),
-		WorkerMaxAttempts:   parsePositiveIntEnv("WORKER_MAX_ATTEMPTS", "3", &loadErrors),
-		WorkerBatchSize:     parsePositiveIntEnvAlias("OUTBOX_BATCH_SIZE", "WORKER_BATCH_SIZE", "100", &loadErrors),
-		OutboxLeaseTTL:      parsePositiveDurationSecondsEnv("OUTBOX_LEASE_TTL_SECONDS", "60", &loadErrors),
-		OutboxRetryMax:      parseNonNegativeIntEnv("OUTBOX_RETRY_MAX", "10", &loadErrors),
-		OutboxBackoffBase:   parseDurationMSEnv("OUTBOX_BACKOFF_BASE_MS", "500", &loadErrors),
-		OutboxBackoffMax:    parseDurationMSEnv("OUTBOX_BACKOFF_MAX_MS", "60000", &loadErrors),
-		WorkerKinds:         parseWorkerKindsEnv(&loadErrors),
-		WorkerConcurrency:   parseWorkerConcurrencyEnv(&loadErrors),
-		NoShowThreshold:     parsePositiveIntEnv("NO_SHOW_THRESHOLD", "1", &loadErrors),
-		NoShowCooldownDays:  parsePositiveIntEnv("NO_SHOW_COOLDOWN_DAYS", "90", &loadErrors),
-		NoShowGraceHours:    parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
-		loadErrors:          loadErrors,
+		AppAddr:                         getEnv("APP_ADDR", ":8080"),
+		AppEnv:                          getEnv("APP_ENV", "local"),
+		AuthMode:                        getEnv("AUTH_MODE", authModeExternalSSO),
+		DatabaseURL:                     os.Getenv("DATABASE_URL"),
+		RedisURL:                        os.Getenv("REDIS_URL"),
+		QueueURL:                        os.Getenv("QUEUE_URL"),
+		ObjectEndpoint:                  os.Getenv("OBJECT_STORAGE_ENDPOINT"),
+		ObjectBucket:                    os.Getenv("OBJECT_STORAGE_BUCKET"),
+		ObjectRegion:                    getEnv("OBJECT_STORAGE_REGION", "us-east-1"),
+		ObjectAccessKey:                 os.Getenv("OBJECT_STORAGE_ACCESS_KEY"),
+		ObjectSecretKey:                 os.Getenv("OBJECT_STORAGE_SECRET_KEY"),
+		MailerHost:                      getEnv("MAILER_HOST", "localhost"),
+		MailerPort:                      parsePositiveIntEnv("MAILER_PORT", "1025", &loadErrors),
+		MailerFrom:                      getEnv("MAILER_FROM", "no-reply@cets.local"),
+		MailerRedirectTo:                strings.TrimSpace(os.Getenv("MAILER_REDIRECT_TO")),
+		TokenSigningSecret:              getEnv("TOKEN_SIGNING_SECRET", localTokenSecret),
+		ProviderTokenSecret:             getEnv("PROVIDER_TOKEN_SECRET", localProviderSecret),
+		AutoMigrate:                     parseBoolEnv("AUTO_MIGRATE", "false", &loadErrors),
+		OpsAPIEnabled:                   parseBoolEnv("OPS_API_ENABLED", "false", &loadErrors),
+		RequestTimeout:                  parseDurationMSEnv("REQUEST_TIMEOUT_MS", "5000", &loadErrors),
+		DatabaseTimeout:                 parseDurationMSEnv("DATABASE_TIMEOUT_MS", "5000", &loadErrors),
+		ShutdownTimeout:                 parseDurationMSEnv("SHUTDOWN_TIMEOUT_MS", "10000", &loadErrors),
+		WorkerPollInterval:              parseDurationMSEnv("WORKER_POLL_INTERVAL_MS", "1000", &loadErrors),
+		WorkerShutdownGrace:             parseNonNegativeDurationSecondsEnv("WORKER_SHUTDOWN_GRACE_SECONDS", "30", &loadErrors),
+		WorkerMaxAttempts:               parsePositiveIntEnv("WORKER_MAX_ATTEMPTS", "3", &loadErrors),
+		WorkerBatchSize:                 parsePositiveIntEnvAlias("OUTBOX_BATCH_SIZE", "WORKER_BATCH_SIZE", "100", &loadErrors),
+		OutboxLeaseTTL:                  parsePositiveDurationSecondsEnv("OUTBOX_LEASE_TTL_SECONDS", "60", &loadErrors),
+		OutboxRetryMax:                  parseNonNegativeIntEnv("OUTBOX_RETRY_MAX", "10", &loadErrors),
+		OutboxBackoffBase:               parseDurationMSEnv("OUTBOX_BACKOFF_BASE_MS", "500", &loadErrors),
+		OutboxBackoffMax:                parseDurationMSEnv("OUTBOX_BACKOFF_MAX_MS", "60000", &loadErrors),
+		WorkerKinds:                     parseWorkerKindsEnv(&loadErrors),
+		WorkerConcurrency:               parseWorkerConcurrencyEnv(&loadErrors),
+		NoShowThreshold:                 parsePositiveIntEnv("NO_SHOW_THRESHOLD", "1", &loadErrors),
+		NoShowCooldownDays:              parsePositiveIntEnv("NO_SHOW_COOLDOWN_DAYS", "90", &loadErrors),
+		NoShowGraceHours:                parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
+		ReportStaleThresholdSeconds:     parsePositiveIntEnv("REPORT_STALE_THRESHOLD_SECONDS", "60", &loadErrors),
+		ReportUnavailableTimeoutSeconds: parsePositiveIntEnv("REPORT_UNAVAILABLE_TIMEOUT_SECONDS", "180", &loadErrors),
+		BookingPreadmission:             parseOnOffEnv("BOOKING_PREADMISSION", "off", &loadErrors),
+		ReservationOutageMode:           getEnv("REDIS_OUTAGE_MODE", "degrade"),
+		ReservationTTL:                  parseSecondsEnv("RESERVATION_TTL_SECONDS", "20", &loadErrors),
+		ReservationGraceTTL:             parseSecondsEnv("RESERVATION_TTL_GRACE_SECONDS", "10", &loadErrors),
+		ReservationOperationTimeout:     parseDurationMSEnv("REDIS_OPERATION_TIMEOUT_MS", "150", &loadErrors),
+		BookingReservationHashSecret:    os.Getenv("BOOKING_RESERVATION_HASH_SECRET"),
+		loadErrors:                      loadErrors,
 	}
 }
 
@@ -318,6 +334,29 @@ func parsePositiveDurationSecondsEnv(key string, fallback string, loadErrors *[]
 		return time.Duration(fallbackValue) * time.Second
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func parseSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
+	value := getEnv(key, fallback)
+	secs, err := strconv.Atoi(value)
+	if err != nil || secs <= 0 {
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of seconds, got %q", key, value))
+		return 0
+	}
+	return time.Duration(secs) * time.Second
+}
+
+func parseOnOffEnv(key string, fallback string, loadErrors *[]string) bool {
+	value := strings.ToLower(getEnv(key, fallback))
+	switch value {
+	case "on", "true", "1", "yes":
+		return true
+	case "off", "false", "0", "no", "":
+		return false
+	default:
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be one of on|off, got %q", key, value))
+		return false
+	}
 }
 
 func parsePositiveIntEnv(key string, fallback string, loadErrors *[]string) int {

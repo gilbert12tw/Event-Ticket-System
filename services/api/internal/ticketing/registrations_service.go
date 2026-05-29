@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"event-ticket-system/internal/reservation"
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
@@ -33,6 +34,19 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return BookingResponse{}, forbidden("employees may only book for themselves")
 	}
 
+	if response, found, err := s.replayCompletedBooking(ctx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount); err != nil || found {
+		return response, err
+	}
+
+	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, employeeID, req.IdempotencyKey, req.FamilyCount)
+	if err != nil {
+		return BookingResponse{}, err
+	}
+	gateConfirmed := false
+	defer func() {
+		s.finalizeReservation(ctx, eventID, idempotencyHash, gateConfirmed)
+	}()
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return BookingResponse{}, err
@@ -49,7 +63,17 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return response, tx.Commit(ctx)
 	}
 
-	event, rule, err := s.lockEventWithRule(ctx, tx, eventID)
+	var event Event
+	var rule EligibilityRule
+	if hold.Outcome == reservation.OutcomeExhausted {
+		// PH2-22 fast path: Redis already determined this event is full. The
+		// booking commits a waitlist row, which has no capacity constraint.
+		// A shared lock still protects the event-state recheck from racing
+		// with close, cancel, or archive updates.
+		event, rule, err = s.readEventWithRuleShareLockTx(ctx, tx, eventID)
+	} else {
+		event, rule, err = s.lockEventWithRule(ctx, tx, eventID)
+	}
 	if err != nil {
 		return BookingResponse{}, err
 	}
@@ -124,12 +148,17 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		if err != nil {
 			return BookingResponse{}, err
 		}
-		confirmedCount, err = s.confirmedCountTx(ctx, tx, eventID)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		if confirmedCount >= capacity {
+		if hold.Outcome == reservation.OutcomeExhausted {
 			status = RegistrationWaitlisted
+			confirmedCount = capacity
+		} else {
+			confirmedCount, err = s.confirmedCountTx(ctx, tx, eventID)
+			if err != nil {
+				return BookingResponse{}, err
+			}
+			if confirmedCount >= capacity {
+				status = RegistrationWaitlisted
+			}
 		}
 	}
 
@@ -192,9 +221,28 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err := tx.Commit(ctx); err != nil {
 		return BookingResponse{}, err
 	}
+	gateConfirmed = status == RegistrationConfirmed
 
 	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", action, "status", status, "event_id", eventID, "actor_role", actor.Role)
 	return response, nil
+}
+
+func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, employeeID string, familyCount int) (BookingResponse, bool, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	defer rollback(ctx, tx)
+
+	snapshot, found, err := s.completedBookingIdempotencyResultTx(ctx, tx, key, eventID, employeeID, familyCount)
+	if err != nil || !found {
+		return BookingResponse{}, found, err
+	}
+	response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	return response, true, tx.Commit(ctx)
 }
 
 func remainingForNewBooking(event Event, status string, capacity int, confirmedCount int) int {

@@ -215,18 +215,35 @@ func TestPhase2AsyncPlatformDoesNotDependOnExternalBrokerClients(t *testing.T) {
 
 func TestPhase2WorkersUseSingleGoCommandEntrypoint(t *testing.T) {
 	root := repoRoot(t)
-	entries, err := os.ReadDir(filepath.Join(root, "services", "api", "cmd"))
-	require.NoError(t, err)
 
-	var commandDirs []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			commandDirs = append(commandDirs, entry.Name())
-		}
+	dockerfile, err := os.ReadFile(filepath.Join(root, "services", "api", "Dockerfile"))
+	require.NoError(t, err)
+	assert.Contains(t, string(dockerfile), "go build -o /out/cets ./cmd/cets",
+		"the deployable API image must build the single cets command binary")
+
+	for _, relPath := range []string{
+		filepath.Join("services", "api", "deploy", "compose.yaml"),
+		filepath.Join("services", "api", "deploy", "compose.worker-isolation.yaml"),
+		filepath.Join("services", "api", "deploy", "k8s", "worker.yaml"),
+	} {
+		data, err := os.ReadFile(filepath.Join(root, relPath))
+		require.NoError(t, err)
+		content := string(data)
+		assert.NotContains(t, content, "reservation_experiment",
+			"Phase 2 WS4 worker deployments must not use diagnostic or experiment binaries: "+relPath)
+		assert.NotContains(t, content, "cmd/",
+			"Phase 2 WS4 worker deployments must use the built cets binary command modes: "+relPath)
 	}
 
-	assert.Equal(t, []string{"cets"}, commandDirs,
-		"Phase 2 WS4 workers must remain same-binary command modes, not separately built Go services")
+	compose, err := os.ReadFile(filepath.Join(root, "services", "api", "deploy", "compose.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(compose), `command: ["worker"]`,
+		"Compose worker must remain the cets worker command mode")
+
+	k8sWorker, err := os.ReadFile(filepath.Join(root, "services", "api", "deploy", "k8s", "worker.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, 4, strings.Count(string(k8sWorker), "- worker"),
+		"K8s worker deployments must remain cets worker command modes")
 }
 
 func TestOpsNotificationDeliveriesOpenAPIRolesMatchRuntime(t *testing.T) {
