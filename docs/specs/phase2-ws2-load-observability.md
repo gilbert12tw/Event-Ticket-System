@@ -74,6 +74,7 @@ Current implementation slice:
 - HTTP RED metrics use route pattern, method, and status class labels; raw IDs, signed tokens, QR payloads, and provider tokens must not appear in labels.
 - PostgreSQL pool acquire wait, current lock-waiting sessions, outbox backlog / oldest lag, and terminal outbox publish latency are scrapeable as white-box signals for the Phase 2 baseline.
 - Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus and Grafana with a provisioned `CETS Observability` dashboard. This is a review/demo profile, not a required production backing service.
+- Prometheus loads starter alert rules from `services/api/deploy/observability/rules/`. This adds version-controlled SLO breach detection for PR #43 metrics only; it does not add Alertmanager routing, paging, or a production monitoring dependency.
 
 ```text
 current shipped metrics (prometheus-style):
@@ -93,6 +94,14 @@ current shipped metrics (prometheus-style):
   cets_worker_retry_total{worker_kind, reason}
   cets_worker_deadletter_total{worker_kind}
   cets_metrics_scrape_errors_total{collector}
+
+current shipped alert rules:
+  CETSHighHTTPErrorRate          -> cets_http_requests_total 5xx ratio > 1%
+  CETSHighP99Latency            -> cets_http_request_seconds_bucket P99 > 1s
+  CETSDBPoolAcquireWaitHigh     -> pool acquire wait average > 50ms
+  CETSDBLockWaitingSessions     -> cets_db_lock_waiting_sessions > 0
+  CETSOutboxOldestLagHigh       -> cets_outbox_oldest_lag_seconds > 300s
+  CETSMetricsScrapeErrors       -> cets_metrics_scrape_errors_total increasing
 
 future WS2 target metrics:
   cets_db_lock_wait_seconds_bucket{le=...}
