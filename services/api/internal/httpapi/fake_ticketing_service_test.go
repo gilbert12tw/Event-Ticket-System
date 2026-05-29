@@ -172,9 +172,9 @@ func (s *fakeTicketingService) RetryNotificationDelivery(context.Context, ticket
 	return ticketing.NotificationDelivery{DeliveryID: "del_1", Status: "pending"}, nil
 }
 
-func (s *fakeTicketingService) Reports(_ context.Context, actor ticketing.Actor) ([]ticketing.ReportRow, error) {
+func (s *fakeTicketingService) Reports(_ context.Context, actor ticketing.Actor) (ticketing.ReportsResult, error) {
 	s.reportsActor = actor
-	return []ticketing.ReportRow{{EventID: "evt_1"}}, nil
+	return ticketing.ReportsResult{Rows: []ticketing.ReportRow{{EventID: "evt_1"}}}, nil
 }
 
 func (s *fakeTicketingService) CreateReportExport(context.Context, ticketing.Actor, ticketing.ReportExportRequest) (ticketing.ReportExport, error) {
