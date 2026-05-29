@@ -9,7 +9,7 @@
 
 > When a hot, capacity-bound event receives many simultaneous booking attempts, does the PH2-22 Redis pre-admission gate measurably reduce booking latency and increase throughput, without ever overselling?
 
-Phase 1 ships a DB-only booking path: every concurrent request takes `SELECT … FOR UPDATE` on the event row, then `SELECT count(*)` of confirmed registrations, then INSERTs. The hot row-lock serializes the workload. PH2-22 adds an atomic Redis pre-admission counter; when Redis reports `exhausted` the booking still produces a waitlist row, but the heavy event-row lock and the confirmed-count query are both skipped. The question is whether the saved work is observable end-to-end.
+Phase 1 ships a DB-only booking path: every concurrent request takes `SELECT … FOR UPDATE` on the event row, then `SELECT count(*)` of confirmed registrations, then INSERTs. The hot exclusive row-lock serializes the workload. PH2-22 adds an atomic Redis pre-admission counter; when Redis reports `exhausted` the booking still produces a waitlist row, but the exclusive event-row lock and the confirmed-count query are both skipped. The question is whether the saved work is observable end-to-end.
 
 ## 2. Setup
 
@@ -25,6 +25,7 @@ Phase 1 ships a DB-only booking path: every concurrent request takes `SELECT …
 | Metric source | Per-call wall-clock latency around `Service.Book()`; final DB count for correctness check |
 | Modes compared | `BOOKING_PREADMISSION=off` (Phase 1 baseline) vs `=on` (PH2-22) |
 | Reproduce | `EXPERIMENT_VUS=200 EXPERIMENT_CAPACITY=10 scripts/run_reservation_experiment.sh` |
+| Safety guard | The runner sets `EXPERIMENT_ALLOW_DESTRUCTIVE=1` only for its Compose database; direct binary runs must set it explicitly because the harness truncates app tables and deletes reservation keys. |
 
 Raw JSON summaries are committed at [`docs/reports/data/`](data/).
 
@@ -76,15 +77,15 @@ Both modes preserve the oversell invariant exactly. PH2-22 does not change commi
 
 ## 4. Why the gate helps
 
-In gate-off mode, every booking attempt acquires `SELECT … FOR UPDATE` on the event row, so the workload is fully serialized on a single row lock. Each thread holds the lock long enough to run `confirmedCountTx` (a `SELECT count(*)` over `registrations`), evaluate capacity, and INSERT. With 200 contenders, the lock-wait queue is the dominant cost.
+In gate-off mode, every booking attempt acquires `SELECT … FOR UPDATE` on the event row, so the workload is fully serialized on a single exclusive row lock. Each thread holds the lock long enough to run `confirmedCountTx` (a `SELECT count(*)` over `registrations`), evaluate capacity, and INSERT. With 200 contenders, the lock-wait queue is the dominant cost.
 
 In gate-on mode the booking service queries Redis first. Reservations are decremented atomically by the Lua script (one round-trip per request, parallel-safe). The first 10 requests get `granted` and take the same heavy path as before. The remaining 190 get `exhausted`, and `Service.Book()` then takes a fast path that:
 
-1. Reads the event row **without** `FOR UPDATE` (waitlist inserts have no capacity constraint, so the row lock is unnecessary).
+1. Reads the event row without the exclusive `FOR UPDATE` lock (waitlist inserts have no capacity constraint; the implementation keeps a shared lock so event close/cancel/archive updates cannot race the final state recheck).
 2. Skips `SELECT count(*) FROM registrations` entirely (status is already known to be `waitlisted`).
 3. INSERTs the waitlist registration and commits.
 
-That removes 190 row-lock acquisitions and 190 count queries from the contended critical section. The remaining throughput gain comes from those threads no longer queueing behind the 10 confirmed-path transactions.
+That removes 190 exclusive row-lock acquisitions and 190 count queries from the contended critical section. The remaining throughput gain comes from those threads no longer serializing behind one another after the confirmed-path transactions drain.
 
 ## 5. Caveats
 
@@ -109,7 +110,7 @@ scripts/.venv/bin/python scripts/plot_reservation_experiment.py \
   --out docs/reports/figures
 ```
 
-The script brings up Postgres + Redis, builds `cmd/reservation_experiment`, runs each mode against a freshly truncated schema, and generates the four PNGs above.
+The script brings up Postgres + Redis, builds `cmd/reservation_experiment`, runs each mode against a freshly truncated schema, installs the plotter dependencies from `scripts/requirements-reservation-experiment.txt` into `scripts/.venv`, and generates the four PNGs above.
 
 ## 7. Conclusion
 

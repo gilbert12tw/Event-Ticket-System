@@ -9,6 +9,11 @@
 //	EXPERIMENT_MODE=off|on  toggles BOOKING_PREADMISSION
 //	EXPERIMENT_VUS          concurrent booking attempts (default 200)
 //	EXPERIMENT_CAPACITY     limited event capacity (default 10)
+//	EXPERIMENT_TIMEOUT_SECONDS
+//	                        whole-run timeout (default 120)
+//	EXPERIMENT_ALLOW_DESTRUCTIVE=1
+//	                        required because the harness truncates tables and
+//	                        deletes reservation keys
 //	DATABASE_URL            Postgres connection string
 //	REDIS_URL               Redis connection string (required when mode=on)
 //
@@ -21,9 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -44,34 +47,6 @@ const (
 	hotEventTitle    = "Redis Gate Experiment Hot Event"
 )
 
-type result struct {
-	Mode             string    `json:"mode"`
-	VUs              int       `json:"vus"`
-	Capacity         int       `json:"capacity"`
-	WallClockMS      float64   `json:"wall_clock_ms"`
-	RPS              float64   `json:"rps"`
-	Outcomes         outcomes  `json:"outcomes"`
-	LatencyMS        latencies `json:"latency_ms"`
-	DBConfirmedCount int       `json:"db_confirmed_count"`
-}
-
-type outcomes struct {
-	Confirmed  int `json:"confirmed"`
-	Waitlisted int `json:"waitlisted"`
-	Error      int `json:"error"`
-}
-
-type latencies struct {
-	Min  float64   `json:"min"`
-	P50  float64   `json:"p50"`
-	P90  float64   `json:"p90"`
-	P95  float64   `json:"p95"`
-	P99  float64   `json:"p99"`
-	Max  float64   `json:"max"`
-	Mean float64   `json:"mean"`
-	All  []float64 `json:"all_ms"`
-}
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "experiment failed:", err)
@@ -86,15 +61,20 @@ func run() error {
 	}
 	vus := atoiOr("EXPERIMENT_VUS", 200)
 	capacity := atoiOr("EXPERIMENT_CAPACITY", 10)
-	if vus <= 0 || capacity <= 0 {
-		return errors.New("EXPERIMENT_VUS and EXPERIMENT_CAPACITY must be positive")
+	if err := validateExperimentShape(vus, capacity); err != nil {
+		return err
 	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return errors.New("DATABASE_URL is required")
 	}
+	if err := requireDestructiveOptIn(); err != nil {
+		return err
+	}
 
-	ctx := context.Background()
+	timeout := time.Duration(atoiOr("EXPERIMENT_TIMEOUT_SECONDS", 120)) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	pool, err := postgres.Connect(ctx, dbURL)
 	if err != nil {
 		return fmt.Errorf("postgres connect: %w", err)
@@ -115,10 +95,10 @@ func run() error {
 		}
 		opts, err := redis.ParseURL(redisURL)
 		if err != nil {
-			return fmt.Errorf("parse REDIS_URL: %w", err)
+			return errors.New("REDIS_URL is invalid")
 		}
 		redisClient = redis.NewClient(opts)
-		defer redisClient.Close()
+		defer func() { _ = redisClient.Close() }()
 		if err := flushReservationKeys(ctx, redisClient); err != nil {
 			return fmt.Errorf("flush redis: %w", err)
 		}
@@ -177,6 +157,12 @@ func run() error {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND status = 'confirmed'`, eventID).Scan(&dbConfirmed); err != nil {
 		return fmt.Errorf("verify dbConfirmed: %w", err)
 	}
+	confirmed := int(confirmedCount.Load())
+	waitlisted := int(waitlistedCount.Load())
+	bookingErrors := int(errCount.Load())
+	if err := validateExperimentOutcome(vus, capacity, confirmed, waitlisted, bookingErrors, dbConfirmed); err != nil {
+		return err
+	}
 
 	out := result{
 		Mode:        mode,
@@ -185,9 +171,9 @@ func run() error {
 		WallClockMS: float64(wall.Microseconds()) / 1000.0,
 		RPS:         float64(vus) / wall.Seconds(),
 		Outcomes: outcomes{
-			Confirmed:  int(confirmedCount.Load()),
-			Waitlisted: int(waitlistedCount.Load()),
-			Error:      int(errCount.Load()),
+			Confirmed:  confirmed,
+			Waitlisted: waitlisted,
+			Error:      bookingErrors,
 		},
 		LatencyMS:        summarize(latenciesMs),
 		DBConfirmedCount: dbConfirmed,
@@ -240,10 +226,12 @@ func seedFixtures(ctx context.Context, pool *pgxpool.Pool, service *ticketing.Se
 }
 
 func warmup(ctx context.Context, pool *pgxpool.Pool, service *ticketing.Service, eventID string, redisClient *redis.Client) error {
-	_, _ = service.Book(ctx,
+	if _, err := service.Book(ctx,
 		ticketing.Actor{ID: warmupEmployee, Role: ticketing.RoleEmployee},
 		eventID,
-		ticketing.BookingRequest{EmployeeID: warmupEmployee, IdempotencyKey: "warmup-key"})
+		ticketing.BookingRequest{EmployeeID: warmupEmployee, IdempotencyKey: "warmup-key"}); err != nil {
+		return fmt.Errorf("book warmup: %w", err)
+	}
 	if _, err := pool.Exec(ctx, `DELETE FROM tickets WHERE registration_id IN (SELECT registration_id FROM registrations WHERE employee_id = $1)`, warmupEmployee); err != nil {
 		return err
 	}
@@ -276,43 +264,6 @@ func flushReservationKeys(ctx context.Context, client *redis.Client) error {
 		return nil
 	}
 	return client.Del(ctx, keys...).Err()
-}
-
-func summarize(xs []float64) latencies {
-	if len(xs) == 0 {
-		return latencies{}
-	}
-	cp := make([]float64, len(xs))
-	copy(cp, xs)
-	sort.Float64s(cp)
-	sum := 0.0
-	for _, v := range cp {
-		sum += v
-	}
-	return latencies{
-		Min:  cp[0],
-		P50:  percentile(cp, 0.50),
-		P90:  percentile(cp, 0.90),
-		P95:  percentile(cp, 0.95),
-		P99:  percentile(cp, 0.99),
-		Max:  cp[len(cp)-1],
-		Mean: sum / float64(len(cp)),
-		All:  cp,
-	}
-}
-
-func percentile(sorted []float64, p float64) float64 {
-	if len(sorted) == 0 {
-		return 0
-	}
-	idx := int(math.Ceil(p*float64(len(sorted)))) - 1
-	if idx < 0 {
-		idx = 0
-	}
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
-	}
-	return sorted[idx]
 }
 
 func employeeIDFor(i int) string { return fmt.Sprintf("EXP%05d", i) }

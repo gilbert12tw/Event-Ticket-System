@@ -8,20 +8,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type eventRowLockMode string
+
+const (
+	eventRowLockShare  eventRowLockMode = " FOR SHARE"
+	eventRowLockUpdate eventRowLockMode = " FOR UPDATE"
+)
+
 func (s *Service) lockEventWithRule(ctx context.Context, tx pgx.Tx, eventID string) (Event, EligibilityRule, error) {
-	return s.readEventWithRuleTx(ctx, tx, eventID, true)
+	return s.readEventWithRuleTx(ctx, tx, eventID, eventRowLockUpdate)
 }
 
-// readEventWithRuleNoLockTx is the non-locking variant used by the PH2-22 gate
-// fast path: when Redis pre-admission already determined the event is full,
-// the booking commits a waitlist row and does NOT need the event row's
-// `FOR UPDATE` lock (waitlist inserts have no capacity constraint). Skipping
-// the lock removes the hot-row contention point for exhausted requests.
-func (s *Service) readEventWithRuleNoLockTx(ctx context.Context, tx pgx.Tx, eventID string) (Event, EligibilityRule, error) {
-	return s.readEventWithRuleTx(ctx, tx, eventID, false)
+// readEventWithRuleShareLockTx is used by the PH2-22 exhausted fast path.
+// Waitlist inserts have no capacity constraint, so they do not need the
+// exclusive `FOR UPDATE` lock, but they still take a shared lock to serialize
+// with event state changes such as close, cancel, or archive.
+func (s *Service) readEventWithRuleShareLockTx(ctx context.Context, tx pgx.Tx, eventID string) (Event, EligibilityRule, error) {
+	return s.readEventWithRuleTx(ctx, tx, eventID, eventRowLockShare)
 }
 
-func (s *Service) readEventWithRuleTx(ctx context.Context, tx pgx.Tx, eventID string, lock bool) (Event, EligibilityRule, error) {
+func (s *Service) readEventWithRuleTx(ctx context.Context, tx pgx.Tx, eventID string, lockMode eventRowLockMode) (Event, EligibilityRule, error) {
 	var event Event
 	var tags string
 	var capacity pgtype.Int4
@@ -29,9 +35,7 @@ func (s *Service) readEventWithRuleTx(ctx context.Context, tx pgx.Tx, eventID st
 			capacity_type, capacity, allows_family, status, allocation_mode,
 			category, tags, entry_method, visibility, version, COALESCE(archived_at, '0001-01-01 00:00:00+00'::timestamptz), created_by, created_at, updated_at
 		FROM events WHERE event_id = $1`
-	if lock {
-		query += " FOR UPDATE"
-	}
+	query += string(lockMode)
 	err := tx.QueryRow(ctx, query, eventID).
 		Scan(&event.EventID, &event.Title, &event.Description, &event.Location, &event.EventCity, &event.EventSite, &event.StartsAt, &event.RegistrationStart, &event.RegistrationClose,
 			&event.CapacityType, &capacity, &event.AllowsFamily, &event.Status, &event.AllocationMode,
