@@ -72,6 +72,7 @@ The envelope is the document stored in `outbox_events.payload`. The columns `out
 | `ticket.expired.v2` | Event closed past redemption window without check-in. |
 | `checkin.recorded.v2` | Online scan commit or offline batch sync commit. |
 | `notification.requested.v2` | Application service requests a delivery (email or in-app); consumed by notification worker. |
+| `reservation.compensation.release_required.v2` | Redis reservation hold must be released after DB rollback, timeout, or non-confirmed booking outcome. |
 | `report.export.requested.v2` | Admin enqueues a CSV export. |
 | `report.export.completed.v2` | Export worker writes the CSV to object store. |
 | `report.export.failed.v2` | Export worker exhausts retries. |
@@ -79,7 +80,7 @@ The envelope is the document stored in `outbox_events.payload`. The columns `out
 | `eligibility.impact_review.created.v2` | Rule change creates a review row impacting existing registrations. |
 | `reporting.projection.update_required.v2` | Any domain event that requires a downstream projection re-derivation (WS5 read model). |
 
-Total: 15 types. `PH2-05` adds an architecture test that fails if `outbox_events.event_type` contains a value outside this registry once Phase 2 is live; until then the test asserts only that every registry entry has a fixture.
+Total: 16 types. `PH2-05` adds an architecture test that fails if `outbox_events.event_type` contains a value outside this registry once Phase 2 is live; until then the test asserts only that every registry entry has a fixture.
 
 ## 5. Per-Event Payload Schemas
 
@@ -167,7 +168,18 @@ Forbidden: `qr_token`, `signed_token`, `qr_payload`, any base64 ticket body. Con
 
 Forbidden: `recipient_email`, `subject`, `body`, `html_body`, rendered text of any kind. The notification worker re-resolves recipient address and template body at delivery time from authoritative tables.
 
-### 5.10 `report.export.requested.v2`
+### 5.10 `reservation.compensation.release_required.v2`
+
+```json
+{ "reservation_id": "resv_…",
+  "event_id": "evt_…",
+  "reason": "db_rollback|expired_hold|non_confirmed_booking",
+  "requested_at": "2026-05-19T12:34:56Z" }
+```
+
+Forbidden: employee identifiers, recipient details, Redis keys, or raw Redis values. The compensation worker derives authoritative capacity from PostgreSQL before releasing an advisory hold.
+
+### 5.11 `report.export.requested.v2`
 
 ```json
 { "export_id": "exp_…", "report_type": "participation",
@@ -176,7 +188,7 @@ Forbidden: `recipient_email`, `subject`, `body`, `html_body`, rendered text of a
   "requested_at": "2026-05-19T12:34:56Z" }
 ```
 
-### 5.11 `report.export.completed.v2`
+### 5.12 `report.export.completed.v2`
 
 ```json
 { "export_id": "exp_…", "report_type": "participation",
@@ -187,7 +199,7 @@ Forbidden: `recipient_email`, `subject`, `body`, `html_body`, rendered text of a
 
 Forbidden: signed download URL, presigned S3 URL, bearer token of any kind. Consumers (e.g. notification worker shipping "export ready" email) resolve a fresh signed URL from object store at send time.
 
-### 5.12 `report.export.failed.v2`
+### 5.13 `report.export.failed.v2`
 
 ```json
 { "export_id": "exp_…", "report_type": "participation",
@@ -197,7 +209,7 @@ Forbidden: signed download URL, presigned S3 URL, bearer token of any kind. Cons
 
 Forbidden: stack trace, raw SQL, raw provider error body. `reason_code` is a closed enum maintained by WS5; messages live in logs.
 
-### 5.13 `hr_sync.batch.completed.v2`
+### 5.14 `hr_sync.batch.completed.v2`
 
 ```json
 { "batch_id": "hrb_…", "source": "hr_csv|hr_api",
@@ -206,7 +218,7 @@ Forbidden: stack trace, raw SQL, raw provider error body. `reason_code` is a clo
   "completed_at": "2026-05-19T12:34:56Z" }
 ```
 
-### 5.14 `eligibility.impact_review.created.v2`
+### 5.15 `eligibility.impact_review.created.v2`
 
 ```json
 { "review_id": "rev_…", "event_id": "evt_…",
@@ -214,7 +226,7 @@ Forbidden: stack trace, raw SQL, raw provider error body. `reason_code` is a clo
   "created_at": "2026-05-19T12:34:56Z" }
 ```
 
-### 5.15 `reporting.projection.update_required.v2`
+### 5.16 `reporting.projection.update_required.v2`
 
 ```json
 { "projection_name": "event_participation_summary",
@@ -240,6 +252,7 @@ The recipe is deterministic: given the same logical event, an emitter — includ
 | `ticket.expired.v2` | `ticket.expired:{ticket_id}` |
 | `checkin.recorded.v2` | `checkin.recorded:{ticket_id}` |
 | `notification.requested.v2` | `notification.requested:{notification_id}` |
+| `reservation.compensation.release_required.v2` | `reservation.compensation.release_required:{reservation_id}` |
 | `report.export.requested.v2` | `report.export.requested:{export_id}` |
 | `report.export.completed.v2` | `report.export.completed:{export_id}` |
 | `report.export.failed.v2` | `report.export.failed:{export_id}` |
@@ -266,6 +279,7 @@ Emitters MAY catch unique-violation and treat it as success (idempotent emit).
 | `ticket.*` | `event_id` | Ticket lifecycle ordering within an event. |
 | `checkin.recorded.v2` | `event_id` | Per-event projection consistency. |
 | `notification.requested.v2` | `recipient_employee_id` | Per-recipient ordering avoids out-of-order "cancelled then confirmed" emails. |
+| `reservation.compensation.release_required.v2` | `event_id` | Reservation compensation must preserve capacity ordering within an event. |
 | `report.export.*` | `export_id` | One export's request/complete/fail must observe order. |
 | `hr_sync.batch.completed.v2` | `batch_id` | One batch is its own partition. |
 | `eligibility.impact_review.created.v2` | `event_id` | Reviews scoped to one event. |

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,9 +36,37 @@ func TestCreateReportExportStartsPendingWithOutboxAndAudit(t *testing.T) {
 	assert.False(t, completedAt.Valid, "stored report export completed_at should be null while pending")
 	assertPendingReportExportOmitsCompletedAt(t, got)
 
-	var outboxCount int
-	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'report.export.requested' AND aggregate_id = $1`, got.ExportID).Scan(&outboxCount))
-	assert.Equal(t, 1, outboxCount)
+	var (
+		schemaVersion  int
+		idempotencyKey string
+		partitionKey   string
+		payloadText    string
+	)
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT schema_version, COALESCE(idempotency_key, ''), COALESCE(partition_key, ''), payload::text
+		FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2`,
+		outboxEventReportExportRequestedV2, got.ExportID).Scan(&schemaVersion, &idempotencyKey, &partitionKey, &payloadText))
+	assert.Equal(t, 2, schemaVersion)
+	assert.Equal(t, "report.export.requested:"+got.ExportID, idempotencyKey)
+	assert.Equal(t, got.ExportID, partitionKey)
+	var envelope map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(payloadText), &envelope))
+	assert.Equal(t, outboxEventReportExportRequestedV2, envelope["event_type"])
+	assert.Equal(t, idempotencyKey, envelope["idempotency_key"])
+	assert.Equal(t, partitionKey, envelope["partition_key"])
+	payload, ok := envelope["payload"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, got.ExportID, payload["export_id"])
+	assert.Equal(t, ReportExportTypeParticipation, payload["report_type"])
+	assert.Equal(t, hr.ID, payload["requested_by_employee_id"])
+	requestedAt, ok := payload["requested_at"].(string)
+	require.True(t, ok)
+	_, err = time.Parse(time.RFC3339Nano, requestedAt)
+	require.NoError(t, err)
+	filters, ok := payload["filters"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Empty(t, filters)
+	assert.NotContains(t, payload, "object_key")
+	assert.NotContains(t, payload, "requested_by")
 
 	var auditCount int
 	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'report.export.requested' AND entity_id = $1`, got.ExportID).Scan(&auditCount))
@@ -102,7 +131,7 @@ func assertReportExportSideEffects(t *testing.T, service *Service, ctx context.C
 	t.Helper()
 	for _, query := range []string{
 		`SELECT count(*) FROM report_exports`,
-		`SELECT count(*) FROM outbox_events WHERE event_type = 'report.export.requested'`,
+		`SELECT count(*) FROM outbox_events WHERE event_type = 'report.export.requested.v2'`,
 		`SELECT count(*) FROM audit_logs WHERE action = 'report.export.requested'`,
 	} {
 		var got int

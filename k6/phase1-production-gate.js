@@ -94,7 +94,7 @@ export function httpGate() {
     package_signature: offlinePackage.package_signature,
     scans: []
   }, "offline sync");
-  const checkinResponse = rawPost("/api/v1/checkins", { signed_token: token, device_id: "gate-k6" });
+  const checkinResponse = rawPost("/api/v1/checkins", { signed_token: token, event_id: event.event_id, device_id: "gate-k6" });
   check(checkinResponse, { "online check-in status is 2xx": (res) => res.status >= 200 && res.status < 300 });
   envelopeData(checkinResponse, "online check-in");
   checkinDuration.add(checkinResponse.timings.duration);

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"event-ticket-system/internal/traceid"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -95,6 +97,21 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	if delivery.OutboxID == "" {
 		return NotificationDelivery{}, conflict("notification delivery outbox is unavailable")
 	}
+	var outboxEventType string
+	err = tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1 FOR UPDATE`, delivery.OutboxID).Scan(&outboxEventType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NotificationDelivery{}, conflict("notification delivery outbox is unavailable")
+	}
+	if err != nil {
+		return NotificationDelivery{}, err
+	}
+	if !retryableNotificationOutboxEventType(outboxEventType) {
+		return NotificationDelivery{}, conflict("only notification outbox deliveries can be retried")
+	}
+	previousStatus := delivery.Status
+	outboxID := delivery.OutboxID
+	channel := delivery.Channel
+	deadLetterCleared := previousStatus == deliveryStatusDeadLetter
 	err = tx.QueryRow(ctx, `UPDATE notification_deliveries
 		SET status = 'pending', last_error = '', updated_at = now()
 		WHERE delivery_id = $1
@@ -105,10 +122,55 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	}
 	delivery.EmployeeRef = notificationEmployeeRef(employeeID)
 	delivery.LastError = redactNotificationDeliveryError(delivery.LastError, employeeID)
-	if _, err := tx.Exec(ctx, `UPDATE outbox_events SET publish_status = 'pending', available_at = now(), last_error = '' WHERE outbox_id = $1`, delivery.OutboxID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE outbox_events
+		SET publish_status = 'pending',
+			attempts = 0,
+			retry_count = 0,
+			available_at = now(),
+			last_error = '',
+			dead_letter_at = NULL,
+			lease_started_at = NULL
+		WHERE outbox_id = $1`, delivery.OutboxID); err != nil {
 		return NotificationDelivery{}, err
 	}
-	return delivery, tx.Commit(ctx)
+	auditID, err := newID("aud")
+	if err != nil {
+		return NotificationDelivery{}, err
+	}
+	if err := insertAudit(ctx, tx, auditID, actor, "notification.delivery.retry", "notification_delivery", delivery.DeliveryID, map[string]interface{}{
+		"outbox_id":           outboxID,
+		"channel":             channel,
+		"previous_status":     previousStatus,
+		"next_status":         delivery.Status,
+		"retry_budget_reset":  true,
+		"dead_letter_cleared": deadLetterCleared,
+	}); err != nil {
+		return NotificationDelivery{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return NotificationDelivery{}, err
+	}
+	s.logNotificationDeliveryRetryQueued(ctx, actor.Role, delivery.DeliveryID, outboxID, channel, previousStatus, delivery.Status, deadLetterCleared)
+	return delivery, nil
+}
+
+func (s *Service) logNotificationDeliveryRetryQueued(ctx context.Context, actorRole, deliveryID, outboxID, channel, previousStatus, nextStatus string, deadLetterCleared bool) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	s.logger.Info("notification delivery retry queued",
+		"trace_id", traceid.FromContext(ctx),
+		"action", "notification.delivery.retry",
+		"actor_role", actorRole,
+		"delivery_id", deliveryID,
+		"outbox_id", outboxID,
+		"worker_kind", outboxWorkerKindNotification,
+		"channel", channel,
+		"previous_status", previousStatus,
+		"next_status", nextStatus,
+		"retry_budget_reset", true,
+		"dead_letter_cleared", deadLetterCleared,
+	)
 }
 
 func (s *Service) findNotificationPreferences(ctx context.Context, employeeID string) (NotificationPreferences, error) {

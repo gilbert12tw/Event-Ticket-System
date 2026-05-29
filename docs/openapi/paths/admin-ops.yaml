@@ -41,50 +41,12 @@
         "$ref": "../components/responses.yaml#/Unauthorized"
       "403":
         "$ref": "../components/responses.yaml#/Forbidden"
-"/admin/ops/queues/{kind}/replay":
-  post:
-    tags:
-      - Ops
-    operationId: postOpsQueueReplay
-    x-required-roles:
-      - hr_admin
-    summary: Replay queue rows by time window.
-    description: "Re-enqueue outbox rows for the given worker kind across a [from, to] window. Consumers are idempotent. dry_run=true returns affected count without enqueuing; dry_run=false enqueues and writes an audit row. Source: docs/specs/phase2-ws4-async-notification.md §6."
-    parameters:
-      - name: kind
-        in: path
-        required: true
-        description: Worker kind enum (notification, projection, compensation, export, reservation_compensation).
-        schema:
-          "$ref": "../components/schemas/ops.yaml#/WorkerKind"
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            "$ref": "../components/schemas/ops.yaml#/QueueReplayRequest"
-    responses:
-      "200":
-        description: Replay outcome (dry-run or applied).
-        content:
-          application/json:
-            schema:
-              "$ref": "../components/schemas/ops.yaml#/QueueReplayResponse"
-      "400":
-        "$ref": "../components/responses.yaml#/BadRequest"
-      "401":
-        "$ref": "../components/responses.yaml#/Unauthorized"
-      "403":
-        "$ref": "../components/responses.yaml#/Forbidden"
-      "404":
-        "$ref": "../components/responses.yaml#/NotFound"
 "/admin/ops/notification-deliveries":
   get:
     tags:
       - Ops
     operationId: getOpsNotificationDeliveries
     x-required-roles:
-      - activity_admin
       - hr_admin
       - system_admin
     summary: Read notification delivery ops feed.
@@ -114,6 +76,8 @@
           application/json:
             schema:
               "$ref": "../components/schemas/ops.yaml#/NotificationDeliveriesAdminResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
       "401":
         "$ref": "../components/responses.yaml#/Unauthorized"
       "403":

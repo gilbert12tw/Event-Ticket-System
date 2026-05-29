@@ -6,7 +6,15 @@ WorkerKind:
     - projection
     - compensation
     - export
-    - reservation_compensation
+ObservedWorkerKind:
+  type: string
+  description: "Read-only ops bucket for queue and delivery health. unknown is used only for unregistered or unsafe outbox event types and is not a WORKER_KINDS runtime process kind."
+  enum:
+    - notification
+    - projection
+    - compensation
+    - export
+    - unknown
 CapacityPressureRow:
   type: object
   required:
@@ -63,7 +71,7 @@ QueueStatusRow:
     - p95_age_seconds
   properties:
     name:
-      "$ref": "#/WorkerKind"
+      "$ref": "#/ObservedWorkerKind"
     pending:
       type: integer
       minimum: 0
@@ -98,66 +106,6 @@ QueueStatusResponse:
       properties:
         data:
           "$ref": "#/QueueStatus"
-QueueReplayRequest:
-  type: object
-  required:
-    - from
-    - to
-    - dry_run
-  additionalProperties: false
-  properties:
-    from:
-      type: string
-      format: date-time
-    to:
-      type: string
-      format: date-time
-    event_types:
-      type: array
-      items:
-        type: string
-    dry_run:
-      type: boolean
-QueueReplayResult:
-  type: object
-  required:
-    - kind
-    - from
-    - to
-    - dry_run
-    - affected_count
-  properties:
-    kind:
-      "$ref": "#/WorkerKind"
-    from:
-      type: string
-      format: date-time
-    to:
-      type: string
-      format: date-time
-    dry_run:
-      type: boolean
-    affected_count:
-      type: integer
-      minimum: 0
-    enqueued_count:
-      type:
-        - integer
-        - "null"
-      minimum: 0
-    audit_id:
-      type:
-        - string
-        - "null"
-      format: uuid
-QueueReplayResponse:
-  description: "Replay outcome. dry_run=true returns affected_count only; dry_run=false also returns enqueued_count and audit_id."
-  allOf:
-    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
-    - type: object
-      properties:
-        data:
-          "$ref": "#/QueueReplayResult"
 NotificationDeliveryAdminRow:
   type: object
   required:
@@ -172,7 +120,7 @@ NotificationDeliveryAdminRow:
       type: string
       format: uuid
     worker_kind:
-      "$ref": "#/WorkerKind"
+      "$ref": "#/ObservedWorkerKind"
     event_type:
       type: string
     status:
@@ -201,6 +149,12 @@ NotificationDeliveryAdminRow:
         - string
         - "null"
       format: date-time
+    retry_eligible:
+      type: boolean
+      description: True when the delivery can be retried by the notification retry endpoint.
+    dead_letter_eligible:
+      type: boolean
+      description: True when the row is in a dead-letter state and eligible for dead-letter operations.
 NotificationDeliveriesAdmin:
   type: object
   required:
@@ -281,10 +235,6 @@ OpsDashboard:
       type: array
       items:
         "$ref": "#/NotificationDeliveryAdminRow"
-    replay_recent:
-      type: array
-      items:
-        "$ref": "#/QueueReplayResult"
 OpsDashboardResponse:
   description: "Aggregated ops control-plane view. activity_admin sees a read subset (payload-level redaction enforced server-side); hr_admin sees the full payload."
   allOf:

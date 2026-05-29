@@ -11,7 +11,8 @@ HTTP_METHODS = %w[get put post delete options head patch trace].freeze
 BANNED_PATHS = [
   "/auth/login",
   "/auth/logout",
-  "/employees/{employee_id}/tickets"
+  "/employees/{employee_id}/tickets",
+  "/admin/ops/queues/{kind}/replay"
 ].freeze
 
 EXPECTED_OPERATIONS = {
@@ -50,7 +51,6 @@ EXPECTED_OPERATIONS = {
   "/admin/audit-logs" => %w[get],
   "/admin/ops/capacity-pressure" => %w[get],
   "/admin/ops/queues" => %w[get],
-  "/admin/ops/queues/{kind}/replay" => %w[post],
   "/admin/ops/notification-deliveries" => %w[get],
   "/admin/ops/report-freshness" => %w[get],
   "/admin/ops/dashboard" => %w[get]
@@ -98,8 +98,7 @@ EXPECTED_REQUIRED_ROLES = {
   ["get", "/admin/audit-logs"] => %w[hr_admin system_admin],
   ["get", "/admin/ops/capacity-pressure"] => %w[activity_admin hr_admin system_admin],
   ["get", "/admin/ops/queues"] => %w[hr_admin system_admin],
-  ["post", "/admin/ops/queues/{kind}/replay"] => %w[hr_admin],
-  ["get", "/admin/ops/notification-deliveries"] => %w[activity_admin hr_admin system_admin],
+  ["get", "/admin/ops/notification-deliveries"] => %w[hr_admin system_admin],
   ["get", "/admin/ops/report-freshness"] => %w[hr_admin system_admin],
   ["get", "/admin/ops/dashboard"] => %w[activity_admin hr_admin system_admin]
 }.freeze
@@ -424,7 +423,7 @@ if (meta_property_part["required"] || []).include?("meta")
 end
 
 worker_kind = require_schema_ref(root, "WorkerKind")
-required_kinds = %w[notification projection compensation export reservation_compensation]
+required_kinds = %w[notification projection compensation export]
 missing_kinds = required_kinds - (worker_kind["enum"] || [])
 fail_contract("WorkerKind enum must include #{missing_kinds.join(", ")}") unless missing_kinds.empty?
 

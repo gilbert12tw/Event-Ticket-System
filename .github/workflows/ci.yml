@@ -192,7 +192,7 @@ jobs:
           if grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' /tmp/changed-files; then
             openapi=true
           fi
-          if grep -Eq '^(\.github/workflows/ci\.yml$|services/api/deploy/|services/api/Dockerfile$|apps/web/e2e-live/)' /tmp/changed-files; then
+          if grep -Eq '^(\.github/workflows/ci\.yml$|services/api/deploy/|services/api/Dockerfile$|services/api/cmd/cets/worker.*\.go$|services/api/internal/config/|services/api/internal/postgres/schema\.sql$|services/api/internal/ticketing/(worker|outbox|notification).*\.go$|services/api/internal/observability/|apps/web/e2e-live/)' /tmp/changed-files; then
             live=true
           fi
           if grep -Eq '^k6/' /tmp/changed-files; then
@@ -348,8 +348,7 @@ jobs:
       - name: Install Playwright browsers
         run: |
           if [[ "${ACT:-}" == "true" ]]; then
-            rm -rf "$HOME/.cache/ms-playwright"
-            pnpm --filter cets-web exec playwright install --with-deps --force chromium
+            pnpm --filter cets-web exec playwright install --with-deps chromium
           else
             pnpm --filter cets-web exec playwright install chromium
           fi
@@ -381,8 +380,15 @@ jobs:
     env:
       K6_IMAGE: grafana/k6:1.7.1-with-browser
       COMPOSE_PROJECT_NAME: cets-ci
+      APP_PORT: 18080
       POSTGRES_PORT: 15432
+      REDIS_PORT: 16379
+      MINIO_API_PORT: 19000
+      MINIO_CONSOLE_PORT: 19001
+      MAILHOG_SMTP_PORT: 11025
+      MAILHOG_UI_PORT: 18025
       API_IMAGE_TAG: ci
+      LIVE_BASE_URL: http://127.0.0.1:18080
       K6_RELEASE_DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.k6_release_duration || '10s' }}
       K6_CHANGED: ${{ needs.changes.outputs.k6 }}
     steps:
@@ -414,16 +420,29 @@ jobs:
       - name: Install Playwright browsers
         run: |
           if [[ "${ACT:-}" == "true" ]]; then
-            rm -rf "$HOME/.cache/ms-playwright"
-            pnpm --filter cets-web exec playwright install --with-deps --force chromium
+            pnpm --filter cets-web exec playwright install --with-deps chromium
           else
             pnpm --filter cets-web exec playwright install chromium
           fi
+      - name: Set up Docker CLI for local act runs
+        if: env.ACT == 'true'
+        run: |
+          if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+            docker --version
+            docker compose version
+            exit 0
+          fi
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
+          docker --version
+          docker compose version
       - name: Validate Docker Compose config
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
+      - name: Validate worker-isolation Docker Compose config
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation config
       - name: Reset local act live volumes
         if: env.ACT == 'true'
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml down --volumes --remove-orphans
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation down --volumes --remove-orphans
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Build release image
@@ -442,28 +461,43 @@ jobs:
       - name: Run explicit database migration
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml run --rm migrate
       - name: Start API services for live gates
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml up -d app worker
+        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation up -d app worker-notification worker-projection worker-compensation worker-export
       - name: Wait for API readiness
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/readyz; then
+            if curl -fsS "$LIVE_BASE_URL/readyz"; then
               break
             fi
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+          curl -fsS "$LIVE_BASE_URL/readyz" >/dev/null
       - name: Run live Playwright workflow checks
         if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_live_playwright
-        run: PLAYWRIGHT_LIVE_BASE_URL=http://127.0.0.1:8080 pnpm --filter cets-web test:e2e:live
+        run: PLAYWRIGHT_LIVE_BASE_URL="$LIVE_BASE_URL" pnpm --filter cets-web test:e2e:live
+      - name: Inject WS4 notification failure pressure
+        run: |
+          WORKER_NOTIFICATION_MAILER_HOST=127.0.0.1 WORKER_NOTIFICATION_MAILER_PORT=1 \
+            docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation up -d --force-recreate worker-notification
+      - name: Seed WS4 non-notification worker evidence
+        run: |
+          suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml exec -T postgres psql -U cets -d cets -c "
+            INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, publish_status, available_at)
+            VALUES
+              ('out-k6-projection-${suffix}', 'projection-k6-${suffix}', 'reporting.projection.update_required.v2', '{\"projection\":\"worker_isolation\"}'::jsonb, 'pending', now()),
+              ('out-k6-compensation-${suffix}', 'compensation-k6-${suffix}', 'reservation.compensation.release_required.v2', '{\"reservation_id\":\"res_worker_isolation\"}'::jsonb, 'pending', now())
+            ON CONFLICT (outbox_id) DO NOTHING;"
       - name: Run k6 smoke gate checks
         if: env.K6_CHANGED == 'true' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_smoke))
-        run: docker run --rm --network host --cap-add=SYS_ADMIN -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_BROWSER_ENABLED=true -e K6_SMOKE_DURATION=20s "$K6_IMAGE" run /k6/phase1-production-gate.js
+        run: docker run --rm --network host --cap-add=SYS_ADMIN -v "$PWD/k6:/k6" -e BASE_URL="$LIVE_BASE_URL" -e K6_BROWSER_ENABLED=true -e K6_SMOKE_DURATION=20s "$K6_IMAGE" run /k6/phase1-production-gate.js
       - name: Run k6 release gate checks
         if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_k6_release))
-        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL=http://127.0.0.1:8080 -e K6_RELEASE_DURATION="$K6_RELEASE_DURATION" "$K6_IMAGE" run /k6/phase1-release-gate.js
+        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL="$LIVE_BASE_URL" -e K6_RELEASE_DURATION="$K6_RELEASE_DURATION" "$K6_IMAGE" run /k6/phase1-release-gate.js
+      - name: Run WS4 worker isolation lag gate
+        run: docker run --rm --network host -v "$PWD/k6:/k6" -e BASE_URL="$LIVE_BASE_URL" -e K6_OUTBOX_P95_MAX_SECONDS=60 -e K6_OUTBOX_MAX_SECONDS=180 -e K6_REQUIRED_WORKER_KINDS=export,projection,compensation "$K6_IMAGE" run /k6/phase2-worker-isolation-lag.js
       - name: Scan live gate logs for sensitive leakage
         run: |
-          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml logs --no-color app worker > /tmp/cets-app-worker.log
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation logs --no-color app worker-notification worker-projection worker-compensation worker-export > /tmp/cets-app-worker.log
           if grep -E -i 'signed[_ -]?token|qr_payload|auth_session|token_signing|object_storage_secret|session=|set-cookie|local_dev_.*secret|[A-Za-z0-9._%+-]+@cets\.local|Ariel Chen|Ben Lin|Carla Wu' /tmp/cets-app-worker.log; then
             echo "Sensitive app/worker log output detected" >&2
             exit 1
@@ -498,4 +532,4 @@ jobs:
           if [[ "${ACT:-}" == "true" ]]; then
             down_args+=(--volumes --remove-orphans)
           fi
-          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml down "${down_args[@]}"
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation down "${down_args[@]}"

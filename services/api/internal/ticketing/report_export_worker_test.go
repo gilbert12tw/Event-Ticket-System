@@ -15,6 +15,8 @@ import (
 type recordingReportStore struct {
 	err         error
 	keys        []string
+	existing    map[string]bool
+	existsCalls int
 	contentType string
 	body        string
 }
@@ -33,6 +35,14 @@ func (s *recordingReportStore) Put(ctx context.Context, key string, contentType 
 	s.contentType = contentType
 	s.body = string(body)
 	return s.err
+}
+
+func (s *recordingReportStore) Exists(ctx context.Context, key string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.existsCalls++
+	return s.existing[key], nil
 }
 
 func TestProcessOutboxOnceGeneratesReportExportArtifact(t *testing.T) {
@@ -71,6 +81,33 @@ func TestProcessOutboxOnceGeneratesReportExportArtifact(t *testing.T) {
 
 	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusReady, true)
 	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "published", 1)
+}
+
+func TestProcessOutboxOnceGeneratesReportExportArtifactForLegacyEvent(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	export, err := service.CreateReportExport(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, ReportExportRequest{ReportType: "participation"})
+	require.NoError(t, err)
+	convertReportExportOutboxToLegacyEvent(t, service, ctx, export)
+	store := &recordingReportStore{}
+	sender := &recordingNotificationSender{}
+
+	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{
+		Sender:      sender,
+		ReportStore: store,
+		MaxAttempts: 3,
+		WorkerKinds: []string{outboxWorkerKindExport},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 0, sender.calls)
+	require.Len(t, store.keys, 1)
+	assert.Equal(t, export.ObjectKey, store.keys[0])
+	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusReady, true)
+	assertReportExportOutboxStatusForEventType(t, service, ctx, export.ExportID, outboxEventReportExportRequested, "published", 1)
 }
 
 func TestBuildReportExportCSVIncludesAggregateColumns(t *testing.T) {
@@ -141,13 +178,46 @@ func TestProcessOutboxOnceMarksReportExportFailureRetryable(t *testing.T) {
 	require.NoError(t, service.SeedDemoData(ctx))
 	export, err := service.CreateReportExport(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, ReportExportRequest{ReportType: "participation"})
 	require.NoError(t, err)
-	store := &recordingReportStore{err: errors.New("object store unavailable")}
+	providerToken := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXRyeSJ9.signature"
+	store := &recordingReportStore{err: errors.New("object store unavailable for " + export.ObjectKey + " and e1001@cets.local with token " + providerToken)}
 
 	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{ReportStore: store, MaxAttempts: 3})
 	require.NoError(t, err)
 	assert.Equal(t, 1, processed)
 	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusPending, false)
 	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "pending", 1)
+	state := loadReportExportOutboxFailureState(t, service, ctx, export.ExportID)
+	assert.Equal(t, "object store unavailable", state.lastError)
+	assert.NotContains(t, state.lastError, export.ObjectKey)
+	assert.NotContains(t, strings.ToLower(state.lastError), "e1001@cets.local")
+	assert.NotContains(t, state.lastError, providerToken)
+}
+
+func TestProcessOutboxOncePublishesExistingReportExportAfterCrashWithoutRewrite(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	export, err := service.CreateReportExport(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, ReportExportRequest{ReportType: "participation"})
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `UPDATE outbox_events
+		SET publish_status = 'processing',
+			attempts = 1,
+			available_at = now() - interval '1 minute',
+			lease_started_at = now() - interval '2 minutes'
+		WHERE aggregate_id = $1 AND event_type = $2`, export.ExportID, outboxEventReportExportRequestedV2)
+	require.NoError(t, err)
+	store := &recordingReportStore{existing: map[string]bool{export.ObjectKey: true}}
+
+	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{ReportStore: store, MaxAttempts: 3})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, 1, store.existsCalls)
+	assert.Empty(t, store.keys, "object already exists after crash; retry must not rewrite export artifact")
+	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusReady, true)
+	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "published", 2)
+	assertReportExportOutboxLeaseCleared(t, service, ctx, export.ExportID)
 }
 
 func TestProcessOutboxOnceMarksReportExportFailedAtMaxAttempts(t *testing.T) {
@@ -157,9 +227,10 @@ func TestProcessOutboxOnceMarksReportExportFailedAtMaxAttempts(t *testing.T) {
 	require.NoError(t, service.SeedDemoData(ctx))
 	export, err := service.CreateReportExport(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, ReportExportRequest{ReportType: "participation"})
 	require.NoError(t, err)
-	_, err = service.db.Exec(ctx, `UPDATE outbox_events SET attempts = 2 WHERE aggregate_id = $1 AND event_type = $2`, export.ExportID, outboxEventReportExportRequested)
+	_, err = service.db.Exec(ctx, `UPDATE outbox_events SET attempts = 2 WHERE aggregate_id = $1 AND event_type = $2`, export.ExportID, outboxEventReportExportRequestedV2)
 	require.NoError(t, err)
-	store := &recordingReportStore{err: errors.New("object store unavailable")}
+	providerToken := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXBvcnQifQ.signature"
+	store := &recordingReportStore{err: errors.New("object store unavailable for " + export.ObjectKey + " and e1001@cets.local with token " + providerToken)}
 
 	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{ReportStore: store, MaxAttempts: 3})
 
@@ -167,6 +238,24 @@ func TestProcessOutboxOnceMarksReportExportFailedAtMaxAttempts(t *testing.T) {
 	assert.Equal(t, 1, processed)
 	assertReportExportState(t, service, ctx, export.ExportID, ReportExportStatusFailed, true)
 	assertReportExportOutboxStatus(t, service, ctx, export.ExportID, "dead_letter", 3)
+	state := loadReportExportOutboxFailureState(t, service, ctx, export.ExportID)
+	assert.Equal(t, 3, state.retryCount)
+	assert.True(t, state.deadLetterAt.Valid)
+	assert.Equal(t, "object store unavailable", state.lastError)
+	assert.NotContains(t, state.lastError, export.ObjectKey)
+	assert.NotContains(t, strings.ToLower(state.lastError), "e1001@cets.local")
+	assert.NotContains(t, state.lastError, providerToken)
+	outboxID := reportExportOutboxIDForEventType(t, service, ctx, export.ExportID, outboxEventReportExportRequestedV2)
+	audit := readJSONMap(t, service, ctx, `SELECT metadata::text FROM audit_logs
+		WHERE action = 'outbox.dead_letter'
+			AND entity_type = 'outbox_event'
+			AND entity_id = $1`, outboxID)
+	assert.Equal(t, outboxEventReportExportRequestedV2, audit["event_type"])
+	assert.Equal(t, outboxWorkerKindExport, audit["worker_kind"])
+	assert.Equal(t, float64(3), audit["retry_count"])
+	assert.Equal(t, float64(2), audit["schema_version"])
+	assert.Equal(t, outboxDeadLetterReasonRetryExhausted, audit["reason"])
+	assertNoSensitiveJSONValues(t, audit, export.ObjectKey, "object store unavailable")
 }
 
 func assertReportExportState(t *testing.T, service *Service, ctx context.Context, exportID string, wantStatus string, wantCompleted bool) {
@@ -180,12 +269,54 @@ func assertReportExportState(t *testing.T, service *Service, ctx context.Context
 
 func assertReportExportOutboxStatus(t *testing.T, service *Service, ctx context.Context, exportID string, wantStatus string, wantAttempts int) {
 	t.Helper()
+	assertReportExportOutboxStatusForEventType(t, service, ctx, exportID, outboxEventReportExportRequestedV2, wantStatus, wantAttempts)
+}
+
+func assertReportExportOutboxLeaseCleared(t *testing.T, service *Service, ctx context.Context, exportID string) {
+	t.Helper()
+	var leaseCleared bool
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT lease_started_at IS NULL
+		FROM outbox_events WHERE aggregate_id = $1 AND event_type = $2`,
+		exportID, outboxEventReportExportRequestedV2).Scan(&leaseCleared))
+	assert.True(t, leaseCleared)
+}
+
+func assertReportExportOutboxStatusForEventType(t *testing.T, service *Service, ctx context.Context, exportID string, eventType string, wantStatus string, wantAttempts int) {
+	t.Helper()
 	var gotStatus string
 	var gotAttempts int
-	require.NoError(t, service.db.QueryRow(ctx, `SELECT publish_status, attempts FROM outbox_events WHERE aggregate_id = $1 AND event_type = $2`, exportID, outboxEventReportExportRequested).
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT publish_status, attempts FROM outbox_events WHERE aggregate_id = $1 AND event_type = $2`, exportID, eventType).
 		Scan(&gotStatus, &gotAttempts))
 	assert.Equal(t, wantStatus, gotStatus)
 	assert.Equal(t, wantAttempts, gotAttempts)
+}
+
+func convertReportExportOutboxToLegacyEvent(t *testing.T, service *Service, ctx context.Context, export ReportExport) {
+	t.Helper()
+	tag, err := service.db.Exec(ctx, `UPDATE outbox_events
+		SET event_type = $1,
+			payload = jsonb_build_object('requested_by', $2::text, 'report_type', $3::text, 'object_key', $4::text),
+			schema_version = 1,
+			idempotency_key = NULL,
+			partition_key = NULL
+		WHERE aggregate_id = $5 AND event_type = $6`,
+		outboxEventReportExportRequested, export.RequestedBy, export.ReportType, export.ObjectKey, export.ExportID, outboxEventReportExportRequestedV2)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), tag.RowsAffected())
+}
+
+func loadReportExportOutboxFailureState(t *testing.T, service *Service, ctx context.Context, exportID string) outboxFailureState {
+	t.Helper()
+	outboxID := reportExportOutboxIDForEventType(t, service, ctx, exportID, outboxEventReportExportRequestedV2)
+	return loadOutboxFailureState(t, service, ctx, outboxID)
+}
+
+func reportExportOutboxIDForEventType(t *testing.T, service *Service, ctx context.Context, exportID string, eventType string) string {
+	t.Helper()
+	var outboxID string
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT outbox_id FROM outbox_events WHERE aggregate_id = $1 AND event_type = $2`,
+		exportID, eventType).Scan(&outboxID))
+	return outboxID
 }
 
 func parseReportCSV(t *testing.T, body string) [][]string {
