@@ -35,6 +35,14 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	t.Setenv("NO_SHOW_THRESHOLD", "2")
 	t.Setenv("NO_SHOW_COOLDOWN_DAYS", "45")
 	t.Setenv("NO_SHOW_GRACE_HOURS", "12")
+	t.Setenv("REPORT_STALE_THRESHOLD_SECONDS", "90")
+	t.Setenv("REPORT_UNAVAILABLE_TIMEOUT_SECONDS", "240")
+	t.Setenv("BOOKING_PREADMISSION", "on")
+	t.Setenv("REDIS_OUTAGE_MODE", "fail")
+	t.Setenv("RESERVATION_TTL_SECONDS", "30")
+	t.Setenv("RESERVATION_TTL_GRACE_SECONDS", "15")
+	t.Setenv("REDIS_OPERATION_TIMEOUT_MS", "175")
+	t.Setenv("BOOKING_RESERVATION_HASH_SECRET", "reservation-hash-secret")
 
 	cfg := Load()
 
@@ -62,6 +70,14 @@ func TestLoadDefaultsAndEnv(t *testing.T) {
 	assert.Equal(t, 2, cfg.NoShowThreshold)
 	assert.Equal(t, 45, cfg.NoShowCooldownDays)
 	assert.Equal(t, 12, cfg.NoShowGraceHours)
+	assert.Equal(t, 90, cfg.ReportStaleThresholdSeconds)
+	assert.Equal(t, 240, cfg.ReportUnavailableTimeoutSeconds)
+	assert.True(t, cfg.BookingPreadmission)
+	assert.Equal(t, "fail", cfg.ReservationOutageMode)
+	assert.Equal(t, 30*time.Second, cfg.ReservationTTL)
+	assert.Equal(t, 15*time.Second, cfg.ReservationGraceTTL)
+	assert.Equal(t, 175*time.Millisecond, cfg.ReservationOperationTimeout)
+	assert.Equal(t, "reservation-hash-secret", cfg.BookingReservationHashSecret)
 }
 
 func TestValidateForServeRequiresDatabaseURL(t *testing.T) {

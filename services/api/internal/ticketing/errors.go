@@ -56,6 +56,10 @@ func conflict(message string) AppError {
 	return AppError{Status: 409, Message: message}
 }
 
+func serviceUnavailable(code string, message string) AppError {
+	return AppError{Status: 503, Code: code, Message: message}
+}
+
 func notImplemented(message string) AppError {
 	return AppError{Status: 501, Message: message}
 }

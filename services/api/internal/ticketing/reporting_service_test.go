@@ -48,7 +48,7 @@ func TestReportsIncludeAggregateAttendanceAndCityDistribution(t *testing.T) {
 
 	reports, err := service.Reports(ctx, hr)
 	require.NoError(t, err)
-	limitedReport := requireReportRow(t, reports, limited.EventID)
+	limitedReport := requireReportRow(t, reports.Rows, limited.EventID)
 	assert.Equal(t, 1, limitedReport.ConfirmedCount)
 	assert.Equal(t, 1, limitedReport.WaitlistCount)
 	assert.Equal(t, 1, limitedReport.EmployeeCount)
@@ -56,7 +56,7 @@ func TestReportsIncludeAggregateAttendanceAndCityDistribution(t *testing.T) {
 	assert.Equal(t, 1, limitedReport.TotalAttendeeCount)
 	assert.Equal(t, map[string]int{"Taipei": 1}, limitedReport.CityDistribution)
 
-	unlimitedReport := requireReportRow(t, reports, unlimited.EventID)
+	unlimitedReport := requireReportRow(t, reports.Rows, unlimited.EventID)
 	assert.Equal(t, 1, unlimitedReport.ConfirmedCount)
 	assert.Equal(t, 1, unlimitedReport.EmployeeCount)
 	assert.Equal(t, confirmed.Registration.FamilyCount, unlimitedReport.FamilyCount)
@@ -82,7 +82,7 @@ func TestReportsUseUnknownCityWhenEventCityIsEmpty(t *testing.T) {
 
 	reports, err := service.Reports(ctx, hr)
 	require.NoError(t, err)
-	row := requireReportRow(t, reports, event.EventID)
+	row := requireReportRow(t, reports.Rows, event.EventID)
 	assert.Equal(t, map[string]int{"unknown": 0}, row.CityDistribution)
 }
 

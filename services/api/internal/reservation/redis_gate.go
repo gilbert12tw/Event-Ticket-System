@@ -85,6 +85,14 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 	if parseErr != nil {
 		return Hold{}, parseErr
 	}
+	switch outcome {
+	case OutcomeGranted, OutcomeDuplicate, OutcomeExhausted:
+	case OutcomeMisconfigured:
+		g.logger.Warn("reservation lua misconfigured", "op", "reserve", "error_class", "misconfigured")
+		return Hold{}, ErrUnavailable
+	default:
+		return Hold{}, fmt.Errorf("unexpected reservation outcome %q", outcome)
+	}
 	return Hold{
 		Outcome:         outcome,
 		ReservationID:   id,
@@ -133,7 +141,7 @@ func (g *RedisGate) Release(ctx context.Context, eventID, idempotencyHash string
 }
 
 func (g *RedisGate) handleOutage(err error, op string) (Hold, error) {
-	g.logger.Warn("reservation lua failed", "op", op, "error_class", classify(err), "outage_mode", g.cfg.OutageMode, "error", err.Error())
+	g.logger.Warn("reservation lua failed", "op", op, "error_class", classify(err), "outage_mode", g.cfg.OutageMode)
 	if g.cfg.OutageMode == OutageModeFail {
 		return Hold{}, ErrUnavailable
 	}

@@ -122,5 +122,8 @@ func testRouter(deps Dependencies) http.Handler {
 	if deps.ProviderAuth.Secret == "" {
 		deps.ProviderAuth.Secret = providerTestSecret()
 	}
+	if deps.ReportStaleThresholdSeconds == 0 {
+		deps.ReportStaleThresholdSeconds = 60
+	}
 	return NewRouter(deps)
 }

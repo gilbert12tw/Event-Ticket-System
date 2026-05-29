@@ -59,7 +59,7 @@ func (s *Service) loadReportExport(ctx context.Context, exportID string) (Report
 }
 
 func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
-	rows, err := s.Reports(ctx, Actor{ID: "report-export-worker", Role: RoleHRAdmin})
+	result, err := s.Reports(ctx, Actor{ID: "report-export-worker", Role: RoleHRAdmin})
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
 	if err := writer.Write([]string{"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count", "employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count", "remaining_capacity", "city_distribution", "starts_at"}); err != nil {
 		return nil, err
 	}
-	for _, row := range rows {
+	for _, row := range result.Rows {
 		cityDistribution, err := cityDistributionCSVValue(row.CityDistribution)
 		if err != nil {
 			return nil, err
