@@ -339,10 +339,10 @@ func TestEventIDFromPendingKey(t *testing.T) {
 		id  string
 		ok  bool
 	}{
-		"valid":           {"cets:v1:resv:evt_abc:pending", "evt_abc", true},
-		"wrong prefix":    {"some:other:key", "", false},
-		"wrong suffix":    {"cets:v1:resv:evt_abc:hold:x", "", false},
-		"empty event id":  {"cets:v1:resv::pending", "", false},
+		"valid":            {"cets:v1:resv:evt_abc:pending", "evt_abc", true},
+		"wrong prefix":     {"some:other:key", "", false},
+		"wrong suffix":     {"cets:v1:resv:evt_abc:hold:x", "", false},
+		"empty event id":   {"cets:v1:resv::pending", "", false},
 		"event with colon": {"cets:v1:resv:evt:colon:pending", "evt:colon", true},
 	}
 	for name, tc := range cases {

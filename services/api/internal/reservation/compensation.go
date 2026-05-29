@@ -38,11 +38,11 @@ type CompensationMetrics interface {
 // CompensationConfig controls how aggressively the Compensator scans Redis.
 // All values come from environment variables in the worker bootstrap.
 type CompensationConfig struct {
-	GraceTTL          time.Duration // only consider pending members older than now-grace
-	BatchSize         int           // max pending members processed per event per sweep
-	MaxEvents         int           // max events scanned per sweep
-	DriftMarkerTTL    time.Duration // TTL of the cets:v1:resv:{event_id}:drift observability marker
-	OperationTimeout  time.Duration // per Redis/PG call deadline
+	GraceTTL         time.Duration // only consider pending members older than now-grace
+	BatchSize        int           // max pending members processed per event per sweep
+	MaxEvents        int           // max events scanned per sweep
+	DriftMarkerTTL   time.Duration // TTL of the cets:v1:resv:{event_id}:drift observability marker
+	OperationTimeout time.Duration // per Redis/PG call deadline
 }
 
 // Compensator scans `cets:v1:resv:{event_id}:pending` for expired members
