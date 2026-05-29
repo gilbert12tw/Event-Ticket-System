@@ -35,7 +35,11 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 			return err
 		}
 		if redisClient != nil {
-			defer redisClient.Close()
+			defer func() {
+				if err := redisClient.Close(); err != nil {
+					logger.Warn("redis client close failed", "error", err)
+				}
+			}()
 		}
 		ticketingService := newTicketingService(pool, cfg, logger).
 			WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret))

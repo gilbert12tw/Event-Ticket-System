@@ -76,7 +76,7 @@ func TestBookingWithGateConfirmsLimitedSeatAndDecrementsCounter(t *testing.T) {
 	// After a confirmed booking, the hold is gone and the counter reflects
 	// remaining capacity (capacity=2, remaining after one confirm = 1).
 	client := redisClientFromEnv(t)
-	defer client.Close()
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	remaining, err := client.Get(ctx, "cets:v1:resv:"+event.EventID+":remaining").Int()
 	require.NoError(t, err)
 	assert.Equal(t, 1, remaining)
@@ -201,7 +201,7 @@ func TestBookingWithGateUnlimitedEventBypassesRedis(t *testing.T) {
 
 	// No Redis keys should be created for unlimited events.
 	client := redisClientFromEnv(t)
-	defer client.Close()
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	keys, err := client.Keys(ctx, "cets:v1:resv:"+event.EventID+":*").Result()
 	require.NoError(t, err)
 	assert.Empty(t, keys, "unlimited events must not touch Redis")
@@ -234,7 +234,7 @@ func TestBookingWithGateIdempotentReplayDoesNotDoubleDecrement(t *testing.T) {
 	assert.Equal(t, first.Registration.RegistrationID, replay.Registration.RegistrationID)
 
 	client := redisClientFromEnv(t)
-	defer client.Close()
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	remaining, err := client.Get(ctx, "cets:v1:resv:"+event.EventID+":remaining").Int()
 	require.NoError(t, err)
 	assert.Equal(t, 4, remaining, "replay must not decrement again (5 - 1 confirmed = 4)")
