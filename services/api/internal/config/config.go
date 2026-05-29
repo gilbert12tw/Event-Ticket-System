@@ -52,6 +52,12 @@ type Config struct {
 	NoShowGraceHours                int
 	ReportStaleThresholdSeconds     int
 	ReportUnavailableTimeoutSeconds int
+	BookingPreadmission             bool
+	ReservationOutageMode           string
+	ReservationTTL                  time.Duration
+	ReservationGraceTTL             time.Duration
+	ReservationOperationTimeout     time.Duration
+	BookingReservationHashSecret    string
 	loadErrors                      []string
 }
 
@@ -87,6 +93,12 @@ func Load() Config {
 		NoShowGraceHours:                parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
 		ReportStaleThresholdSeconds:     parsePositiveIntEnv("REPORT_STALE_THRESHOLD_SECONDS", "60", &loadErrors),
 		ReportUnavailableTimeoutSeconds: parsePositiveIntEnv("REPORT_UNAVAILABLE_TIMEOUT_SECONDS", "180", &loadErrors),
+		BookingPreadmission:             parseOnOffEnv("BOOKING_PREADMISSION", "off", &loadErrors),
+		ReservationOutageMode:           getEnv("REDIS_OUTAGE_MODE", "degrade"),
+		ReservationTTL:                  parseSecondsEnv("RESERVATION_TTL_SECONDS", "20", &loadErrors),
+		ReservationGraceTTL:             parseSecondsEnv("RESERVATION_TTL_GRACE_SECONDS", "10", &loadErrors),
+		ReservationOperationTimeout:     parseDurationMSEnv("REDIS_OPERATION_TIMEOUT_MS", "150", &loadErrors),
+		BookingReservationHashSecret:    os.Getenv("BOOKING_RESERVATION_HASH_SECRET"),
 		loadErrors:                      loadErrors,
 	}
 }
@@ -258,6 +270,29 @@ func parseDurationMSEnv(key string, fallback string, loadErrors *[]string) time.
 		return 5 * time.Second
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+func parseSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
+	value := getEnv(key, fallback)
+	secs, err := strconv.Atoi(value)
+	if err != nil || secs <= 0 {
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of seconds, got %q", key, value))
+		return 0
+	}
+	return time.Duration(secs) * time.Second
+}
+
+func parseOnOffEnv(key string, fallback string, loadErrors *[]string) bool {
+	value := strings.ToLower(getEnv(key, fallback))
+	switch value {
+	case "on", "true", "1", "yes":
+		return true
+	case "off", "false", "0", "no", "":
+		return false
+	default:
+		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be one of on|off, got %q", key, value))
+		return false
+	}
 }
 
 func parsePositiveIntEnv(key string, fallback string, loadErrors *[]string) int {

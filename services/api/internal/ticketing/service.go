@@ -4,15 +4,19 @@ import (
 	"log/slog"
 	"time"
 
+	"event-ticket-system/internal/reservation"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	db           *pgxpool.Pool
-	signer       Signer
-	logger       *slog.Logger
-	now          func() time.Time
-	noShowPolicy NoShowPolicy
+	db                *pgxpool.Pool
+	signer            Signer
+	logger            *slog.Logger
+	now               func() time.Time
+	noShowPolicy      NoShowPolicy
+	reservationGate   reservation.Gate
+	reservationSecret []byte
 }
 
 func NewService(db *pgxpool.Pool, signer Signer, logger *slog.Logger) *Service {
@@ -25,10 +29,24 @@ func NewServiceWithPolicy(db *pgxpool.Pool, signer Signer, logger *slog.Logger, 
 	}
 	policy = policy.Normalize()
 	return &Service{
-		db:           db,
-		signer:       signer,
-		logger:       logger,
-		now:          func() time.Time { return time.Now().UTC() },
-		noShowPolicy: policy,
+		db:              db,
+		signer:          signer,
+		logger:          logger,
+		now:             func() time.Time { return time.Now().UTC() },
+		noShowPolicy:    policy,
+		reservationGate: reservation.NoopGate{},
 	}
+}
+
+// WithReservationGate attaches a PH2-22 pre-admission gate to the service.
+// secret is the HMAC key used to derive Redis-safe idempotency hashes; it must
+// be non-empty when gate.Enabled() is true. Calling with reservation.NoopGate
+// (or not calling at all) preserves the Phase 1 DB-only booking path.
+func (s *Service) WithReservationGate(gate reservation.Gate, secret []byte) *Service {
+	if gate == nil {
+		gate = reservation.NoopGate{}
+	}
+	s.reservationGate = gate
+	s.reservationSecret = secret
+	return s
 }
