@@ -75,6 +75,7 @@ Current implementation slice:
 - PostgreSQL pool acquire wait, current lock-waiting sessions, outbox backlog / oldest lag, and terminal outbox publish latency are scrapeable as white-box signals for the Phase 2 baseline.
 - Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus and Grafana with a provisioned `CETS Observability` dashboard. This is a review/demo profile, not a required production backing service.
 - Black-box probing is provided by optional `blackbox-exporter`; Prometheus probes `http://app:8080/`, `http://app:8080/healthz`, and `http://app:8080/readyz` through `/probe` to represent the external symptom view separately from in-process white-box metrics. Probes do not call product APIs and do not change booking, check-in, worker, or reporting behavior.
+- Prometheus loads starter alert rules from `services/api/deploy/observability/rules/`. This adds version-controlled SLO breach detection for PR #43 metrics only; it does not add Alertmanager routing, paging, or a production monitoring dependency.
 
 ```text
 current shipped metrics (prometheus-style):
@@ -96,6 +97,14 @@ current shipped metrics (prometheus-style):
   cets_metrics_scrape_errors_total{collector}
   probe_success{probe_scope="blackbox"}
   probe_duration_seconds{probe_scope="blackbox"}
+
+current shipped alert rules:
+  CETSHighHTTPErrorRate          -> cets_http_requests_total 5xx ratio > 1%
+  CETSHighP99Latency            -> cets_http_request_seconds_bucket P99 > 1s
+  CETSDBPoolAcquireWaitHigh     -> pool acquire wait average > 50ms
+  CETSDBLockWaitingSessions     -> cets_db_lock_waiting_sessions > 0
+  CETSOutboxOldestLagHigh       -> cets_outbox_oldest_lag_seconds > 300s
+  CETSMetricsScrapeErrors       -> cets_metrics_scrape_errors_total increasing
 
 future WS2 target metrics:
   cets_db_lock_wait_seconds_bucket{le=...}

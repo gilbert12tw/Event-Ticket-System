@@ -1,0 +1,74 @@
+groups:
+  - name: cets-slo-alerts
+    rules:
+      - alert: CETSHighHTTPErrorRate
+        expr: |
+          (
+            sum(rate(cets_http_requests_total{status_class=~"5xx"}[5m]))
+            /
+            sum(rate(cets_http_requests_total[5m]))
+          ) > 0.01
+          and sum(rate(cets_http_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: page
+          slo: cets-api-success-rate
+        annotations:
+          summary: CETS API 5xx error rate is above 1 percent
+          description: User-visible server errors are breaching the starter SLO threshold for 5 minutes.
+
+      - alert: CETSHighP99Latency
+        expr: |
+          histogram_quantile(0.99, sum(rate(cets_http_request_seconds_bucket[5m])) by (le)) > 1
+          and sum(rate(cets_http_request_seconds_count[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: page
+          slo: cets-api-p99-latency
+        annotations:
+          summary: CETS API P99 latency is above 1 second
+          description: Tail latency is high enough to affect the slowest user requests for 5 minutes.
+
+      - alert: CETSDBPoolAcquireWaitHigh
+        expr: |
+          rate(cets_db_pool_acquire_wait_seconds_total[5m])
+          /
+          clamp_min(rate(cets_db_pool_acquire_count_total[5m]), 1)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          slo: cets-db-pool-saturation
+        annotations:
+          summary: PostgreSQL pool acquire wait is elevated
+          description: Average pool acquire wait is above 50ms, which can become a saturation cause behind slow requests.
+
+      - alert: CETSDBLockWaitingSessions
+        expr: cets_db_lock_waiting_sessions > 0
+        for: 2m
+        labels:
+          severity: warning
+          slo: cets-db-lock-saturation
+        annotations:
+          summary: PostgreSQL sessions are waiting on locks
+          description: Lock wait saturation is present and should be correlated with booking or admin write traffic.
+
+      - alert: CETSOutboxOldestLagHigh
+        expr: max(cets_outbox_oldest_lag_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+          slo: cets-outbox-lag
+        annotations:
+          summary: Outbox lag is above 5 minutes
+          description: Notification, projection, or export side effects may be delayed while core transactions continue.
+
+      - alert: CETSMetricsScrapeErrors
+        expr: sum(rate(cets_metrics_scrape_errors_total[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+          slo: cets-telemetry-health
+        annotations:
+          summary: CETS metrics collector is reporting scrape errors
+          description: Observability evidence is degraded because at least one scrape-time collector is failing.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestComposeAppPortBindingInvariant(t *testing.T) {
@@ -97,6 +98,7 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/blackbox_exporter/config.yml",
 		"${BLACKBOX_EXPORTER_PORT:-9115}:9115",
 		"./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro",
+		"./observability/rules:/etc/prometheus/rules:ro",
 		"grafana:",
 		"image: grafana/grafana:12.2.0",
 		"GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}",
@@ -130,6 +132,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	required := []string{
 		"job_name: cets-app",
 		"metrics_path: /metrics",
+		"rule_files:",
+		"/etc/prometheus/rules/*.yml",
 		"app:8080",
 		"job_name: cets-blackbox",
 		"metrics_path: /probe",
@@ -168,6 +172,69 @@ func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
 	assert.NotContains(t, combined, "Authorization:", "black-box probes must not depend on product credentials")
 	assert.NotContains(t, combined, "app:\n    depends_on:\n      blackbox-exporter:", "app must not depend on probe health")
 	assert.NotContains(t, combined, "worker:\n    depends_on:\n      blackbox-exporter:", "worker must not depend on probe health")
+}
+
+func TestPrometheusAlertRulesCoverStarterSLOSignals(t *testing.T) {
+	rulesFile, err := os.ReadFile("observability/rules/cets-alerts.yml")
+	require.NoError(t, err)
+
+	var rules prometheusRulesFile
+	require.NoError(t, yaml.Unmarshal(rulesFile, &rules))
+	require.Len(t, rules.Groups, 1)
+	assert.Equal(t, "cets-slo-alerts", rules.Groups[0].Name)
+
+	alerts := map[string]prometheusAlertRule{}
+	for _, rule := range rules.Groups[0].Rules {
+		alerts[rule.Alert] = rule
+	}
+	requiredAlerts := []string{
+		"CETSHighHTTPErrorRate",
+		"CETSHighP99Latency",
+		"CETSDBPoolAcquireWaitHigh",
+		"CETSDBLockWaitingSessions",
+		"CETSOutboxOldestLagHigh",
+		"CETSMetricsScrapeErrors",
+	}
+	for _, alert := range requiredAlerts {
+		rule, ok := alerts[alert]
+		require.True(t, ok, "missing alert rule %s", alert)
+		assert.NotEmpty(t, rule.Expr, "alert %s must have a PromQL expression", alert)
+		assert.NotEmpty(t, rule.For, "alert %s must require sustained breach time", alert)
+		assert.NotEmpty(t, rule.Labels["severity"], "alert %s must declare routing severity", alert)
+		assert.NotEmpty(t, rule.Labels["slo"], "alert %s must map back to a starter SLO", alert)
+		assert.NotEmpty(t, rule.Annotations["summary"], "alert %s must explain the symptom", alert)
+	}
+
+	combinedExpr := string(rulesFile)
+	for _, metric := range []string{
+		"cets_http_requests_total",
+		"cets_http_request_seconds_bucket",
+		"cets_http_request_seconds_count",
+		"cets_db_pool_acquire_wait_seconds_total",
+		"cets_db_pool_acquire_count_total",
+		"cets_db_lock_waiting_sessions",
+		"cets_outbox_oldest_lag_seconds",
+		"cets_metrics_scrape_errors_total",
+	} {
+		assert.Contains(t, combinedExpr, metric, "alert rules must use the shipped PR #43 metric %s", metric)
+	}
+}
+
+type prometheusRulesFile struct {
+	Groups []prometheusRuleGroup `yaml:"groups"`
+}
+
+type prometheusRuleGroup struct {
+	Name  string                `yaml:"name"`
+	Rules []prometheusAlertRule `yaml:"rules"`
+}
+
+type prometheusAlertRule struct {
+	Alert       string            `yaml:"alert"`
+	Expr        string            `yaml:"expr"`
+	For         string            `yaml:"for"`
+	Labels      map[string]string `yaml:"labels"`
+	Annotations map[string]string `yaml:"annotations"`
 }
 
 func TestComposePassesNoShowPolicyConfig(t *testing.T) {
