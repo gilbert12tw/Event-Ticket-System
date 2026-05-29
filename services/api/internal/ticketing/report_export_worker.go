@@ -8,37 +8,58 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 )
-
-const outboxEventReportExportRequested = "report.export.requested"
 
 type ReportObjectStore interface {
 	Put(ctx context.Context, key string, contentType string, body []byte) error
 }
 
-func (s *Service) processReportExportOutbox(ctx context.Context, claim outboxClaim, store ReportObjectStore, maxAttempts int) error {
+type ReportObjectExistenceChecker interface {
+	Exists(ctx context.Context, key string) (bool, error)
+}
+
+func (s *Service) processReportExportOutbox(ctx context.Context, claim outboxClaim, store ReportObjectStore, retryPolicy OutboxRetryPolicy) (string, error) {
 	if store == nil {
-		return s.failReportExportOutbox(ctx, claim, maxAttempts, errors.New("report export object store is required"))
+		return s.failReportExportOutbox(ctx, claim, retryPolicy, errors.New("report export object store is required"))
 	}
 	export, err := s.loadReportExport(ctx, claim.aggregateID)
 	if err != nil {
-		return s.failReportExportOutbox(ctx, claim, maxAttempts, err)
+		return s.failReportExportOutbox(ctx, claim, retryPolicy, err)
 	}
 	if export.Status == ReportExportStatusReady {
-		return s.markOutboxPublished(ctx, claim.outboxID)
+		return outboxAttemptOutcomePublished, s.markOutboxPublished(ctx, claim)
+	}
+	exists, err := reportExportObjectExists(ctx, store, export.ObjectKey)
+	if err != nil {
+		return s.failReportExportOutbox(ctx, claim, retryPolicy, err)
+	}
+	if exists {
+		if err := s.markReportExportReady(ctx, export.ExportID); err != nil {
+			return outboxAttemptOutcomeError, err
+		}
+		return outboxAttemptOutcomePublished, s.markOutboxPublished(ctx, claim)
 	}
 	body, err := s.buildReportExportCSV(ctx)
 	if err != nil {
-		return s.failReportExportOutbox(ctx, claim, maxAttempts, err)
+		return s.failReportExportOutbox(ctx, claim, retryPolicy, err)
 	}
 	if err := store.Put(ctx, export.ObjectKey, "text/csv; charset=utf-8", body); err != nil {
-		return s.failReportExportOutbox(ctx, claim, maxAttempts, err)
+		return s.failReportExportOutbox(ctx, claim, retryPolicy, err)
 	}
 	if err := s.markReportExportReady(ctx, export.ExportID); err != nil {
-		return err
+		return outboxAttemptOutcomeError, err
 	}
-	return s.markOutboxPublished(ctx, claim.outboxID)
+	return outboxAttemptOutcomePublished, s.markOutboxPublished(ctx, claim)
+}
+
+func reportExportObjectExists(ctx context.Context, store ReportObjectStore, key string) (bool, error) {
+	checker, ok := store.(ReportObjectExistenceChecker)
+	if !ok {
+		return false, nil
+	}
+	return checker.Exists(ctx, key)
 }
 
 func (s *Service) loadReportExport(ctx context.Context, exportID string) (ReportExport, error) {
@@ -119,15 +140,48 @@ func (s *Service) markReportExportReady(ctx context.Context, exportID string) er
 	return err
 }
 
-func (s *Service) failReportExportOutbox(ctx context.Context, claim outboxClaim, maxAttempts int, failure error) error {
-	if claim.attempts >= maxAttempts {
-		if _, err := s.db.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = now() WHERE export_id = $2`, ReportExportStatusFailed, claim.aggregateID); err != nil {
-			return err
+func (s *Service) failReportExportOutbox(ctx context.Context, claim outboxClaim, retryPolicy OutboxRetryPolicy, failure error) (string, error) {
+	outcome := outboxFailureOutcome(claim, retryPolicy)
+	lastError := safeReportExportFailureError(failure)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return outboxAttemptOutcomeError, err
+	}
+	defer rollback(ctx, tx)
+	if retryPolicy.exhausted(claim.attempts) {
+		if _, err := tx.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = now() WHERE export_id = $2`, ReportExportStatusFailed, claim.aggregateID); err != nil {
+			return outboxAttemptOutcomeError, err
 		}
-		return s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, failure.Error())
+		if err := updateOutboxFailureInTx(ctx, tx, claim, retryPolicy, "dead_letter", lastError); err != nil {
+			return outboxAttemptOutcomeError, err
+		}
+		if err := insertOutboxDeadLetterAuditInTx(ctx, tx, claim, outboxDeadLetterReasonRetryExhausted); err != nil {
+			return outboxAttemptOutcomeError, err
+		}
+		return outcome, tx.Commit(ctx)
 	}
-	if _, err := s.db.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = NULL WHERE export_id = $2`, ReportExportStatusPending, claim.aggregateID); err != nil {
-		return err
+	if _, err := tx.Exec(ctx, `UPDATE report_exports SET status = $1, completed_at = NULL WHERE export_id = $2`, ReportExportStatusPending, claim.aggregateID); err != nil {
+		return outboxAttemptOutcomeError, err
 	}
-	return s.updateOutboxAfterSendFailure(ctx, claim.outboxID, claim.attempts, maxAttempts, failure.Error())
+	if err := updateOutboxFailureInTx(ctx, tx, claim, retryPolicy, "pending", lastError); err != nil {
+		return outboxAttemptOutcomeError, err
+	}
+	if err := insertOutboxRetryScheduledAuditInTx(ctx, tx, claim, outboxRetryReasonRetryableFailure); err != nil {
+		return outboxAttemptOutcomeError, err
+	}
+	return outcome, tx.Commit(ctx)
+}
+
+func safeReportExportFailureError(failure error) string {
+	if failure == nil {
+		return ""
+	}
+	message := strings.TrimSpace(failure.Error())
+	if message == "" {
+		return ""
+	}
+	if strings.Contains(strings.ToLower(message), "object store") {
+		return "object store unavailable"
+	}
+	return "report export failed"
 }

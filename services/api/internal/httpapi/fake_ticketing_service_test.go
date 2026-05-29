@@ -29,6 +29,9 @@ type fakeTicketingService struct {
 	reportsActor          ticketing.Actor
 	auditActor            ticketing.Actor
 	auditQuery            []ticketing.AuditLogQuery
+	queueStatusActor      ticketing.Actor
+	notificationOpsActor  ticketing.Actor
+	notificationOpsQuery  []ticketing.NotificationDeliveryOpsQuery
 	createRequest         ticketing.CreateEventRequest
 	updateRequest         ticketing.UpdateEventRequest
 }
@@ -170,6 +173,37 @@ func (s *fakeTicketingService) NotificationDeliveries(context.Context, ticketing
 
 func (s *fakeTicketingService) RetryNotificationDelivery(context.Context, ticketing.Actor, string) (ticketing.NotificationDelivery, error) {
 	return ticketing.NotificationDelivery{DeliveryID: "del_1", Status: "pending"}, nil
+}
+
+func (s *fakeTicketingService) NotificationDeliveryOpsFeed(_ context.Context, actor ticketing.Actor, query ...ticketing.NotificationDeliveryOpsQuery) (ticketing.NotificationDeliveryOpsPage, error) {
+	s.notificationOpsActor = actor
+	s.notificationOpsQuery = query
+	return ticketing.NotificationDeliveryOpsPage{
+		Deliveries: []ticketing.NotificationDeliveryOpsRow{{
+			DeliveryID:         "del_1",
+			WorkerKind:         "notification",
+			EventType:          "notification.requested.v2",
+			Status:             "dead_letter",
+			RetryCount:         4,
+			RecipientRedacted:  "E100****",
+			RetryEligible:      true,
+			DeadLetterEligible: true,
+		}},
+		NextCursor: "next-delivery-cursor",
+	}, nil
+}
+
+func (s *fakeTicketingService) OutboxQueueStatus(_ context.Context, actor ticketing.Actor) (ticketing.OutboxQueueStatus, error) {
+	s.queueStatusActor = actor
+	return ticketing.OutboxQueueStatus{
+		Queues: []ticketing.OutboxQueueStatusRow{{
+			Name:          "notification",
+			Pending:       3,
+			InFlight:      1,
+			DeadLetter:    2,
+			P95AgeSeconds: 42,
+		}},
+	}, nil
 }
 
 func (s *fakeTicketingService) Reports(_ context.Context, actor ticketing.Actor) ([]ticketing.ReportRow, error) {

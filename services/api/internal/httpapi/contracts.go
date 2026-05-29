@@ -15,6 +15,7 @@ type TicketingService interface {
 	NotificationService
 	ReportingService
 	AuditService
+	OpsService
 	DemoService
 }
 
@@ -64,6 +65,7 @@ type NotificationService interface {
 	UpdateNotificationPreferences(ctx context.Context, actor ticketing.Actor, req ticketing.NotificationPreferences) (ticketing.NotificationPreferences, error)
 	NotificationDeliveries(ctx context.Context, actor ticketing.Actor) ([]ticketing.NotificationDelivery, error)
 	RetryNotificationDelivery(ctx context.Context, actor ticketing.Actor, deliveryID string) (ticketing.NotificationDelivery, error)
+	NotificationDeliveryOpsFeed(ctx context.Context, actor ticketing.Actor, query ...ticketing.NotificationDeliveryOpsQuery) (ticketing.NotificationDeliveryOpsPage, error)
 }
 
 type ReportingService interface {
@@ -74,6 +76,10 @@ type ReportingService interface {
 
 type AuditService interface {
 	AuditLogs(ctx context.Context, actor ticketing.Actor, query ...ticketing.AuditLogQuery) ([]ticketing.AuditLog, error)
+}
+
+type OpsService interface {
+	OutboxQueueStatus(ctx context.Context, actor ticketing.Actor) (ticketing.OutboxQueueStatus, error)
 }
 
 type DemoService interface {

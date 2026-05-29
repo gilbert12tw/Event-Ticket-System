@@ -11,11 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"event-ticket-system/internal/eventcontract"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var httpBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+var allowedOutboxMetricEventTypes = buildAllowedOutboxMetricEventTypes()
 
 type SQLMetricsDB interface {
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
@@ -154,6 +157,7 @@ func writeSQLMetrics(ctx context.Context, w io.Writer, db any) {
 	}
 	writeLockWaitMetric(ctx, w, sqlDB)
 	writeOutboxMetrics(ctx, w, sqlDB)
+	writeWorkerOutcomeMetrics(ctx, w, sqlDB)
 }
 
 func writeLockWaitMetric(ctx context.Context, w io.Writer, db SQLMetricsDB) {
@@ -171,35 +175,105 @@ func writeLockWaitMetric(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 	writeLine(w, "# HELP cets_outbox_pending_total Outbox rows still requiring worker attention.")
 	writeLine(w, "# TYPE cets_outbox_pending_total gauge")
+	writeLine(w, "# HELP cets_outbox_lag_seconds Outbox publish latency distribution for rows that reached published state.")
+	writeLine(w, "# TYPE cets_outbox_lag_seconds histogram")
 	writeLine(w, "# HELP cets_outbox_oldest_lag_seconds Age of the oldest outbox row still requiring worker attention.")
 	writeLine(w, "# TYPE cets_outbox_oldest_lag_seconds gauge")
-	rows, err := db.Query(ctx, `SELECT event_type, publish_status, count(*),
-			COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0)
-		FROM outbox_events
-		WHERE publish_status IN ('pending', 'processing', 'dead_letter')
-		GROUP BY event_type, publish_status
-		ORDER BY event_type, publish_status`)
+	writeLine(w, "# HELP cets_outbox_retry_count Retry attempts recorded on outbox rows still requiring worker attention.")
+	writeLine(w, "# TYPE cets_outbox_retry_count gauge")
+	writeLine(w, "# HELP cets_outbox_dead_letter_total Outbox rows currently in dead-letter state.")
+	writeLine(w, "# TYPE cets_outbox_dead_letter_total gauge")
+	writeLine(w, "# HELP cets_outbox_lease_held_seconds Oldest held lease age for processing outbox rows.")
+	writeLine(w, "# TYPE cets_outbox_lease_held_seconds gauge")
+	rows, err := db.Query(ctx, `WITH outbox_attention AS (
+			SELECT event_type,
+				CASE
+					WHEN event_type IN ('report.export.requested', 'report.export.requested.v2') THEN 'export'
+					WHEN event_type = 'reporting.projection.update_required.v2' THEN 'projection'
+					WHEN event_type LIKE 'reservation.compensation.%' THEN 'compensation'
+					ELSE 'notification'
+				END AS worker_kind,
+				publish_status,
+				retry_count,
+				lease_started_at,
+				created_at
+			FROM outbox_events
+			WHERE publish_status IN ('pending', 'processing', 'dead_letter')
+		)
+		SELECT event_type, worker_kind, publish_status, count(*),
+			COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0),
+			COALESCE(sum(retry_count), 0),
+			count(*) FILTER (WHERE publish_status = 'dead_letter'),
+			COALESCE(EXTRACT(EPOCH FROM now() - min(lease_started_at)), 0)
+		FROM outbox_attention
+		GROUP BY event_type, worker_kind, publish_status
+		ORDER BY worker_kind, event_type, publish_status`)
 	if err != nil {
 		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1")
 		return
 	}
 	defer rows.Close()
 
+	aggregates := map[outboxMetricKey]outboxMetricAggregate{}
 	for rows.Next() {
-		var eventType, status string
-		var count int64
-		var oldestLag float64
-		if err := rows.Scan(&eventType, &status, &count, &oldestLag); err != nil {
+		var eventType, workerKind, status string
+		var count, retryCount, deadLetterCount int64
+		var oldestLag, leaseHeld float64
+		if err := rows.Scan(&eventType, &workerKind, &status, &count, &oldestLag, &retryCount, &deadLetterCount, &leaseHeld); err != nil {
 			writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1")
 			return
 		}
-		labels := fmt.Sprintf(`event_type="%s",status="%s"`, escapeLabel(eventType), escapeLabel(status))
-		writeFormat(w, "cets_outbox_pending_total{%s} %d\n", labels, count)
-		writeFormat(w, "cets_outbox_oldest_lag_seconds{%s} %s\n", labels, strconv.FormatFloat(oldestLag, 'f', -1, 64))
+		key := normalizeOutboxMetricKey(eventType, workerKind, status)
+		addOutboxMetricAggregate(aggregates, key, count, oldestLag, retryCount, deadLetterCount, leaseHeld)
 	}
 	if err := rows.Err(); err != nil {
 		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1")
+		return
 	}
+
+	for _, aggregate := range sortedOutboxMetricAggregates(aggregates) {
+		labels := fmt.Sprintf(`event_type="%s",worker_kind="%s",status="%s"`,
+			escapeLabel(aggregate.Key.EventType), escapeLabel(aggregate.Key.WorkerKind), escapeLabel(aggregate.Key.Status))
+		writeFormat(w, "cets_outbox_pending_total{%s} %d\n", labels, aggregate.Count)
+		writeFormat(w, "cets_outbox_oldest_lag_seconds{%s} %s\n", labels, strconv.FormatFloat(aggregate.OldestLag, 'f', -1, 64))
+		writeFormat(w, "cets_outbox_retry_count{%s} %d\n", labels, aggregate.RetryCount)
+		writeFormat(w, "cets_outbox_lease_held_seconds{%s} %s\n", labels, strconv.FormatFloat(aggregate.LeaseHeld, 'f', -1, 64))
+		if aggregate.DeadLetterCount > 0 {
+			writeFormat(w, "cets_outbox_dead_letter_total{event_type=\"%s\",worker_kind=\"%s\"} %d\n",
+				escapeLabel(aggregate.Key.EventType), escapeLabel(aggregate.Key.WorkerKind), aggregate.DeadLetterCount)
+		}
+	}
+	writeOutboxLagHistogramMetrics(ctx, w, db)
+}
+
+func buildAllowedOutboxMetricEventTypes() map[string]struct{} {
+	allowed := map[string]struct{}{
+		"booking.confirmed":                 {},
+		"booking.waitlisted":                {},
+		"eligibility.impact_review.created": {},
+		"hr_sync.completed":                 {},
+		"lottery.completed":                 {},
+		"registration.cancelled":            {},
+		"registration.no_show_recorded":     {},
+		"report.export.requested":           {},
+		"ticket.expired":                    {},
+		"ticket.issued":                     {},
+		"ticket.redeemed":                   {},
+		"ticket.revoked":                    {},
+		"waitlist.promoted":                 {},
+	}
+	for _, eventType := range eventcontract.Registry {
+		allowed[eventType] = struct{}{}
+	}
+	return allowed
+}
+
+func safeOutboxMetricEventType(eventType string) string {
+	eventType = strings.TrimSpace(eventType)
+	if _, ok := allowedOutboxMetricEventTypes[eventType]; ok {
+		return eventType
+	}
+	return "unknown"
 }
 
 func writeLine(w io.Writer, line string) {

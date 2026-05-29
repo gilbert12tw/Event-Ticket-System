@@ -41,8 +41,16 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 		"DATABASE_TIMEOUT_MS:",
 		"SHUTDOWN_TIMEOUT_MS:",
 		"WORKER_POLL_INTERVAL_MS:",
+		"WORKER_SHUTDOWN_GRACE_SECONDS:",
 		"WORKER_MAX_ATTEMPTS:",
+		"OUTBOX_BATCH_SIZE:",
+		"OUTBOX_BATCH_SIZE=100",
+		"OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}",
 		"WORKER_BATCH_SIZE:",
+		"OUTBOX_LEASE_TTL_SECONDS:",
+		"OUTBOX_RETRY_MAX:",
+		"OUTBOX_BACKOFF_BASE_MS:",
+		"OUTBOX_BACKOFF_MAX_MS:",
 		"worker:",
 		`command: ["worker"]`,
 		"migrate:",
@@ -102,12 +110,14 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	prometheus, err := os.ReadFile("observability/prometheus.yml")
 	require.NoError(t, err)
-	datasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
+	prometheusDatasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
 	require.NoError(t, err)
 	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
 	require.NoError(t, err)
 
-	combined := string(prometheus) + "\n" + string(datasource) + "\n" + string(dashboardFile)
+	combined := string(prometheus) + "\n" +
+		string(prometheusDatasource) + "\n" +
+		string(dashboardFile)
 	required := []string{
 		"job_name: cets-app",
 		"metrics_path: /metrics",
@@ -221,7 +231,10 @@ func TestKubernetesManifestsDeclareApplicationContracts(t *testing.T) {
 		"kind: Kustomization",
 		"namespace: cets",
 		"name: cets-api",
-		"name: cets-worker",
+		"name: cets-worker-notification",
+		"name: cets-worker-projection",
+		"name: cets-worker-compensation",
+		"name: cets-worker-export",
 		"name: cets-api-config",
 		"name: cets-api-secret",
 		"APP_ADDR: \":8080\"",
@@ -244,7 +257,7 @@ func TestKubernetesManifestsDeclareApplicationContracts(t *testing.T) {
 		assert.Contains(t, manifests, fragment, "k8s manifest contract is missing %q", fragment)
 	}
 
-	assert.GreaterOrEqual(t, strings.Count(manifests, "image: cets-api:dev"), 4, "app, worker, migrate, and seed must share the API image contract")
+	assert.GreaterOrEqual(t, strings.Count(manifests, "image: cets-api:dev"), 7, "app, per-kind workers, migrate, and seed must share the API image contract")
 }
 
 func TestKubernetesManifestsDeclareFullLocalStackContracts(t *testing.T) {
@@ -281,7 +294,7 @@ func TestKubernetesManifestsDeclareAdminProcessContracts(t *testing.T) {
 		"name: cets-seed",
 		"suspend: true",
 		"- seed",
-		"name: cets-worker",
+		"name: cets-worker-notification",
 		"- worker",
 		"restartPolicy: OnFailure",
 	}
