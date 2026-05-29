@@ -259,28 +259,27 @@ func TestCompensatorLeavesCounterAloneWhenNoDrift(t *testing.T) {
 	assert.Equal(t, int64(0), exists, "no drift marker when nothing was capped")
 }
 
-func TestCompensatorCleansOrphanPendingWithoutHold(t *testing.T) {
+func TestCompensatorReturnsSlotWhenHoldTTLExpired(t *testing.T) {
 	lookup := newFakeLookup()
-	comp, _, client, cleanup := newTestCompensator(t, lookup)
+	comp, gate, client, cleanup := newTestCompensator(t, lookup)
 	defer cleanup()
 	ctx := context.Background()
 	eventID := uniqueEventID(t)
-	hash := "orphan-pending"
+	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "ttl-expired-k")
 	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), holdKey(eventID, hash), driftKey(eventID))
 
-	// Simulate state where the hold expired via TTL but the pending member
-	// wasn't cleaned (e.g. process crash after EXPIRE but before ZREM in a
-	// future code path). The counter exists at 3.
-	require.NoError(t, client.Set(ctx, remainingKey(eventID), 3, 0).Err())
 	lookup.setCapacity(eventID, 3)
-	past := time.Now().Add(-1 * time.Hour).UTC().Unix()
-	require.NoError(t, client.ZAdd(ctx, pendingKey(eventID), redis.Z{Score: float64(past), Member: hash}).Err())
+	seedHold(t, gate, eventID, hash, 3) // counter: 3 -> 2
+	// Simulate natural TTL expiry: Redis deletes the hold hash, but the
+	// pending zset member remains for compensation to process.
+	require.NoError(t, client.Del(ctx, holdKey(eventID, hash)).Err())
+	expirePending(t, client, eventID, hash)
 
 	require.NoError(t, comp.SweepEvent(ctx, eventID))
 
 	rem, err := client.Get(ctx, remainingKey(eventID)).Int()
 	require.NoError(t, err)
-	assert.Equal(t, 3, rem, "no hold means no increment — TTL effectively returned the slot")
+	assert.Equal(t, 3, rem, "TTL removes only the hold; compensation must return the advisory slot")
 	count, err := client.ZCard(ctx, pendingKey(eventID)).Result()
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count, "orphan pending member must be removed")
