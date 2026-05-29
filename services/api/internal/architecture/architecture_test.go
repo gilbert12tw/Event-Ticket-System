@@ -194,6 +194,71 @@ func TestPhase2DocsDoNotClaimDeferredInfraIsRequired(t *testing.T) {
 	assert.Empty(t, offenders, "Phase 2 docs claim deferred infrastructure is required: %s", strings.Join(offenders, "; "))
 }
 
+func TestPhase2AsyncPlatformDoesNotDependOnExternalBrokerClients(t *testing.T) {
+	root := repoRoot(t)
+	forbiddenPrefixes := []string{
+		"github.com/segmentio/kafka-go",
+		"github.com/confluentinc/confluent-kafka-go",
+		"github.com/IBM/sarama",
+		"github.com/Shopify/sarama",
+		"github.com/rabbitmq/amqp091-go",
+		"github.com/streadway/amqp",
+		"github.com/nats-io/nats.go",
+		"github.com/aws/aws-sdk-go/service/sqs",
+		"github.com/aws/aws-sdk-go-v2/service/sqs",
+	}
+
+	offenders := brokerClientImportOffenders(t, root, forbiddenPrefixes)
+	offenders = append(offenders, brokerClientModuleOffenders(t, root, forbiddenPrefixes)...)
+	assert.Empty(t, offenders, "Phase 2 WS4 must stay on the PostgreSQL outbox, not external broker clients: %s", strings.Join(offenders, "; "))
+}
+
+func TestPhase2WorkersUseSingleGoCommandEntrypoint(t *testing.T) {
+	root := repoRoot(t)
+
+	dockerfile, err := os.ReadFile(filepath.Join(root, "services", "api", "Dockerfile"))
+	require.NoError(t, err)
+	assert.Contains(t, string(dockerfile), "go build -o /out/cets ./cmd/cets",
+		"the deployable API image must build the single cets command binary")
+
+	for _, relPath := range []string{
+		filepath.Join("services", "api", "deploy", "compose.yaml"),
+		filepath.Join("services", "api", "deploy", "compose.worker-isolation.yaml"),
+		filepath.Join("services", "api", "deploy", "k8s", "worker.yaml"),
+	} {
+		data, err := os.ReadFile(filepath.Join(root, relPath))
+		require.NoError(t, err)
+		content := string(data)
+		assert.NotContains(t, content, "reservation_experiment",
+			"Phase 2 WS4 worker deployments must not use diagnostic or experiment binaries: "+relPath)
+		assert.NotContains(t, content, "cmd/",
+			"Phase 2 WS4 worker deployments must use the built cets binary command modes: "+relPath)
+	}
+
+	compose, err := os.ReadFile(filepath.Join(root, "services", "api", "deploy", "compose.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(compose), `command: ["worker"]`,
+		"Compose worker must remain the cets worker command mode")
+
+	k8sWorker, err := os.ReadFile(filepath.Join(root, "services", "api", "deploy", "k8s", "worker.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, 4, strings.Count(string(k8sWorker), "- worker"),
+		"K8s worker deployments must remain cets worker command modes")
+}
+
+func TestOpsNotificationDeliveriesOpenAPIRolesMatchRuntime(t *testing.T) {
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "docs", "openapi", "paths", "admin-ops.yaml"))
+	require.NoError(t, err)
+
+	block := extractOpenAPIPathBlock(string(data), `"/admin/ops/notification-deliveries":`)
+	require.NotEmpty(t, block, "admin ops notification deliveries OpenAPI path not found")
+
+	roles := extractOpenAPIRequiredRoles(block)
+	assert.Equal(t, []string{"hr_admin", "system_admin"}, roles,
+		"ops notification delivery feed is HR/system-admin only; activity_admin can use the Phase 1 delivery listing instead")
+}
+
 func TestEventTypeRegistryMatchesNormativeDoc(t *testing.T) {
 	root := repoRoot(t)
 	docPath := filepath.Join(root, "docs", "specs", "phase2-ws4-async-notification.md")
@@ -270,6 +335,44 @@ func extractEventRegistryFromDoc(t *testing.T, content string) []string {
 	return types
 }
 
+func extractOpenAPIPathBlock(content string, path string) string {
+	start := strings.Index(content, path)
+	if start < 0 {
+		return ""
+	}
+	lines := strings.Split(content[start+len(path):], "\n")
+	var block []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, `"/`) {
+			break
+		}
+		block = append(block, line)
+	}
+	return strings.Join(block, "\n")
+}
+
+func extractOpenAPIRequiredRoles(block string) []string {
+	lines := strings.Split(block, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "x-required-roles:" {
+			continue
+		}
+		var roles []string
+		for _, roleLine := range lines[i+1:] {
+			trimmed := strings.TrimSpace(roleLine)
+			if strings.HasPrefix(trimmed, "- ") {
+				roles = append(roles, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+				continue
+			}
+			if trimmed != "" {
+				break
+			}
+		}
+		return roles
+	}
+	return nil
+}
+
 func forbiddenMarkdownPhrases(root string, forbidden []string) ([]string, error) {
 	var offenders []string
 	for _, path := range []string{filepath.Join(root, "AGENTS.md"), filepath.Join(root, "docs")} {
@@ -298,6 +401,62 @@ func forbiddenMarkdownPhrases(root string, forbidden []string) ([]string, error)
 		}
 	}
 	return offenders, nil
+}
+
+func brokerClientImportOffenders(t *testing.T, root string, forbiddenPrefixes []string) []string {
+	t.Helper()
+	var offenders []string
+	err := filepath.WalkDir(filepath.Join(root, "services", "api"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || isGeneratedGo(path) {
+			return nil
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imported := range parsed.Imports {
+			importPath := strings.Trim(imported.Path.Value, `"`)
+			if hasAnyPrefix(importPath, forbiddenPrefixes) {
+				rel, _ := filepath.Rel(root, path)
+				offenders = append(offenders, rel+": "+importPath)
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	return offenders
+}
+
+func brokerClientModuleOffenders(t *testing.T, root string, forbiddenPrefixes []string) []string {
+	t.Helper()
+	var offenders []string
+	for _, name := range []string{"go.mod", "go.sum"} {
+		path := filepath.Join(root, "services", "api", name)
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		for _, line := range strings.Split(string(data), "\n") {
+			modulePath := strings.Fields(line)
+			if len(modulePath) == 0 {
+				continue
+			}
+			if hasAnyPrefix(modulePath[0], forbiddenPrefixes) {
+				offenders = append(offenders, filepath.Join("services", "api", name)+": "+modulePath[0])
+			}
+		}
+	}
+	return offenders
+}
+
+func hasAnyPrefix(value string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func repoRoot(t *testing.T) string {

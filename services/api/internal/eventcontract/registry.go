@@ -14,6 +14,7 @@ var Registry = []string{
 	"ticket.expired.v2",
 	"checkin.recorded.v2",
 	"notification.requested.v2",
+	"reservation.compensation.release_required.v2",
 	"report.export.requested.v2",
 	"report.export.completed.v2",
 	"report.export.failed.v2",

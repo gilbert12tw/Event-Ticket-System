@@ -218,6 +218,7 @@ NotificationDeliveryStatus:
   type: string
   enum:
     - pending
+    - sending
     - sent
     - failed
     - suppressed

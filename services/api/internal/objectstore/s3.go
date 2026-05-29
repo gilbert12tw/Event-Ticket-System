@@ -25,36 +25,10 @@ type S3CompatibleStore struct {
 }
 
 func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType string, body []byte) error {
-	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("object key is required")
-	}
-	endpoint, err := url.Parse(strings.TrimRight(s.Endpoint, "/"))
+	endpoint, canonicalURI, region, now, err := s.requestParts(key)
 	if err != nil {
 		return err
 	}
-	if endpoint.Scheme == "" || endpoint.Host == "" {
-		return fmt.Errorf("object storage endpoint must include scheme and host")
-	}
-	if strings.TrimSpace(s.Bucket) == "" {
-		return fmt.Errorf("object storage bucket is required")
-	}
-	if strings.TrimSpace(s.AccessKey) == "" || strings.TrimSpace(s.SecretKey) == "" {
-		return fmt.Errorf("object storage credentials are required")
-	}
-	region := strings.TrimSpace(s.Region)
-	if region == "" {
-		region = "us-east-1"
-	}
-	now := time.Now().UTC()
-	if s.now != nil {
-		now = s.now().UTC()
-	}
-
-	objectPath := "/" + strings.Trim(s.Bucket, "/") + "/" + strings.TrimLeft(key, "/")
-	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + objectPath
-	endpoint.RawQuery = ""
-	canonicalURI := endpoint.EscapedPath()
-
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -71,11 +45,7 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	request.Header.Set("X-Amz-Date", amzDate)
 	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
-	client := s.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	response, err := client.Do(request)
+	response, err := s.httpClient().Do(request)
 	if err != nil {
 		return err
 	}
@@ -85,6 +55,75 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	}
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
 	return fmt.Errorf("object storage put failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+}
+
+func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error) {
+	endpoint, canonicalURI, region, now, err := s.requestParts(key)
+	if err != nil {
+		return false, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint.String(), nil)
+	if err != nil {
+		return false, err
+	}
+	payloadHash := sha256Hex(nil)
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	request.Header.Set("X-Amz-Date", amzDate)
+	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
+
+	response, err := s.httpClient().Do(request)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		return true, nil
+	}
+	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+	return false, fmt.Errorf("object storage head failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+}
+
+func (s S3CompatibleStore) requestParts(key string) (*url.URL, string, string, time.Time, error) {
+	if strings.TrimSpace(key) == "" {
+		return nil, "", "", time.Time{}, fmt.Errorf("object key is required")
+	}
+	endpoint, err := url.Parse(strings.TrimRight(s.Endpoint, "/"))
+	if err != nil {
+		return nil, "", "", time.Time{}, err
+	}
+	if endpoint.Scheme == "" || endpoint.Host == "" {
+		return nil, "", "", time.Time{}, fmt.Errorf("object storage endpoint must include scheme and host")
+	}
+	if strings.TrimSpace(s.Bucket) == "" {
+		return nil, "", "", time.Time{}, fmt.Errorf("object storage bucket is required")
+	}
+	if strings.TrimSpace(s.AccessKey) == "" || strings.TrimSpace(s.SecretKey) == "" {
+		return nil, "", "", time.Time{}, fmt.Errorf("object storage credentials are required")
+	}
+	region := strings.TrimSpace(s.Region)
+	if region == "" {
+		region = "us-east-1"
+	}
+	now := time.Now().UTC()
+	if s.now != nil {
+		now = s.now().UTC()
+	}
+	objectPath := "/" + strings.Trim(s.Bucket, "/") + "/" + strings.TrimLeft(key, "/")
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + objectPath
+	endpoint.RawQuery = ""
+	return endpoint, endpoint.EscapedPath(), region, now, nil
+}
+
+func (s S3CompatibleStore) httpClient() *http.Client {
+	if s.Client != nil {
+		return s.Client
+	}
+	return http.DefaultClient
 }
 
 func (s S3CompatibleStore) authorization(request *http.Request, canonicalURI string, payloadHash string, amzDate string, dateStamp string, region string) string {

@@ -72,7 +72,7 @@ Current implementation slice:
 
 - `GET /metrics` exposes Prometheus text format from the existing app process.
 - HTTP RED metrics use route pattern, method, and status class labels; raw IDs, signed tokens, QR payloads, and provider tokens must not appear in labels.
-- PostgreSQL pool acquire wait, current lock-waiting sessions, and outbox backlog / oldest lag are scrapeable as white-box signals for the Phase 2 baseline.
+- PostgreSQL pool acquire wait, current lock-waiting sessions, outbox backlog / oldest lag, and terminal outbox publish latency are scrapeable as white-box signals for the Phase 2 baseline.
 - Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus, Loki, Promtail, Tempo, and Grafana with provisioned Grafana datasources. This is a review/demo profile, not a required production backing service.
 - Loki stores app/worker stdout logs collected by Promtail from the Docker socket, keeping the application log contract as stdout/stderr only.
 - Tempo exposes local OTLP gRPC/HTTP receivers for trace ingestion, but the app does not emit spans in this slice; OTLP export must remain a future opt-in typed config change.
@@ -85,23 +85,29 @@ current shipped metrics (prometheus-style):
   cets_db_pool_acquire_count_total
   cets_db_pool_conns{state}
   cets_db_lock_waiting_sessions
-  cets_outbox_pending_total{event_type, status}
-  cets_outbox_oldest_lag_seconds{event_type, status}
+  cets_outbox_pending_total{event_type, worker_kind, status}
+  cets_outbox_lag_seconds_bucket{event_type, worker_kind}
+  cets_outbox_lag_seconds_sum{event_type, worker_kind}
+  cets_outbox_lag_seconds_count{event_type, worker_kind}
+  cets_outbox_oldest_lag_seconds{event_type, worker_kind, status}
+  cets_outbox_retry_count{event_type, worker_kind, status}
+  cets_outbox_dead_letter_total{event_type, worker_kind}
+  cets_worker_retry_total{worker_kind, reason}
+  cets_worker_deadletter_total{worker_kind}
   cets_metrics_scrape_errors_total{collector}
 
 future WS2 target metrics:
   cets_db_lock_wait_seconds_bucket{le=...}
   cets_booking_tx_duration_seconds_bucket{outcome="confirmed|rejected|conflict"}
-  cets_outbox_lag_seconds_bucket{event_type, worker_kind}
   cets_worker_process_seconds_bucket{worker_kind, outcome}
-  cets_worker_retry_total{worker_kind, reason}
-  cets_worker_deadletter_total{worker_kind}
 
 structured log fields (stdout JSON):
   ts, level, msg, trace_id, span_id, route, employee_id_hash,
   event_id, registration_id, idempotency_key, worker_kind,
   outcome, latency_ms, retry_count
 ```
+
+`cets_outbox_lag_seconds_*` is a histogram of rows that reached `publish_status='published'`, measuring `published_at - created_at`. It is not the live backlog gauge. Current queue pressure and dead-letter pressure remain exposed through `cets_outbox_pending_total`, `cets_outbox_oldest_lag_seconds`, and `cets_outbox_dead_letter_total`.
 
 `employee_id_hash` and any PII-derived field is salted/truncated per existing Phase 1 redaction rules. No signed tokens, provider tokens, or full names in any field.
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -28,12 +29,25 @@ func insertOutbox(ctx context.Context, tx pgx.Tx, eventType string, aggregateID 
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(payload)
+	idempotencyKey, partitionKey, err := outboxV2Metadata(eventType, aggregateID, outboxID, payload)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload)
-		VALUES ($1,$2,$3,$4::jsonb)`, outboxID, aggregateID, eventType, string(body))
+	body, err := json.Marshal(map[string]interface{}{
+		"event_id":        outboxID,
+		"event_type":      eventType,
+		"schema_version":  2,
+		"occurred_at":     time.Now().UTC().Format(time.RFC3339Nano),
+		"idempotency_key": idempotencyKey,
+		"partition_key":   partitionKey,
+		"payload":         payload,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO outbox_events
+		(outbox_id, aggregate_id, event_type, payload, schema_version, idempotency_key, partition_key)
+		VALUES ($1,$2,$3,$4::jsonb,2,$5,$6)`, outboxID, aggregateID, eventType, string(body), idempotencyKey, partitionKey)
 	return err
 }
 

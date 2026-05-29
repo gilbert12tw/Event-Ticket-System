@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"log/slog"
-	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/objectstore"
@@ -14,7 +12,12 @@ import (
 	"event-ticket-system/internal/ticketing"
 )
 
-func worker(cfg config.Config, logger *slog.Logger) error {
+func worker(cfg config.Config, logger *slog.Logger, args []string) error {
+	var err error
+	cfg, err = cfg.WithWorkerArgs(args)
+	if err != nil {
+		return err
+	}
 	if err := cfg.ValidateWorker(); err != nil {
 		return err
 	}
@@ -47,34 +50,40 @@ func worker(cfg config.Config, logger *slog.Logger) error {
 		AccessKey: cfg.ObjectAccessKey,
 		SecretKey: cfg.ObjectSecretKey,
 	}
-	ticker := time.NewTicker(cfg.WorkerPollInterval)
-	defer ticker.Stop()
+	loopCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+	logger.Info("worker started",
+		"poll_interval_ms", cfg.WorkerPollInterval.Milliseconds(),
+		"shutdown_grace_seconds", int(cfg.WorkerShutdownGrace.Seconds()),
+		"outbox_retry_max", cfg.OutboxRetryMax,
+		"outbox_backoff_base_ms", cfg.OutboxBackoffBase.Milliseconds(),
+		"outbox_backoff_max_ms", cfg.OutboxBackoffMax.Milliseconds(),
+		"outbox_lease_ttl_seconds", int(cfg.OutboxLeaseTTL.Seconds()),
+		"batch_size", cfg.WorkerBatchSize,
+		"worker_kinds", cfg.WorkerKinds,
+		"worker_concurrency", cfg.WorkerConcurrency,
+	)
 
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
-	logger.Info("worker started", "poll_interval_ms", cfg.WorkerPollInterval.Milliseconds(), "max_attempts", cfg.WorkerMaxAttempts, "batch_size", cfg.WorkerBatchSize)
-
-	for {
-		select {
-		case <-ticker.C:
-			workCtx, workCancel := context.WithTimeout(context.Background(), cfg.RequestTimeout)
-			processed, err := service.ProcessOutboxOnceWithOptions(workCtx, ticketing.OutboxProcessorOptions{
+	return runWorkerKindLoops(loopCtx, workerKindLoopOptions{
+		Logger:            logger,
+		PollInterval:      cfg.WorkerPollInterval,
+		RequestTimeout:    cfg.RequestTimeout,
+		ShutdownGrace:     cfg.WorkerShutdownGrace,
+		WorkerKinds:       cfg.WorkerKinds,
+		WorkerConcurrency: cfg.WorkerConcurrency,
+		Process: func(workCtx context.Context, spec workerKindLoopSpec) (int, error) {
+			return service.ProcessOutboxOnceWithOptions(workCtx, ticketing.OutboxProcessorOptions{
 				Sender:      sender,
 				ReportStore: reportStore,
-				MaxAttempts: cfg.WorkerMaxAttempts,
 				BatchSize:   cfg.WorkerBatchSize,
+				WorkerKinds: []string{spec.Kind},
+				LeaseTTL:    cfg.OutboxLeaseTTL,
+				RetryPolicy: &ticketing.OutboxRetryPolicy{
+					MaxAttempts: cfg.OutboxRetryMax,
+					BackoffBase: cfg.OutboxBackoffBase,
+					BackoffMax:  cfg.OutboxBackoffMax,
+				},
 			})
-			workCancel()
-			if err != nil {
-				logger.Error("outbox processing failed", "error", err)
-				continue
-			}
-			if processed > 0 {
-				logger.Info("outbox processed", "count", processed)
-			}
-		case sig := <-stopCh:
-			logger.Info("worker shutdown signal received", "signal", sig.String())
-			return nil
-		}
-	}
+		},
+	})
 }

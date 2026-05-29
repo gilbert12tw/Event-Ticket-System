@@ -50,6 +50,7 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 			Logger:         logger,
 			RequestTimeout: cfg.RequestTimeout,
 			AppEnv:         cfg.AppEnv,
+			OpsAPIEnabled:  cfg.OpsAPIEnabled,
 			ProviderAuth: httpapi.ProviderAuthConfig{
 				Secret: cfg.ProviderTokenSecret,
 			},

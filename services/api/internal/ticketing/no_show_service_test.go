@@ -163,7 +163,7 @@ func TestRecordNoShowWritesSafeGovernanceMetadata(t *testing.T) {
 	assert.Equal(t, "cooldown_active", audit["cooldown_status"])
 	assertNoSensitiveJSONValues(t, audit, "Ariel Chen", booking.Ticket.SignedToken, booking.Ticket.QRPayload)
 
-	payload := readJSONMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = 'registration.no_show_recorded' AND aggregate_id = $1`, booking.Registration.RegistrationID)
+	payload := readOutboxPayloadMap(t, service, ctx, `SELECT payload::text FROM outbox_events WHERE event_type = 'registration.no_show_recorded' AND aggregate_id = $1`, booking.Registration.RegistrationID)
 	assert.Equal(t, event.EventID, payload["event_id"])
 	assert.Equal(t, "No Show Governance", payload["event_title"])
 	assert.Equal(t, "E1001", payload["employee_id"])

@@ -62,7 +62,7 @@ Out of scope:
 | Category | Requirement | Metric |
 | --- | --- | --- |
 | Reliability | At-least-once delivery; consumer idempotency makes it effectively once. | `PH2-37` duplicate-delivery test. |
-| Isolation | Notification slowness does not raise non-notification kind lag. | Per-kind `cets_outbox_lag_seconds` (WS2). |
+| Isolation | Notification slowness does not raise non-notification kind lag or backlog. | Per-kind `cets_outbox_lag_seconds` and `cets_outbox_oldest_lag_seconds` (WS2). |
 | Latency | Outbox lag p95 < 60s, max < 180s (acceptance matrix §1.4). | k6 + lag metric. |
 | Recovery | Crash / SIGKILL never duplicates side effect. | `PH2-37` crash test. |
 | Observability | Every retry, dead-letter, replay action is logged + auditable. | Structured log + audit row; ops API feed. |
@@ -110,6 +110,7 @@ ticket.revoked.v2
 ticket.expired.v2
 checkin.recorded.v2
 notification.requested.v2
+reservation.compensation.release_required.v2
 report.export.requested.v2
 report.export.completed.v2
 report.export.failed.v2
@@ -138,21 +139,22 @@ Ops admin endpoints (additive; OpenAPI added by WS1 `PH2-02`):
 ```text
 GET  /api/v1/admin/ops/queues
   Response: per kind { name, pending, in_flight, dead_letter, p95_age_seconds, last_processed_at }
+  Known kinds: notification, projection, compensation, export; unregistered or unsafe event_type rows are reported under read-only kind `unknown` and are not valid WORKER_KINDS values.
 
-POST /api/v1/admin/ops/queues/{kind}/replay
-  Body: { from: iso8601, to: iso8601, event_types?: [string], dry_run: bool }
-  Auth: hr_admin
-  Behavior: dry_run=true returns affected count; dry_run=false enqueues replays; writes audit row
+cets ops replay --kind=<kind> --from=<iso8601> --to=<iso8601> [--event-type=<type>] [--apply]
+  Auth: one-off admin process using the same binary and database config
+  Behavior: default dry-run returns affected count; --apply enqueues replays and writes audit row
 
 GET  /api/v1/admin/ops/notification-deliveries?status=&cursor=&limit=
   Response: redacted delivery rows for ops visibility
+  worker_kind uses the same observed kind bucket as queue status; unregistered or unsafe event_type rows are reported as `unknown` and are not retry-eligible.
 ```
 
 ## 7. 12-Factor Notes
 
-- **Config**: `WORKER_KINDS`, `WORKER_CONCURRENCY_*`, `OUTBOX_LEASE_TTL_SECONDS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_BACKOFF_*`, `OUTBOX_RETRY_MAX`, `OPS_REPLAY_ENABLED`. All env-only. Documented in `services/api/deploy/.env.example`.
+- **Config**: `WORKER_KINDS`, `WORKER_CONCURRENCY_*`, `OUTBOX_LEASE_TTL_SECONDS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_BACKOFF_*`, `OUTBOX_RETRY_MAX`. All env-only. Documented in `services/api/deploy/.env.example`.
 - **Backing services**: PostgreSQL outbox table is the queue; no Kafka, RabbitMQ, SQS as Phase 2 deliverable. SMTP (Mailhog in dev) remains an attached resource.
-- **Build / release / run**: Same Go binary. Worker process selected by `cets worker --kinds=...` (or `WORKER_KINDS` env). Migrations run as `cets migrate`.
+- **Build / release / run**: Same Go binary. Worker process selected by `cets worker --kinds=...` (or `WORKER_KINDS` env). Migrations run as `cets migrate`. Local / CI isolation checks can layer `services/api/deploy/compose.worker-isolation.yaml` on top of `compose.yaml` with the `worker-isolation` profile to run one worker process per kind without introducing a new service codebase.
 - **Processes**: Stateless workers; lease state in PostgreSQL. Multiple processes can run in parallel safely due to row-level lease + unique idempotency index.
 - **Port binding**: Workers do not bind a public port. Admin ops endpoints are served by the existing `cets serve` process.
 - **Concurrency**: Scale by adding worker processes of a kind. No new lock files, no shared in-memory queues.
@@ -170,7 +172,7 @@ GET  /api/v1/admin/ops/notification-deliveries?status=&cursor=&limit=
 - `go test ./internal/worker -run TestCrashRecovery -count=1` — simulated crash mid-lease; consumer idempotency prevents duplicate side effect.
 - `go test ./internal/httpapi -run TestOpsQueueAdmin -count=1` — RBAC, replay dry-run vs apply, audit row written.
 - `go test ./internal/architecture -run TestOutboxEventTypeRegistry -count=1` (added by `PH2-05`) — fails on unregistered event_type in code or fixtures.
-- Live Compose gate (`live-gates` CI job) runs k6 with worker isolation enabled and asserts non-notification lag stays in NFR bounds.
+- Live Compose gate (`live-gates` CI job) runs k6 with worker isolation enabled and asserts non-notification lag stays in NFR bounds. Use `docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation ...` for the process-isolated local topology.
 
 ## 9. Rollback / Disable
 
@@ -180,7 +182,7 @@ Every WS4 runtime change ships disable-capable:
 - Worker kind split (`PH2-31`): default `WORKER_KINDS=notification,projection,compensation,export` mirrors Phase 1 behavior; setting `WORKER_KINDS=*` runs all kinds in one process (Phase 1 parity). Disable a kind by removing it from the list.
 - Notification isolation (`PH2-32`): isolation is purely a process-topology choice driven by `WORKER_KINDS`; rollback = redeploy with a single worker process running all kinds.
 - Retry / backoff / dead-letter (`PH2-33`): tunables are env vars; emergency-disable retry by `OUTBOX_RETRY_MAX=0` (one attempt, immediate dead-letter); reviewer test asserts no silent drops in any setting.
-- Replay admin (`PH2-34`): `OPS_REPLAY_ENABLED=false` removes the route; CLI command still works for break-glass.
+- Replay admin (`PH2-34`): no long-lived HTTP replay route; the same binary exposes `cets ops replay` as a break-glass one-off admin process.
 - Graceful shutdown (`PH2-35`): grace period via `WORKER_SHUTDOWN_GRACE_SECONDS`; setting `0` falls back to immediate exit (Phase 1 baseline) for emergency rollback.
 - Notification delivery admin feed (`PH2-36`): route gated by `OPS_API_ENABLED=true` (shared with WS3/WS5 ops surfaces).
 - All schema changes are reversible by a follow-up migration; no destructive `DROP TABLE` of historical rows.

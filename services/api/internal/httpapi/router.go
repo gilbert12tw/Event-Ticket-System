@@ -30,6 +30,7 @@ type Dependencies struct {
 	Metrics                     *observability.Registry
 	RequestTimeout              time.Duration
 	AppEnv                      string
+	OpsAPIEnabled               bool
 	ProviderAuth                ProviderAuthConfig
 	ReportStaleThresholdSeconds int
 }
@@ -52,7 +53,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.Handle("GET /metrics", deps.Metrics.Handler(deps.DB))
 	provider := NewProviderVerifier(deps.ProviderAuth)
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
-	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.ReportStaleThresholdSeconds, deps.Logger)
+	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
 	return withTraceID(withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))
 }

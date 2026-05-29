@@ -49,6 +49,12 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS audit_logs",
 		"CREATE TABLE IF NOT EXISTS outbox_events",
 		"attempts INTEGER NOT NULL DEFAULT 0",
+		"schema_version INTEGER NOT NULL DEFAULT 1",
+		"idempotency_key TEXT",
+		"partition_key TEXT",
+		"dead_letter_at TIMESTAMPTZ",
+		"retry_count INTEGER NOT NULL DEFAULT 0",
+		"outbox_events_idem_key_idx",
 		"CREATE TABLE IF NOT EXISTS notification_deliveries",
 		"CREATE TABLE IF NOT EXISTS lottery_runs",
 		"CREATE TABLE IF NOT EXISTS lottery_results",
@@ -177,6 +183,53 @@ func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
 	assert.Equal(t, "limited", capacityType)
 	assert.Equal(t, 25, capacity)
 	assert.False(t, allowsFamily)
+}
+
+func TestMigrateAddsOutboxEnvelopeV2ColumnsToExistingRows(t *testing.T) {
+	ctx, pool := newMigrationTest(t, 10*time.Second)
+
+	_, err := pool.Exec(ctx, `CREATE TABLE outbox_events (
+		outbox_id TEXT PRIMARY KEY,
+		aggregate_id TEXT NOT NULL,
+		event_type TEXT NOT NULL,
+		payload JSONB NOT NULL,
+		publish_status TEXT NOT NULL DEFAULT 'pending',
+		attempts INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT NOT NULL DEFAULT '',
+		available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		published_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO outbox_events
+		(outbox_id, aggregate_id, event_type, payload)
+		VALUES ('out_legacy', 'reg_legacy', 'booking.confirmed', '{"employee_id":"E1001"}'::jsonb)`)
+	require.NoError(t, err)
+
+	require.NoError(t, Migrate(ctx, pool))
+
+	var (
+		schemaVersion int
+		retryCount    int
+		rowCount      int
+	)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT schema_version, retry_count, count(*) OVER ()
+		FROM outbox_events WHERE outbox_id = 'out_legacy'`).
+		Scan(&schemaVersion, &retryCount, &rowCount))
+	assert.Equal(t, 1, schemaVersion)
+	assert.Equal(t, 0, retryCount)
+	assert.Equal(t, 1, rowCount)
+
+	columns := migrationColumnNames(t, ctx, pool, "outbox_events")
+	for _, column := range []string{"idempotency_key", "partition_key", "dead_letter_at", "lease_started_at"} {
+		assert.Contains(t, columns, column)
+	}
+	var indexDefinition string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT indexdef FROM pg_indexes
+		WHERE schemaname = current_schema() AND indexname = 'outbox_events_idem_key_idx'`).
+		Scan(&indexDefinition))
+	assert.Contains(t, indexDefinition, "(event_type, idempotency_key)")
+	assert.Contains(t, indexDefinition, "idempotency_key IS NOT NULL")
 }
 
 func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.T) {

@@ -212,9 +212,15 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 		event_type TEXT NOT NULL,
 		payload JSONB NOT NULL,
 		publish_status TEXT NOT NULL DEFAULT 'pending',
+		schema_version INTEGER NOT NULL DEFAULT 1,
+		idempotency_key TEXT,
+		partition_key TEXT,
 		attempts INTEGER NOT NULL DEFAULT 0,
+		retry_count INTEGER NOT NULL DEFAULT 0,
 		last_error TEXT NOT NULL DEFAULT '',
+		dead_letter_at TIMESTAMPTZ,
 		available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		lease_started_at TIMESTAMPTZ,
 		published_at TIMESTAMPTZ,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	);
@@ -232,7 +238,7 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
 		outbox_id TEXT REFERENCES outbox_events(outbox_id) ON DELETE SET NULL,
 		employee_id TEXT REFERENCES employees(employee_id) ON DELETE SET NULL,
 		channel TEXT NOT NULL CHECK (channel IN ('email', 'in_app')),
-		status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed', 'suppressed', 'dead_letter')),
+		status TEXT NOT NULL CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'suppressed', 'dead_letter')),
 		attempts INTEGER NOT NULL DEFAULT 0,
 		last_error TEXT NOT NULL DEFAULT '',
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -317,9 +323,16 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_filter ON audit_logs(action, entity_ty
 
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(publish_status, available_at);
 
+CREATE INDEX IF NOT EXISTS idx_outbox_published_lag ON outbox_events(event_type, published_at, created_at)
+		WHERE publish_status = 'published' AND published_at IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_deliveries_outbox_channel ON notification_deliveries(outbox_id, channel) WHERE outbox_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status ON notification_deliveries(status, updated_at DESC);
+
+ALTER TABLE notification_deliveries DROP CONSTRAINT IF EXISTS notification_deliveries_status_check;
+
+ALTER TABLE notification_deliveries ADD CONSTRAINT notification_deliveries_status_check CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'suppressed', 'dead_letter'));
 
 CREATE INDEX IF NOT EXISTS idx_lottery_runs_event ON lottery_runs(event_id, created_at DESC);
 
@@ -441,11 +454,30 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS revoked_reason TEXT NOT NULL DEFAUL
 
 ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
 
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS partition_key TEXT;
+
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+
 ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS dead_letter_at TIMESTAMPTZ;
 
 ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS lease_started_at TIMESTAMPTZ;
+
 ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS outbox_events_idem_key_idx
+		ON outbox_events (event_type, idempotency_key)
+		WHERE idempotency_key IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_outbox_published_lag ON outbox_events(event_type, published_at, created_at)
+		WHERE publish_status = 'published' AND published_at IS NOT NULL;
 
 ALTER TABLE offline_checkin_batches ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '4 hours');
 

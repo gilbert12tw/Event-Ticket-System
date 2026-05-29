@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -39,10 +40,12 @@ func (s *Service) CreateReportExport(ctx context.Context, actor Actor, req Repor
 	if err != nil {
 		return ReportExport{}, err
 	}
-	if err := insertOutbox(ctx, tx, "report.export.requested", exportID, map[string]interface{}{
-		"requested_by": actor.ID,
-		"report_type":  reportType,
-		"object_key":   objectKey,
+	if err := insertOutbox(ctx, tx, outboxEventReportExportRequestedV2, exportID, map[string]interface{}{
+		"export_id":                exportID,
+		"report_type":              reportType,
+		"requested_by_employee_id": actor.ID,
+		"filters":                  map[string]interface{}{},
+		"requested_at":             now.UTC().Format(time.RFC3339Nano),
 	}); err != nil {
 		return ReportExport{}, err
 	}

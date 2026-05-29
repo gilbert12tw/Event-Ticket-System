@@ -105,8 +105,6 @@ paths:
     "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1capacity-pressure"
   "/admin/ops/queues":
     "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1queues"
-  "/admin/ops/queues/{kind}/replay":
-    "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1queues~1{kind}~1replay"
   "/admin/ops/notification-deliveries":
     "$ref": "./openapi/paths/admin-ops.yaml#/~1admin~1ops~1notification-deliveries"
   "/admin/ops/report-freshness":
@@ -317,12 +315,6 @@ components:
       "$ref": "./openapi/components/schemas/ops.yaml#/QueueStatus"
     QueueStatusResponse:
       "$ref": "./openapi/components/schemas/ops.yaml#/QueueStatusResponse"
-    QueueReplayRequest:
-      "$ref": "./openapi/components/schemas/ops.yaml#/QueueReplayRequest"
-    QueueReplayResult:
-      "$ref": "./openapi/components/schemas/ops.yaml#/QueueReplayResult"
-    QueueReplayResponse:
-      "$ref": "./openapi/components/schemas/ops.yaml#/QueueReplayResponse"
     NotificationDeliveryAdminRow:
       "$ref": "./openapi/components/schemas/ops.yaml#/NotificationDeliveryAdminRow"
     NotificationDeliveriesAdmin:

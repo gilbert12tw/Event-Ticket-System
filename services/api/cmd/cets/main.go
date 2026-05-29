@@ -35,10 +35,12 @@ func run(args []string, logger *slog.Logger) error {
 	case "seed":
 		return seed(cfg, logger)
 	case "worker":
-		return worker(cfg, logger)
+		return worker(cfg, logger, args[1:])
+	case "ops":
+		return ops(cfg, logger, args[1:])
 	case "process-no-shows":
 		return processNoShows(cfg, logger)
 	default:
-		return fmt.Errorf("unknown command %q", command)
+		return fmt.Errorf("unknown command")
 	}
 }

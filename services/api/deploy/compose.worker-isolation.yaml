@@ -1,0 +1,41 @@
+services:
+  worker:
+    profiles: ["combined-worker"]
+
+  worker-notification:
+    extends:
+      file: compose.yaml
+      service: worker
+    profiles: ["worker-isolation"]
+    environment:
+      MAILER_HOST: ${WORKER_NOTIFICATION_MAILER_HOST:-mailhog}
+      MAILER_PORT: ${WORKER_NOTIFICATION_MAILER_PORT:-1025}
+      WORKER_KINDS: notification
+      WORKER_CONCURRENCY_NOTIFICATION: ${WORKER_CONCURRENCY_NOTIFICATION:-4}
+
+  worker-projection:
+    extends:
+      file: compose.yaml
+      service: worker
+    profiles: ["worker-isolation"]
+    environment:
+      WORKER_KINDS: projection
+      WORKER_CONCURRENCY_PROJECTION: ${WORKER_CONCURRENCY_PROJECTION:-2}
+
+  worker-compensation:
+    extends:
+      file: compose.yaml
+      service: worker
+    profiles: ["worker-isolation"]
+    environment:
+      WORKER_KINDS: compensation
+      WORKER_CONCURRENCY_COMPENSATION: ${WORKER_CONCURRENCY_COMPENSATION:-1}
+
+  worker-export:
+    extends:
+      file: compose.yaml
+      service: worker
+    profiles: ["worker-isolation"]
+    environment:
+      WORKER_KINDS: export
+      WORKER_CONCURRENCY_EXPORT: ${WORKER_CONCURRENCY_EXPORT:-1}
