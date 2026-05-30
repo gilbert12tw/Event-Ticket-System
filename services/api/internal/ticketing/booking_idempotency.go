@@ -14,6 +14,7 @@ type bookingIdempotencyResult struct {
 	EventID            string
 	EmployeeID         string
 	FamilyCount        int
+	IdempotencyHash    string
 	RegistrationID     string
 	RegistrationStatus string
 	TicketID           string
@@ -29,12 +30,17 @@ func (s *Service) lockBookingIdempotencyResultTx(
 	eventID string,
 	employeeID string,
 	familyCount int,
+	idempotencyHash string,
 ) (bookingIdempotencyResult, bool, error) {
+	hash := sql.NullString{}
+	if idempotencyHash != "" {
+		hash = sql.NullString{String: idempotencyHash, Valid: true}
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO booking_idempotency_results
-			(idempotency_key, event_id, employee_id, family_count)
-		VALUES ($1,$2,$3,$4)
+			(idempotency_key, event_id, employee_id, family_count, idempotency_hash)
+		VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (idempotency_key) DO NOTHING`,
-		key, eventID, employeeID, familyCount)
+		key, eventID, employeeID, familyCount, hash)
 	if err != nil {
 		return bookingIdempotencyResult{}, false, err
 	}
@@ -83,13 +89,14 @@ func (s *Service) bookingIdempotencyResultForUpdateTx(ctx context.Context, tx pg
 	var result bookingIdempotencyResult
 	var registrationID sql.NullString
 	var ticketID sql.NullString
+	var idempotencyHash sql.NullString
 	var completedAt sql.NullTime
-	err := tx.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count,
+	err := tx.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count, idempotency_hash,
 			registration_id, registration_status, ticket_id, remaining_capacity, message, completed_at
 		FROM booking_idempotency_results
 		WHERE idempotency_key = $1
 		FOR UPDATE`, key).
-		Scan(&result.IdempotencyKey, &result.EventID, &result.EmployeeID, &result.FamilyCount,
+		Scan(&result.IdempotencyKey, &result.EventID, &result.EmployeeID, &result.FamilyCount, &idempotencyHash,
 			&registrationID, &result.RegistrationStatus, &ticketID, &result.RemainingCapacity, &result.Message, &completedAt)
 	if err != nil {
 		return bookingIdempotencyResult{}, err
@@ -99,6 +106,9 @@ func (s *Service) bookingIdempotencyResultForUpdateTx(ctx context.Context, tx pg
 	}
 	if ticketID.Valid {
 		result.TicketID = ticketID.String
+	}
+	if idempotencyHash.Valid {
+		result.IdempotencyHash = idempotencyHash.String
 	}
 	if completedAt.Valid {
 		result.CompletedAt = completedAt.Time

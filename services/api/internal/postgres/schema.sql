@@ -551,3 +551,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS booking_bans_unique_active
 
 CREATE INDEX IF NOT EXISTS idx_booking_bans_employee
 		ON booking_bans (employee_id);
+
+-- PH2-23 reservation TTL & compensation: the worker reconciles orphan Redis
+-- pending holds by looking up the corresponding booking via (event_id,
+-- idempotency_hash). The hash is HMAC-derived (raw key never appears here);
+-- column is nullable because Phase 1 bookings (gate=off) never produce a hash
+-- and must continue to insert idempotency rows.
+ALTER TABLE booking_idempotency_results ADD COLUMN IF NOT EXISTS idempotency_hash TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_idempotency_results_event_hash
+		ON booking_idempotency_results (event_id, idempotency_hash)
+		WHERE idempotency_hash IS NOT NULL;

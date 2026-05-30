@@ -36,6 +36,8 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS booking_idempotency_results",
 		"remaining_capacity INTEGER NOT NULL DEFAULT 0",
 		"idx_booking_idempotency_results_registration",
+		"ADD COLUMN IF NOT EXISTS idempotency_hash TEXT",
+		"idx_booking_idempotency_results_event_hash",
 		"cancel_idempotency_key TEXT",
 		"registration_id TEXT NOT NULL UNIQUE",
 		"sequence_number INTEGER NOT NULL DEFAULT 1",
