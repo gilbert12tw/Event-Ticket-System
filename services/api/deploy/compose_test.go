@@ -93,6 +93,11 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/prometheus/prometheus.yml",
 		"${PROMETHEUS_PORT:-9090}:9090",
 		"./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+		"blackbox-exporter:",
+		"image: prom/blackbox-exporter:v0.27.0",
+		"--config.file=/etc/blackbox_exporter/config.yml",
+		"${BLACKBOX_EXPORTER_PORT:-9115}:9115",
+		"./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro",
 		"./observability/rules:/etc/prometheus/rules:ro",
 		"grafana:",
 		"image: grafana/grafana:12.2.0",
@@ -102,6 +107,7 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro",
 		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
 		"PROMETHEUS_PORT=9090",
+		"BLACKBOX_EXPORTER_PORT=9115",
 		"GRAFANA_PORT=3000",
 	}
 	for _, fragment := range required {
@@ -112,12 +118,15 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	prometheus, err := os.ReadFile("observability/prometheus.yml")
 	require.NoError(t, err)
+	blackbox, err := os.ReadFile("observability/blackbox.yml")
+	require.NoError(t, err)
 	prometheusDatasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
 	require.NoError(t, err)
 	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
 	require.NoError(t, err)
 
 	combined := string(prometheus) + "\n" +
+		string(blackbox) + "\n" +
 		string(prometheusDatasource) + "\n" +
 		string(dashboardFile)
 	required := []string{
@@ -126,6 +135,16 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"rule_files:",
 		"/etc/prometheus/rules/*.yml",
 		"app:8080",
+		"job_name: cets-blackbox",
+		"metrics_path: /probe",
+		"http://app:8080/",
+		"http://app:8080/healthz",
+		"http://app:8080/readyz",
+		"probe_scope: blackbox",
+		"blackbox-exporter:9115",
+		"prober: http",
+		"probe_success{probe_scope=\\\"blackbox\\\"}",
+		"probe_duration_seconds{probe_scope=\\\"blackbox\\\"}",
 		"url: http://prometheus:9090",
 		"cets_http_requests_total",
 		"cets_http_request_seconds_bucket",
@@ -140,6 +159,19 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	var dashboard map[string]interface{}
 	require.NoError(t, json.Unmarshal(dashboardFile, &dashboard))
 	assert.Equal(t, "CETS Observability", dashboard["title"])
+}
+
+func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
+	compose, err := os.ReadFile("compose.yaml")
+	require.NoError(t, err)
+	prometheus, err := os.ReadFile("observability/prometheus.yml")
+	require.NoError(t, err)
+	combined := string(compose) + "\n" + string(prometheus)
+
+	assert.NotContains(t, combined, "/api/v1/", "black-box probes must not exercise product APIs")
+	assert.NotContains(t, combined, "Authorization:", "black-box probes must not depend on product credentials")
+	assert.NotContains(t, combined, "app:\n    depends_on:\n      blackbox-exporter:", "app must not depend on probe health")
+	assert.NotContains(t, combined, "worker:\n    depends_on:\n      blackbox-exporter:", "worker must not depend on probe health")
 }
 
 func TestPrometheusAlertRulesCoverStarterSLOSignals(t *testing.T) {
