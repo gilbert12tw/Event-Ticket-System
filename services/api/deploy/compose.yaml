@@ -245,6 +245,49 @@ services:
       app:
         condition: service_healthy
 
+  loki:
+    image: grafana/loki:3.5.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./observability/loki.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:3.5.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+    volumes:
+      - ./observability/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_started
+      app:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  tempo:
+    image: grafana/tempo:2.8.2
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "-config.file=/etc/tempo/config.yml"
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+      - "${TEMPO_OTLP_GRPC_PORT:-4317}:4317"
+      - "${TEMPO_OTLP_HTTP_PORT:-4318}:4318"
+    volumes:
+      - ./observability/tempo.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/tmp/tempo
+
   blackbox-exporter:
     image: prom/blackbox-exporter:v0.27.0
     restart: unless-stopped
@@ -276,9 +319,17 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      blackbox-exporter:
+        condition: service_started
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   prometheus_data:
+  loki_data:
+  tempo_data:
