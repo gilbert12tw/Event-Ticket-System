@@ -53,7 +53,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	}
 	defer rollback(ctx, tx)
 
-	if snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount); err != nil {
+	if snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount, idempotencyHash); err != nil {
 		return BookingResponse{}, err
 	} else if found {
 		response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)

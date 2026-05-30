@@ -103,7 +103,7 @@ flowchart LR
 ### 4.3 Phase 1 Connectivity Acceptance
 
 - `GET /metrics` exposes Prometheus-style operational metrics on the app port. The current Phase 2 slice includes HTTP RED metrics by route pattern / method / status class, PostgreSQL pool acquire wait counters, current lock-waiting sessions, and outbox backlog / oldest-lag gauges. Route labels must use patterns such as `/api/v1/events/{event_id}` rather than raw IDs or tokens.
-- The optional Compose `observability` profile starts Prometheus, Loki, Promtail, Tempo, and Grafana from `services/api/deploy/observability/` so reviewers can inspect metrics, app/worker stdout logs, and a trace backend without adding required production backing services.
+- The optional Compose `observability` profile starts Prometheus, Grafana, blackbox exporter, Loki, Promtail, and Tempo from `services/api/deploy/observability/` so reviewers can inspect RED, DB pool/lock, outbox lag, HTTP boundary probe signals, app/worker stdout logs, and a trace backend without adding required production backing services. Prometheus also loads starter SLO alert rules for HTTP 5xx error rate, P99 latency, DB pool acquire wait, DB lock waits, outbox lag, and metrics scrape failures; these rules are review/demo evidence until an Alertmanager or production paging route is added. Black-box probes target `/`, `/healthz`, and `/readyz`; they do not call product APIs or booking/check-in flows.
 
 - `GET /readyz` 回 200 代表 app 已透過 `DATABASE_URL` 連到 PostgreSQL；PostgreSQL 停止時 `/readyz` 必須回 503。
 - `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml ps` 代表 Redis、MinIO、Mailhog 已作為 local backing services 啟動；production gate 還必須通過 app/worker behavior tests。

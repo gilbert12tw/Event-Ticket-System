@@ -239,6 +239,7 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     depends_on:
       app:
@@ -287,6 +288,20 @@ services:
       - ./observability/tempo.yml:/etc/tempo/config.yml:ro
       - tempo_data:/tmp/tempo
 
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
+    ports:
+      - "${BLACKBOX_EXPORTER_PORT:-9115}:9115"
+    volumes:
+      - ./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    depends_on:
+      app:
+        condition: service_healthy
+
   grafana:
     image: grafana/grafana:12.2.0
     restart: unless-stopped
@@ -307,6 +322,8 @@ services:
       loki:
         condition: service_started
       tempo:
+        condition: service_started
+      blackbox-exporter:
         condition: service_started
 
 volumes:

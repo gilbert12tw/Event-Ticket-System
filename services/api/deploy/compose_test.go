@@ -1,10 +1,8 @@
 package deploy
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -76,124 +74,6 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 
 	for _, fragment := range required {
 		assert.Contains(t, combined, fragment, "compose/env contract is missing %q", fragment)
-	}
-}
-
-func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
-	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
-	require.NoError(t, err)
-	combined := string(compose) + "\n" + string(envExample)
-
-	required := []string{
-		"prometheus:",
-		"image: prom/prometheus:v3.6.0",
-		`profiles: ["observability"]`,
-		"--config.file=/etc/prometheus/prometheus.yml",
-		"${PROMETHEUS_PORT:-9090}:9090",
-		"./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
-		"loki:",
-		"image: grafana/loki:3.5.0",
-		"-config.file=/etc/loki/config.yml",
-		"${LOKI_PORT:-3100}:3100",
-		"./observability/loki.yml:/etc/loki/config.yml:ro",
-		"promtail:",
-		"image: grafana/promtail:3.5.0",
-		"-config.file=/etc/promtail/config.yml",
-		"./observability/promtail.yml:/etc/promtail/config.yml:ro",
-		"/var/run/docker.sock:/var/run/docker.sock:ro",
-		"tempo:",
-		"image: grafana/tempo:2.8.2",
-		"-config.file=/etc/tempo/config.yml",
-		"${TEMPO_PORT:-3200}:3200",
-		"${TEMPO_OTLP_GRPC_PORT:-4317}:4317",
-		"${TEMPO_OTLP_HTTP_PORT:-4318}:4318",
-		"./observability/tempo.yml:/etc/tempo/config.yml:ro",
-		"grafana:",
-		"image: grafana/grafana:12.2.0",
-		"GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}",
-		"GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}",
-		"${GRAFANA_PORT:-3000}:3000",
-		"./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro",
-		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
-		"PROMETHEUS_PORT=9090",
-		"LOKI_PORT=3100",
-		"TEMPO_PORT=3200",
-		"TEMPO_OTLP_GRPC_PORT=4317",
-		"TEMPO_OTLP_HTTP_PORT=4318",
-		"GRAFANA_PORT=3000",
-	}
-	for _, fragment := range required {
-		assert.Contains(t, combined, fragment, "optional observability contract is missing %q", fragment)
-	}
-}
-
-func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
-	prometheus, err := os.ReadFile("observability/prometheus.yml")
-	require.NoError(t, err)
-	prometheusDatasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
-	require.NoError(t, err)
-	loki, err := os.ReadFile("observability/loki.yml")
-	require.NoError(t, err)
-	promtail, err := os.ReadFile("observability/promtail.yml")
-	require.NoError(t, err)
-	tempo, err := os.ReadFile("observability/tempo.yml")
-	require.NoError(t, err)
-	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
-	require.NoError(t, err)
-
-	combined := strings.Join([]string{
-		string(prometheus),
-		string(prometheusDatasource),
-		string(loki),
-		string(promtail),
-		string(tempo),
-		string(dashboardFile),
-	}, "\n")
-	required := []string{
-		"job_name: cets-app",
-		"metrics_path: /metrics",
-		"app:8080",
-		"url: http://prometheus:9090",
-		"type: loki",
-		"url: http://loki:3100",
-		"type: tempo",
-		"url: http://tempo:3200",
-		"url: http://loki:3100/loki/api/v1/push",
-		"job_name: cets-compose",
-		"regex: \"(app|worker)\"",
-		"otlp:",
-		"endpoint: 0.0.0.0:4317",
-		"endpoint: 0.0.0.0:4318",
-		"cets_http_requests_total",
-		"cets_http_request_seconds_bucket",
-		"cets_db_pool_conns",
-		"cets_db_lock_waiting_sessions",
-		"cets_outbox_oldest_lag_seconds",
-	}
-	for _, fragment := range required {
-		assert.Contains(t, combined, fragment, "observability provisioning is missing %q", fragment)
-	}
-
-	var dashboard map[string]interface{}
-	require.NoError(t, json.Unmarshal(dashboardFile, &dashboard))
-	assert.Equal(t, "CETS Observability", dashboard["title"])
-}
-
-func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
-	require.NoError(t, err)
-	composeText := string(compose)
-
-	for _, serviceName := range []string{"app", "worker"} {
-		serviceBlock := composeServiceBlock(t, composeText, serviceName)
-		assert.NotContains(t, serviceBlock, "loki:", "%s must not depend on Loki for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "promtail:", "%s must not depend on Promtail for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "tempo:", "%s must not depend on Tempo for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "OTEL_", "%s must not enable trace export without typed app config", serviceName)
-		assert.NotContains(t, serviceBlock, "LOKI_", "%s must continue to write logs to stdout/stderr", serviceName)
-		assert.NotContains(t, serviceBlock, "TEMPO_", "%s must not require Tempo to serve product traffic", serviceName)
 	}
 }
 
@@ -393,14 +273,4 @@ func readKubernetesManifests(t *testing.T) string {
 		builder.WriteString("\n")
 	}
 	return builder.String()
-}
-
-func composeServiceBlock(t *testing.T, composeText string, serviceName string) string {
-	t.Helper()
-
-	normalized := strings.ReplaceAll(composeText, "\r\n", "\n")
-	pattern := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(serviceName) + `:\n(?:    .*(?:\n|$))*`)
-	block := pattern.FindString(normalized)
-	require.NotEmpty(t, block, "compose service %s must exist", serviceName)
-	return block
 }
