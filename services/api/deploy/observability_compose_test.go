@@ -159,6 +159,12 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"url: http://prometheus:9090",
 		"type: loki",
 		"url: http://loki:3100",
+		"derivedFields:",
+		"name: Tempo trace",
+		`matcherRegex: '"otel_trace_id":"([a-f0-9]{32})"'`,
+		"datasourceUid: Tempo",
+		`url: "$${__value.raw}"`,
+		`urlDisplayLabel: "Open trace"`,
 		"type: tempo",
 		"url: http://tempo:3200",
 		"url: http://loki:3100/loki/api/v1/push",
@@ -196,6 +202,16 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	var useDashboard map[string]interface{}
 	require.NoError(t, json.Unmarshal(useDashboardFile, &useDashboard))
 	assert.Equal(t, "CETS USE Exporters", useDashboard["title"])
+
+	var datasourceProvisioning grafanaDatasourceProvisioning
+	require.NoError(t, yaml.Unmarshal(prometheusDatasource, &datasourceProvisioning))
+	lokiDatasource := datasourceProvisioning.findDatasource("Loki")
+	require.NotNil(t, lokiDatasource)
+	require.Len(t, lokiDatasource.JSONData.DerivedFields, 1)
+	assert.Equal(t, "Tempo trace", lokiDatasource.JSONData.DerivedFields[0].Name)
+	assert.Equal(t, `"otel_trace_id":"([a-f0-9]{32})"`, lokiDatasource.JSONData.DerivedFields[0].MatcherRegex)
+	assert.Equal(t, "Tempo", lokiDatasource.JSONData.DerivedFields[0].DatasourceUID)
+	assert.Equal(t, "$${__value.raw}", lokiDatasource.JSONData.DerivedFields[0].URL)
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
@@ -295,6 +311,34 @@ func TestPrometheusAlertRulesCoverStarterSLOSignals(t *testing.T) {
 
 type prometheusRulesFile struct {
 	Groups []prometheusRuleGroup `yaml:"groups"`
+}
+
+type grafanaDatasourceProvisioning struct {
+	Datasources []grafanaDatasource `yaml:"datasources"`
+}
+
+func (p grafanaDatasourceProvisioning) findDatasource(name string) *grafanaDatasource {
+	for i := range p.Datasources {
+		if p.Datasources[i].Name == name {
+			return &p.Datasources[i]
+		}
+	}
+	return nil
+}
+
+type grafanaDatasource struct {
+	Name     string `yaml:"name"`
+	JSONData struct {
+		DerivedFields []grafanaDerivedField `yaml:"derivedFields"`
+	} `yaml:"jsonData"`
+}
+
+type grafanaDerivedField struct {
+	Name            string `yaml:"name"`
+	MatcherRegex    string `yaml:"matcherRegex"`
+	DatasourceUID   string `yaml:"datasourceUid"`
+	URL             string `yaml:"url"`
+	URLDisplayLabel string `yaml:"urlDisplayLabel"`
 }
 
 type prometheusRuleGroup struct {
