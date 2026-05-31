@@ -5,6 +5,9 @@ global:
 rule_files:
   - /etc/prometheus/rules/*.yml
 
+remote_write:
+  - url: http://victoria-metrics:8428/api/v1/write
+
 alerting:
   alertmanagers:
     - static_configs:

@@ -8,6 +8,12 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: false
+  - name: VictoriaMetrics
+    uid: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://victoria-metrics:8428
+    editable: false
   - name: Loki
     uid: Loki
     type: loki

@@ -253,6 +253,8 @@ services:
         condition: service_healthy
       alertmanager:
         condition: service_started
+      victoria-metrics:
+        condition: service_started
       redis-exporter:
         condition: service_started
       node-exporter:
@@ -272,6 +274,18 @@ services:
     volumes:
       - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
+
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.129.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "-storageDataPath=/storage"
+      - "-retentionPeriod=30d"
+    ports:
+      - "${VICTORIA_METRICS_PORT:-8428}:8428"
+    volumes:
+      - victoria_metrics_data:/storage
 
   loki:
     image: grafana/loki:3.5.0
@@ -395,6 +409,8 @@ services:
         condition: service_started
       alertmanager:
         condition: service_started
+      victoria-metrics:
+        condition: service_started
       loki:
         condition: service_started
       tempo:
@@ -414,6 +430,7 @@ volumes:
   minio_data:
   prometheus_data:
   alertmanager_data:
+  victoria_metrics_data:
   loki_data:
   tempo_data:
   pyroscope_data:
