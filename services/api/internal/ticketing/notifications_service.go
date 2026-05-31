@@ -76,7 +76,7 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	}
 	defer rollback(ctx, tx)
 
-	delivery, employeeID, err := retryableNotificationDeliveryTx(ctx, tx, deliveryID)
+	delivery, _, err := retryableNotificationDeliveryTx(ctx, tx, deliveryID)
 	if err != nil {
 		return NotificationDelivery{}, err
 	}
@@ -85,7 +85,7 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	channel := delivery.Channel
 	deadLetterCleared := previousStatus == deliveryStatusDeadLetter
 
-	delivery, employeeID, err = requeueNotificationDeliveryTx(ctx, tx, deliveryID)
+	delivery, employeeID, err := requeueNotificationDeliveryTx(ctx, tx, deliveryID)
 	if err != nil {
 		return NotificationDelivery{}, err
 	}

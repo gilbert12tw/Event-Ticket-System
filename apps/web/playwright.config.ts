@@ -6,6 +6,9 @@ const baseURL = `http://127.0.0.1:${port}`;
 const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL || undefined;
 const videoMode =
   process.env.PLAYWRIGHT_DISABLE_VIDEO === "true" ? "off" : "retain-on-failure";
+const webServerCommand = isCI
+  ? `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`
+  : `pnpm exec vite --host 127.0.0.1 --port ${port}`;
 const workerCount = process.env.PLAYWRIGHT_WORKERS
   ? Number(process.env.PLAYWRIGHT_WORKERS)
   : isCI
@@ -55,7 +58,7 @@ export default defineConfig({
   },
   forbidOnly: isCI,
   webServer: {
-    command: `pnpm exec vite --host 127.0.0.1 --port ${port}`,
+    command: webServerCommand,
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,

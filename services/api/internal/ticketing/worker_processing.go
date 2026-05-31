@@ -38,6 +38,9 @@ func (s *Service) processClaimedOutbox(ctx context.Context, tx pgx.Tx, options O
 	if err != nil {
 		return plan.processed, err
 	}
+	if plan.processed > 0 {
+		return plan.processed, nil
+	}
 	if err := tx.Commit(ctx); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
@@ -156,7 +159,7 @@ func (s *Service) sendPreparedOutboxEmail(ctx context.Context, work outboxProces
 		return 1, nil
 	}
 	if work.options.Sender != nil && plan.emailStatus == deliveryStatusPending {
-		sendErr, lastError = s.sendPendingOutboxEmail(ctx, work, payload, employeeID, plan.emailDelivery)
+		lastError, sendErr = s.sendPendingOutboxEmail(ctx, work, payload, employeeID, plan.emailDelivery)
 	}
 	if sendErr != nil {
 		if err := s.updateOutboxAfterSendFailure(ctx, work.claim, work.retryPolicy, lastError); err != nil {
@@ -174,24 +177,24 @@ func (s *Service) sendPreparedOutboxEmail(ctx context.Context, work outboxProces
 	return 1, nil
 }
 
-func (s *Service) sendPendingOutboxEmail(ctx context.Context, work outboxProcessingWork, payload map[string]interface{}, employeeID string, emailDelivery notificationDeliveryState) (error, string) {
+func (s *Service) sendPendingOutboxEmail(ctx context.Context, work outboxProcessingWork, payload map[string]interface{}, employeeID string, emailDelivery notificationDeliveryState) (string, error) {
 	if err := ctx.Err(); err != nil {
 		work.logAttempt(outboxAttemptOutcomeError)
-		return err, ""
+		return "", err
 	}
 	message := deliveryMessageForOutbox(work.claim.eventType, employeeID, payload)
 	message.IdempotencyKey = emailDelivery.deliveryID
 	if err := s.markEmailDeliverySending(ctx, emailDelivery.deliveryID); err != nil {
 		work.logAttempt(outboxAttemptOutcomeError)
-		return err, ""
+		return "", err
 	}
 	sendErr := sendNotificationSafely(ctx, work.options.Sender, message)
 	status, lastError := emailDeliveryResult(sendErr, employeeID, work.claim, work.retryPolicy)
 	if err := s.updateEmailDeliveryAfterSend(ctx, work.claim.outboxID, status, lastError); err != nil {
 		work.logAttempt(outboxAttemptOutcomeError)
-		return err, lastError
+		return lastError, err
 	}
-	return sendErr, lastError
+	return lastError, sendErr
 }
 
 func emailDeliveryResult(sendErr error, employeeID string, claim outboxClaim, retryPolicy OutboxRetryPolicy) (string, string) {

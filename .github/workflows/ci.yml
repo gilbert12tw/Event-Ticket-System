@@ -218,7 +218,7 @@ jobs:
           cache-dependency-path: services/api/go.sum
       - name: Run Go tests
         working-directory: services/api
-        run: go test ./... -count=1
+        run: go test ./... -count=1 -p=1 -timeout=20m
 
   openapi:
     needs: changes
@@ -356,7 +356,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 1
       matrix:
         include:
           - shard: 1
