@@ -182,6 +182,36 @@ func TestKubernetesObservabilityReferenceDocumentsLogCollectorAlternatives(t *te
 	}
 }
 
+func TestKubernetesObservabilityReferenceDocumentsLogAnalysisAlternatives(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "log-analysis-alternatives.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: logstash-log-pipeline-reference",
+		"app.kubernetes.io/name: logstash",
+		"logstash.conf: |",
+		"input {",
+		"http {",
+		"codec => json",
+		"output {",
+		"opensearch {",
+		"hosts => [\"http://opensearch.cets-observability.svc:9200\"]",
+		"index => \"cets-api-logs-%{+YYYY.MM.dd}\"",
+		"docker.elastic.co/logstash/logstash:9.2.2",
+		"name: opensearch",
+		"app.kubernetes.io/name: opensearch",
+		"opensearchproject/opensearch:3.3.2",
+		"kind: StatefulSet",
+		"volumeClaimTemplates:",
+		"storage: 20Gi",
+		"Logstash + OpenSearch analysis pipeline alternative",
+		"indexed search",
+	} {
+		assert.Contains(t, combined, fragment, "log analysis alternatives reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsOpenTelemetryCollector(t *testing.T) {
 	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "opentelemetry-collector.yaml"))
 	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))

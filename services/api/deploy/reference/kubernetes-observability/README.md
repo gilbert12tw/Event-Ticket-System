@@ -23,6 +23,8 @@ product runtime behavior:
   tailing container JSON logs and forwarding them to Loki.
 - `plg-log-stack.yaml` shows a Loki + Grafana log analysis/viewing stack for the PLG pattern.
 - `efk-log-stack.yaml` shows Elasticsearch + Kibana analysis/viewing resources for the EFK pattern.
+- `log-analysis-alternatives.yaml` shows a Logstash + OpenSearch analysis pipeline alternative for
+  central log ingestion and indexed search.
 - `app-lifecycle-service-discovery.yaml` shows the application lifecycle and networking automation
   shape: rolling updates, health probes, self-healing restarts, stable Service discovery, HPA
   scaling, a PodDisruptionBudget, and node-spread hints.

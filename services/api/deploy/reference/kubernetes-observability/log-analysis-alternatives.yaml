@@ -1,0 +1,177 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-log-pipeline-reference
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: logstash
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+data:
+  logstash.conf: |
+    input {
+      http {
+        port => 8080
+        codec => json
+      }
+    }
+
+    filter {
+      mutate {
+        add_field => {
+          "service_name" => "cets-api"
+          "collector" => "logstash"
+        }
+      }
+    }
+
+    output {
+      opensearch {
+        hosts => ["http://opensearch.cets-observability.svc:9200"]
+        index => "cets-api-logs-%{+YYYY.MM.dd}"
+      }
+      stdout {
+        codec => json
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash-log-pipeline
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: logstash
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: logstash
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: logstash
+        app.kubernetes.io/part-of: cets-observability-reference
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:9.2.2
+          ports:
+            - name: http-input
+              containerPort: 8080
+            - name: monitoring
+              containerPort: 9600
+          volumeMounts:
+            - name: pipeline
+              mountPath: /usr/share/logstash/pipeline
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+      volumes:
+        - name: pipeline
+          configMap:
+            name: logstash-log-pipeline-reference
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash-log-pipeline
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: logstash
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: logstash
+  ports:
+    - name: http-input
+      port: 8080
+      targetPort: http-input
+    - name: monitoring
+      port: 9600
+      targetPort: monitoring
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: opensearch
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  serviceName: opensearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opensearch
+        app.kubernetes.io/part-of: cets-observability-reference
+    spec:
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:3.3.2
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: plugins.security.disabled
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 9200
+            - name: transport
+              containerPort: 9300
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: opensearch
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: opensearch
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: opensearch
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http
+    - name: transport
+      port: 9300
+      targetPort: transport
