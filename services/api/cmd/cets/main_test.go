@@ -124,6 +124,74 @@ func TestOpsReplayArgsDefaultDryRunAndApply(t *testing.T) {
 	require.Equal(t, ticketing.Actor{ID: "ops-admin-1", Role: ticketing.RoleSystemAdmin}, applyActor)
 }
 
+func TestOpsReplayArgsRejectsInvalidValues(t *testing.T) {
+	_, _, err := parseOpsReplayArgs([]string{"--unknown"})
+	require.ErrorContains(t, err, "unknown ops replay argument")
+
+	_, _, err = parseOpsReplayArgs([]string{"--kind=notification", "--from=not-time"})
+	require.ErrorContains(t, err, "invalid replay from time")
+
+	_, _, err = parseOpsReplayArgs([]string{"--kind=notification", "--to=not-time"})
+	require.ErrorContains(t, err, "invalid replay to time")
+
+	_, _, err = parseOpsReplayArgs([]string{
+		"--kind=notification",
+		"--from=2026-05-28T10:00:00Z",
+		"--to=2026-05-28T11:00:00Z",
+		"--actor-id", " ",
+	})
+	require.ErrorContains(t, err, "actor id")
+}
+
+func TestOpsReplayArgsLastDryRunFlagWins(t *testing.T) {
+	req, _, err := parseOpsReplayArgs([]string{
+		"--kind=notification",
+		"--from=2026-05-28T10:00:00Z",
+		"--to=2026-05-28T11:00:00Z",
+		"--apply",
+		"--dry-run",
+	})
+
+	require.NoError(t, err)
+	require.True(t, req.DryRun)
+}
+
+func TestOutboxStatsLastProcessedFormatsUTC(t *testing.T) {
+	require.Empty(t, outboxStatsLastProcessed(ticketing.OutboxQueueStatusRow{}))
+
+	when := time.Date(2026, 5, 28, 10, 0, 0, 0, time.FixedZone("TST", 8*60*60))
+	require.Equal(t, "2026-05-28T02:00:00Z", outboxStatsLastProcessed(ticketing.OutboxQueueStatusRow{LastProcessedAt: &when}))
+}
+
+func TestNewBookingReservationGateValidation(t *testing.T) {
+	cfg := config.Config{
+		BookingReservationHashSecret: "reservation-hash-secret",
+		ReservationOutageMode:        "degrade",
+		ReservationTTL:               20 * time.Second,
+		ReservationGraceTTL:          5 * time.Second,
+		ReservationOperationTimeout:  150 * time.Millisecond,
+	}
+	cfg.BookingPreadmission = false
+	gate, client, err := newBookingReservationGate(cfg, testLogger())
+	require.NoError(t, err)
+	require.Nil(t, client)
+	require.NotNil(t, gate)
+
+	cfg.BookingPreadmission = true
+	cfg.ReservationOutageMode = "invalid"
+	_, _, err = newBookingReservationGate(cfg, testLogger())
+	require.Error(t, err)
+
+	cfg.ReservationOutageMode = "degrade"
+	cfg.RedisURL = ""
+	_, _, err = newBookingReservationGate(cfg, testLogger())
+	require.ErrorContains(t, err, "REDIS_URL")
+
+	cfg.RedisURL = "://bad"
+	_, _, err = newBookingReservationGate(cfg, testLogger())
+	require.ErrorContains(t, err, "invalid REDIS_URL")
+}
+
 func TestRunOpsReplayRejectsInvalidKindBeforeDatabaseConnect(t *testing.T) {
 	t.Setenv("DATABASE_URL", "://invalid")
 

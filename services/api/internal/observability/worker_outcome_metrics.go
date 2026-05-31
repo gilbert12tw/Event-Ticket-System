@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const workerOutcomesScrapeErrorMetric = "cets_metrics_scrape_errors_total{collector=\"worker_outcomes\"} 1"
+
 func writeWorkerOutcomeMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 	writeLine(w, "# HELP cets_worker_retry_total Worker retry attempts recorded in durable audit logs.")
 	writeLine(w, "# TYPE cets_worker_retry_total counter")
@@ -27,7 +29,7 @@ func writeWorkerOutcomeMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB
 		GROUP BY action, worker_kind, reason
 		ORDER BY action, worker_kind, reason`)
 	if err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"worker_outcomes\"} 1")
+		writeLine(w, workerOutcomesScrapeErrorMetric)
 		return
 	}
 	defer rows.Close()
@@ -36,13 +38,13 @@ func writeWorkerOutcomeMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB
 		var action, workerKind, reason string
 		var count int64
 		if err := rows.Scan(&action, &workerKind, &reason, &count); err != nil {
-			writeLine(w, "cets_metrics_scrape_errors_total{collector=\"worker_outcomes\"} 1")
+			writeLine(w, workerOutcomesScrapeErrorMetric)
 			return
 		}
 		writeWorkerOutcomeMetricRow(w, action, workerKind, reason, count)
 	}
 	if err := rows.Err(); err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"worker_outcomes\"} 1")
+		writeLine(w, workerOutcomesScrapeErrorMetric)
 	}
 }
 

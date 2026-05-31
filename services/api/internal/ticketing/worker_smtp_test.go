@@ -44,27 +44,41 @@ func serveSMTPDataAcceptedQuitClosed(t *testing.T, listener net.Listener) {
 			return
 		}
 		upper := strings.ToUpper(strings.TrimSpace(line))
-		switch {
-		case strings.HasPrefix(upper, "EHLO"), strings.HasPrefix(upper, "HELO"):
-			writeSMTPLine(t, writer, "250 localhost")
-		case strings.HasPrefix(upper, "MAIL FROM:"), strings.HasPrefix(upper, "RCPT TO:"):
-			writeSMTPLine(t, writer, "250 ok")
-		case upper == "DATA":
-			writeSMTPLine(t, writer, "354 end data")
-			for {
-				dataLine, err := reader.ReadString('\n')
-				if err != nil {
-					return
-				}
-				if strings.TrimSpace(dataLine) == "." {
-					break
-				}
-			}
-			writeSMTPLine(t, writer, "250 queued")
-		case upper == "QUIT":
+		if handleSMTPTestCommand(t, reader, writer, upper) {
 			return
-		default:
-			writeSMTPLine(t, writer, "250 ok")
+		}
+	}
+}
+
+func handleSMTPTestCommand(t *testing.T, reader *bufio.Reader, writer *bufio.Writer, upper string) bool {
+	t.Helper()
+	switch {
+	case strings.HasPrefix(upper, "EHLO"), strings.HasPrefix(upper, "HELO"):
+		writeSMTPLine(t, writer, "250 localhost")
+	case strings.HasPrefix(upper, "MAIL FROM:"), strings.HasPrefix(upper, "RCPT TO:"):
+		writeSMTPLine(t, writer, "250 ok")
+	case upper == "DATA":
+		writeSMTPLine(t, writer, "354 end data")
+		if !readSMTPTestData(reader) {
+			return true
+		}
+		writeSMTPLine(t, writer, "250 queued")
+	case upper == "QUIT":
+		return true
+	default:
+		writeSMTPLine(t, writer, "250 ok")
+	}
+	return false
+}
+
+func readSMTPTestData(reader *bufio.Reader) bool {
+	for {
+		dataLine, err := reader.ReadString('\n')
+		if err != nil {
+			return false
+		}
+		if strings.TrimSpace(dataLine) == "." {
+			return true
 		}
 	}
 }

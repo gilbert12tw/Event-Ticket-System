@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -89,87 +91,32 @@ func opsReplay(cfg config.Config, logger *slog.Logger, args []string) error {
 func parseOpsReplayArgs(args []string) (ticketing.ReplayOutboxRequest, ticketing.Actor, error) {
 	req := ticketing.ReplayOutboxRequest{DryRun: true}
 	actor := ticketing.Actor{ID: "ops-replay", Role: ticketing.RoleSystemAdmin}
-	for i := 0; i < len(args); i++ {
-		arg := strings.TrimSpace(args[i])
-		switch {
-		case arg == "":
-			continue
-		case arg == "--apply":
-			req.DryRun = false
-		case arg == "--dry-run":
-			req.DryRun = true
-		case arg == "--kind":
-			value, next, err := replayFlagValue(args, i, arg)
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
-			}
-			req.Kind = value
-			i = next
-		case strings.HasPrefix(arg, "--kind="):
-			req.Kind = strings.TrimPrefix(arg, "--kind=")
-		case arg == "--from":
-			value, next, err := replayFlagValue(args, i, arg)
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
-			}
-			req.From, err = time.Parse(time.RFC3339, strings.TrimSpace(value))
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("invalid replay from time")
-			}
-			i = next
-		case strings.HasPrefix(arg, "--from="):
-			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(strings.TrimPrefix(arg, "--from=")))
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("invalid replay from time")
-			}
-			req.From = parsed
-		case arg == "--to":
-			value, next, err := replayFlagValue(args, i, arg)
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
-			}
-			req.To, err = time.Parse(time.RFC3339, strings.TrimSpace(value))
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("invalid replay to time")
-			}
-			i = next
-		case strings.HasPrefix(arg, "--to="):
-			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(strings.TrimPrefix(arg, "--to=")))
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("invalid replay to time")
-			}
-			req.To = parsed
-		case arg == "--event-type":
-			value, next, err := replayFlagValue(args, i, arg)
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
-			}
-			req.EventTypes = append(req.EventTypes, value)
-			i = next
-		case strings.HasPrefix(arg, "--event-type="):
-			req.EventTypes = append(req.EventTypes, strings.TrimPrefix(arg, "--event-type="))
-		case arg == "--event-types":
-			value, next, err := replayFlagValue(args, i, arg)
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
-			}
-			req.EventTypes = append(req.EventTypes, splitReplayEventTypes(value)...)
-			i = next
-		case strings.HasPrefix(arg, "--event-types="):
-			req.EventTypes = append(req.EventTypes, splitReplayEventTypes(strings.TrimPrefix(arg, "--event-types="))...)
-		case arg == "--actor-id":
-			value, next, err := replayFlagValue(args, i, arg)
-			if err != nil {
-				return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
-			}
-			actor.ID = strings.TrimSpace(value)
-			i = next
-		case strings.HasPrefix(arg, "--actor-id="):
-			actor.ID = strings.TrimSpace(strings.TrimPrefix(arg, "--actor-id="))
-		default:
-			return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("unknown ops replay argument")
-		}
+	fromRaw := ""
+	toRaw := ""
+	fs := flag.NewFlagSet("ops replay", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Var(replayDryRunFlag{dryRun: &req.DryRun, value: false}, "apply", "")
+	fs.Var(replayDryRunFlag{dryRun: &req.DryRun, value: true}, "dry-run", "")
+	fs.StringVar(&req.Kind, "kind", "", "")
+	fs.StringVar(&fromRaw, "from", "", "")
+	fs.StringVar(&toRaw, "to", "", "")
+	fs.Var((*replayEventTypeFlags)(&req.EventTypes), "event-type", "")
+	fs.Var(replayEventTypesFlag{values: &req.EventTypes}, "event-types", "")
+	fs.StringVar(&actor.ID, "actor-id", actor.ID, "")
+
+	if err := fs.Parse(args); err != nil {
+		return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("unknown ops replay argument")
 	}
+	if fs.NArg() > 0 {
+		return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("unknown ops replay argument")
+	}
+	if err := parseReplayTimeFlag(fromRaw, &req.From, "from"); err != nil {
+		return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
+	}
+	if err := parseReplayTimeFlag(toRaw, &req.To, "to"); err != nil {
+		return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, err
+	}
+	actor.ID = strings.TrimSpace(actor.ID)
 	if actor.ID == "" {
 		return ticketing.ReplayOutboxRequest{}, ticketing.Actor{}, fmt.Errorf("ops replay actor id is required")
 	}
@@ -180,11 +127,62 @@ func parseOpsReplayArgs(args []string) (ticketing.ReplayOutboxRequest, ticketing
 	return req, actor, nil
 }
 
-func replayFlagValue(args []string, index int, flag string) (string, int, error) {
-	if index+1 >= len(args) {
-		return "", index, fmt.Errorf("ops replay argument %q requires a value", flag)
+type replayDryRunFlag struct {
+	dryRun *bool
+	value  bool
+}
+
+func (f replayDryRunFlag) String() string {
+	if f.dryRun == nil {
+		return "true"
 	}
-	return args[index+1], index + 1, nil
+	return fmt.Sprint(*f.dryRun)
+}
+
+func (f replayDryRunFlag) Set(string) error {
+	*f.dryRun = f.value
+	return nil
+}
+
+func (f replayDryRunFlag) IsBoolFlag() bool {
+	return true
+}
+
+type replayEventTypeFlags []string
+
+func (f *replayEventTypeFlags) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *replayEventTypeFlags) Set(value string) error {
+	*f = append(*f, strings.TrimSpace(value))
+	return nil
+}
+
+type replayEventTypesFlag struct {
+	values *[]string
+}
+
+func (f replayEventTypesFlag) String() string {
+	return strings.Join(*f.values, ",")
+}
+
+func (f replayEventTypesFlag) Set(value string) error {
+	*f.values = append(*f.values, splitReplayEventTypes(value)...)
+	return nil
+}
+
+func parseReplayTimeFlag(raw string, target *time.Time, name string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return fmt.Errorf("invalid replay %s time", name)
+	}
+	*target = parsed
+	return nil
 }
 
 func splitReplayEventTypes(raw string) []string {

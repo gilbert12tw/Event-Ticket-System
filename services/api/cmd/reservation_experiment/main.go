@@ -55,86 +55,150 @@ func main() {
 }
 
 func run() error {
-	mode := getenv("EXPERIMENT_MODE", "off")
-	if mode != "off" && mode != "on" {
-		return fmt.Errorf("EXPERIMENT_MODE must be 'off' or 'on', got %q", mode)
-	}
-	vus := atoiOr("EXPERIMENT_VUS", 200)
-	capacity := atoiOr("EXPERIMENT_CAPACITY", 10)
-	if err := validateExperimentShape(vus, capacity); err != nil {
-		return err
-	}
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return errors.New("DATABASE_URL is required")
-	}
-	if err := requireDestructiveOptIn(); err != nil {
-		return err
-	}
-
-	timeout := time.Duration(atoiOr("EXPERIMENT_TIMEOUT_SECONDS", 120)) * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	pool, err := postgres.Connect(ctx, dbURL)
+	cfg, err := loadExperimentConfig()
 	if err != nil {
-		return fmt.Errorf("postgres connect: %w", err)
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+	defer cancel()
+
+	pool, service, redisClient, err := setupExperimentRuntime(ctx, cfg)
+	if err != nil {
+		return err
 	}
 	defer pool.Close()
-	if err := postgres.Migrate(ctx, pool); err != nil {
-		return fmt.Errorf("migrate: %w", err)
+	if redisClient != nil {
+		defer func() { _ = redisClient.Close() }()
 	}
 
+	eventID, err := prepareExperimentData(ctx, pool, service, cfg, redisClient)
+	if err != nil {
+		return err
+	}
+	runResult := runBookingBurst(ctx, service, eventID, cfg)
+	dbConfirmed, err := experimentDBConfirmedCount(ctx, pool, eventID)
+	if err != nil {
+		return err
+	}
+	if err := validateExperimentOutcome(cfg.VUs, cfg.Capacity, runResult.confirmed, runResult.waitlisted, runResult.errors, dbConfirmed); err != nil {
+		return err
+	}
+	return writeExperimentResult(cfg, runResult, dbConfirmed)
+}
+
+type experimentConfig struct {
+	Mode     string
+	VUs      int
+	Capacity int
+	Timeout  time.Duration
+	DBURL    string
+}
+
+type bookingBurstResult struct {
+	latenciesMs []float64
+	wall        time.Duration
+	confirmed   int
+	waitlisted  int
+	errors      int
+}
+
+func loadExperimentConfig() (experimentConfig, error) {
+	cfg := experimentConfig{
+		Mode:     getenv("EXPERIMENT_MODE", "off"),
+		VUs:      atoiOr("EXPERIMENT_VUS", 200),
+		Capacity: atoiOr("EXPERIMENT_CAPACITY", 10),
+		Timeout:  time.Duration(atoiOr("EXPERIMENT_TIMEOUT_SECONDS", 120)) * time.Second,
+		DBURL:    os.Getenv("DATABASE_URL"),
+	}
+	if cfg.Mode != "off" && cfg.Mode != "on" {
+		return experimentConfig{}, fmt.Errorf("EXPERIMENT_MODE must be 'off' or 'on', got %q", cfg.Mode)
+	}
+	if cfg.DBURL == "" {
+		return experimentConfig{}, errors.New("DATABASE_URL is required")
+	}
+	if err := validateExperimentShape(cfg.VUs, cfg.Capacity); err != nil {
+		return experimentConfig{}, err
+	}
+	if err := requireDestructiveOptIn(); err != nil {
+		return experimentConfig{}, err
+	}
+	return cfg, nil
+}
+
+func setupExperimentRuntime(ctx context.Context, cfg experimentConfig) (*pgxpool.Pool, *ticketing.Service, *redis.Client, error) {
+	pool, err := postgres.Connect(ctx, cfg.DBURL)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("postgres connect: %w", err)
+	}
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, nil, nil, fmt.Errorf("migrate: %w", err)
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	service := ticketing.NewServiceWithPolicy(pool, ticketing.NewSigner(signerSecret), logger, ticketing.NoShowPolicy{})
-
-	var redisClient *redis.Client
-	if mode == "on" {
-		redisURL := os.Getenv("REDIS_URL")
-		if redisURL == "" {
-			return errors.New("REDIS_URL is required when EXPERIMENT_MODE=on")
-		}
-		opts, err := redis.ParseURL(redisURL)
-		if err != nil {
-			return errors.New("REDIS_URL is invalid")
-		}
-		redisClient = redis.NewClient(opts)
-		defer func() { _ = redisClient.Close() }()
-		if err := flushReservationKeys(ctx, redisClient); err != nil {
-			return fmt.Errorf("flush redis: %w", err)
-		}
-		gate := reservation.NewRedisGate(redisClient, reservation.Config{
-			Enabled:          true,
-			OutageMode:       reservation.OutageModeDegrade,
-			HashSecret:       []byte(experimentSecret),
-			TTL:              20 * time.Second,
-			OperationTimeout: 150 * time.Millisecond,
-		}, logger)
-		service.WithReservationGate(gate, []byte(experimentSecret))
-	}
-
-	if err := resetSchema(ctx, pool); err != nil {
-		return fmt.Errorf("reset schema: %w", err)
-	}
-	eventID, err := seedFixtures(ctx, pool, service, vus, capacity)
+	redisClient, err := configureExperimentGate(ctx, cfg, logger, service)
 	if err != nil {
-		return fmt.Errorf("seed: %w", err)
+		pool.Close()
+		return nil, nil, nil, err
+	}
+	return pool, service, redisClient, nil
+}
+
+func configureExperimentGate(ctx context.Context, cfg experimentConfig, logger *slog.Logger, service *ticketing.Service) (*redis.Client, error) {
+	if cfg.Mode != "on" {
+		return nil, nil
+	}
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		return nil, errors.New("REDIS_URL is required when EXPERIMENT_MODE=on")
+	}
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, errors.New("REDIS_URL is invalid")
+	}
+	redisClient := redis.NewClient(opts)
+	if err := flushReservationKeys(ctx, redisClient); err != nil {
+		_ = redisClient.Close()
+		return nil, fmt.Errorf("flush redis: %w", err)
+	}
+	gate := reservation.NewRedisGate(redisClient, reservation.Config{
+		Enabled:          true,
+		OutageMode:       reservation.OutageModeDegrade,
+		HashSecret:       []byte(experimentSecret),
+		TTL:              20 * time.Second,
+		OperationTimeout: 150 * time.Millisecond,
+	}, logger)
+	service.WithReservationGate(gate, []byte(experimentSecret))
+	return redisClient, nil
+}
+
+func prepareExperimentData(ctx context.Context, pool *pgxpool.Pool, service *ticketing.Service, cfg experimentConfig, redisClient *redis.Client) (string, error) {
+	if err := resetSchema(ctx, pool); err != nil {
+		return "", fmt.Errorf("reset schema: %w", err)
+	}
+	eventID, err := seedFixtures(ctx, pool, service, cfg.VUs, cfg.Capacity)
+	if err != nil {
+		return "", fmt.Errorf("seed: %w", err)
 	}
 	if err := warmup(ctx, pool, service, eventID, redisClient); err != nil {
-		return fmt.Errorf("warmup: %w", err)
+		return "", fmt.Errorf("warmup: %w", err)
 	}
+	return eventID, nil
+}
 
-	latenciesMs := make([]float64, vus)
+func runBookingBurst(ctx context.Context, service *ticketing.Service, eventID string, cfg experimentConfig) bookingBurstResult {
+	latenciesMs := make([]float64, cfg.VUs)
 	var confirmedCount, waitlistedCount, errCount atomic.Int64
 
 	start := time.Now()
 	var wg sync.WaitGroup
-	wg.Add(vus)
-	for i := 0; i < vus; i++ {
+	wg.Add(cfg.VUs)
+	for i := 0; i < cfg.VUs; i++ {
 		i := i
 		go func() {
 			defer wg.Done()
 			employeeID := employeeIDFor(i)
-			req := ticketing.BookingRequest{EmployeeID: employeeID, IdempotencyKey: fmt.Sprintf("exp-%s-%d", mode, i)}
+			req := ticketing.BookingRequest{EmployeeID: employeeID, IdempotencyKey: fmt.Sprintf("exp-%s-%d", cfg.Mode, i)}
 			t0 := time.Now()
 			res, err := service.Book(ctx, ticketing.Actor{ID: employeeID, Role: ticketing.RoleEmployee}, eventID, req)
 			latenciesMs[i] = float64(time.Since(t0).Microseconds()) / 1000.0
@@ -151,31 +215,36 @@ func run() error {
 		}()
 	}
 	wg.Wait()
-	wall := time.Since(start)
+	return bookingBurstResult{
+		latenciesMs: latenciesMs,
+		wall:        time.Since(start),
+		confirmed:   int(confirmedCount.Load()),
+		waitlisted:  int(waitlistedCount.Load()),
+		errors:      int(errCount.Load()),
+	}
+}
 
+func experimentDBConfirmedCount(ctx context.Context, pool *pgxpool.Pool, eventID string) (int, error) {
 	var dbConfirmed int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND status = 'confirmed'`, eventID).Scan(&dbConfirmed); err != nil {
-		return fmt.Errorf("verify dbConfirmed: %w", err)
+		return 0, fmt.Errorf("verify dbConfirmed: %w", err)
 	}
-	confirmed := int(confirmedCount.Load())
-	waitlisted := int(waitlistedCount.Load())
-	bookingErrors := int(errCount.Load())
-	if err := validateExperimentOutcome(vus, capacity, confirmed, waitlisted, bookingErrors, dbConfirmed); err != nil {
-		return err
-	}
+	return dbConfirmed, nil
+}
 
+func writeExperimentResult(cfg experimentConfig, runResult bookingBurstResult, dbConfirmed int) error {
 	out := result{
-		Mode:        mode,
-		VUs:         vus,
-		Capacity:    capacity,
-		WallClockMS: float64(wall.Microseconds()) / 1000.0,
-		RPS:         float64(vus) / wall.Seconds(),
+		Mode:        cfg.Mode,
+		VUs:         cfg.VUs,
+		Capacity:    cfg.Capacity,
+		WallClockMS: float64(runResult.wall.Microseconds()) / 1000.0,
+		RPS:         float64(cfg.VUs) / runResult.wall.Seconds(),
 		Outcomes: outcomes{
-			Confirmed:  confirmed,
-			Waitlisted: waitlisted,
-			Error:      bookingErrors,
+			Confirmed:  runResult.confirmed,
+			Waitlisted: runResult.waitlisted,
+			Error:      runResult.errors,
 		},
-		LatencyMS:        summarize(latenciesMs),
+		LatencyMS:        summarize(runResult.latenciesMs),
 		DBConfirmedCount: dbConfirmed,
 	}
 	enc := json.NewEncoder(os.Stdout)

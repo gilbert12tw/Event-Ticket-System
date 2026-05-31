@@ -75,48 +75,17 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 		return NotificationDelivery{}, err
 	}
 	defer rollback(ctx, tx)
-	var delivery NotificationDelivery
-	var employeeID string
-	err = tx.QueryRow(ctx, `SELECT delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at
-		FROM notification_deliveries
-		WHERE delivery_id = $1
-		FOR UPDATE`, deliveryID).
-		Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return NotificationDelivery{}, notFound("delivery not found")
-	}
+
+	delivery, employeeID, err := retryableNotificationDeliveryTx(ctx, tx, deliveryID)
 	if err != nil {
 		return NotificationDelivery{}, err
-	}
-	if delivery.Channel != "email" {
-		return NotificationDelivery{}, conflict("only email deliveries can be retried")
-	}
-	if delivery.Status != deliveryStatusFailed && delivery.Status != deliveryStatusDeadLetter {
-		return NotificationDelivery{}, conflict("only failed notification deliveries can be retried")
-	}
-	if delivery.OutboxID == "" {
-		return NotificationDelivery{}, conflict("notification delivery outbox is unavailable")
-	}
-	var outboxEventType string
-	err = tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1 FOR UPDATE`, delivery.OutboxID).Scan(&outboxEventType)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return NotificationDelivery{}, conflict("notification delivery outbox is unavailable")
-	}
-	if err != nil {
-		return NotificationDelivery{}, err
-	}
-	if !retryableNotificationOutboxEventType(outboxEventType) {
-		return NotificationDelivery{}, conflict("only notification outbox deliveries can be retried")
 	}
 	previousStatus := delivery.Status
 	outboxID := delivery.OutboxID
 	channel := delivery.Channel
 	deadLetterCleared := previousStatus == deliveryStatusDeadLetter
-	err = tx.QueryRow(ctx, `UPDATE notification_deliveries
-		SET status = 'pending', last_error = '', updated_at = now()
-		WHERE delivery_id = $1
-		RETURNING delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at`, deliveryID).
-		Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
+
+	delivery, employeeID, err = requeueNotificationDeliveryTx(ctx, tx, deliveryID)
 	if err != nil {
 		return NotificationDelivery{}, err
 	}
@@ -150,26 +119,106 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	if err := tx.Commit(ctx); err != nil {
 		return NotificationDelivery{}, err
 	}
-	s.logNotificationDeliveryRetryQueued(ctx, actor.Role, delivery.DeliveryID, outboxID, channel, previousStatus, delivery.Status, deadLetterCleared)
+	s.logNotificationDeliveryRetryQueued(ctx, notificationRetryLog{
+		ActorRole:         actor.Role,
+		DeliveryID:        delivery.DeliveryID,
+		OutboxID:          outboxID,
+		Channel:           channel,
+		PreviousStatus:    previousStatus,
+		NextStatus:        delivery.Status,
+		DeadLetterCleared: deadLetterCleared,
+	})
 	return delivery, nil
 }
 
-func (s *Service) logNotificationDeliveryRetryQueued(ctx context.Context, actorRole, deliveryID, outboxID, channel, previousStatus, nextStatus string, deadLetterCleared bool) {
+func retryableNotificationDeliveryTx(ctx context.Context, tx pgx.Tx, deliveryID string) (NotificationDelivery, string, error) {
+	var delivery NotificationDelivery
+	var employeeID string
+	err := tx.QueryRow(ctx, `SELECT delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at
+		FROM notification_deliveries
+		WHERE delivery_id = $1
+		FOR UPDATE`, deliveryID).
+		Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NotificationDelivery{}, "", notFound("delivery not found")
+	}
+	if err != nil {
+		return NotificationDelivery{}, "", err
+	}
+	if err := validateRetryableNotificationDelivery(delivery); err != nil {
+		return NotificationDelivery{}, "", err
+	}
+	if err := validateRetryableNotificationOutboxTx(ctx, tx, delivery.OutboxID); err != nil {
+		return NotificationDelivery{}, "", err
+	}
+	return delivery, employeeID, nil
+}
+
+func validateRetryableNotificationDelivery(delivery NotificationDelivery) error {
+	if delivery.Channel != "email" {
+		return conflict("only email deliveries can be retried")
+	}
+	if delivery.Status != deliveryStatusFailed && delivery.Status != deliveryStatusDeadLetter {
+		return conflict("only failed notification deliveries can be retried")
+	}
+	if delivery.OutboxID == "" {
+		return conflict("notification delivery outbox is unavailable")
+	}
+	return nil
+}
+
+func validateRetryableNotificationOutboxTx(ctx context.Context, tx pgx.Tx, outboxID string) error {
+	var outboxEventType string
+	err := tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1 FOR UPDATE`, outboxID).Scan(&outboxEventType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return conflict("notification delivery outbox is unavailable")
+	}
+	if err != nil {
+		return err
+	}
+	if !retryableNotificationOutboxEventType(outboxEventType) {
+		return conflict("only notification outbox deliveries can be retried")
+	}
+	return nil
+}
+
+func requeueNotificationDeliveryTx(ctx context.Context, tx pgx.Tx, deliveryID string) (NotificationDelivery, string, error) {
+	var delivery NotificationDelivery
+	var employeeID string
+	err := tx.QueryRow(ctx, `UPDATE notification_deliveries
+		SET status = 'pending', last_error = '', updated_at = now()
+		WHERE delivery_id = $1
+		RETURNING delivery_id, COALESCE(outbox_id, ''), COALESCE(employee_id, ''), channel, status, attempts, last_error, created_at, updated_at`, deliveryID).
+		Scan(&delivery.DeliveryID, &delivery.OutboxID, &employeeID, &delivery.Channel, &delivery.Status, &delivery.Attempts, &delivery.LastError, &delivery.CreatedAt, &delivery.UpdatedAt)
+	return delivery, employeeID, err
+}
+
+type notificationRetryLog struct {
+	ActorRole         string
+	DeliveryID        string
+	OutboxID          string
+	Channel           string
+	PreviousStatus    string
+	NextStatus        string
+	DeadLetterCleared bool
+}
+
+func (s *Service) logNotificationDeliveryRetryQueued(ctx context.Context, entry notificationRetryLog) {
 	if s == nil || s.logger == nil {
 		return
 	}
 	s.logger.Info("notification delivery retry queued",
 		"trace_id", traceid.FromContext(ctx),
 		"action", "notification.delivery.retry",
-		"actor_role", actorRole,
-		"delivery_id", deliveryID,
-		"outbox_id", outboxID,
+		"actor_role", entry.ActorRole,
+		"delivery_id", entry.DeliveryID,
+		"outbox_id", entry.OutboxID,
 		"worker_kind", outboxWorkerKindNotification,
-		"channel", channel,
-		"previous_status", previousStatus,
-		"next_status", nextStatus,
+		"channel", entry.Channel,
+		"previous_status", entry.PreviousStatus,
+		"next_status", entry.NextStatus,
 		"retry_budget_reset", true,
-		"dead_letter_cleared", deadLetterCleared,
+		"dead_letter_cleared", entry.DeadLetterCleared,
 	)
 }
 

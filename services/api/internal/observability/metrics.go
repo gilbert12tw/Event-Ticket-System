@@ -20,6 +20,8 @@ import (
 var httpBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 var allowedOutboxMetricEventTypes = buildAllowedOutboxMetricEventTypes()
 
+const outboxScrapeErrorMetric = "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1"
+
 type SQLMetricsDB interface {
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
@@ -209,7 +211,7 @@ func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 		GROUP BY event_type, worker_kind, publish_status
 		ORDER BY worker_kind, event_type, publish_status`)
 	if err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1")
+		writeLine(w, outboxScrapeErrorMetric)
 		return
 	}
 	defer rows.Close()
@@ -220,14 +222,14 @@ func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 		var count, retryCount, deadLetterCount int64
 		var oldestLag, leaseHeld float64
 		if err := rows.Scan(&eventType, &workerKind, &status, &count, &oldestLag, &retryCount, &deadLetterCount, &leaseHeld); err != nil {
-			writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1")
+			writeLine(w, outboxScrapeErrorMetric)
 			return
 		}
 		key := normalizeOutboxMetricKey(eventType, workerKind, status)
 		addOutboxMetricAggregate(aggregates, key, count, oldestLag, retryCount, deadLetterCount, leaseHeld)
 	}
 	if err := rows.Err(); err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1")
+		writeLine(w, outboxScrapeErrorMetric)
 		return
 	}
 

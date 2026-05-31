@@ -9,6 +9,8 @@ import (
 
 var outboxLagHistogramBuckets = []float64{1, 5, 10, 30, 60, 180, 300, 600, 1800, 3600}
 
+const outboxLagHistogramScrapeErrorMetric = "cets_metrics_scrape_errors_total{collector=\"outbox_lag_histogram\"} 1"
+
 func writeOutboxLagHistogramMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 	rows, err := db.Query(ctx, `/* outbox_lag_histogram */
 		WITH outbox_published AS (
@@ -41,7 +43,7 @@ func writeOutboxLagHistogramMetrics(ctx context.Context, w io.Writer, db SQLMetr
 		GROUP BY event_type, worker_kind
 		ORDER BY worker_kind, event_type`)
 	if err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox_lag_histogram\"} 1")
+		writeLine(w, outboxLagHistogramScrapeErrorMetric)
 		return
 	}
 	defer rows.Close()
@@ -69,7 +71,7 @@ func writeOutboxLagHistogramMetrics(ctx context.Context, w io.Writer, db SQLMetr
 			&count,
 			&sum,
 		); err != nil {
-			writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox_lag_histogram\"} 1")
+			writeLine(w, outboxLagHistogramScrapeErrorMetric)
 			return
 		}
 		key := normalizeOutboxLagHistogramKey(eventType, workerKind)
@@ -87,7 +89,7 @@ func writeOutboxLagHistogramMetrics(ctx context.Context, w io.Writer, db SQLMetr
 		}, count, sum)
 	}
 	if err := rows.Err(); err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"outbox_lag_histogram\"} 1")
+		writeLine(w, outboxLagHistogramScrapeErrorMetric)
 		return
 	}
 	for _, aggregate := range sortedOutboxLagHistogramAggregates(aggregates) {

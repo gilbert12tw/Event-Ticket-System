@@ -279,7 +279,8 @@ export function SegmentedFilter({
   counts?: Record<string, number>;
 }>) {
   return (
-    <div className="segmented-filter" aria-label={label} role="group">
+    <fieldset className="segmented-filter">
+      <legend className="sr-only">{label}</legend>
       {options.map((option) => (
         <Button
           aria-pressed={value === option.value}
@@ -300,7 +301,7 @@ export function SegmentedFilter({
           )}
         </Button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 

@@ -22,6 +22,7 @@ type workerBatchResult struct {
 }
 
 const maxPostCancelShutdownWait = 2 * time.Second
+const workerShutdownRequestedMsg = "worker shutdown requested"
 
 func runWorkerLoop(ctx context.Context, options workerLoopOptions) error {
 	if options.Logger == nil {
@@ -33,11 +34,11 @@ func runWorkerLoop(ctx context.Context, options workerLoopOptions) error {
 	for {
 		select {
 		case <-ctx.Done():
-			options.Logger.Info("worker shutdown requested", "phase", "idle")
+			options.Logger.Info(workerShutdownRequestedMsg, "phase", "idle")
 			return nil
 		case <-ticker.C:
 			if ctx.Err() != nil {
-				options.Logger.Info("worker shutdown requested", "phase", "idle")
+				options.Logger.Info(workerShutdownRequestedMsg, "phase", "idle")
 				return nil
 			}
 			shutdown, err := runWorkerBatch(ctx, options)
@@ -53,7 +54,7 @@ func runWorkerLoop(ctx context.Context, options workerLoopOptions) error {
 
 func runWorkerBatch(loopCtx context.Context, options workerLoopOptions) (bool, error) {
 	if loopCtx.Err() != nil {
-		options.Logger.Info("worker shutdown requested", "phase", "idle")
+		options.Logger.Info(workerShutdownRequestedMsg, "phase", "idle")
 		return true, nil
 	}
 	workCtx, workCancel := context.WithTimeout(context.Background(), options.RequestTimeout)
@@ -69,7 +70,7 @@ func runWorkerBatch(loopCtx context.Context, options workerLoopOptions) (bool, e
 		logWorkerBatchResult(options.Logger, result)
 		return false, result.err
 	case <-loopCtx.Done():
-		options.Logger.Info("worker shutdown requested", "phase", "draining", "grace_seconds", int(options.ShutdownGrace.Seconds()))
+		options.Logger.Info(workerShutdownRequestedMsg, "phase", "draining", "grace_seconds", int(options.ShutdownGrace.Seconds()))
 		return true, drainWorkerBatch(options, workCancel, done)
 	}
 }

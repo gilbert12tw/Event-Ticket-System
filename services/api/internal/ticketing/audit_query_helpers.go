@@ -48,23 +48,30 @@ func parseAuditCursor(raw string) (time.Time, string) {
 	if raw == "" {
 		return time.Time{}, ""
 	}
-	if strings.Contains(raw, "|") {
-		parts := strings.SplitN(raw, "|", 2)
-		parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(parts[0]))
-		if err != nil {
-			return time.Time{}, ""
-		}
-		return parsed, strings.TrimSpace(parts[1])
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err == nil && strings.Contains(string(decoded), "|") {
-		return parseAuditCursor(string(decoded))
+	if parsed, id, ok := parseDelimitedCursor(raw); ok {
+		return parsed, id
 	}
 	parsed, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
 		return time.Time{}, ""
 	}
 	return parsed, ""
+}
+
+func parseDelimitedCursor(raw string) (time.Time, string, bool) {
+	if strings.Contains(raw, "|") {
+		parts := strings.SplitN(raw, "|", 2)
+		parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(parts[0]))
+		if err != nil {
+			return time.Time{}, "", false
+		}
+		return parsed, strings.TrimSpace(parts[1]), true
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err == nil && strings.Contains(string(decoded), "|") {
+		return parseDelimitedCursor(string(decoded))
+	}
+	return time.Time{}, "", false
 }
 
 func ParseAuditCursor(raw string) (time.Time, string) {

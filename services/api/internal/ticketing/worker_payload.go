@@ -71,22 +71,8 @@ func markOutboxProcessingFailureInTx(ctx context.Context, tx pgx.Tx, claim outbo
 	if retryPolicy.exhausted(claim.attempts) {
 		status = "dead_letter"
 	}
-	tag, err := tx.Exec(ctx, `UPDATE outbox_events
-		SET publish_status = $1,
-			last_error = $2,
-			retry_count = $3,
-			dead_letter_at = CASE WHEN $1 = 'dead_letter' THEN now() ELSE NULL END,
-			lease_started_at = NULL,
-			available_at = now() + ($4::double precision * interval '1 second')
-		WHERE outbox_id = $5
-			AND publish_status = 'processing'
-			AND lease_started_at = $6`,
-		status, lastError, claim.attempts, retryPolicy.backoffForOutbox(claim.outboxID, claim.attempts).Seconds(), claim.outboxID, claim.leaseStartedAt)
-	if err != nil {
+	if err := updateOutboxFailureInTx(ctx, tx, claim, retryPolicy, status, lastError); err != nil {
 		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return errOutboxLeaseLost
 	}
 	if status == "dead_letter" {
 		return insertOutboxDeadLetterAuditInTx(ctx, tx, claim, outboxDeadLetterReasonInvalidPayload)
