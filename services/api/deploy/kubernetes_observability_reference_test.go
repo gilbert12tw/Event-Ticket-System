@@ -151,6 +151,37 @@ func TestKubernetesObservabilityReferenceDocumentsContainerLogPipeline(t *testin
 	}
 }
 
+func TestKubernetesObservabilityReferenceDocumentsLogCollectorAlternatives(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "log-collector-alternatives.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: fluentd-log-collector-reference",
+		"app.kubernetes.io/name: fluentd",
+		"fluent.conf: |",
+		"@type tail",
+		"path /var/log/containers/cets-api-*.log",
+		"@type json",
+		"collector fluentd",
+		"@type loki",
+		"url http://loki.cets-observability.svc:3100",
+		"name: vector-log-collector-reference",
+		"app.kubernetes.io/name: vector",
+		"vector.yaml: |",
+		"type: kubernetes_logs",
+		"include_paths:",
+		"type: remap",
+		"parse_json!(.message)",
+		"collector = \"vector\"",
+		"type: loki",
+		"endpoint: http://loki.cets-observability.svc:3100",
+		"Fluentd and Vector collector config alternatives",
+	} {
+		assert.Contains(t, combined, fragment, "log collector alternatives reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsOpenTelemetryCollector(t *testing.T) {
 	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "opentelemetry-collector.yaml"))
 	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))

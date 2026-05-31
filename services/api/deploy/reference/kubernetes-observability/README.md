@@ -19,6 +19,8 @@ product runtime behavior:
   `kube-state-metrics.cets-observability.svc:8080`.
 - `log-sidecar-example.yaml` shows the container log forwarding sidecar pattern: the app still
   writes stdout, while a Fluent Bit sidecar tails a shared stdout spool and forwards structured logs.
+- `log-collector-alternatives.yaml` shows Fluentd and Vector collector config alternatives for
+  tailing container JSON logs and forwarding them to Loki.
 - `plg-log-stack.yaml` shows a Loki + Grafana log analysis/viewing stack for the PLG pattern.
 - `efk-log-stack.yaml` shows Elasticsearch + Kibana analysis/viewing resources for the EFK pattern.
 - `app-lifecycle-service-discovery.yaml` shows the application lifecycle and networking automation
