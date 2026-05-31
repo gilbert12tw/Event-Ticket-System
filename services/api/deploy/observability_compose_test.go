@@ -128,6 +128,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	rollups, err := os.ReadFile("observability/rules/cets-rollups.yml")
 	require.NoError(t, err)
+	serviceLevelRules, err := os.ReadFile("observability/rules/cets-service-level.yml")
+	require.NoError(t, err)
 	loki, err := os.ReadFile("observability/loki.yml")
 	require.NoError(t, err)
 	promtail, err := os.ReadFile("observability/promtail.yml")
@@ -147,6 +149,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		string(alertmanager),
 		string(prometheusDatasource),
 		string(rollups),
+		string(serviceLevelRules),
 		string(loki),
 		string(promtail),
 		string(tempo),
@@ -229,6 +232,13 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"cets:http_request_duration_seconds:p99_5m",
 		"cets:outbox_oldest_lag_seconds:max5m",
 		"cets:db_lock_waiting_sessions:max5m",
+		"cets-service-level-objectives",
+		"cets:sli_api_success_rate:ratio5m",
+		"cets:sli_api_p99_latency_seconds:5m",
+		"cets:slo_api_success_rate:target_ratio",
+		"cets:slo_api_p99_latency:target_seconds",
+		"cets:error_budget_api_success_rate:burn_rate5m",
+		"cets:error_budget_api_success_rate:remaining_ratio5m",
 		"CETS Golden Signals",
 		"Golden Signal: Traffic",
 		"Golden Signal: Errors",
@@ -434,6 +444,7 @@ type prometheusRuleGroup struct {
 }
 
 type prometheusAlertRule struct {
+	Record      string            `yaml:"record"`
 	Alert       string            `yaml:"alert"`
 	Expr        string            `yaml:"expr"`
 	For         string            `yaml:"for"`

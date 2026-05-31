@@ -1,0 +1,48 @@
+groups:
+  - name: cets-service-level-objectives
+    interval: 5m
+    rules:
+      - record: cets:sli_api_success_rate:ratio5m
+        expr: |
+          1 - (
+            sum(rate(cets_http_requests_total{status_class=~"5xx"}[5m]))
+            /
+            clamp_min(sum(rate(cets_http_requests_total[5m])), 1)
+          )
+
+      - record: cets:sli_api_p99_latency_seconds:5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(cets_http_request_seconds_bucket[5m])) by (le)
+          )
+
+      - record: cets:slo_api_success_rate:target_ratio
+        expr: vector(0.999)
+        labels:
+          slo: cets-api-success-rate
+          sli: api_success_rate
+
+      - record: cets:slo_api_p99_latency:target_seconds
+        expr: vector(1)
+        labels:
+          slo: cets-api-p99-latency
+          sli: api_p99_latency
+
+      - record: cets:error_budget_api_success_rate:burn_rate5m
+        expr: |
+          (
+            sum(rate(cets_http_requests_total{status_class=~"5xx"}[5m]))
+            /
+            clamp_min(sum(rate(cets_http_requests_total[5m])), 1)
+          ) / 0.001
+        labels:
+          slo: cets-api-success-rate
+          sli: api_success_rate
+
+      - record: cets:error_budget_api_success_rate:remaining_ratio5m
+        expr: |
+          clamp_min(1 - cets:error_budget_api_success_rate:burn_rate5m, 0)
+        labels:
+          slo: cets-api-success-rate
+          sli: api_success_rate
