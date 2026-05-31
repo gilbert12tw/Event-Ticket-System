@@ -168,9 +168,16 @@ func TestPhase3ComposeScriptsDeclareDeployVerifyAndDrillContracts(t *testing.T) 
 		"api/datasources/uid",
 		"api/v1/targets?state=active",
 		"api/search?tags=service.name%3Dcets-backend",
+		"api/traces/$trace_id",
 		"traces_service_graph_request_total",
+		`traces_service_graph_request_total{server="cets-backend"}`,
 		"pyroscope/render",
 		"otel_trace_id",
+		"TEMPO_TRACE_ID",
+		"$TEMPO_TRACE_ID",
+		"cets_http_request_seconds_count",
+		"count by (route, method, status_class)",
+		"count by (instance)",
 		"phase3-redaction-canary",
 		`service_name%3D%22redaction-canary%22`,
 		"DRILL_SERVICES=(gateway-1 frontend-1 backend-1)",
@@ -237,6 +244,8 @@ func TestPhase3OTelTraceIDCompatibilityContract(t *testing.T) {
 	assert.Contains(t, datasources, `[a-fA-F0-9]{32}`)
 	assert.Contains(t, router, "otelTraceIDFromContext")
 	assert.Contains(t, router, "observability.TraceHTTP")
+	assert.Contains(t, verify, `service_name=~\"backend-.*\"`)
+	assert.Contains(t, verify, `|= \"$TEMPO_TRACE_ID\"`)
 }
 
 func TestPhase3ComposeReplacesLocalK3sAssets(t *testing.T) {

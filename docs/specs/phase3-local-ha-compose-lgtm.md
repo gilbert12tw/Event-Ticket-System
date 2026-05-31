@@ -106,6 +106,7 @@ measured bottleneck, failure-isolation, ownership, or release-cadence need.
 | PH3-AC-8 | Telemetry does not include PII, signed QR tokens, provider secrets, raw idempotency keys, email bodies, or raw recipient email; redaction canaries cover each sensitive class. |
 | PH3-AC-9 | k6 smoke and stress profiles prove external edge traffic reaches at least three frontend replicas and three backend replicas. |
 | PH3-AC-10 | Controlled error traffic is visible in RED metrics and Loki/Tempo evidence without being counted as unexpected k6 failure. |
+| PH3-AC-11 | Grafana/LGTM evidence is end-to-end queryable for the k6 path: Prometheus RED data must include route, method, status class, latency histogram, and all three backend instances; Tempo must return a backend trace with route evidence; Loki must return backend logs for that exact Tempo trace ID; Pyroscope must return backend CPU samples; service graph metrics must include an edge whose server is `cets-backend`. |
 
 ## Stop Conditions
 
@@ -119,8 +120,9 @@ measured bottleneck, failure-isolation, ownership, or release-cadence need.
   bodies, or raw recipient email.
 - Stop if scripts require legacy cluster tooling, Phase 3 cluster manifests, or destructive
   host-cluster changes.
-- Stop if verification can pass without `/readyz`, k6 replica-distribution evidence, service graph
-  validation, trace-correlated logs, or profile validation.
+- Stop if verification can pass without `/readyz`, k6 replica-distribution evidence, route/status/instance
+  RED evidence, service graph validation involving `cets-backend`, exact Tempo trace ID to Loki log
+  correlation, or profile validation.
 
 ## Verification
 
@@ -130,6 +132,10 @@ measured bottleneck, failure-isolation, ownership, or release-cadence need.
 - `scripts/compose/phase3-verify.sh` checks replica state, endpoint smoke, Grafana datasource
   provisioning, k6 stress evidence, Prometheus RED targets, Tempo trace ingest, Tempo service graph
   metrics, Pyroscope profile data, Loki trace-correlated logs, and telemetry redaction canaries.
+  Its LGTM assertions are intentionally data-level checks, not just health checks: RED must prove
+  request/error/duration evidence by route/status/backend instance, Tempo must produce a trace ID,
+  Loki must return backend logs for that same trace ID, Pyroscope must return non-zero backend CPU
+  samples, and service graph metrics must include `cets-backend` as a server node.
 - `scripts/compose/phase3-drill.sh` stops one stateless replica at a time and verifies recovery.
 - `cd services/api && go test ./... -count=1`.
 - `pnpm --filter cets-web lint`, `pnpm --filter cets-web test`, and `pnpm --filter cets-web build`.
