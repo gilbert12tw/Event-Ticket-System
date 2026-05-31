@@ -28,6 +28,8 @@ product runtime behavior:
   scaling, a PodDisruptionBudget, and node-spread hints.
 - `opentelemetry-collector.yaml` shows a vendor-neutral OpenTelemetry Collector entry point that
   accepts OTLP traces/logs, batches them, and routes traces to Tempo and logs to Loki.
+- `trace-backend-alternatives.yaml` shows Jaeger and Zipkin trace backend alternatives with query
+  UI Services for reviewing span timelines and dependency graphs.
 
 Together, these files keep the logging and metrics stack as code for review, with tracing pipeline
 examples included, without making it the active deployment path.

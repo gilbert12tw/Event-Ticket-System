@@ -218,6 +218,34 @@ func TestKubernetesObservabilityReferenceDocumentsOpenTelemetryCollector(t *test
 	}
 }
 
+func TestKubernetesObservabilityReferenceDocumentsTraceBackendAlternatives(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "trace-backend-alternatives.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: jaeger-trace-backend",
+		"app.kubernetes.io/name: jaeger",
+		"jaegertracing/all-in-one:1.62.0",
+		"name: query",
+		"containerPort: 16686",
+		"name: otlp-grpc",
+		"name: otlp-http",
+		"name: zipkin",
+		"containerPort: 9411",
+		"name: zipkin-trace-backend",
+		"app.kubernetes.io/name: zipkin",
+		"openzipkin/zipkin:3.5.1",
+		"path: /health",
+		"kind: Service",
+		"type: ClusterIP",
+		"Jaeger and Zipkin trace backend alternatives",
+		"span timelines and dependency graphs",
+	} {
+		assert.Contains(t, combined, fragment, "trace backend alternatives reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsAppLifecycleAndServiceDiscovery(t *testing.T) {
 	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "app-lifecycle-service-discovery.yaml"))
 	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
