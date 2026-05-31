@@ -12,6 +12,8 @@ product runtime behavior:
 - `node-exporter-daemonset.yaml` shows the one-exporter-per-node DaemonSet shape for OS metrics.
 - `app-metrics-sidecar-example.yaml` shows the sidecar pattern for an app-specific exporter in the
   same pod as an application container.
+- `database-exporter-alternatives.yaml` shows a MySQL exporter reference for database metrics
+  translation when an external MySQL-compatible data store exists outside the current CETS runtime.
 - `metrics-stack.yaml` shows a containerized Prometheus + Grafana metrics stack: Prometheus is a
   StatefulSet with a persistent volume claim for TSDB data, while Grafana stays stateless and uses
   Prometheus as its data source.

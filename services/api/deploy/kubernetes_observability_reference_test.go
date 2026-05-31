@@ -107,6 +107,29 @@ func TestKubernetesObservabilityReferenceDocumentsContainerMetricsStack(t *testi
 		"Grafana reference must remain stateless")
 }
 
+func TestKubernetesObservabilityReferenceDocumentsDatabaseExporterAlternatives(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "database-exporter-alternatives.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: database-exporter-alternatives-reference",
+		"mysqld-exporter.cnf: |",
+		"host=mysql.example.internal",
+		"job_name: cets-mysql-exporter-reference",
+		"signal_scope: database-exporter",
+		"name: mysql-exporter-reference",
+		"app.kubernetes.io/name: mysqld-exporter",
+		"prom/mysqld-exporter:v0.17.2",
+		"--config.my-cnf=/etc/mysqld-exporter/mysqld-exporter.cnf",
+		"containerPort: 9104",
+		"MySQL exporter reference",
+		"external MySQL-compatible data store",
+	} {
+		assert.Contains(t, combined, fragment, "database exporter alternatives reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsMetricsStorageAlternatives(t *testing.T) {
 	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "metrics-storage-alternatives.yaml"))
 	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
