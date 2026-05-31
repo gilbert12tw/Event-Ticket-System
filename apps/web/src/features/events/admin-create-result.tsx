@@ -3,7 +3,9 @@ import type { EventSummary } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { departmentLabel, eventStatusView, siteLabel } from "@/lib/ui/options";
 
-export function AdminCreateResult({ event }: { event: EventSummary | null }) {
+export function AdminCreateResult({
+  event,
+}: Readonly<{ event: EventSummary | null }>) {
   return (
     <Card className="panel span-4">
       <h2>建立結果</h2>

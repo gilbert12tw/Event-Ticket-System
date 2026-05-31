@@ -1,8 +1,12 @@
-import { useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
+import { useMemo, useState } from "react";
 import type { ApiLogEntry, AuthSession } from "@/lib/api";
-import type { NavItem, RouteKey, WorkspaceKey } from "@/app/routes";
-import { navigate } from "@/app/routes";
+import {
+  navigate,
+  type NavItem,
+  type RouteKey,
+  type WorkspaceKey,
+} from "@/app/routes";
 import { roleLabel } from "@/lib/formatting";
 import { runClientNavigation } from "@/lib/navigation";
 import { DebugToggle } from "@/components/shared";
@@ -44,7 +48,6 @@ type AuthenticatedShellProps = {
 type NavLinkProps = {
   item: NavItem;
   route: RouteKey;
-  compact?: boolean;
 };
 
 export function AuthenticatedShell({
@@ -63,7 +66,7 @@ export function AuthenticatedShell({
   safeRoute,
   session,
   ready,
-}: AuthenticatedShellProps) {
+}: Readonly<AuthenticatedShellProps>) {
   return (
     <div
       className={`app-shell ${activeWorkspace}-workspace${
@@ -93,12 +96,7 @@ export function AuthenticatedShell({
         session={session}
       />
 
-      <main
-        className="workspace"
-        data-route={safeRoute}
-        id="main-workspace"
-        tabIndex={-1}
-      >
+      <main className="workspace" data-route={safeRoute} id="main-workspace">
         <Header
           apiLog={apiLog}
           route={safeRoute}
@@ -125,12 +123,12 @@ function DesktopSidebar({
   navRoutes,
   route,
   session,
-}: {
+}: Readonly<{
   activeWorkspace: WorkspaceKey;
   navRoutes: NavItem[];
   route: RouteKey;
   session: AuthSession;
-}) {
+}>) {
   return (
     <aside className="sidebar desktop-sidebar" aria-label="主要導覽">
       <BrandBlock />
@@ -159,7 +157,7 @@ function MobileTopBar({
   onToggleDebugChrome,
   ready,
   session,
-}: {
+}: Readonly<{
   activeRoute: NavItem;
   apiLog: ApiLogEntry[];
   debugChromeAvailable: boolean;
@@ -171,7 +169,7 @@ function MobileTopBar({
   onToggleDebugChrome: (enabled: boolean) => void;
   ready: string;
   session: AuthSession;
-}) {
+}>) {
   const displayName = session.claims.display_name || session.actor.id;
   return (
     <header className="mobile-topbar">
@@ -240,10 +238,10 @@ function MobileTopBar({
 function MobileTabBar({
   navRoutes,
   route,
-}: {
+}: Readonly<{
   navRoutes: NavItem[];
   route: RouteKey;
-}) {
+}>) {
   const { directRoutes, overflowRoutes } = useMemo(
     () => mobileRouteGroups(navRoutes),
     [navRoutes],
@@ -256,7 +254,7 @@ function MobileTabBar({
   return (
     <nav className="mobile-tabbar" aria-label="手機主要導覽">
       {directRoutes.map((item) => (
-        <MobileNavLink item={item} key={item.key} route={route} compact />
+        <MobileNavLink item={item} key={item.key} route={route} />
       ))}
       {overflowRoutes.length > 0 && (
         <Sheet open={routeSheetOpen} onOpenChange={setRouteSheetOpen}>
@@ -314,7 +312,7 @@ function BrandBlock() {
   );
 }
 
-function DesktopNavLink({ item, route }: NavLinkProps) {
+function DesktopNavLink({ item, route }: Readonly<NavLinkProps>) {
   const active = navItemActive(item.key, route);
   return (
     <a
@@ -334,7 +332,7 @@ function DesktopNavLink({ item, route }: NavLinkProps) {
   );
 }
 
-function MobileNavLink({ item, route }: NavLinkProps) {
+function MobileNavLink({ item, route }: Readonly<NavLinkProps>) {
   const active = navItemActive(item.key, route);
   return (
     <a

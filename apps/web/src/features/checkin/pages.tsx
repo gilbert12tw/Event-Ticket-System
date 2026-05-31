@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { ApiError, checkIn, listAdminEvents } from "@/lib/api";
 import type { CheckinResponse, EventSummary } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
@@ -45,13 +44,13 @@ export function CheckinPage() {
   const recentToken = hasDemoCheckinToken() ? getDemoCheckinToken() : "";
   const deviceID =
     devicePreset === "custom" ? customDeviceID.trim() : devicePreset;
-  const selectedEventID = eventID || events[0]?.event_id || "";
+  const selectedEventID =
+    eventID === "" ? (events[0]?.event_id ?? "") : eventID;
   const selectedEvent = events.find(
     (event) => event.event_id === selectedEventID,
   );
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submit() {
     setBusy(true);
     setMessage("");
     setResult(null);
@@ -88,13 +87,21 @@ export function CheckinPage() {
     }
   }
 
+  function readinessMessage() {
+    if (!selectedEventID.trim()) {
+      return "請先選擇驗票活動，避免核銷其他活動票券。";
+    }
+    if (tokenOnlyReady) {
+      return "請選擇或填寫裝置代號。";
+    }
+    return "請掃描或貼上票券簽章碼。";
+  }
+
   useEffect(() => {
     listAdminEvents()
       .then((nextEvents) => {
         setEvents(nextEvents);
-        setEventID((current) =>
-          nextEvents.some((event) => event.event_id === current) ? current : "",
-        );
+        setEventID((current) => selectedCheckinEventID(nextEvents, current));
       })
       .catch((error) => setMessage(errorMessage(error)));
   }, []);
@@ -117,10 +124,22 @@ export function CheckinPage() {
     selectedEventID.trim().length > 0;
   const tokenOnlyReady = token.trim().length > 0;
 
+  function handleTokenKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter" || !tokenReady) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
   return (
     <section className="content-grid checkin-workspace">
       <Card asChild className="panel span-6 checkin-form">
-        <form aria-busy={busy} onSubmit={(event) => void submit(event)}>
+        <form
+          aria-busy={busy}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
           <div className="section-heading">
             <div>
               <h2>線上驗票</h2>
@@ -150,19 +169,13 @@ export function CheckinPage() {
             name="signed-token"
             value={token}
             onChange={setToken}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && tokenReady) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
+            onKeyDown={handleTokenKeyDown}
             required
             hint="掃描器送出 Enter 時會直接驗票；長簽章碼可展開手動貼上。"
           />
           <details className="advanced-filter">
             <summary>
-              手動貼上
-              <span>進階</span>
+              手動貼上 <span>進階</span>
             </summary>
             <div className="mt-14">
               <TextareaField
@@ -201,11 +214,7 @@ export function CheckinPage() {
             message={
               tokenReady
                 ? "已偵測活動、簽章碼與裝置代號，可以送出驗票。"
-                : !selectedEventID.trim()
-                  ? "請先選擇驗票活動，避免核銷其他活動票券。"
-                  : tokenOnlyReady
-                    ? "請選擇或填寫裝置代號。"
-                    : "請掃描或貼上票券簽章碼。"
+                : readinessMessage()
             }
           />
           <div className="helper-strip">
@@ -260,4 +269,8 @@ export function CheckinPage() {
       </Card>
     </section>
   );
+}
+
+function selectedCheckinEventID(events: EventSummary[], current: string) {
+  return events.some((event) => event.event_id === current) ? current : "";
 }

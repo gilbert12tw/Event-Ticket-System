@@ -4,7 +4,8 @@
 
 本文件定義 Corporate Event Ticketing System 的 Phase 1 production E2E
 testcase 路徑。它補充 `docs/specs/phase1-production-upper-bound.md`、
-`docs/specs/phase1-product-requirements.md` 與 `docs/specs/phase1-mvp.md`，
+`docs/specs/phase1-product-requirements.md` 與 archived demo baseline
+`docs/archive/specs/phase1-mvp.md`，
 把必要角色旅程與正確性風險整理成 Given / When / Then 場景。
 
 範圍僅限 Phase 1 production：Go modular monolith、可選的 same-binary

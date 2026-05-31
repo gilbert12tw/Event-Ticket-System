@@ -1,4 +1,3 @@
-import type { KeyboardEvent } from "react";
 import type { AuditLog } from "@/lib/api";
 import { formatDate } from "@/lib/formatting";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,7 @@ export function AuditRowsTable({
   onSelect,
   rows,
   selectedID,
-}: {
+}: Readonly<{
   cursor: string;
   hasPreviousCursor: boolean;
   nextCursor: string;
@@ -32,7 +31,7 @@ export function AuditRowsTable({
   onSelect: (auditID: string) => void;
   rows: AuditLog[];
   selectedID: string;
-}) {
+}>) {
   if (rows.length === 0) {
     return (
       <>
@@ -132,23 +131,28 @@ function AuditTableRow({
   onSelect,
   row,
   selected,
-}: {
+}: Readonly<{
   onSelect: (auditID: string) => void;
   row: AuditLog;
   selected: boolean;
-}) {
+}>) {
   return (
     <tr
       className={selected ? "interactive-row selected-row" : "interactive-row"}
-      tabIndex={0}
       aria-selected={selected}
       aria-label={`檢視稽核 ${row.audit_id}`}
       onClick={() => onSelect(row.audit_id)}
-      onKeyDown={(event) =>
-        handleAuditRowKeyDown(event, row.audit_id, onSelect)
-      }
     >
-      <td>{formatDate(row.created_at)}</td>
+      <td>
+        <Button
+          aria-label={`檢視稽核 ${row.audit_id}`}
+          onClick={() => onSelect(row.audit_id)}
+          size="sm"
+          variant="link"
+        >
+          {formatDate(row.created_at)}
+        </Button>
+      </td>
       <td>
         <StatusBadge tone={auditActionView(row.action).tone}>
           {auditActionView(row.action).label}
@@ -170,11 +174,11 @@ function AuditMobileCard({
   onSelect,
   row,
   selected,
-}: {
+}: Readonly<{
   onSelect: (auditID: string) => void;
   row: AuditLog;
   selected: boolean;
-}) {
+}>) {
   return (
     <article
       className={
@@ -217,14 +221,4 @@ function AuditMobileCard({
       </Button>
     </article>
   );
-}
-
-function handleAuditRowKeyDown(
-  event: KeyboardEvent<HTMLTableRowElement>,
-  auditID: string,
-  onSelect: (auditID: string) => void,
-) {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  onSelect(auditID);
 }

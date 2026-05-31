@@ -26,12 +26,12 @@ export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
   form,
   onChange,
   windowReady,
-}: {
+}: Readonly<{
   capacityReady: boolean;
   form: T;
   onChange: (next: T) => void;
   windowReady: boolean;
-}) {
+}>) {
   return (
     <>
       <fieldset className="form-section full">
@@ -149,10 +149,10 @@ export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
 export function EligibilityFields({
   form,
   onChange,
-}: {
+}: Readonly<{
   form: AdminCreateForm;
   onChange: (next: AdminCreateForm) => void;
-}) {
+}>) {
   return (
     <fieldset className="form-section full">
       <legend>資格規則</legend>
@@ -189,10 +189,10 @@ export function EligibilityFields({
 export function IntentSelector({
   value,
   onChange,
-}: {
+}: Readonly<{
   value: string;
   onChange: (value: string) => void;
-}) {
+}>) {
   return (
     <div className="status-selectors" role="radiogroup" aria-label="建立意圖">
       {[
@@ -216,10 +216,10 @@ export function IntentSelector({
 export function TagInput({
   value,
   onChange,
-}: {
+}: Readonly<{
   value: string;
   onChange: (value: string) => void;
-}) {
+}>) {
   const [custom, setCustom] = useState("");
   const tags = useMemo(() => splitTags(value), [value]);
   const options = tagSuggestionOptions.filter(
@@ -288,9 +288,9 @@ export function TagInput({
 
 export function ReadinessGrid({
   checks,
-}: {
+}: Readonly<{
   checks: { label: string; ok: boolean }[];
-}) {
+}>) {
   return (
     <div className="readiness-grid full" aria-label="發布檢查">
       {checks.map((item) => (
@@ -308,7 +308,7 @@ export function ReadinessGrid({
   );
 }
 
-export function SelectEventFirst({ action }: { action: string }) {
+export function SelectEventFirst({ action }: Readonly<{ action: string }>) {
   return (
     <EmptyState
       title="尚未選擇活動"

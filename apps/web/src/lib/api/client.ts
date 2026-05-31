@@ -45,6 +45,7 @@ export type ApiObserver = (entry: ApiLogEntry) => void;
 export type ProviderTokenProvider = () => string | null | undefined;
 
 let observer: ApiObserver | null = null;
+let apiLogSequence = 0;
 let explicitProviderToken: string | null = null;
 let providerTokenProvider: ProviderTokenProvider = defaultProviderTokenProvider;
 
@@ -155,6 +156,11 @@ function post<T>(path: string, body: unknown = {}) {
   return api<T>(path, { method: "POST", body });
 }
 
+function nextApiLogID() {
+  apiLogSequence = (apiLogSequence + 1) % Number.MAX_SAFE_INTEGER;
+  return `${Date.now()}-${apiLogSequence}`;
+}
+
 function logApi(
   label: string,
   status: number | "ERR",
@@ -163,7 +169,7 @@ function logApi(
   responseBody: unknown,
 ) {
   observer?.({
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: nextApiLogID(),
     label,
     status,
     ok,
@@ -373,8 +379,9 @@ export function offlineCheckinPackage(eventID: string, deviceID: string) {
   const params = new URLSearchParams();
   if (deviceID.trim()) params.set("device_id", deviceID.trim());
   const query = params.toString();
+  const querySuffix = query ? `?${query}` : "";
   return api<OfflineCheckinPackage>(
-    `/api/v1/checkins/events/${encoded(eventID)}/offline-package${query ? `?${query}` : ""}`,
+    `/api/v1/checkins/events/${encoded(eventID)}/offline-package${querySuffix}`,
   );
 }
 
@@ -429,9 +436,8 @@ export function auditLogs(filters: AuditLogFilters = {}) {
       params.set(key, String(value).trim());
   }
   const query = params.toString();
-  return apiList<AuditLog>(
-    `/api/v1/admin/audit-logs${query ? `?${query}` : ""}`,
-  );
+  const querySuffix = query ? `?${query}` : "";
+  return apiList<AuditLog>(`/api/v1/admin/audit-logs${querySuffix}`);
 }
 
 export const readiness = (path: "/healthz" | "/readyz") =>

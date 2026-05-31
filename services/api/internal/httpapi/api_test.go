@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -349,6 +350,34 @@ func TestSeedDemoHandlerIsHiddenOutsideLocalEnvironments(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestSeedDemoHandlerRequiresActorAndAllowedRole(t *testing.T) {
+	service := &fakeTicketingService{}
+	cases := []struct {
+		name    string
+		actorID string
+		role    string
+		want    int
+	}{
+		{name: "missing actor", want: http.StatusUnauthorized},
+		{name: "employee forbidden", actorID: "E1001", role: ticketing.RoleEmployee, want: http.StatusForbidden},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/seed-demo", bytes.NewBufferString(`{}`))
+			if tc.actorID != "" || tc.role != "" {
+				identity := authIdentity{Actor: ticketing.Actor{ID: tc.actorID, Role: tc.role}}
+				req = req.WithContext(context.WithValue(req.Context(), authContextKey{}, identity))
+			}
+			rec := httptest.NewRecorder()
+
+			handleSeedDemo(service, "local").ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.want, rec.Code)
+		})
+	}
 }
 
 func TestMockProviderTokenIssuesBearerAndMeReadsClaims(t *testing.T) {

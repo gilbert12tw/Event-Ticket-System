@@ -208,7 +208,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if status == RegistrationWaitlisted {
 		action = "booking.waitlisted"
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, action, "registration", regID, map[string]interface{}{"event_id": eventID, "status": status, "capacity_type": event.CapacityType, "family_count": req.FamilyCount}); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, action, "registration", regID, map[string]interface{}{"event_id": eventID, "status": status, "capacity_type": event.CapacityType, "family_count": req.FamilyCount})); err != nil {
 		return BookingResponse{}, err
 	}
 	if err := insertOutbox(ctx, tx, action, regID, bookingNotificationPayload(reg, event, actor)); err != nil {

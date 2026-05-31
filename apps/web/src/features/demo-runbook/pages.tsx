@@ -34,13 +34,17 @@ const demoSteps = [
   ["report", "檢視報表與稽核"],
 ] as const;
 
+async function runAs(principalID: string) {
+  return selectMockProfile(principalID);
+}
+
 export function DemoRunbookPage({
   session,
   onSessionChange,
-}: {
+}: Readonly<{
   session: AuthSession;
   onSessionChange: (session: AuthSession | null) => void;
-}) {
+}>) {
   const [steps, setSteps] = useState<
     Record<string, { state: StepState; hint: string }>
   >(() => initialSteps());
@@ -50,10 +54,6 @@ export function DemoRunbookPage({
 
   function mark(id: string, state: StepState, hint: string) {
     setSteps((current) => ({ ...current, [id]: { state, hint } }));
-  }
-
-  async function runAs(principalID: string) {
-    return selectMockProfile(principalID);
   }
 
   async function runDemo() {

@@ -22,6 +22,18 @@ import (
 )
 
 func serve(cfg config.Config, logger *slog.Logger) error {
+	runtimeObs, err := startRuntimeObservability(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if err := runtimeObs.Shutdown(shutdownCtx); err != nil {
+			logger.Error("runtime observability shutdown failed", "error", err)
+		}
+	}()
+
 	return withDatabase(cfg, cfg.ValidateForServe, func(ctx context.Context, pool *pgxpool.Pool) error {
 		if cfg.AutoMigrate {
 			if err := postgres.Migrate(ctx, pool); err != nil {

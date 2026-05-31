@@ -43,7 +43,7 @@ export function EmployeeEventCard({
   onCancelReasonChange,
   pending = false,
   result,
-}: {
+}: Readonly<{
   cancelReason?: string;
   cancelBusy?: boolean;
   event: EventSummary;
@@ -52,7 +52,7 @@ export function EmployeeEventCard({
   onCancelReasonChange?: (value: string) => void;
   pending?: boolean;
   result?: ReactNode;
-}) {
+}>) {
   const action = attendeeActionState(event);
   const eligibilityDecision = getEligibilityDecision(event);
   const cooldown =
@@ -70,12 +70,11 @@ export function EmployeeEventCard({
   const detailHref = `/user/events/detail?event_id=${encodeURIComponent(
     event.event_id,
   )}`;
-  const primaryHref =
-    action.kind === "ticket" && event.current_user_ticket
-      ? ticketDetailPath(event.current_user_ticket.ticket_id)
-      : action.kind === "ticket"
-        ? "/user/tickets"
-        : detailHref;
+  const primaryHref = resolvePrimaryHref(
+    action.kind,
+    detailHref,
+    event.current_user_ticket,
+  );
   return (
     <EventListItem
       title={event.title}
@@ -149,10 +148,10 @@ export function EmployeeEventCard({
 function EventCardDescription({
   copy,
   event,
-}: {
+}: Readonly<{
   copy: string;
   event: EventSummary;
-}) {
+}>) {
   const warnings = getEligibilityDecision(event)?.warnings ?? [];
   return (
     <div className="event-card-description-stack">
@@ -162,7 +161,7 @@ function EventCardDescription({
   );
 }
 
-function BlockedEventAction({ event }: { event: EventSummary }) {
+function BlockedEventAction({ event }: Readonly<{ event: EventSummary }>) {
   const action = attendeeActionState(event);
   return (
     <Button
@@ -184,12 +183,12 @@ function EventBadges({
   eligibilityTone,
   event,
   showRegistration = true,
-}: {
+}: Readonly<{
   capacity: { label: string; tone: Tone };
   eligibilityTone: Tone;
   event: EventSummary;
   showRegistration?: boolean;
-}) {
+}>) {
   const eventStatus = eventStatusView(event.status);
   const registrationStatus = event.current_user_status
     ? registrationStatusView(event.current_user_status)
@@ -213,10 +212,10 @@ function EventBadges({
 export function EventSummaryBlock({
   compact = false,
   event,
-}: {
+}: Readonly<{
   compact?: boolean;
   event: EventSummary;
-}) {
+}>) {
   const capacityMax =
     event.capacity ?? Math.max(event.confirmed_count + event.waitlist_count, 1);
   const eligibilityDecision = getEligibilityDecision(event);
@@ -312,7 +311,7 @@ function eventSummaryRows(
   return rows;
 }
 
-export function WaitlistPolicy({ event }: { event: EventSummary }) {
+export function WaitlistPolicy({ event }: Readonly<{ event: EventSummary }>) {
   if (event.capacity_type !== "limited") return null;
   const full = (event.remaining_capacity ?? 0) <= 0;
   if (!full && event.waitlist_count === 0) return null;
@@ -328,11 +327,11 @@ export function FamilyCountControl({
   event,
   onChange,
   value,
-}: {
+}: Readonly<{
   event: EventSummary;
   onChange: (value: number) => void;
   value: number;
-}) {
+}>) {
   if (event.capacity_type === "limited") {
     return <p className="form-hint">限量活動不開放填寫家屬人數。</p>;
   }
@@ -415,12 +414,24 @@ function capacitySummaryLabel(event: EventSummary) {
 
 function userFacingEventDescription(description?: string | null) {
   const cleaned = (description || "")
-    .replace(/phase\s*1/gi, "")
-    .replace(/第一階段/g, "")
-    .replace(/示範/g, "流程")
-    .replace(/\s+/g, " ")
+    .replaceAll(/phase\s*1/gi, "")
+    .replaceAll("第一階段", "")
+    .replaceAll("示範", "流程")
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ")
     .trim();
   return cleaned || "未提供活動描述。";
+}
+
+function resolvePrimaryHref(
+  actionKind: string,
+  detailHref: string,
+  currentUserTicket?: { ticket_id: string } | null,
+) {
+  if (actionKind !== "ticket") return detailHref;
+  if (currentUserTicket) return ticketDetailPath(currentUserTicket.ticket_id);
+  return "/user/tickets";
 }
 
 function waitlistPolicyCopy(event: EventSummary) {

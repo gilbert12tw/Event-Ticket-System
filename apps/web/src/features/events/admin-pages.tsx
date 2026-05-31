@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
 import {
   archiveEvent,
   changeEventState,
@@ -39,6 +38,8 @@ import { AdminEventDangerTab } from "./admin-event-danger-panel";
 import { adminEventTabs, type AdminEventTab } from "./admin-event-crud-types";
 import { AdminCreateResult } from "./admin-create-result";
 
+type FormSubmitEvent = { preventDefault: () => void };
+
 export function AdminEventsPage() {
   const [form, setForm] = useState(defaultEventForm);
   const [created, setCreated] = useState<EventSummary | null>(null);
@@ -57,7 +58,7 @@ export function AdminEventsPage() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const selectedAdminEvent =
-    adminEvents.find((event) => event.event_id === selectedEventID) ||
+    adminEvents.find((event) => event.event_id === selectedEventID) ??
     adminEvents[0];
   const previewEmployees = useMemo(
     () =>
@@ -114,7 +115,10 @@ export function AdminEventsPage() {
     try {
       const rows = await listAdminEvents();
       setAdminEvents(rows);
-      applySelectedEvent(rows, nextSelectedID || rows[0]?.event_id || "");
+      applySelectedEvent(
+        rows,
+        nextSelectedID === "" ? (rows[0]?.event_id ?? "") : nextSelectedID,
+      );
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -122,8 +126,8 @@ export function AdminEventsPage() {
 
   function applySelectedEvent(rows: EventSummary[], eventID: string) {
     const nextEvent =
-      rows.find((event) => event.event_id === eventID) || rows[0];
-    setSelectedEventID(nextEvent?.event_id || "");
+      rows.find((event) => event.event_id === eventID) ?? rows[0];
+    setSelectedEventID(nextEvent?.event_id ?? "");
     if (!nextEvent) return;
     setEditForm(editFormFromEvent(nextEvent));
     setStateForm({
@@ -145,7 +149,7 @@ export function AdminEventsPage() {
     }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormSubmitEvent) {
     event.preventDefault();
     setBusy(true);
     setMessage("");
@@ -162,7 +166,7 @@ export function AdminEventsPage() {
     }
   }
 
-  async function saveSelected(event: FormEvent<HTMLFormElement>) {
+  async function saveSelected(event: FormSubmitEvent) {
     event.preventDefault();
     if (!selectedAdminEvent) return;
     setBusy(true);
@@ -382,6 +386,14 @@ function updateBody(
   };
 }
 
+function initialTab(): AdminEventTab {
+  if (globalThis.location.pathname.includes("/new")) return "create";
+  if (globalThis.location.pathname.includes("/edit")) return "edit";
+  if (globalThis.location.pathname.includes("/eligibility"))
+    return "eligibility";
+  return "list";
+}
+
 function windowReady(starts: string, start: string, close: string) {
   const startsAt = new Date(starts);
   const registrationStart = new Date(start);
@@ -393,11 +405,4 @@ function windowReady(starts: string, start: string, close: string) {
     registrationStart <= registrationClose &&
     registrationClose <= startsAt
   );
-}
-
-function initialTab(): AdminEventTab {
-  if (window.location.pathname.includes("/new")) return "create";
-  if (window.location.pathname.includes("/edit")) return "edit";
-  if (window.location.pathname.includes("/eligibility")) return "eligibility";
-  return "list";
 }

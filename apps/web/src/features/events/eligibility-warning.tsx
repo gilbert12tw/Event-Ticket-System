@@ -7,7 +7,7 @@ interface EligibilityWarningListProps {
 
 export function EligibilityWarningList({
   warnings,
-}: EligibilityWarningListProps) {
+}: Readonly<EligibilityWarningListProps>) {
   if (warnings.length === 0) return null;
 
   return (

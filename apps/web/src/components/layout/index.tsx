@@ -27,10 +27,10 @@ import {
 export function WorkspaceSwitch({
   active,
   role,
-}: {
+}: Readonly<{
   active: WorkspaceKey;
   role: Role;
-}) {
+}>) {
   const visibleWorkspaces = [
     {
       key: "user" as const,
@@ -88,7 +88,7 @@ export function Header({
   onSwitchProfile,
   onToggleDebugChrome,
   ready,
-}: {
+}: Readonly<{
   apiLog: ApiLogEntry[];
   debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
@@ -100,7 +100,7 @@ export function Header({
   onSwitchProfile?: () => void;
   onToggleDebugChrome: (enabled: boolean) => void;
   ready: string;
-}) {
+}>) {
   const item = routes.find((candidate) => candidate.key === route) || routes[0];
   const displayName = session.claims.display_name || session.actor.id;
   return (
@@ -145,7 +145,7 @@ function DebugToolsSheet({
   onToggleDebugChrome,
   ready,
   session,
-}: {
+}: Readonly<{
   apiLog: ApiLogEntry[];
   debugChromeEnabled: boolean;
   health: string;
@@ -155,7 +155,7 @@ function DebugToolsSheet({
   onToggleDebugChrome: (enabled: boolean) => void;
   ready: string;
   session: AuthSession;
-}) {
+}>) {
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -265,29 +265,21 @@ export function LoadingScreen() {
 export function StatusPanel({
   health,
   ready,
-}: {
+}: Readonly<{
   health: string;
   ready: string;
-}) {
+}>) {
   return (
     <div className="status-panel" aria-label="系統狀態">
       <div className="status-line">
         <span>應用服務</span>
-        <StatusBadge
-          tone={
-            health === "ok" ? "ok" : health === "checking" ? "neutral" : "fail"
-          }
-        >
+        <StatusBadge tone={statusPanelTone(health)}>
           {serviceStatusLabel(health)}
         </StatusBadge>
       </div>
       <div className="status-line">
         <span>資料庫</span>
-        <StatusBadge
-          tone={
-            ready === "ok" ? "ok" : ready === "checking" ? "neutral" : "fail"
-          }
-        >
+        <StatusBadge tone={statusPanelTone(ready)}>
           {serviceStatusLabel(ready)}
         </StatusBadge>
       </div>
@@ -299,11 +291,11 @@ export function ApiActivity({
   entries,
   mode = "floating",
   onClear,
-}: {
+}: Readonly<{
   entries: ApiLogEntry[];
   mode?: "floating" | "sheet";
   onClear: () => void;
-}) {
+}>) {
   const [collapsed, setCollapsed] = useState(mode !== "sheet");
   return (
     <aside
@@ -377,10 +369,19 @@ export function ApiActivity({
 
 function formatApiBody(value: unknown) {
   try {
-    return JSON.stringify(value, null, 2) ?? "null";
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "string") return value;
+    const serialized = JSON.stringify(value, null, 2);
+    return serialized ?? "[unserializable]";
   } catch {
-    return String(value);
+    return "[unserializable]";
   }
+}
+
+function statusPanelTone(value: string): "ok" | "neutral" | "fail" {
+  if (value === "ok") return "ok";
+  if (value === "checking") return "neutral";
+  return "fail";
 }
 
 function serviceStatusLabel(status: string) {

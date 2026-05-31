@@ -47,10 +47,12 @@ import {
 
 type PendingAction = "book" | "cancel" | "";
 
-export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
+export function EmployeeEventDetailPage({
+  claims,
+}: Readonly<{ claims: AuthMeClaims }>) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [selectedID, setSelectedID] = useState(
-    () => new URLSearchParams(window.location.search).get("event_id") || "",
+    () => new URLSearchParams(globalThis.location.search).get("event_id") || "",
   );
   const [detail, setDetail] = useState<EventSummary | null>(null);
   const [familyCount, setFamilyCount] = useState(0);
@@ -71,7 +73,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
     setMessage("");
     try {
       const rows = await listEvents();
-      const eventID = nextID || rows[0]?.event_id || "";
+      const eventID = nextID === "" ? (rows[0]?.event_id ?? "") : nextID;
       const nextDetail = eventID ? await getEvent(eventID) : null;
       if (requestID !== refreshRequestRef.current) return;
       setEvents(rows);
@@ -93,7 +95,7 @@ export function EmployeeEventDetailPage({ claims }: { claims: AuthMeClaims }) {
     setSelectedID(eventID);
     setBookingResult(null);
     setMessage("");
-    window.history.replaceState(
+    globalThis.history.replaceState(
       {},
       "",
       `/user/events/detail${
@@ -290,14 +292,14 @@ function DetailActionControls({
   onBook,
   onFamilyCountChange,
   pendingAction,
-}: {
+}: Readonly<{
   claims: AuthMeClaims;
   detail: EventSummary;
   familyCount: number;
   onBook: () => void;
   onFamilyCountChange: (value: number) => void;
   pendingAction: PendingAction;
-}) {
+}>) {
   const action = attendeeActionState(detail);
   const canSubmit = canSubmitAttendeeAction(detail);
   return (
@@ -319,12 +321,12 @@ function DetailActionControls({
         value={familyCount}
         onChange={onFamilyCountChange}
       />
-      {action.kind !== "ticket" && (
+      {action.kind === "ticket" ? null : (
         <Button
           className="w-full"
           type="button"
           variant={canSubmit ? "default" : "outline"}
-          title={!canSubmit ? action.recoveryCopy : undefined}
+          title={canSubmit ? undefined : action.recoveryCopy}
           onClick={onBook}
           disabled={pendingAction === "book" || !canSubmit}
         >
@@ -336,7 +338,7 @@ function DetailActionControls({
   );
 }
 
-function TicketHandoff({ ticket }: { ticket: Ticket }) {
+function TicketHandoff({ ticket }: Readonly<{ ticket: Ticket }>) {
   return (
     <div className="ticket-handoff">
       <span>二維碼已移到我的票券詳細頁，入場時再開啟即可。</span>

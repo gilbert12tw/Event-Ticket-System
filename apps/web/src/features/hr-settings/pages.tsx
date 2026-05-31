@@ -109,6 +109,8 @@ export function HrSyncSettingsPage() {
   const resolutionReady =
     Boolean(selectedResolution) &&
     (selectedResolution !== "custom" || Boolean(selectedCustomResolution));
+  const canResolveSelected =
+    selected && !loading && selected.review_id !== resolving && resolutionReady;
 
   return (
     <section className="content-grid">
@@ -213,12 +215,7 @@ export function HrSyncSettingsPage() {
               <p>選取單筆影響項目後再填寫原因，表格保持可掃描。</p>
             </div>
           </div>
-          {!selected ? (
-            <EmptyState
-              title="尚未選擇項目"
-              action="從左側表格選取一筆人資影響項目。"
-            />
-          ) : (
+          {selected ? (
             <div className="summary-block">
               <MetaList
                 rows={[
@@ -268,11 +265,7 @@ export function HrSyncSettingsPage() {
                   </div>
                   <Button
                     type="button"
-                    disabled={
-                      loading ||
-                      resolving === selected.review_id ||
-                      !resolutionReady
-                    }
+                    disabled={!canResolveSelected}
                     onClick={() => void resolve(selected)}
                   >
                     {resolving === selected.review_id ? "處理中" : "標記已處理"}
@@ -280,6 +273,11 @@ export function HrSyncSettingsPage() {
                 </>
               )}
             </div>
+          ) : (
+            <EmptyState
+              title="尚未選擇項目"
+              action="從左側表格選取一筆人資影響項目。"
+            />
           )}
         </aside>
       </Card>

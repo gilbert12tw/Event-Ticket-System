@@ -19,7 +19,7 @@ export function MockProfileSelector({
   onToggleDebugChrome,
   profiles,
   onSelect,
-}: {
+}: Readonly<{
   debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
   health: string;
@@ -28,7 +28,7 @@ export function MockProfileSelector({
   onToggleDebugChrome: (enabled: boolean) => void;
   profiles: MockProfile[];
   onSelect: (profileID: string) => void;
-}) {
+}>) {
   const groups = Array.from(
     new Set(profiles.map((profile) => profile.department || "本機身分")),
   );

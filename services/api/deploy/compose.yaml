@@ -15,7 +15,7 @@ services:
       APP_ENV: ${APP_ENV:-local}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
       OPS_API_ENABLED: ${OPS_API_ENABLED:-false}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
       PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
@@ -79,7 +79,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
       DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
@@ -129,7 +129,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
       DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
     depends_on:
       postgres:
@@ -143,7 +143,7 @@ services:
       APP_ADDR: :8080
       APP_ENV: ${APP_ENV:-local}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:-cets_dev_password}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
       DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
       SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
@@ -164,7 +164,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cets}
       POSTGRES_USER: ${POSTGRES_USER:-cets}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cets_dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:

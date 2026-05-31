@@ -49,7 +49,7 @@ func (s *Service) CreateReportExport(ctx context.Context, actor Actor, req Repor
 	}); err != nil {
 		return ReportExport{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "report.export.requested", "report_export", exportID, map[string]interface{}{"report_type": reportType, "object_key": objectKey}); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "report.export.requested", "report_export", exportID, map[string]interface{}{"report_type": reportType, "object_key": objectKey})); err != nil {
 		return ReportExport{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -99,14 +99,12 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 	if seed == "" {
 		seed = eventID
 	}
-	var existing LotteryRun
-	err := s.db.QueryRow(ctx, `SELECT run_id, event_id, seed, status, winner_count, created_by, created_at FROM lottery_runs WHERE event_id = $1 AND seed = $2`, eventID, seed).
-		Scan(&existing.RunID, &existing.EventID, &existing.Seed, &existing.Status, &existing.WinnerCount, &existing.CreatedBy, &existing.CreatedAt)
-	if err == nil {
-		return existing, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	existing, found, err := s.findLotteryRun(ctx, eventID, seed)
+	if err != nil {
 		return LotteryRun{}, err
+	}
+	if found {
+		return existing, nil
 	}
 
 	tx, err := s.db.Begin(ctx)
@@ -119,31 +117,58 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 	if err != nil {
 		return LotteryRun{}, err
 	}
-	err = tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, winner_count, created_by, created_at
-		FROM lottery_runs WHERE event_id = $1 AND seed = $2`, eventID, seed).
-		Scan(&existing.RunID, &existing.EventID, &existing.Seed, &existing.Status, &existing.WinnerCount, &existing.CreatedBy, &existing.CreatedAt)
-	if err == nil {
-		return existing, tx.Commit(ctx)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	existing, found, err = findLotteryRunTx(ctx, tx, eventID, seed)
+	if err != nil {
 		return LotteryRun{}, err
+	}
+	if found {
+		return existing, tx.Commit(ctx)
 	}
 	if err := validateLotteryEvent(event); err != nil {
 		return LotteryRun{}, err
 	}
 
-	confirmed, err := s.confirmedCountTx(ctx, tx, eventID)
+	run, err := s.createLotteryRunTx(ctx, tx, actor, event, rule, eventID, seed)
 	if err != nil {
 		return LotteryRun{}, err
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return LotteryRun{}, err
+	}
+	return run, nil
+}
 
-	winnerCount := 0
+func (s *Service) findLotteryRun(ctx context.Context, eventID string, seed string) (LotteryRun, bool, error) {
+	return scanLotteryRunRow(s.db.QueryRow(ctx, `SELECT run_id, event_id, seed, status, winner_count, created_by, created_at FROM lottery_runs WHERE event_id = $1 AND seed = $2`, eventID, seed))
+}
+
+func findLotteryRunTx(ctx context.Context, tx pgx.Tx, eventID string, seed string) (LotteryRun, bool, error) {
+	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, winner_count, created_by, created_at
+		FROM lottery_runs WHERE event_id = $1 AND seed = $2`, eventID, seed))
+}
+
+func scanLotteryRunRow(row pgx.Row) (LotteryRun, bool, error) {
+	var run LotteryRun
+	err := row.Scan(&run.RunID, &run.EventID, &run.Seed, &run.Status, &run.WinnerCount, &run.CreatedBy, &run.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return LotteryRun{}, false, nil
+	}
+	if err != nil {
+		return LotteryRun{}, false, err
+	}
+	return run, true, nil
+}
+
+func (s *Service) createLotteryRunTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, rule EligibilityRule, eventID string, seed string) (LotteryRun, error) {
 	candidates, err := s.lotteryCandidatesTx(ctx, tx, eventID, rule, seed)
 	if err != nil {
 		return LotteryRun{}, err
 	}
-
 	eventCapacity, err := limitedCapacity(event)
+	if err != nil {
+		return LotteryRun{}, err
+	}
+	confirmed, err := s.confirmedCountTx(ctx, tx, eventID)
 	if err != nil {
 		return LotteryRun{}, err
 	}
@@ -162,49 +187,79 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 	if err != nil {
 		return LotteryRun{}, err
 	}
-	for i := 0; i < winnerLimit; i++ {
-		candidate := candidates[i]
-		_, err := tx.Exec(ctx, `UPDATE registrations SET status = 'confirmed' WHERE registration_id = $1`, candidate.registrationID)
-		if err != nil {
-			return LotteryRun{}, err
-		}
-		ticket, err := s.createTicketTx(ctx, tx, candidate.registration, candidate.employee)
-		if err != nil {
-			return LotteryRun{}, err
-		}
-		if err := insertTicketIssuedAuditTx(ctx, tx, actor, ticket); err != nil {
-			return LotteryRun{}, err
-		}
-		if err := insertLotteryResultTx(ctx, tx, runID, eventID, candidate.registrationID, candidate.registration.EmployeeID, "winner", ticket.TicketID, i); err != nil {
-			return LotteryRun{}, err
-		}
-		winnerCount++
-	}
-	for i := winnerLimit; i < len(candidates); i++ {
-		candidate := candidates[i]
-		if err := insertLotteryResultTx(ctx, tx, runID, eventID, candidate.registrationID, candidate.registration.EmployeeID, "waitlisted", "", i); err != nil {
-			return LotteryRun{}, err
-		}
+	winnerCount, err := s.insertLotteryDrawResultsTx(ctx, tx, actor, runID, eventID, candidates, winnerLimit)
+	if err != nil {
+		return LotteryRun{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE lottery_runs SET winner_count = $2 WHERE run_id = $1`, runID, winnerCount); err != nil {
 		return LotteryRun{}, err
 	}
-	auditID, err := newID("aud")
-	if err != nil {
-		return LotteryRun{}, err
-	}
-	if err := insertAudit(ctx, tx, auditID, actor, "lottery.completed", "event", eventID,
-		map[string]interface{}{"seed": seed, "winner_count": winnerCount, "event_id": eventID}); err != nil {
-		return LotteryRun{}, err
-	}
-	if err := insertOutbox(ctx, tx, "lottery.completed", runID,
-		map[string]interface{}{"event_id": eventID, "seed": seed, "winner_count": winnerCount}); err != nil {
-		return LotteryRun{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := insertLotteryCompletionEffectsTx(ctx, tx, actor, runID, eventID, seed, winnerCount); err != nil {
 		return LotteryRun{}, err
 	}
 	return LotteryRun{RunID: runID, EventID: eventID, Seed: seed, Status: "completed", WinnerCount: winnerCount, CreatedBy: actor.ID, CreatedAt: now}, nil
+}
+
+func (s *Service) insertLotteryDrawResultsTx(ctx context.Context, tx pgx.Tx, actor Actor, runID string, eventID string, candidates []lotteryCandidate, winnerLimit int) (int, error) {
+	winnerCount := 0
+	for i := 0; i < winnerLimit; i++ {
+		if err := s.insertLotteryWinnerTx(ctx, tx, actor, runID, eventID, candidates[i], i); err != nil {
+			return 0, err
+		}
+		winnerCount++
+	}
+	for i := winnerLimit; i < len(candidates); i++ {
+		if err := insertLotteryWaitlistResultTx(ctx, tx, runID, eventID, candidates[i], i); err != nil {
+			return 0, err
+		}
+	}
+	return winnerCount, nil
+}
+
+func (s *Service) insertLotteryWinnerTx(ctx context.Context, tx pgx.Tx, actor Actor, runID string, eventID string, candidate lotteryCandidate, drawOrder int) error {
+	if _, err := tx.Exec(ctx, `UPDATE registrations SET status = 'confirmed' WHERE registration_id = $1`, candidate.registrationID); err != nil {
+		return err
+	}
+	ticket, err := s.createTicketTx(ctx, tx, candidate.registration, candidate.employee)
+	if err != nil {
+		return err
+	}
+	if err := insertTicketIssuedAuditTx(ctx, tx, actor, ticket); err != nil {
+		return err
+	}
+	return insertLotteryResultTx(ctx, tx, lotteryResultInsert{
+		runID:          runID,
+		eventID:        eventID,
+		registrationID: candidate.registrationID,
+		employeeID:     candidate.registration.EmployeeID,
+		result:         "winner",
+		ticketID:       ticket.TicketID,
+		drawOrder:      drawOrder,
+	})
+}
+
+func insertLotteryWaitlistResultTx(ctx context.Context, tx pgx.Tx, runID string, eventID string, candidate lotteryCandidate, drawOrder int) error {
+	return insertLotteryResultTx(ctx, tx, lotteryResultInsert{
+		runID:          runID,
+		eventID:        eventID,
+		registrationID: candidate.registrationID,
+		employeeID:     candidate.registration.EmployeeID,
+		result:         "waitlisted",
+		drawOrder:      drawOrder,
+	})
+}
+
+func insertLotteryCompletionEffectsTx(ctx context.Context, tx pgx.Tx, actor Actor, runID string, eventID string, seed string, winnerCount int) error {
+	auditID, err := newID("aud")
+	if err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "lottery.completed", "event", eventID,
+		map[string]interface{}{"seed": seed, "winner_count": winnerCount, "event_id": eventID})); err != nil {
+		return err
+	}
+	return insertOutbox(ctx, tx, "lottery.completed", runID,
+		map[string]interface{}{"event_id": eventID, "seed": seed, "winner_count": winnerCount})
 }
 
 func validateLotteryEvent(event Event) error {
@@ -217,15 +272,25 @@ func validateLotteryEvent(event Event) error {
 	return nil
 }
 
-func insertLotteryResultTx(ctx context.Context, tx pgx.Tx, runID string, eventID string, registrationID string, employeeID string, result string, ticketID string, drawOrder int) error {
+type lotteryResultInsert struct {
+	runID          string
+	eventID        string
+	registrationID string
+	employeeID     string
+	result         string
+	ticketID       string
+	drawOrder      int
+}
+
+func insertLotteryResultTx(ctx context.Context, tx pgx.Tx, result lotteryResultInsert) error {
 	resultID, err := newID("lor")
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO lottery_results
-		(result_id, run_id, event_id, registration_id, employee_id, result, ticket_id, draw_order)
-		VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7, ''),$8)`,
-		resultID, runID, eventID, registrationID, employeeID, result, ticketID, drawOrder)
+			(result_id, run_id, event_id, registration_id, employee_id, result, ticket_id, draw_order)
+			VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7, ''),$8)`,
+		resultID, result.runID, result.eventID, result.registrationID, result.employeeID, result.result, result.ticketID, result.drawOrder)
 	return err
 }
 

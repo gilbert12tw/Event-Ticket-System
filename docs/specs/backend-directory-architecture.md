@@ -2,14 +2,17 @@
 
 ## Summary
 
-Refactor `services/api` into smaller, module-oriented files while preserving the current Go package boundaries and Phase 1 modular monolith behavior. This is a directory and cohesion cleanup only: no HTTP contract, database schema, environment variable, Docker, worker, or business-rule changes are in scope.
+Refactor `services/api` into smaller, module-oriented files while preserving Phase 1 modular
+monolith behavior. This is a directory and cohesion cleanup only: no HTTP contract, database
+schema, environment variable, Docker, worker, or business-rule changes are in scope.
 
 ## Current State
 
-- `services/api/internal/ticketing/service.go`, `production.go`, `boundaries.go`, and `models.go` mix Event, Eligibility, Registration, Ticket, Check-in, Notification, Reporting, Audit, demo, and helper code in large files.
+- `services/api/internal/ticketing` still holds many Event, Eligibility, Registration, Ticket,
+  Check-in, Notification, Reporting, Audit, demo, worker, and helper files in one broad package.
 - `services/api/internal/httpapi/api.go` registers and implements handlers for every backend module in one file, while `router.go` exposes one broad service interface.
 - `services/api/cmd/cets/main.go` contains serve, migrate, ready, seed, and worker command flow in one file.
-- Several hand-written Go files exceed the repository's 500-line hard limit.
+- Several hand-written Go files remain close to the repository's 500-line hard limit.
 
 ## Target Shape
 
@@ -50,7 +53,15 @@ services/api/
       audit_service.go
       demo_service.go
       *_models.go
+      workerinfra/
+        contracts.go
+        retry_policy.go
+        safe_sender.go
+        smtp_sender.go
 ```
+
+Deeper package splits are allowed only when they preserve the modular-monolith deployment model and
+keep compatibility aliases in `internal/ticketing` until callers are migrated deliberately.
 
 ## Acceptance Criteria
 
@@ -59,6 +70,8 @@ services/api/
 - [ ] AC-3: Given any hand-written Go source file under `services/api`, when the file-size guard runs, then no file exceeds 500 lines.
 - [ ] AC-4: Given package imports are inspected, when the architecture guard runs, then `ticketing` does not import `httpapi`.
 - [ ] AC-5: Given docs are inspected, when Phase 1 architecture is described, then it remains a Docker Compose modular monolith and does not claim microservices, Kafka, Kubernetes, or cross-region HA are complete.
+- [ ] AC-6: Given worker infrastructure is split out, when imports are inspected, then
+      `ticketing/workerinfra` does not import ticketing domain orchestration or database adapters.
 
 ## Edge Cases
 
@@ -68,7 +81,7 @@ services/api/
 | E-2 | Handler helpers are split | Keep error envelopes, auth behavior, logging, trace IDs, and status code mapping unchanged. |
 | E-3 | Models are split by module | Preserve JSON tags, enum values, zero-value behavior, and exported type names. |
 | E-4 | Tests use package-local helpers | Move helpers only when needed and avoid changing test intent. |
-| E-5 | A deeper package split looks attractive | Defer it unless this spec is updated with import-cycle and migration details. |
+| E-5 | A deeper package split looks attractive | Preserve facade aliases and add import guards before moving callers. |
 
 ## Non-Functional Requirements
 
@@ -86,6 +99,8 @@ No public contract changes are introduced. Internal compatibility requirements:
 
 - `services/api/internal/ticketing.NewService` remains the construction entry point.
 - Existing exported `ticketing` types and service methods remain available with the same names and signatures.
+- Exported worker delivery contracts may live in `ticketing/workerinfra`, but `ticketing` keeps
+  aliases for existing callers.
 - `httpapi.NewRouter` keeps accepting an aggregate ticketing service plus router options.
 - `cmd/cets` commands keep the same CLI names and environment variable behavior.
 
@@ -98,6 +113,7 @@ No public contract changes are introduced. Internal compatibility requirements:
 | AC-3 | Add a backend architecture test that checks hand-written Go file line counts. |
 | AC-4 | Add a backend architecture test that scans imports for forbidden `ticketing -> httpapi` dependency. |
 | AC-5 | Add a docs architecture test that rejects Phase 1 completion claims for microservices, Kafka, Kubernetes, and cross-region HA. |
+| AC-6 | Add a backend architecture test that rejects `workerinfra -> ticketing` and database adapter imports. |
 
 ## 12-Factor Notes
 

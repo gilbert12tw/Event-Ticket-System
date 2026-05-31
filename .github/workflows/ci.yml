@@ -13,7 +13,9 @@ on:
       - "apps/web/**"
       - "docs/ARCHITECTURE.md"
       - "docs/agent-rules/**"
+      - "docs/archive/**"
       - "docs/DESIGN.md"
+      - "docs/INDEX.md"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
       - "docs/principles/**"
@@ -22,10 +24,15 @@ on:
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
+      - "goal.md"
+      - "infra/aws/**"
       - "k6/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "scripts/aws/**"
+      - "scripts/compose/**"
+      - "scripts/ci/**"
       - "scripts/*openapi*"
       - "services/api/**"
       - "turbo.json"
@@ -43,7 +50,9 @@ on:
       - "apps/web/**"
       - "docs/ARCHITECTURE.md"
       - "docs/agent-rules/**"
+      - "docs/archive/**"
       - "docs/DESIGN.md"
+      - "docs/INDEX.md"
       - "docs/openapi.yaml"
       - "docs/openapi/**"
       - "docs/principles/**"
@@ -52,10 +61,15 @@ on:
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
+      - "goal.md"
+      - "infra/aws/**"
       - "k6/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "scripts/aws/**"
+      - "scripts/compose/**"
+      - "scripts/ci/**"
       - "scripts/*openapi*"
       - "services/api/**"
       - "turbo.json"
@@ -99,13 +113,19 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      backend_lint: ${{ steps.filter.outputs.backend_lint }}
+      backend_test: ${{ steps.filter.outputs.backend_test }}
+      frontend_static: ${{ steps.filter.outputs.frontend_static }}
+      frontend_unit: ${{ steps.filter.outputs.frontend_unit }}
+      frontend_e2e: ${{ steps.filter.outputs.frontend_e2e }}
       openapi: ${{ steps.filter.outputs.openapi }}
+      compose: ${{ steps.filter.outputs.compose }}
       live: ${{ steps.filter.outputs.live }}
       k6: ${{ steps.filter.outputs.k6 }}
+      phase3: ${{ steps.filter.outputs.phase3 }}
       quick: ${{ steps.filter.outputs.quick }}
       full: ${{ steps.filter.outputs.full }}
     steps:
@@ -116,121 +136,63 @@ jobs:
 
       - name: Detect changed areas
         id: filter
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          force_full=false
-          release_full=false
-          if [[ "${{ github.event_name }}" == "release" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
-            release_full=true
-            : > /tmp/changed-files
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            : > /tmp/changed-files
-          else
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              base="${{ github.event.pull_request.base.sha }}"
-              head="${{ github.event.pull_request.head.sha }}"
-            else
-              base="${{ github.event.before }}"
-              head="${{ github.event.after || github.sha }}"
-              if [[ "$base" =~ ^0+$ ]]; then
-                base="$(git rev-list --max-parents=0 "$head")"
-              fi
-            fi
-
-            if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-              git fetch --no-tags --depth=1 origin "$base" || force_full=true
-            fi
-            if [[ "$force_full" == "false" ]]; then
-              git diff --check "$base" "$head"
-              git diff --name-only "$base" "$head" > /tmp/changed-files
-            else
-              echo "Base commit $base is unavailable; running the full CI gate."
-              : > /tmp/changed-files
-            fi
-            if [[ "$force_full" == "false" && ! -s /tmp/changed-files ]]; then
-              git show --pretty="" --name-only "$head" > /tmp/changed-files
-            fi
-          fi
-          cat /tmp/changed-files
-
-          full=$force_full
-          backend=false
-          frontend=false
-          openapi=false
-          live=false
-          k6=false
-          if [[ "$release_full" == "true" ]]; then
-            full=true
-            backend=true
-            frontend=true
-            openapi=true
-            live=true
-            k6=true
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ inputs.run_full_ci }}" == "true" ]]; then
-              full=true
-              backend=true
-              frontend=true
-              openapi=true
-              live=true
-              k6=true
-            elif [[ "${{ inputs.run_live_playwright }}" == "true" || "${{ inputs.run_k6_smoke }}" == "true" || "${{ inputs.run_k6_release }}" == "true" ]]; then
-              live=true
-              if [[ "${{ inputs.run_k6_smoke }}" == "true" ]]; then
-                k6=true
-              fi
-            fi
-          fi
-          if grep -Eq '^(services/api/|go\.work$|go\.work\.sum$|docs/specs/|docs/ARCHITECTURE\.md$|AGENTS\.md$)' /tmp/changed-files; then
-            backend=true
-          fi
-          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' /tmp/changed-files; then
-            frontend=true
-          fi
-          if grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' /tmp/changed-files; then
-            openapi=true
-          fi
-          if grep -Eq '^(\.github/workflows/ci\.yml$|services/api/deploy/|services/api/Dockerfile$|services/api/cmd/cets/worker.*\.go$|services/api/internal/config/|services/api/internal/postgres/schema\.sql$|services/api/internal/ticketing/(worker|outbox|notification).*\.go$|services/api/internal/observability/|apps/web/e2e-live/)' /tmp/changed-files; then
-            live=true
-          fi
-          if grep -Eq '^k6/' /tmp/changed-files; then
-            live=true
-            k6=true
-          fi
-          if [[ "$full" == "true" ]]; then
-            live=true
-          fi
-          quick=false
-          if [[ "$full" == "false" && "$backend" == "false" && "$frontend" == "false" && "$openapi" == "false" && "$live" == "false" && "$k6" == "false" ]]; then
-            quick=true
-          fi
-
-          {
-            echo "backend=$backend"
-            echo "frontend=$frontend"
-            echo "openapi=$openapi"
-            echo "live=$live"
-            echo "k6=$k6"
-            echo "quick=$quick"
-            echo "full=$full"
-          } >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_BEFORE: ${{ github.event.before }}
+          GITHUB_AFTER: ${{ github.event.after }}
+          INPUT_RUN_FULL_CI: ${{ inputs.run_full_ci || 'false' }}
+          INPUT_RUN_LIVE_PLAYWRIGHT: ${{ inputs.run_live_playwright || 'false' }}
+          INPUT_RUN_K6_SMOKE: ${{ inputs.run_k6_smoke || 'false' }}
+          INPUT_RUN_K6_RELEASE: ${{ inputs.run_k6_release || 'false' }}
+        run: bash scripts/ci/detect-changes.sh
 
   quick-check:
     needs: changes
     if: needs.changes.outputs.quick == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: No code gates required
         run: echo "Only documentation or agent metadata changed; diff whitespace was checked in changes job."
 
-  backend:
+  backend-lint:
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    if: needs.changes.outputs.backend_lint == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache: ${{ env.ACT != 'true' }}
+          cache-dependency-path: services/api/go.sum
+      - name: Restore Node path for local act runs
+        if: env.ACT == 'true'
+        run: |
+          if command -v node >/dev/null 2>&1; then
+            node_bin="$(dirname "$(command -v node)")"
+          else
+            node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+          fi
+          echo "$node_bin" >> "$GITHUB_PATH"
+      - name: Run Go lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.7.2
+          working-directory: services/api
+          args: --timeout=5m
+
+  backend-test:
+    needs: changes
+    if: needs.changes.outputs.backend_test == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     services:
       postgres:
         image: postgres:16.13-alpine
@@ -254,19 +216,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: services/api/go.mod
-          cache: true
+          cache: ${{ env.ACT != 'true' }}
           cache-dependency-path: services/api/go.sum
-      - name: Restore Node path for local act runs
-        if: env.ACT == 'true'
-        run: |
-          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
-          echo "$node_bin" >> "$GITHUB_PATH"
-      - name: Run Go lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.7.2
-          working-directory: services/api
-          args: --timeout=5m
       - name: Run Go tests
         working-directory: services/api
         run: go test ./... -count=1
@@ -274,7 +225,7 @@ jobs:
   openapi:
     needs: changes
     if: needs.changes.outputs.openapi == 'true' || needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -285,145 +236,25 @@ jobs:
             ruby --version
             exit 0
           fi
-          if command -v sudo >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ruby
-          else
-            apt-get update
-            apt-get install -y ruby
-          fi
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ruby
           ruby --version
       - name: Verify OpenAPI contract
         run: ruby scripts/check-openapi-contract.rb
 
-  frontend:
+  compose-contract:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    if: needs.changes.outputs.compose == 'true' || needs.changes.outputs.phase3 == 'true' || needs.changes.outputs.live == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          version: 10.33.3
-      - name: Restore Node path for local act runs
-        if: env.ACT == 'true'
-        run: |
-          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
-          echo "$node_bin" >> "$GITHUB_PATH"
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Restore Turbo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo/cache
-          key: ${{ runner.os }}-turbo-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
-            ${{ runner.os }}-turbo-main-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
-            ${{ runner.os }}-turbo-
-      - name: Install web dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Lint web
-        run: pnpm lint:web
-      - name: Type-check web
-        run: pnpm type-check
-      - name: Check formatting
-        run: pnpm format:check
-      - name: Test web
-        run: pnpm test
-      - name: Build web
-        run: pnpm build
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install Playwright browsers
-        run: |
-          if [[ "${ACT:-}" == "true" ]]; then
-            pnpm --filter cets-web exec playwright install --with-deps chromium
-          else
-            pnpm --filter cets-web exec playwright install chromium
-          fi
-      - name: Run mocked Playwright viewport checks
-        run: pnpm --filter cets-web test:e2e
-      - name: Clean local act frontend outputs
-        if: success() && env.ACT == 'true'
-        run: |
-          rm -rf \
-            services/api/internal/httpapi/static/assets \
-            services/api/internal/httpapi/static/index.html \
-            services/api/internal/httpapi/static/favicon.svg \
-            apps/web/test-results \
-            apps/web/playwright-report
-
-  live-gates:
-    needs:
-      - changes
-      - openapi
-      - backend
-      - frontend
-    if: >-
-      always() &&
-      needs.changes.outputs.live == 'true' &&
-      (needs.openapi.result == 'success' || needs.openapi.result == 'skipped') &&
-      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
-    runs-on: ubuntu-latest
-    env:
-      K6_IMAGE: grafana/k6:1.7.1-with-browser
-      COMPOSE_PROJECT_NAME: cets-ci
-      APP_PORT: 18080
-      POSTGRES_PORT: 15432
-      REDIS_PORT: 16379
-      MINIO_API_PORT: 19000
-      MINIO_CONSOLE_PORT: 19001
-      MAILHOG_SMTP_PORT: 11025
-      MAILHOG_UI_PORT: 18025
-      API_IMAGE_TAG: ci
-      LIVE_BASE_URL: http://127.0.0.1:18080
-      K6_RELEASE_DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.k6_release_duration || '10s' }}
-      K6_CHANGED: ${{ needs.changes.outputs.k6 }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.3
-      - name: Restore Node path for local act runs
-        if: env.ACT == 'true'
-        run: |
-          node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
-          echo "$node_bin" >> "$GITHUB_PATH"
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install web dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install Playwright browsers
-        run: |
-          if [[ "${ACT:-}" == "true" ]]; then
-            pnpm --filter cets-web exec playwright install --with-deps chromium
-          else
-            pnpm --filter cets-web exec playwright install chromium
-          fi
+          go-version-file: services/api/go.mod
+          cache: ${{ env.ACT != 'true' }}
+          cache-dependency-path: services/api/go.sum
       - name: Set up Docker CLI for local act runs
         if: env.ACT == 'true'
         run: |
@@ -436,10 +267,179 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
           docker --version
           docker compose version
-      - name: Validate Docker Compose config
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
-      - name: Validate worker-isolation Docker Compose config
-        run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation config
+      - name: Validate Compose configs
+        run: |
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
+          docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation config
+          docker compose \
+            --env-file services/api/deploy/.env.example \
+            -f services/api/deploy/compose.yaml \
+            -f services/api/deploy/compose.worker-isolation.yaml \
+            -f services/api/deploy/compose.phase3-ha.yaml \
+            --profile phase3-ha \
+            --profile worker-isolation \
+            --profile observability \
+            --profile phase3-canary \
+            config >/tmp/cets-phase3-compose-config.yaml
+      - name: Validate deploy contracts
+        working-directory: services/api
+        run: go test ./deploy -count=1
+
+  frontend-static:
+    needs: changes
+    if: needs.changes.outputs.frontend_static == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up web workspace
+        uses: ./.github/actions/setup-web
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
+            ${{ runner.os }}-turbo-main-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
+            ${{ runner.os }}-turbo-
+      - name: Lint web
+        run: pnpm lint:web
+      - name: Type-check web
+        run: pnpm type-check
+      - name: Check formatting
+        run: pnpm format:check
+
+  frontend-unit-build:
+    needs: changes
+    if: needs.changes.outputs.frontend_unit == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up web workspace
+        uses: ./.github/actions/setup-web
+      - name: Test web
+        run: pnpm --filter cets-web test
+      - name: Build web
+        run: pnpm --filter cets-web build
+
+  frontend-e2e:
+    needs: changes
+    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - shard: 1
+            port: 4173
+          - shard: 2
+            port: 4174
+          - shard: 3
+            port: 4175
+          - shard: 4
+            port: 4176
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up web workspace
+        uses: ./.github/actions/setup-web
+      - name: Restore Playwright browser cache
+        if: env.ACT != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Playwright browsers
+        run: scripts/ci/install-playwright.sh chromium
+      - name: Run mocked Playwright viewport checks shard ${{ matrix.shard }}/4
+        env:
+          PLAYWRIGHT_HTML_REPORT: playwright-report/mock-shard-${{ matrix.shard }}
+          PLAYWRIGHT_JSON_OUTPUT: test-results/mock-shard-${{ matrix.shard }}/playwright-results.json
+          PLAYWRIGHT_MOCK_PORT: ${{ matrix.port }}
+          PLAYWRIGHT_OUTPUT_DIR: test-results/mock-shard-${{ matrix.shard }}
+          PLAYWRIGHT_WORKERS: 2
+        run: pnpm --filter cets-web exec playwright test --shard=${{ matrix.shard }}/4
+      - name: Upload mocked Playwright artifacts on failure
+        if: failure() && env.ACT != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-mock-artifacts-${{ matrix.shard }}
+          if-no-files-found: ignore
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+      - name: Clean local act frontend outputs
+        if: success() && env.ACT == 'true'
+        run: |
+          rm -rf \
+            apps/web/test-results/mock-shard-${{ matrix.shard }} \
+            apps/web/playwright-report/mock-shard-${{ matrix.shard }}
+
+  live-gates:
+    needs:
+      - changes
+      - backend-lint
+      - backend-test
+      - openapi
+      - compose-contract
+      - frontend-static
+      - frontend-unit-build
+      - frontend-e2e
+    if: >-
+      always() &&
+      needs.changes.outputs.live == 'true' &&
+      (needs['backend-lint'].result == 'success' || needs['backend-lint'].result == 'skipped') &&
+      (needs['backend-test'].result == 'success' || needs['backend-test'].result == 'skipped') &&
+      (needs.openapi.result == 'success' || needs.openapi.result == 'skipped') &&
+      (needs['compose-contract'].result == 'success' || needs['compose-contract'].result == 'skipped') &&
+      (needs['frontend-static'].result == 'success' || needs['frontend-static'].result == 'skipped') &&
+      (needs['frontend-unit-build'].result == 'success' || needs['frontend-unit-build'].result == 'skipped') &&
+      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped')
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    env:
+      K6_IMAGE: grafana/k6:1.7.1-with-browser
+      COMPOSE_PROJECT_NAME: cets-ci
+      APP_PORT: 28080
+      POSTGRES_PORT: 25432
+      REDIS_PORT: 26379
+      MINIO_API_PORT: 29000
+      MINIO_CONSOLE_PORT: 29001
+      MAILHOG_SMTP_PORT: 21025
+      MAILHOG_UI_PORT: 28025
+      API_IMAGE_TAG: ci
+      LIVE_BASE_URL: http://127.0.0.1:28080
+      K6_RELEASE_DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.k6_release_duration || '10s' }}
+      K6_CHANGED: ${{ needs.changes.outputs.k6 }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up web workspace
+        uses: ./.github/actions/setup-web
+      - name: Restore Playwright browser cache
+        if: env.ACT != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Playwright browsers
+        run: scripts/ci/install-playwright.sh chromium
+      - name: Set up Docker CLI for local act runs
+        if: env.ACT == 'true'
+        run: |
+          if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+            docker --version
+            docker compose version
+            exit 0
+          fi
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
+          docker --version
+          docker compose version
+      - name: Validate Phase 3 Compose scripts
+        run: bash -n scripts/compose/phase3-deploy.sh scripts/compose/phase3-verify.sh scripts/compose/phase3-drill.sh
       - name: Reset local act live volumes
         if: env.ACT == 'true'
         run: docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.worker-isolation.yaml --profile worker-isolation down --volumes --remove-orphans
@@ -516,7 +516,7 @@ jobs:
           fi
           grep -E -i 'notifications@cets\.local' /tmp/cets-mailhog.log >/dev/null
       - name: Upload Playwright artifacts on failure
-        if: failure()
+        if: failure() && env.ACT != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts

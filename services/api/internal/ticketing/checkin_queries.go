@@ -28,7 +28,19 @@ func (s *Service) findCheckinByTicketTx(ctx context.Context, tx pgx.Tx, ticketID
 	return response, true, nil
 }
 
-func insertCheckinRejectionTx(ctx context.Context, tx pgx.Tx, actor Actor, ticketID string, eventID string, deviceID string, reason string, detail string) error {
+type checkinRejection struct {
+	ticketID string
+	eventID  string
+	deviceID string
+	reason   string
+	detail   string
+}
+
+func newCheckinRejection(ticketID string, eventID string, deviceID string, reason string, detail string) checkinRejection {
+	return checkinRejection{ticketID: ticketID, eventID: eventID, deviceID: deviceID, reason: reason, detail: detail}
+}
+
+func insertCheckinRejectionTx(ctx context.Context, tx pgx.Tx, actor Actor, rejection checkinRejection) error {
 	rejectionID, err := newID("rej")
 	if err != nil {
 		return err
@@ -36,6 +48,6 @@ func insertCheckinRejectionTx(ctx context.Context, tx pgx.Tx, actor Actor, ticke
 	_, err = tx.Exec(ctx, `INSERT INTO checkin_rejections
 		(rejection_id, ticket_id, event_id, staff_id, device_id, reason, detail, rejected_at)
 		VALUES ($1,NULLIF($2, ''),$3,$4,$5,$6,$7,now())`,
-		rejectionID, ticketID, eventID, actor.ID, deviceID, reason, detail)
+		rejectionID, rejection.ticketID, rejection.eventID, actor.ID, rejection.deviceID, rejection.reason, rejection.detail)
 	return err
 }

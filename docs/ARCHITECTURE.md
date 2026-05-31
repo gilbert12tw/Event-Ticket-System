@@ -1,6 +1,6 @@
 # 企業員工活動票務與現場驗票系統架構設計
 
-> 本文件與 repo root 的 `AGENTS.md` 是目前架構與實作準則來源。Phase 1 採用 Docker Compose + modular monolith 快速交付；Phase 2/3 再依流量與風險逐步拆分服務、導入 Kafka、Kubernetes 與高可用治理。
+> 本文件與 repo root 的 `AGENTS.md` 是目前架構與實作準則來源。Phase 1 採用 Docker Compose + modular monolith 快速交付；Phase 2 採 process-first 演進；Phase 3 先以單機 Docker Compose 模擬高可用與可觀測性，再依量測證據決定是否升級 container platform、Kafka 或微服務。
 
 ---
 
@@ -38,7 +38,7 @@
 | --- | --- | --- | --- |
 | Phase 1 production | Docker Compose + modular monolith + PostgreSQL；Redis / MinIO / Mailhog 作為 attached backing services；same-binary worker 消費 PostgreSQL outbox | 約 36 App RPS、5 Booking TPS、320 concurrent users | 防超賣、離線驗票邊界、通知重試、報表匯出、Playwright/k6 production gate。 |
 | Phase 2 成長期 (process-first) | 保留 Phase 1 modular monolith；以同一 Go binary 拆分 process：`app` (HTTP) + 多個 same-binary worker process by kind (`notification`、`projection`、`compensation`、`export`)；Redis 作為 booking pre-admission gate，reservation cleanup 歸在 `compensation` kind；PostgreSQL 仍是 booking / ticket / check-in / audit 的 final truth；Reporting 由 outbox-derived projection 提供 read model | 約 270 App RPS、35 Booking TPS、2,400 concurrent users | 尖峰報名削峰 (Redis pre-admission + idempotency)、worker kind isolation、reporting read model + freshness contract、ops 控制平面；Registration / Notification / Reporting 是否獨立部署為 deferred decision-gate，需 `docs/specs/phase2-scale-hardening.md` §2 證據才能升級。 |
-| Phase 3 高流量 | 強化 Ticket / Check-in、offline sync、資料分區、跨 AZ HA；評估 container platform 等更重的營運模式 | 約 1,000 App RPS、120 Booking TPS、10,000 concurrent users | 多入口驗票、高可用、DB failover、分區與營運成熟度。 |
+| Phase 3 高流量 | 先用 Docker Compose 單機模擬 edge/gateway/frontend/backend 3-replica stateless HA 與 LGTM 可觀測性；production cross-AZ、DB failover、container platform 與服務拆分仍需後續證據 | 約 1,000 App RPS、120 Booking TPS、10,000 concurrent users | 多入口驗票、高可用演練、logs/metrics/traces/profiles/node graph、分區與營運成熟度。 |
 
 > Phase 2 預設仍是 “one codebase, process-first evolution”。Kafka、Kubernetes、service mesh、cross-region HA、完整微服務在 Phase 2 一律視為 deferred decision-gate topics — 不列為 Phase 2 必交付，docs guard (`TestPhase2DocsDoNotClaimDeferredInfraIsRequired`) 會在 docs 出現「Phase 2 已完成 / 已導入 / 已落地」等語言時失敗。Phase 2 acceptance matrix 與 non-goals 詳見 `docs/specs/phase2-scale-hardening.md`；hot-path / async / reporting / ops 子規格見 `docs/specs/phase2-ws{1,2,3,4,5}-*.md`。
 
@@ -93,7 +93,7 @@ flowchart LR
 ### 4.2 Compose 操作約定
 
 - `services/api/deploy/compose.yaml` 作為本地開發與 mentor demo 的主要入口。
-- `services/api/deploy/k8s/` 提供可選的 local / staging-safe Kubernetes 範本；Compose 仍是 Phase 1 primary local deployment，套用到 shared staging 前必須替換 image tag 與 placeholder secrets。
+- `services/api/deploy/compose.phase3-ha.yaml` 是 Phase 3 本機高可用模擬入口；active deployment assets 只維持 Docker Compose。Kubernetes / equivalent container platform 保留為 production decision gate，不在本地 Phase 3 模擬中維護主動部署範本。
 - `services/api/deploy/.env.example` 作為環境變數模板；`services/api/deploy/.env` 可本地使用但不得放入真實 secrets。
 - app 與 worker 使用同一份映像與同一份設定來源，只是啟動 command 不同。
 - app 提供 `health` / `ready` endpoint；Compose 使用 `healthcheck` 與 `depends_on: service_healthy` 等待 PostgreSQL / Redis ready，但 business readiness 目前只驗證 PostgreSQL。
@@ -580,16 +580,23 @@ Phase 2 預設仍是 Phase 1 modular monolith；scale lever 是 **process model*
 
 12-Factor 不退化：Phase 2 process / worker kind 切分仍透過 env config (`WORKER_KINDS`、`DATABASE_URL`、`REDIS_URL`、`OBJECT_STORAGE_*`、`MAILER_*`) 注入，backing services 仍以 attached resource 對接 (PostgreSQL / Redis / MinIO / Mailhog)，所有 process logs 仍寫 stdout / stderr，process 仍是 stateless (狀態放 PostgreSQL / Redis / object storage)，migration / seed / replay / rebuild / reservation reconcile 仍以同一 binary 的 one-off admin process 執行。
 
-### 15.2 Phase 3: HA, Offline Check-in and Container Platform
+### 15.2 Phase 3: Local HA Simulation, Offline Check-in and Observability
 
-| 能力 | 設計 |
+Phase 3 目前以 `docs/specs/phase3-local-ha-compose-lgtm.md` 定義為 **single-machine local
+simulation**。它用 Docker Compose explicit replica services 證明 3-replica stateless tiers、
+failure drill 與 LGTM observability 能運作；它不宣稱 production multi-AZ、managed database
+failover、disaster recovery 或 multi-region active-active 已完成。
+
+| 能力 | 本機 Phase 3 模擬設計 |
 | --- | --- |
-| 多入口驗票 | Check-in 可獨立擴容，`ticket_id` unique constraint，Redis short TTL cache 加速重複掃描判斷。 |
-| 離線驗票 | 驗票 PWA 下載 signed ticket manifest，離線先本機核銷，恢復連線後同步 Check-inRecord。 |
-| 資料分區 | 大表依 `event_id` 或年度分區；audit log / check-in log 依 retention policy 冷熱分層。 |
-| 高可用 | 服務跨 AZ，DB primary + standby / read replica，queue 與 Redis 採 managed HA。 |
-| Container platform | 當服務數與部署頻率上升，再評估 Kubernetes 或等價平台，導入 HPA、rolling deployment、health probe。 |
-| Release strategy | DB migration backward compatible、feature flag、blue-green / rolling deployment、rollback procedure。 |
+| 多入口驗票 | Check-in 可獨立擴容，`ticket_id` unique constraint，Redis short TTL cache 只做加速；PostgreSQL 仍是核銷 final truth。 |
+| 離線驗票 | 驗票 PWA 下載 signed ticket manifest，離線先本機核銷，恢復連線後同步 CheckinRecord。 |
+| 資料分區 | 大表依 `event_id` 或年度分區作為後續 production migration path；本機模擬不改變交易 truth。 |
+| Local HA simulation | 單機 Docker Compose 以 edge LB -> 3 gateway replicas -> frontend LB -> 3 frontend replicas -> backend LB -> 3 backend replicas 模擬 stateless HA。 |
+| Container platform | Phase 3 local simulation 不要求 Kubernetes；container platform / rolling deployment / PDB / multi-node scheduling 保留為 production decision gate。 |
+| LGTM observability | Grafana + Loki + Tempo + Prometheus + Pyroscope + Alloy Docker log / OTLP trace collection，用 trace/log/metric/profile/node graph 找出失敗元件。 |
+| Microservices | 目前不拆 full microservices；只有 same-binary worker kind isolation。若 process-first scaling 無法滿足獨立 bottleneck、故障隔離、ownership 或 release cadence，再用新 spec 拆服務。 |
+| Release strategy | DB migration backward compatible、feature flag、rollback procedure；production multi-AZ、rolling deploy、container platform 與 DB failover 需後續獨立 spec 驗證。 |
 
 ---
 

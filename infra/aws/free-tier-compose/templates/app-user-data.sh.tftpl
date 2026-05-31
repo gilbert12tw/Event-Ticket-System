@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+dnf update -y
+dnf install -y docker git
+systemctl enable --now docker
+usermod -aG docker ec2-user || true
+
+curl -fsSL https://github.com/docker/compose/releases/download/v2.30.3/docker-compose-linux-aarch64 \
+  -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -sf /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
+
+install -d -o ec2-user -g ec2-user /opt/cets
+if [ ! -d /opt/cets/.git ]; then
+  git clone --branch "${repository_branch}" --depth 1 "${repository_url}" /opt/cets
+fi
+cd /opt/cets
+git fetch origin "${repository_branch}"
+git reset --hard "origin/${repository_branch}"
+
+cat >/opt/cets/services/api/deploy/.env.aws <<'ENV'
+APP_ENV=aws-phase3
+APP_PORT=8080
+APP_ADDR=:8080
+POSTGRES_DB=cets
+DATABASE_URL=${database_url}
+REDIS_URL=${redis_url}
+QUEUE_URL=${queue_url}
+TOKEN_SIGNING_SECRET=${token_signing_secret}
+PROVIDER_TOKEN_SECRET=${provider_token_secret}
+OBJECT_STORAGE_ENDPOINT=${object_storage_endpoint}
+OBJECT_STORAGE_REGION=${object_storage_region}
+OBJECT_STORAGE_BUCKET=${object_storage_bucket}
+OBJECT_STORAGE_ACCESS_KEY=${object_storage_access_key}
+OBJECT_STORAGE_SECRET_KEY=${object_storage_secret_key}
+MAILER_HOST=${mailer_host}
+MAILER_PORT=1025
+OTEL_TRACES_ENABLED=true
+OTEL_EXPORTER_OTLP_ENDPOINT=${observability_endpoint}:4318
+OTEL_SERVICE_NAME=cets-backend-${node_index}
+OTEL_SERVICE_VERSION=phase3-aws
+PYROSCOPE_ENABLED=true
+PYROSCOPE_SERVER_ADDRESS=${observability_endpoint}:4040
+PYROSCOPE_APPLICATION_NAME=cets-backend-${node_index}
+AWS_ALLOY_CONFIG=/opt/cets/infra/aws/free-tier-compose/alloy.aws-app.alloy
+ENV
+chown ec2-user:ec2-user /opt/cets/services/api/deploy/.env.aws
+chmod 0600 /opt/cets/services/api/deploy/.env.aws
+
+cat >/opt/cets/infra/aws/free-tier-compose/alloy.aws-app.alloy <<'ALLOY'
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    action        = "replace"
+    target_label  = "compose_project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    action        = "replace"
+    target_label  = "service_name"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    action        = "replace"
+    target_label  = "container"
+  }
+  rule {
+    replacement   = "phase3-aws"
+    target_label  = "phase"
+  }
+}
+
+loki.source.docker "logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.redact.receiver]
+}
+
+loki.process "redact" {
+  stage.docker {}
+
+  stage.replace {
+    expression = `(?i)"(?:pii|raw_pii|signed_token|signed_qr_token|signed_qr_payload|qr_token|qr_payload|ticket_token|ticket_qr_token|provider_token|provider_secret|email_body|recipient_email|raw_recipient_email|raw_idempotency_key)"\s*:\s*("[^"\\]*(?:\\.[^"\\]*)*")`
+    replace    = `"[REDACTED]"`
+  }
+  stage.replace {
+    expression = `(?i)"(?:pii|raw_pii|signed_token|signed_qr_token|signed_qr_payload|qr_token|qr_payload|ticket_token|ticket_qr_token|provider_token|provider_secret|email_body|recipient_email|raw_recipient_email|raw_idempotency_key)"\s*:\s*([^,}\s]+)`
+    replace    = `"[REDACTED]"`
+  }
+  stage.replace {
+    expression = `(?i)(?:pii|raw_pii|signed_token|signed_qr_token|signed_qr_payload|qr_token|qr_payload|ticket_token|ticket_qr_token|provider_token|provider_secret|email_body|recipient_email|raw_recipient_email|raw_idempotency_key)=("[^"]*"|\S+)`
+    replace    = `[REDACTED]`
+  }
+
+  forward_to = [loki.write.observability.receiver]
+}
+
+loki.write "observability" {
+  endpoint {
+    url = "${observability_endpoint}:3100/loki/api/v1/push"
+  }
+}
+ALLOY
+chown ec2-user:ec2-user /opt/cets/infra/aws/free-tier-compose/alloy.aws-app.alloy
+chmod 0644 /opt/cets/infra/aws/free-tier-compose/alloy.aws-app.alloy
+
+docker compose \
+  --env-file /opt/cets/services/api/deploy/.env.aws \
+  -f /opt/cets/services/api/deploy/compose.yaml \
+  -f /opt/cets/infra/aws/free-tier-compose/compose.aws-app.yaml \
+  up -d migrate seed
+
+docker compose \
+  --env-file /opt/cets/services/api/deploy/.env.aws \
+  -f /opt/cets/services/api/deploy/compose.yaml \
+  -f /opt/cets/infra/aws/free-tier-compose/compose.aws-app.yaml \
+  up -d app worker alloy-agent

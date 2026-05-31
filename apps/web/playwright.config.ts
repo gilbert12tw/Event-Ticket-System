@@ -1,6 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const isCI = process.env.CI === "true";
+const port = Number(process.env.PLAYWRIGHT_MOCK_PORT || "4173");
+const baseURL = `http://127.0.0.1:${port}`;
+const workerCount = process.env.PLAYWRIGHT_WORKERS
+  ? Number(process.env.PLAYWRIGHT_WORKERS)
+  : isCI
+    ? 4
+    : undefined;
 const viewports = [
   { name: "375", width: 375, height: 812 },
   { name: "768", width: 768, height: 1024 },
@@ -16,23 +23,37 @@ export default defineConfig({
     timeout: 8_000,
   },
   testIgnore: ["**/*.snapshots/**"],
-  workers: isCI ? 4 : undefined,
+  workers: workerCount,
   retries: isCI ? 2 : 0,
   reporter: [
     ["list"],
-    ["html", { open: "never", outputFolder: "playwright-report" }],
-    ["json", { outputFile: "test-results/playwright-mock-results.json" }],
+    [
+      "html",
+      {
+        open: "never",
+        outputFolder: process.env.PLAYWRIGHT_HTML_REPORT || "playwright-report",
+      },
+    ],
+    [
+      "json",
+      {
+        outputFile:
+          process.env.PLAYWRIGHT_JSON_OUTPUT ||
+          "test-results/playwright-mock-results.json",
+      },
+    ],
   ],
+  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR || "test-results",
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
   forbidOnly: isCI,
   webServer: {
-    command: "pnpm exec vite --host 127.0.0.1 --port 4173",
-    url: "http://127.0.0.1:4173",
+    command: `pnpm exec vite --host 127.0.0.1 --port ${port}`,
+    url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,
   },

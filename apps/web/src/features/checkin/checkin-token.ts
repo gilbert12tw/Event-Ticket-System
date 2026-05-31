@@ -11,7 +11,7 @@ export function checkinHistoryState(token: string): CheckinHistoryState {
 }
 
 export function readHistoryCheckinToken(
-  state: unknown = window.history.state,
+  state: unknown = globalThis.history.state,
 ): string {
   const payload =
     state && typeof state === "object" && !Array.isArray(state)

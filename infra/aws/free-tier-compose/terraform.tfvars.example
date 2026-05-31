@@ -1,0 +1,34 @@
+aws_profile = "cets-phase3-deployer"
+aws_region  = "us-east-1"
+
+deployment_mode = "dev-single-az"
+project_name    = "cets-phase3"
+domain_name     = "tickets.example.com"
+acm_certificate_arn = ""
+budget_email    = "you@example.com"
+
+# UTC AWS Budgets window. Defaults map to 2026-06-01 00:00 through 2026-06-15
+# 00:00 Asia/Taipei, matching the two-week cost gate forecast window.
+budget_time_period_start = "2026-05-31_16:00"
+budget_time_period_end   = "2026-06-14_16:00"
+
+allowlist_cidrs = [
+  "203.0.113.10/32"
+]
+
+public_app_cidrs = [
+  "0.0.0.0/0"
+]
+
+repository_url    = "https://github.com/OWNER/Event-Ticket-System.git"
+repository_branch = "feature/phase3-compose-ha-lgtm-pr"
+
+db_password           = "REPLACE_ME_WITH_UNTRACKED_SECRET"
+token_signing_secret  = "REPLACE_ME_WITH_UNTRACKED_SECRET"
+provider_token_secret = "REPLACE_ME_WITH_UNTRACKED_SECRET"
+grafana_admin_password = "REPLACE_ME_WITH_UNTRACKED_SECRET"
+
+# Use dev-single-az normally. Switch to demo-ha on 2026-06-03 and 2026-06-10 after cost gate passes.
+demo_app_node_count         = 2
+enable_rds_multi_az_in_demo = true
+ttl_expires_on              = "2026-06-12"

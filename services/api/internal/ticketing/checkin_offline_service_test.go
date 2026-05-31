@@ -163,6 +163,43 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'offline_checkin.conflict' AND metadata->>'batch_id' = $1`, []interface{}{pkg.BatchID}, 3)
 }
 
+func TestSyncOfflineCheckinsRecordsMissingTicketForValidToken(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
+	event, _ := createOfflineSyncTicket(t, service, ctx, "Missing Offline Ticket", "E1001", "missing-offline-ticket")
+	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
+	require.NoError(t, err)
+	missingToken, err := service.signer.Sign(TicketClaims{
+		TicketID:   "tkt-offline-missing",
+		EventID:    event.EventID,
+		EmployeeID: "E1001",
+	})
+	require.NoError(t, err)
+
+	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
+		BatchID:          pkg.BatchID,
+		EventID:          event.EventID,
+		DeviceID:         "gate-1",
+		PackageSignature: pkg.PackageSignature,
+		Scans:            []OfflineCheckinScanInput{{SignedToken: missingToken, ScannedAt: time.Now().UTC()}},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, response.Accepted)
+	assert.Equal(t, 0, response.Duplicate)
+	assert.Equal(t, 1, response.Conflict)
+	require.Len(t, response.Results, 1)
+	assert.Equal(t, "conflict", response.Results[0].Status)
+	assert.Equal(t, offlineConflictNotFound, response.Results[0].ConflictReason)
+	assert.Equal(t, "tkt-offline-missing", response.Results[0].TicketID)
+	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM offline_checkin_scans WHERE batch_id = $1 AND status = 'conflict' AND ticket_id IS NULL`, []interface{}{pkg.BatchID}, 1)
+	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'offline_checkin.conflict' AND entity_type = 'offline_checkin_batch' AND entity_id = $1`, []interface{}{pkg.BatchID}, 1)
+}
+
 func TestSyncOfflineCheckinsKeepsFirstCommitWinsForRepeatedScans(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

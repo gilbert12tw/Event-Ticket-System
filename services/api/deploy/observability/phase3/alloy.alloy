@@ -1,0 +1,81 @@
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    action        = "replace"
+    target_label  = "compose_project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    action        = "replace"
+    target_label  = "service_name"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    action        = "replace"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.redact.receiver]
+}
+
+loki.process "redact" {
+  stage.docker {}
+
+  stage.replace {
+    expression = `(?i)"(?:pii|raw_pii|signed_token|signed_qr_token|signed_qr_payload|qr_token|qr_payload|ticket_token|ticket_qr_token|provider_token|provider_secret|email_body|recipient_email|raw_recipient_email|raw_idempotency_key)"\s*:\s*("[^"\\]*(?:\\.[^"\\]*)*")`
+    replace    = `"[REDACTED]"`
+  }
+  stage.replace {
+    expression = `(?i)"(?:pii|raw_pii|signed_token|signed_qr_token|signed_qr_payload|qr_token|qr_payload|ticket_token|ticket_qr_token|provider_token|provider_secret|email_body|recipient_email|raw_recipient_email|raw_idempotency_key)"\s*:\s*([^,}\s]+)`
+    replace    = `"[REDACTED]"`
+  }
+  stage.replace {
+    expression = `(?i)(?:pii|raw_pii|signed_token|signed_qr_token|signed_qr_payload|qr_token|qr_payload|ticket_token|ticket_qr_token|provider_token|provider_secret|email_body|recipient_email|raw_recipient_email|raw_idempotency_key)=("[^"]*"|\S+)`
+    replace    = `[REDACTED]`
+  }
+  stage.static_labels {
+    values = {
+      phase = "phase3-compose",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

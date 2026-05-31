@@ -66,11 +66,19 @@ type Config struct {
 	ReservationGraceTTL             time.Duration
 	ReservationOperationTimeout     time.Duration
 	BookingReservationHashSecret    string
+	OTelTracesEnabled               bool
+	OTelEndpoint                    string
+	OTelServiceName                 string
+	OTelServiceVersion              string
+	PyroscopeEnabled                bool
+	PyroscopeAddress                string
+	PyroscopeAppName                string
 	loadErrors                      []string
 }
 
 func Load() Config {
 	var loadErrors []string
+	otelServiceName := getEnv("OTEL_SERVICE_NAME", "cets-api")
 	return Config{
 		AppAddr:                         getEnv("APP_ADDR", ":8080"),
 		AppEnv:                          getEnv("APP_ENV", "local"),
@@ -115,6 +123,13 @@ func Load() Config {
 		ReservationGraceTTL:             parseSecondsEnv("RESERVATION_TTL_GRACE_SECONDS", "10", &loadErrors),
 		ReservationOperationTimeout:     parseDurationMSEnv("REDIS_OPERATION_TIMEOUT_MS", "150", &loadErrors),
 		BookingReservationHashSecret:    os.Getenv("BOOKING_RESERVATION_HASH_SECRET"),
+		OTelTracesEnabled:               parseBoolEnv("OTEL_TRACES_ENABLED", "false", &loadErrors),
+		OTelEndpoint:                    strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		OTelServiceName:                 otelServiceName,
+		OTelServiceVersion:              getEnv("OTEL_SERVICE_VERSION", "dev"),
+		PyroscopeEnabled:                parseBoolEnv("PYROSCOPE_ENABLED", "false", &loadErrors),
+		PyroscopeAddress:                strings.TrimSpace(os.Getenv("PYROSCOPE_SERVER_ADDRESS")),
+		PyroscopeAppName:                getEnv("PYROSCOPE_APPLICATION_NAME", otelServiceName),
 		loadErrors:                      loadErrors,
 	}
 }
@@ -131,6 +146,9 @@ func (c Config) ValidateForServe() error {
 	}
 	if c.ShutdownTimeout <= 0 {
 		return errors.New("SHUTDOWN_TIMEOUT_MS must be positive")
+	}
+	if err := c.validateRuntimeObservability(); err != nil {
+		return err
 	}
 	if c.isProduction() {
 		if err := c.validateProductionAuth(); err != nil {
@@ -167,23 +185,30 @@ func (c Config) ValidateWorker() error {
 	if err := c.ValidateDatabase(); err != nil {
 		return err
 	}
+	if err := c.validateWorkerTiming(); err != nil {
+		return err
+	}
+	if err := c.validateWorkerDispatch(); err != nil {
+		return err
+	}
+	if err := c.validateWorkerMailer(); err != nil {
+		return err
+	}
+	if err := c.validateRuntimeObservability(); err != nil {
+		return err
+	}
+	return c.validateProductionWorker()
+}
+
+func (c Config) validateWorkerTiming() error {
 	if c.WorkerPollInterval <= 0 {
 		return errors.New("WORKER_POLL_INTERVAL_MS must be positive")
 	}
 	if c.WorkerShutdownGrace < 0 {
 		return errors.New("WORKER_SHUTDOWN_GRACE_SECONDS must be non-negative")
 	}
-	if c.WorkerMaxAttempts <= 0 {
-		return errors.New("WORKER_MAX_ATTEMPTS must be positive")
-	}
-	if c.WorkerBatchSize <= 0 {
-		return errors.New("OUTBOX_BATCH_SIZE must be positive")
-	}
 	if c.OutboxLeaseTTL <= 0 {
 		return errors.New("OUTBOX_LEASE_TTL_SECONDS must be positive")
-	}
-	if c.OutboxRetryMax < 0 {
-		return errors.New("OUTBOX_RETRY_MAX must be non-negative")
 	}
 	if c.OutboxBackoffBase <= 0 {
 		return errors.New("OUTBOX_BACKOFF_BASE_MS must be positive")
@@ -194,12 +219,26 @@ func (c Config) ValidateWorker() error {
 	if c.OutboxBackoffMax < c.OutboxBackoffBase {
 		return errors.New("OUTBOX_BACKOFF_MAX_MS must be greater than or equal to OUTBOX_BACKOFF_BASE_MS")
 	}
+	return nil
+}
+
+func (c Config) validateWorkerDispatch() error {
+	if c.WorkerMaxAttempts <= 0 {
+		return errors.New("WORKER_MAX_ATTEMPTS must be positive")
+	}
+	if c.WorkerBatchSize <= 0 {
+		return errors.New("OUTBOX_BATCH_SIZE must be positive")
+	}
+	if c.OutboxRetryMax < 0 {
+		return errors.New("OUTBOX_RETRY_MAX must be non-negative")
+	}
 	if err := validateWorkerKinds(c.WorkerKinds); err != nil {
 		return err
 	}
-	if err := validateWorkerConcurrency(c.WorkerConcurrency); err != nil {
-		return err
-	}
+	return validateWorkerConcurrency(c.WorkerConcurrency)
+}
+
+func (c Config) validateWorkerMailer() error {
 	if strings.TrimSpace(c.MailerHost) == "" {
 		return errors.New("MAILER_HOST is required")
 	}
@@ -209,15 +248,17 @@ func (c Config) ValidateWorker() error {
 	if strings.TrimSpace(c.MailerFrom) == "" {
 		return errors.New("MAILER_FROM is required")
 	}
-	if c.isProduction() {
-		if err := validateProductionSecret("TOKEN_SIGNING_SECRET", c.TokenSigningSecret, localTokenSecret, demoTokenSecret); err != nil {
-			return err
-		}
-		if err := c.validateProductionBackingServices(); err != nil {
-			return err
-		}
-	}
 	return nil
+}
+
+func (c Config) validateProductionWorker() error {
+	if !c.isProduction() {
+		return nil
+	}
+	if err := validateProductionSecret("TOKEN_SIGNING_SECRET", c.TokenSigningSecret, localTokenSecret, demoTokenSecret); err != nil {
+		return err
+	}
+	return c.validateProductionBackingServices()
 }
 
 func (c Config) isProduction() bool {
@@ -280,6 +321,26 @@ func (c Config) validateProductionBackingServices() error {
 	}
 	if c.MailerPort <= 0 {
 		return errors.New("MAILER_PORT must be positive")
+	}
+	return nil
+}
+
+func (c Config) validateRuntimeObservability() error {
+	if c.OTelTracesEnabled {
+		if strings.TrimSpace(c.OTelEndpoint) == "" {
+			return errors.New("OTEL_EXPORTER_OTLP_ENDPOINT is required when OTEL_TRACES_ENABLED=true")
+		}
+		if strings.TrimSpace(c.OTelServiceName) == "" {
+			return errors.New("OTEL_SERVICE_NAME is required when OTEL_TRACES_ENABLED=true")
+		}
+	}
+	if c.PyroscopeEnabled {
+		if strings.TrimSpace(c.PyroscopeAddress) == "" {
+			return errors.New("PYROSCOPE_SERVER_ADDRESS is required when PYROSCOPE_ENABLED=true")
+		}
+		if strings.TrimSpace(c.PyroscopeAppName) == "" {
+			return errors.New("PYROSCOPE_APPLICATION_NAME is required when PYROSCOPE_ENABLED=true")
+		}
 	}
 	return nil
 }

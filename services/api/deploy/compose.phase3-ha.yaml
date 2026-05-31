@@ -1,0 +1,396 @@
+name: ${COMPOSE_PROJECT_NAME:-cets}
+
+x-api-image: &api-image
+  image: ${API_IMAGE_NAME:-cets-api}:${API_IMAGE_TAG:-dev}
+  build:
+    context: ../../..
+    dockerfile: services/api/Dockerfile
+
+x-frontend-image: &frontend-image
+  image: ${FRONTEND_IMAGE_NAME:-cets-frontend}:${FRONTEND_IMAGE_TAG:-dev}
+  build:
+    context: ../../..
+    dockerfile: apps/web/Dockerfile
+
+x-backend-env: &backend-env
+  APP_ADDR: :8080
+  APP_ENV: ${APP_ENV:-local}
+  AUTO_MIGRATE: "false"
+  OPS_API_ENABLED: ${OPS_API_ENABLED:-false}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
+  TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
+  PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
+  REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
+  DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
+  SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+  REDIS_URL: redis://redis:6379/0
+  QUEUE_URL: redis://redis:6379/1
+  OBJECT_STORAGE_ENDPOINT: http://minio:9000
+  OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+  OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-cets-dev}
+  OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+  OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin_dev_password}
+  MAILER_HOST: mailhog
+  MAILER_PORT: 1025
+  MAILER_FROM: ${MAILER_FROM:-no-reply@cets.local}
+  MAILER_REDIRECT_TO: ${MAILER_REDIRECT_TO:-}
+  NO_SHOW_THRESHOLD: ${NO_SHOW_THRESHOLD:-1}
+  NO_SHOW_COOLDOWN_DAYS: ${NO_SHOW_COOLDOWN_DAYS:-90}
+  NO_SHOW_GRACE_HOURS: ${NO_SHOW_GRACE_HOURS:-24}
+  OTEL_TRACES_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+  OTEL_SERVICE_NAME: cets-backend
+  OTEL_SERVICE_VERSION: phase3-compose
+  PYROSCOPE_ENABLED: "true"
+  PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+  PYROSCOPE_APPLICATION_NAME: cets-backend
+
+x-backend-service: &backend-service
+  <<: *api-image
+  profiles: ["phase3-ha"]
+  restart: unless-stopped
+  environment:
+    <<: *backend-env
+  expose:
+    - "8080"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    seed:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/readyz >/dev/null"]
+    interval: 15s
+    timeout: 5s
+    retries: 8
+    start_period: 15s
+
+x-nginx-service: &nginx-service
+  image: public.ecr.aws/docker/library/nginx:1.29-alpine
+  profiles: ["phase3-ha"]
+  restart: unless-stopped
+  expose:
+    - "8080"
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+    interval: 15s
+    timeout: 5s
+    retries: 8
+    start_period: 10s
+
+services:
+  app:
+    profiles: ["phase1-default"]
+
+  worker:
+    profiles: ["combined-worker"]
+
+  postgres:
+    ports: !override
+      - "${PHASE3_POSTGRES_PORT:-15432}:5432"
+
+  redis:
+    ports: !override
+      - "${PHASE3_REDIS_PORT:-16379}:6379"
+
+  minio:
+    ports: !override
+      - "${PHASE3_MINIO_API_PORT:-19000}:9000"
+      - "${PHASE3_MINIO_CONSOLE_PORT:-19001}:9001"
+
+  mailhog:
+    ports: !override
+      - "${PHASE3_MAILHOG_SMTP_PORT:-11025}:1025"
+      - "${PHASE3_MAILHOG_UI_PORT:-18025}:8025"
+
+  edge-lb:
+    <<: *nginx-service
+    container_name: cets-phase3-edge-lb
+    ports:
+      - "${PHASE3_EDGE_PORT:-18080}:8080"
+    volumes:
+      - ./nginx/phase3/edge-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      gateway-1:
+        condition: service_healthy
+      gateway-2:
+        condition: service_healthy
+      gateway-3:
+        condition: service_healthy
+
+  gateway-1:
+    <<: *nginx-service
+    container_name: cets-phase3-gateway-1
+    volumes:
+      - ./nginx/phase3/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend-lb:
+        condition: service_healthy
+
+  gateway-2:
+    <<: *nginx-service
+    container_name: cets-phase3-gateway-2
+    volumes:
+      - ./nginx/phase3/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend-lb:
+        condition: service_healthy
+
+  gateway-3:
+    <<: *nginx-service
+    container_name: cets-phase3-gateway-3
+    volumes:
+      - ./nginx/phase3/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend-lb:
+        condition: service_healthy
+
+  frontend-lb:
+    <<: *nginx-service
+    container_name: cets-phase3-frontend-lb
+    volumes:
+      - ./nginx/phase3/frontend-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend-1:
+        condition: service_healthy
+      frontend-2:
+        condition: service_healthy
+      frontend-3:
+        condition: service_healthy
+
+  frontend-1:
+    <<: *frontend-image
+    profiles: ["phase3-ha"]
+    container_name: cets-phase3-frontend-1
+    restart: unless-stopped
+    expose:
+      - "8080"
+    depends_on:
+      backend-lb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+  frontend-2:
+    <<: *frontend-image
+    profiles: ["phase3-ha"]
+    container_name: cets-phase3-frontend-2
+    restart: unless-stopped
+    expose:
+      - "8080"
+    depends_on:
+      backend-lb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+  frontend-3:
+    <<: *frontend-image
+    profiles: ["phase3-ha"]
+    container_name: cets-phase3-frontend-3
+    restart: unless-stopped
+    expose:
+      - "8080"
+    depends_on:
+      backend-lb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+  backend-lb:
+    <<: *nginx-service
+    container_name: cets-phase3-backend-lb
+    volumes:
+      - ./nginx/phase3/backend-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+      backend-3:
+        condition: service_healthy
+
+  backend-1:
+    <<: *backend-service
+    container_name: cets-phase3-backend-1
+
+  backend-2:
+    <<: *backend-service
+    container_name: cets-phase3-backend-2
+
+  backend-3:
+    <<: *backend-service
+    container_name: cets-phase3-backend-3
+
+  worker-notification:
+    profiles: ["worker-isolation", "phase3-ha"]
+    environment:
+      OTEL_TRACES_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: cets-worker-notification
+      OTEL_SERVICE_VERSION: phase3-compose
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+      PYROSCOPE_APPLICATION_NAME: cets-worker-notification
+
+  worker-projection:
+    profiles: ["worker-isolation", "phase3-ha"]
+    environment:
+      OTEL_TRACES_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: cets-worker-projection
+      OTEL_SERVICE_VERSION: phase3-compose
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+      PYROSCOPE_APPLICATION_NAME: cets-worker-projection
+
+  worker-compensation:
+    profiles: ["worker-isolation", "phase3-ha"]
+    environment:
+      OTEL_TRACES_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: cets-worker-compensation
+      OTEL_SERVICE_VERSION: phase3-compose
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+      PYROSCOPE_APPLICATION_NAME: cets-worker-compensation
+
+  worker-export:
+    profiles: ["worker-isolation", "phase3-ha"]
+    environment:
+      OTEL_TRACES_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: cets-worker-export
+      OTEL_SERVICE_VERSION: phase3-compose
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+      PYROSCOPE_APPLICATION_NAME: cets-worker-export
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    profiles: ["observability", "phase3-ha"]
+    depends_on: !reset []
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=2d"
+      - "--web.enable-remote-write-receiver"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/phase3/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.4.0
+    profiles: ["observability", "phase3-ha"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./observability/phase3/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/phase3/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/phase3/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: !override
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      pyroscope:
+        condition: service_started
+
+  loki:
+    image: grafana/loki:3.6.0
+    profiles: ["observability", "phase3-ha"]
+    user: "0"
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./observability/phase3/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/tmp/loki
+
+  promtail:
+    profiles: ["phase1-default"]
+    depends_on: !reset []
+
+  blackbox-exporter:
+    profiles: ["phase1-default"]
+    depends_on: !reset []
+
+  tempo:
+    image: grafana/tempo:2.10.0
+    profiles: ["observability", "phase3-ha"]
+    user: "0"
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+    volumes:
+      - ./observability/phase3/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/tmp/tempo
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  pyroscope:
+    image: grafana/pyroscope:1.18.1
+    profiles: ["observability", "phase3-ha"]
+    ports:
+      - "${PYROSCOPE_PORT:-4040}:4040"
+    volumes:
+      - pyroscope_data:/var/lib/pyroscope
+
+  alloy:
+    image: grafana/alloy:v1.16.0
+    profiles: ["observability", "phase3-ha"]
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"
+    volumes:
+      - ./observability/phase3/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
+
+  redaction-canary:
+    image: curlimages/curl:8.17.0
+    profiles: ["phase3-canary"]
+    container_name: cets-phase3-redaction-canary
+    command:
+      - sh
+      - -c
+      - |
+        printf '{"message":"phase3-redaction-canary","pii":"phase3-raw-pii-canary","signed_token":"phase3-raw-signed-canary","signed_qr_token":"phase3-raw-qr-canary","provider_token":"phase3-raw-provider-canary","email_body":"phase3-raw-email-body-canary","raw_recipient_email":"phase3-raw-recipient-email-canary@example.test","raw_idempotency_key":"phase3-raw-idempotency-canary"}\n'
+        sleep 120
+
+volumes:
+  loki_data:
+  tempo_data:
+  pyroscope_data:

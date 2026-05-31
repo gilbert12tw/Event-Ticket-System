@@ -41,7 +41,7 @@ func (s *Service) readEventWithRuleTx(ctx context.Context, tx pgx.Tx, eventID st
 			&event.CapacityType, &capacity, &event.AllowsFamily, &event.Status, &event.AllocationMode,
 			&event.Category, &tags, &event.EntryMethod, &event.Visibility, &event.Version, &event.ArchivedAt, &event.CreatedBy, &event.CreatedAt, &event.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Event{}, EligibilityRule{}, notFound("event not found")
+		return Event{}, EligibilityRule{}, notFound(errEventNotFoundMessage)
 	}
 	if err != nil {
 		return Event{}, EligibilityRule{}, err

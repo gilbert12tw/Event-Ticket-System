@@ -10,9 +10,9 @@ import { checkinStatusView, localizedMessage } from "@/lib/ui/options";
 
 export function OfflineResultStep({
   syncResult,
-}: {
+}: Readonly<{
   syncResult: OfflineCheckinSyncResponse | null;
-}) {
+}>) {
   return (
     <>
       {syncResult && (

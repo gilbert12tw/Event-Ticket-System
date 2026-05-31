@@ -21,6 +21,17 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 	if err := cfg.ValidateWorker(); err != nil {
 		return err
 	}
+	runtimeObs, err := startRuntimeObservability(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if err := runtimeObs.Shutdown(shutdownCtx); err != nil {
+			logger.Error("runtime observability shutdown failed", "error", err)
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
 	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)

@@ -108,10 +108,8 @@ export type ResolveImpactReviewRequest = {
 
 export type CapacityType = "limited" | "unlimited";
 
-export type WarningCode = "cross_city" | string;
-
 export interface EligibilityWarning {
-  code: WarningCode;
+  code: string;
   message: string;
   employee_city?: string;
   event_city?: string;

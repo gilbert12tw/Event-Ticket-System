@@ -37,7 +37,7 @@ func (s *Service) RevokeTicket(ctx context.Context, actor Actor, ticketID string
 		if err != nil {
 			return Ticket{}, err
 		}
-		if err := insertAudit(ctx, tx, auditID, actor, "ticket.revoked", "ticket", ticketID, map[string]interface{}{"event_id": ticket.EventID, "reason": req.Reason}); err != nil {
+		if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "ticket.revoked", "ticket", ticketID, map[string]interface{}{"event_id": ticket.EventID, "reason": req.Reason})); err != nil {
 			return Ticket{}, err
 		}
 	}

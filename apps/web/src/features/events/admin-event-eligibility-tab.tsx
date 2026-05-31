@@ -24,10 +24,10 @@ import { SelectEventFirst } from "./admin-event-form-controls";
 export function AdminEventEligibilityTab({
   selectedEvent,
   onSaved,
-}: {
+}: Readonly<{
   selectedEvent?: EventSummary;
   onSaved: (eventID: string) => void;
-}) {
+}>) {
   const [form, setForm] = useState<EligibilityRuleInput>(() =>
     ruleFormFromEvent(selectedEvent),
   );

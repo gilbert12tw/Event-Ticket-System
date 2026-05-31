@@ -26,13 +26,13 @@ export function AllocationTab({
   event,
   onAllocated,
   waitlistCount,
-}: {
+}: Readonly<{
   busy: boolean;
   confirmedCount: number;
   event?: EventSummary;
   onAllocated: () => void;
   waitlistCount: number;
-}) {
+}>) {
   const [seed, setSeed] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [message, setMessage] = useState("");

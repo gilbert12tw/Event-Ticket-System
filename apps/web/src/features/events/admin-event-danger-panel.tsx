@@ -11,12 +11,12 @@ export function AdminEventDangerTab({
   selectedEvent,
   onArchive,
   onDuplicate,
-}: {
+}: Readonly<{
   busy: boolean;
   selectedEvent?: EventSummary;
   onArchive: () => void;
   onDuplicate: () => void;
-}) {
+}>) {
   const [archiveConfirmation, setArchiveConfirmation] = useState("");
   if (!selectedEvent) return <SelectEventFirst action="使用危險操作" />;
   const archiveConfirmed = archiveConfirmation.trim() === selectedEvent.title;

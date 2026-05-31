@@ -100,7 +100,7 @@ function ControlField({
   required = false,
   suffix,
 }: ControlFieldProps) {
-  const fieldID = id || `${label.replace(/\s+/g, "-").toLowerCase()}-${suffix}`;
+  const fieldID = id || `${slugify(label)}-${suffix}`;
   const descriptionID = hint ? `${fieldID}-hint` : undefined;
   return (
     <UiField className={className} data-invalid={invalid || undefined}>
@@ -256,7 +256,7 @@ export function ReadinessMessage({
   label,
   message,
   tone,
-}: ReadinessMessageProps) {
+}: Readonly<ReadinessMessageProps>) {
   return (
     <div className="publish-check" aria-live="polite">
       <StatusBadge tone={tone}>{label}</StatusBadge>
@@ -271,15 +271,15 @@ export function SegmentedFilter({
   onChange,
   options,
   counts = {},
-}: {
+}: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Option[];
   counts?: Record<string, number>;
-}) {
+}>) {
   return (
-    <div className="segmented-filter" role="group" aria-label={label}>
+    <div className="segmented-filter" aria-label={label} role="group">
       {options.map((option) => (
         <Button
           aria-pressed={value === option.value}
@@ -332,7 +332,7 @@ export function StatusBadge({ children, tone }: ToneChildrenProps) {
   );
 }
 
-export function Kpi({ label, value }: LabelValueProps) {
+export function Kpi({ label, value }: Readonly<LabelValueProps>) {
   return (
     <Card className="kpi" size="sm">
       <strong>{value}</strong>
@@ -347,29 +347,35 @@ export function ProgressMeter({
   max,
   helper,
   compact = false,
-}: ProgressMeterProps) {
+}: Readonly<ProgressMeterProps>) {
   const ratio = max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0;
+  const percentage = Math.round(ratio * 100);
   return (
     <div
       className={compact ? "progress-meter compact" : "progress-meter"}
       aria-label={`${label} ${helper}`}
-      aria-valuemax={max}
-      aria-valuemin={0}
-      aria-valuenow={Math.min(Math.max(value, 0), max)}
-      role="progressbar"
     >
       <div className="progress-meter-head">
         <span>{label}</span>
         <strong>{helper}</strong>
       </div>
-      <div className="progress-track">
-        <span style={{ width: `${Math.round(ratio * 100)}%` }} />
-      </div>
+      <progress
+        className="progress-track"
+        value={percentage}
+        max={100}
+        aria-label={label}
+      >
+        <span />
+      </progress>
     </div>
   );
 }
 
-export function EmptyState({ title, action }: EmptyStateProps) {
+function slugify(value: string) {
+  return value.split(/\s+/).filter(Boolean).join("-").toLowerCase();
+}
+
+export function EmptyState({ title, action }: Readonly<EmptyStateProps>) {
   return (
     <UiEmpty className="empty-state">
       <EmptyHeader>
@@ -380,7 +386,7 @@ export function EmptyState({ title, action }: EmptyStateProps) {
   );
 }
 
-export function DangerZonePanel({ children }: ChildrenProps) {
+export function DangerZonePanel({ children }: Readonly<ChildrenProps>) {
   return <Card className="danger-zone-panel">{children}</Card>;
 }
 
@@ -400,9 +406,7 @@ export function ResponsiveTable({
       <div
         className="table-scroll"
         data-slot="responsive-table"
-        role="region"
         aria-label={label}
-        tabIndex={0}
       >
         <Table>
           <caption className="sr-only">{label}</caption>
@@ -418,7 +422,7 @@ export function ResponsiveTable({
   );
 }
 
-export function SkeletonRows({ rows }: { rows: number }) {
+export function SkeletonRows({ rows }: Readonly<{ rows: number }>) {
   return (
     <div className="skeleton-stack" role="status" aria-live="polite">
       <span className="sr-only">載入中…</span>

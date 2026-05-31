@@ -27,7 +27,9 @@ type TextByEvent = Record<string, string>;
 type EmployeeEventTab = "available" | "registered" | "unavailable";
 const employeeEventTabs = ["available", "registered", "unavailable"] as const;
 
-export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
+export function EmployeeEventsPage({
+  claims,
+}: Readonly<{ claims: AuthMeClaims }>) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
@@ -203,12 +205,11 @@ export function EmployeeEventsPage({ claims }: { claims: AuthMeClaims }) {
                   }
                   result={
                     bookingResults[event.event_id] && (
-                      <div
+                      <output
                         className={`booking-result ${bookingResults[event.event_id].tone}`}
-                        role="status"
                       >
                         <p>{bookingResults[event.event_id].copy}</p>
-                      </div>
+                      </output>
                     )
                   }
                 />
@@ -242,13 +243,13 @@ function EventListState({
   loading,
   render,
   rows,
-}: {
+}: Readonly<{
   emptyAction: string;
   emptyTitle: string;
   loading: boolean;
   render: (event: EventSummary) => ReactNode;
   rows: EventSummary[];
-}) {
+}>) {
   if (loading) return <SkeletonRows rows={3} />;
   if (rows.length === 0) {
     return <EmptyState title={emptyTitle} action={emptyAction} />;

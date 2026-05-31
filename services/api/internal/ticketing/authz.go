@@ -2,9 +2,14 @@ package ticketing
 
 import "strings"
 
+const (
+	errMissingActorHeaders = "missing actor headers"
+	errRoleNotAllowed      = "role is not allowed"
+)
+
 func authorizeEmployeeRead(actor Actor, employeeID string) (string, error) {
 	if actor.ID == "" || actor.Role == "" {
-		return "", unauthorized("missing actor headers")
+		return "", unauthorized(errMissingActorHeaders)
 	}
 	employeeID = strings.TrimSpace(employeeID)
 	switch actor.Role {
@@ -19,30 +24,30 @@ func authorizeEmployeeRead(actor Actor, employeeID string) (string, error) {
 	case RoleActivityAdmin, RoleHRAdmin, RoleSystemAdmin:
 		return employeeID, nil
 	default:
-		return "", forbidden("role is not allowed")
+		return "", forbidden(errRoleNotAllowed)
 	}
 }
 
 func requireRole(actor Actor, role string) error {
 	if actor.ID == "" || actor.Role == "" {
-		return unauthorized("missing actor headers")
+		return unauthorized(errMissingActorHeaders)
 	}
 	if !roleMatches(actor.Role, role) {
-		return forbidden("role is not allowed")
+		return forbidden(errRoleNotAllowed)
 	}
 	return nil
 }
 
 func requireAnyRole(actor Actor, roles ...string) error {
 	if actor.ID == "" || actor.Role == "" {
-		return unauthorized("missing actor headers")
+		return unauthorized(errMissingActorHeaders)
 	}
 	for _, role := range roles {
 		if roleMatches(actor.Role, role) {
 			return nil
 		}
 	}
-	return forbidden("role is not allowed")
+	return forbidden(errRoleNotAllowed)
 }
 
 func roleMatches(actual string, required string) bool {
