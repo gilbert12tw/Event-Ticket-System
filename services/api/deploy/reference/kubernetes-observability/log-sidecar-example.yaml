@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cets-api-log-sidecar-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cets-api
+      observability.cets.dev/log-sidecar: "true"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cets-api
+        app.kubernetes.io/part-of: cets-observability-reference
+        observability.cets.dev/log-sidecar: "true"
+    spec:
+      containers:
+        - name: app
+          image: cets-api:decision-gate
+          command: ["/bin/sh", "-c"]
+          args:
+            - /cets serve 2>&1 | tee -a /var/log/cets/stdout.log
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: stdout-spool
+              mountPath: /var/log/cets
+        - name: fluent-bit
+          image: cr.fluentbit.io/fluent/fluent-bit:4.0.13
+          args:
+            - --config=/fluent-bit/etc/fluent-bit.conf
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: stdout-spool
+              mountPath: /var/log/cets
+              readOnly: true
+            - name: fluent-bit-config
+              mountPath: /fluent-bit/etc
+              readOnly: true
+      volumes:
+        - name: stdout-spool
+          emptyDir: {}
+        - name: fluent-bit-config
+          configMap:
+            name: cets-fluent-bit-sidecar-example
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cets-fluent-bit-sidecar-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/part-of: cets-observability-reference
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Daemon        Off
+        Log_Level     info
+        Parsers_File  parsers.conf
+
+    [INPUT]
+        Name          tail
+        Path          /var/log/cets/stdout.log
+        Parser        json
+        Tag           cets.api
+        Refresh_Interval 1
+
+    [FILTER]
+        Name          modify
+        Match         cets.api
+        Add           pod_name ${POD_NAME}
+        Add           namespace ${POD_NAMESPACE}
+        Add           service.name cets-api
+
+    [OUTPUT]
+        Name          loki
+        Match         cets.api
+        Host          loki.cets-observability.svc
+        Port          3100
+        Labels        job=cets-api,service_name=cets-api,pod_name=$pod_name,namespace=$namespace
+        Line_Format   json
+  parsers.conf: |
+    [PARSER]
+        Name          json
+        Format        json
+        Time_Key      time
+        Time_Format   %Y-%m-%dT%H:%M:%S.%LZ

@@ -98,13 +98,57 @@ func TestKubernetesObservabilityReferenceDocumentsContainerMetricsStack(t *testi
 		"one-exporter-per-node DaemonSet",
 		"StatefulSet with a persistent volume claim",
 		"Grafana stays stateless",
-		"full metrics stack as code",
+		"logging and metrics stack as code",
 	} {
 		assert.Contains(t, combined, fragment, "container metrics reference is missing %q", fragment)
 	}
 
 	assert.NotContains(t, grafanaDeploymentBlock(t, stack), "volumeClaimTemplates:",
 		"Grafana reference must remain stateless")
+}
+
+func TestKubernetesObservabilityReferenceDocumentsContainerLogPipeline(t *testing.T) {
+	sidecar := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "log-sidecar-example.yaml"))
+	plg := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "plg-log-stack.yaml"))
+	efk := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "efk-log-stack.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := sidecar + "\n" + plg + "\n" + efk + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: cets-api-log-sidecar-example",
+		"name: fluent-bit",
+		"cr.fluentbit.io/fluent/fluent-bit:4.0.13",
+		"name: stdout-spool",
+		"emptyDir: {}",
+		"tee -a /var/log/cets/stdout.log",
+		"Name          tail",
+		"Path          /var/log/cets/stdout.log",
+		"Parser        json",
+		"Name          loki",
+		"Host          loki.cets-observability.svc",
+		"service.name cets-api",
+		"kind: StatefulSet",
+		"name: loki",
+		"grafana/loki:3.6.0",
+		"storage: 10Gi",
+		"name: grafana-log-viewer",
+		"grafana/grafana:12.4.0",
+		"type: loki",
+		"derivedFields:",
+		"name: Tempo trace",
+		"name: elasticsearch",
+		"docker.elastic.co/elasticsearch/elasticsearch:9.2.2",
+		"storage: 20Gi",
+		"name: kibana",
+		"docker.elastic.co/kibana/kibana:9.2.2",
+		"ELASTICSEARCH_HOSTS",
+		"Fluent Bit sidecar",
+		"PLG pattern",
+		"EFK pattern",
+		"logging and metrics stack as code",
+	} {
+		assert.Contains(t, combined, fragment, "container log pipeline reference is missing %q", fragment)
+	}
 }
 
 func TestKubernetesObservabilityReferenceStaysOutsideProductRuntime(t *testing.T) {

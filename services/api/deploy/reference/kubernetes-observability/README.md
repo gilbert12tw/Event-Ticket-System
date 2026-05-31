@@ -17,9 +17,13 @@ product runtime behavior:
   Prometheus as its data source.
 - `prometheus-scrape-example.yaml` shows the Prometheus scrape job shape for
   `kube-state-metrics.cets-observability.svc:8080`.
+- `log-sidecar-example.yaml` shows the container log forwarding sidecar pattern: the app still
+  writes stdout, while a Fluent Bit sidecar tails a shared stdout spool and forwards structured logs.
+- `plg-log-stack.yaml` shows a Loki + Grafana log analysis/viewing stack for the PLG pattern.
+- `efk-log-stack.yaml` shows Elasticsearch + Kibana analysis/viewing resources for the EFK pattern.
 
-Together, these files keep the full metrics stack as code for review without making it the active
-deployment path.
+Together, these files keep the logging and metrics stack as code for review without making it the
+active deployment path.
 
 Keep application behavior independent from these files. Booking, ticket, check-in, worker,
 reporting, and audit correctness still rely on PostgreSQL-backed application contracts, not
