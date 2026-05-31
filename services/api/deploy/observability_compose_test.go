@@ -48,6 +48,20 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/blackbox_exporter/config.yml",
 		"${BLACKBOX_EXPORTER_PORT:-9115}:9115",
 		"./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro",
+		"node-exporter:",
+		"image: prom/node-exporter:v1.9.1",
+		"--path.rootfs=/host",
+		"${NODE_EXPORTER_PORT:-9100}:9100",
+		"/:/host:ro,rslave",
+		"cadvisor:",
+		"image: gcr.io/cadvisor/cadvisor:v0.52.1",
+		"privileged: true",
+		"${CADVISOR_PORT:-8081}:8080",
+		"/:/rootfs:ro",
+		"/var/run:/var/run:ro",
+		"/sys:/sys:ro",
+		"/var/lib/docker/:/var/lib/docker:ro",
+		"/dev/disk/:/dev/disk:ro",
 		"./observability/rules:/etc/prometheus/rules:ro",
 		"grafana:",
 		"image: grafana/grafana:12.2.0",
@@ -58,6 +72,8 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
 		"PROMETHEUS_PORT=9090",
 		"BLACKBOX_EXPORTER_PORT=9115",
+		"NODE_EXPORTER_PORT=9100",
+		"CADVISOR_PORT=8081",
 		"LOKI_PORT=3100",
 		"TEMPO_PORT=3200",
 		"TEMPO_OTLP_GRPC_PORT=4317",
@@ -84,6 +100,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
 	require.NoError(t, err)
+	useDashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-use-exporters.json")
+	require.NoError(t, err)
 
 	combined := strings.Join([]string{
 		string(prometheus),
@@ -93,6 +111,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		string(promtail),
 		string(tempo),
 		string(dashboardFile),
+		string(useDashboardFile),
 	}, "\n")
 	required := []string{
 		"job_name: cets-app",
@@ -107,6 +126,11 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"http://app:8080/readyz",
 		"probe_scope: blackbox",
 		"blackbox-exporter:9115",
+		"job_name: cets-node-exporter",
+		"node-exporter:9100",
+		"job_name: cets-cadvisor",
+		"cadvisor:8080",
+		"signal_scope: use",
 		"prober: http",
 		"probe_success{probe_scope=\\\"blackbox\\\"}",
 		"probe_duration_seconds{probe_scope=\\\"blackbox\\\"}",
@@ -126,6 +150,18 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"cets_db_pool_conns",
 		"cets_db_lock_waiting_sessions",
 		"cets_outbox_oldest_lag_seconds",
+		"node_cpu_seconds_total{mode=\\\"idle\\\", signal_scope=\\\"use\\\"}",
+		"node_load1{signal_scope=\\\"use\\\"}",
+		"node_memory_MemAvailable_bytes{signal_scope=\\\"use\\\"}",
+		"node_vmstat_pgpgin{signal_scope=\\\"use\\\"}",
+		"container_cpu_usage_seconds_total{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
+		"container_memory_working_set_bytes{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
+		"USE CPU Utilization",
+		"USE CPU Saturation",
+		"USE Memory Utilization",
+		"USE Memory Saturation",
+		"Container CPU Usage",
+		"Container Memory Working Set",
 	}
 	for _, fragment := range required {
 		assert.Contains(t, combined, fragment, "observability provisioning is missing %q", fragment)
@@ -134,6 +170,10 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	var dashboard map[string]interface{}
 	require.NoError(t, json.Unmarshal(dashboardFile, &dashboard))
 	assert.Equal(t, "CETS Observability", dashboard["title"])
+
+	var useDashboard map[string]interface{}
+	require.NoError(t, json.Unmarshal(useDashboardFile, &useDashboard))
+	assert.Equal(t, "CETS USE Exporters", useDashboard["title"])
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
@@ -163,6 +203,20 @@ func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
 	assert.NotContains(t, combined, "Authorization:", "black-box probes must not depend on product credentials")
 	assert.NotContains(t, combined, "app:\n    depends_on:\n      blackbox-exporter:", "app must not depend on probe health")
 	assert.NotContains(t, combined, "worker:\n    depends_on:\n      blackbox-exporter:", "worker must not depend on probe health")
+}
+
+func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
+	compose, err := os.ReadFile("compose.yaml")
+	require.NoError(t, err)
+	composeText := string(compose)
+
+	for _, serviceName := range []string{"app", "worker"} {
+		serviceBlock := composeServiceBlock(t, composeText, serviceName)
+		assert.NotContains(t, serviceBlock, "node-exporter:", "%s must not depend on node exporter for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "cadvisor:", "%s must not depend on cAdvisor for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "NODE_EXPORTER", "%s must not receive exporter config", serviceName)
+		assert.NotContains(t, serviceBlock, "CADVISOR", "%s must not receive cAdvisor config", serviceName)
+	}
 }
 
 func TestPrometheusAlertRulesCoverStarterSLOSignals(t *testing.T) {
