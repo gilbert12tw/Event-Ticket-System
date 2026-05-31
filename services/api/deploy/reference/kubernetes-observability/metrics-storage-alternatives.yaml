@@ -1,0 +1,260 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metrics-storage-alternatives-reference
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: metrics-storage-alternatives
+    app.kubernetes.io/part-of: cets-observability-reference
+data:
+  prometheus-remote-write.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: cets-api-app-metrics
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - cets-api.cets.svc:8080
+            labels:
+              signal_scope: app
+    remote_write:
+      - url: http://thanos-receive.cets-observability.svc:19291/api/v1/receive
+        name: thanos-long-term-reference
+      - url: http://cortex.cets-observability.svc:9009/api/v1/push
+        name: cortex-long-term-reference
+  grafana-agent.yml: |
+    metrics:
+      global:
+        scrape_interval: 15s
+      configs:
+        - name: cets-reference
+          scrape_configs:
+            - job_name: cets-api-app-metrics
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - cets-api.cets.svc:8080
+                  labels:
+                    signal_scope: app
+          remote_write:
+            - url: http://thanos-receive.cets-observability.svc:19291/api/v1/receive
+              name: thanos-long-term-reference
+            - url: http://cortex.cets-observability.svc:9009/api/v1/push
+              name: cortex-long-term-reference
+  cortex.yml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 9009
+      grpc_listen_port: 9095
+    distributor:
+      pool:
+        health_check_ingesters: true
+    ingester:
+      ring:
+        kvstore:
+          store: inmemory
+        replication_factor: 1
+    blocks_storage:
+      backend: filesystem
+      filesystem:
+        dir: /data/blocks
+    compactor:
+      data_dir: /data/compactor
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thanos-receive
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: thanos-receive
+    app.kubernetes.io/part-of: cets-observability-reference
+spec:
+  serviceName: thanos-receive
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: thanos-receive
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: thanos-receive
+        app.kubernetes.io/part-of: cets-observability-reference
+    spec:
+      containers:
+        - name: thanos-receive
+          image: quay.io/thanos/thanos:v0.40.1
+          args:
+            - receive
+            - --http-address=0.0.0.0:10902
+            - --grpc-address=0.0.0.0:10901
+            - --remote-write.address=0.0.0.0:19291
+            - --tsdb.path=/data
+            - --receive.replication-factor=1
+          ports:
+            - name: http
+              containerPort: 10902
+            - name: grpc
+              containerPort: 10901
+            - name: receive
+              containerPort: 19291
+          volumeMounts:
+            - name: tsdb
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: tsdb
+        labels:
+          app.kubernetes.io/name: thanos-receive
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-receive
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: thanos-receive
+    app.kubernetes.io/part-of: cets-observability-reference
+spec:
+  selector:
+    app.kubernetes.io/name: thanos-receive
+  ports:
+    - name: http
+      port: 10902
+      targetPort: http
+    - name: grpc
+      port: 10901
+      targetPort: grpc
+    - name: receive
+      port: 19291
+      targetPort: receive
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cortex
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cortex
+    app.kubernetes.io/part-of: cets-observability-reference
+spec:
+  serviceName: cortex
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cortex
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cortex
+        app.kubernetes.io/part-of: cets-observability-reference
+    spec:
+      containers:
+        - name: cortex
+          image: quay.io/cortexproject/cortex:v1.18.0
+          args:
+            - -config.file=/etc/cortex/cortex.yml
+            - -target=all
+          ports:
+            - name: http
+              containerPort: 9009
+            - name: grpc
+              containerPort: 9095
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cortex
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: metrics-storage-alternatives-reference
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: cortex
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cortex
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cortex
+    app.kubernetes.io/part-of: cets-observability-reference
+spec:
+  selector:
+    app.kubernetes.io/name: cortex
+  ports:
+    - name: http
+      port: 9009
+      targetPort: http
+    - name: grpc
+      port: 9095
+      targetPort: grpc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-agent-metrics
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: grafana-agent
+    app.kubernetes.io/part-of: cets-observability-reference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana-agent
+        app.kubernetes.io/part-of: cets-observability-reference
+    spec:
+      containers:
+        - name: grafana-agent
+          image: grafana/agent:v0.43.4
+          args:
+            - -config.file=/etc/agent/grafana-agent.yml
+            - -server.http.address=0.0.0.0:12345
+          ports:
+            - name: http
+              containerPort: 12345
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agent
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: metrics-storage-alternatives-reference
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-agent-metrics
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: grafana-agent
+    app.kubernetes.io/part-of: cets-observability-reference
+spec:
+  selector:
+    app.kubernetes.io/name: grafana-agent
+  ports:
+    - name: http
+      port: 12345
+      targetPort: http

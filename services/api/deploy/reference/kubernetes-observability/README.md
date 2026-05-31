@@ -15,6 +15,9 @@ product runtime behavior:
 - `metrics-stack.yaml` shows a containerized Prometheus + Grafana metrics stack: Prometheus is a
   StatefulSet with a persistent volume claim for TSDB data, while Grafana stays stateless and uses
   Prometheus as its data source.
+- `metrics-storage-alternatives.yaml` shows Thanos Receive, Cortex, and Grafana Agent remote-write
+  reference shapes for long-term metrics storage alternatives beyond the local VictoriaMetrics
+  review profile.
 - `prometheus-scrape-example.yaml` shows the Prometheus scrape job shape for
   `kube-state-metrics.cets-observability.svc:8080`.
 - `log-sidecar-example.yaml` shows the container log forwarding sidecar pattern: the app still

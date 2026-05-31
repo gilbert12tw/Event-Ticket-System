@@ -107,6 +107,36 @@ func TestKubernetesObservabilityReferenceDocumentsContainerMetricsStack(t *testi
 		"Grafana reference must remain stateless")
 }
 
+func TestKubernetesObservabilityReferenceDocumentsMetricsStorageAlternatives(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "metrics-storage-alternatives.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: metrics-storage-alternatives-reference",
+		"prometheus-remote-write.yml: |",
+		"remote_write:",
+		"http://thanos-receive.cets-observability.svc:19291/api/v1/receive",
+		"http://cortex.cets-observability.svc:9009/api/v1/push",
+		"grafana-agent.yml: |",
+		"app.kubernetes.io/name: thanos-receive",
+		"quay.io/thanos/thanos:v0.40.1",
+		"--receive.replication-factor=1",
+		"app.kubernetes.io/name: cortex",
+		"quay.io/cortexproject/cortex:v1.18.0",
+		"blocks_storage:",
+		"kind: StatefulSet",
+		"volumeClaimTemplates:",
+		"storage: 20Gi",
+		"app.kubernetes.io/name: grafana-agent",
+		"grafana/agent:v0.43.4",
+		"Thanos Receive, Cortex, and Grafana Agent remote-write",
+		"long-term metrics storage alternatives",
+	} {
+		assert.Contains(t, combined, fragment, "metrics storage alternatives reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsContainerLogPipeline(t *testing.T) {
 	sidecar := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "log-sidecar-example.yaml"))
 	plg := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "plg-log-stack.yaml"))
