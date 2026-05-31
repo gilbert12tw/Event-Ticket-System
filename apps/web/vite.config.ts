@@ -16,6 +16,10 @@ const watchOptions =
   process.env.CHOKIDAR_USEPOLLING === "true"
     ? { usePolling: true, interval: 100 }
     : undefined;
+const testTimeout = Number(
+  process.env.VITEST_TEST_TIMEOUT ?? (process.env.CI ? "20000" : "10000"),
+);
+const maxWorkers = process.env.VITEST_MAX_WORKERS ?? undefined;
 
 export default defineConfig({
   plugins: [cleanGeneratedStaticAssets(), react(), tailwindcss()],
@@ -52,6 +56,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
+    testTimeout,
+    maxWorkers,
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],

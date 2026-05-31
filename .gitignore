@@ -9,8 +9,6 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
-infra/aws/free-tier-compose/cost-reports/
-infra/aws/free-tier-compose/selected-region.env
 
 # OS / editor noise
 .DS_Store

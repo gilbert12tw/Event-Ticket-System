@@ -27,7 +27,6 @@ Use this page as the first stop when deciding which document is current.
 - `docs/specs/phase2-ws4-async-notification.md` - async notification, outbox, and worker isolation.
 - `docs/specs/phase2-ws5-reporting-ops.md` - reporting read model and ops controls.
 - `docs/specs/phase3-local-ha-compose-lgtm.md` - current Phase 3 local HA Compose and LGTM simulation contract.
-- `docs/specs/phase3-aws-scheduled-ha-demo.md` - Phase 3 scheduled AWS HA demo and cost-control contract.
 
 ## Rules And Principles
 
