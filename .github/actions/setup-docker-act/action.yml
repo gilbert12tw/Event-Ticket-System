@@ -1,0 +1,19 @@
+name: Set up Docker CLI for local act runs
+description: Install Docker CLI and Compose plugin when running under nektos/act.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Docker CLI for act
+      if: env.ACT == 'true'
+      shell: bash
+      run: |
+        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+          docker --version
+          docker compose version
+          exit 0
+        fi
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
+        docker --version
+        docker compose version
