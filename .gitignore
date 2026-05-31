@@ -28,6 +28,7 @@ tmp/
 temp/
 .cache/
 .scannerwork/
+artifacts/
 
 # Dependencies / build outputs
 node_modules/

@@ -52,7 +52,13 @@ func TestPhase3ComposeOverlayDeclaresLocalHATopology(t *testing.T) {
 		"proxy_pass http://cets_backend_lb",
 		"proxy_pass http://cets_frontend_lb",
 		"proxy_set_header traceparent $http_traceparent;",
+		"proxy_set_header tracestate $http_tracestate;",
+		"proxy_set_header baggage $http_baggage;",
 		"proxy_set_header X-Request-ID $request_id;",
+		"X-CETS-Edge-Replica",
+		"X-CETS-Gateway-Replica",
+		"X-CETS-Frontend-Replica",
+		"X-CETS-Backend-Replica",
 		"PHASE3_EDGE_PORT=18080",
 		"PHASE3_POSTGRES_PORT=15432",
 		"PHASE3_MINIO_API_PORT=19000",
@@ -106,6 +112,7 @@ func TestPhase3ComposeLGTMDeclaresFourSignalsAndNodeGraph(t *testing.T) {
 		"loki.source.docker",
 		"otelcol.receiver.otlp",
 		"cets_http_requests_total",
+		"Backend RED by Replica",
 		"traces_service_graph_request_total",
 		"traces_spanmetrics_calls_total",
 		"process_cpu:cpu:nanoseconds:cpu:nanoseconds",
@@ -141,6 +148,11 @@ func TestPhase3ComposeScriptsDeclareDeployVerifyAndDrillContracts(t *testing.T) 
 
 	for _, fragment := range []string{
 		"compose.phase3-ha.yaml",
+		"phase3-k6.sh",
+		"phase3-ha-lgtm.js",
+		"K6_PHASE3_PROFILE",
+		"K6_PHASE3_REPLICA_SAMPLES",
+		"header_replicas",
 		"--profile phase3-ha",
 		"--profile worker-isolation",
 		"--profile observability",
@@ -180,6 +192,51 @@ func TestPhase3ComposeScriptsDeclareDeployVerifyAndDrillContracts(t *testing.T) 
 	} {
 		assert.NotContains(t, scripts, forbidden, "Phase 3 Compose scripts must not require %q", forbidden)
 	}
+}
+
+func TestPhase3K6LoadScriptDeclaresDistributionAndErrorContracts(t *testing.T) {
+	scriptPath := filepath.Join("..", "..", "..", "k6", "phase3-ha-lgtm.js")
+	require.FileExists(t, scriptPath)
+	script := readText(t, scriptPath)
+	wrapper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-k6.sh"))
+
+	for _, fragment := range []string{
+		"phase3_gateway_replica_hits",
+		"phase3_frontend_replica_hits",
+		"phase3_backend_replica_hits",
+		"phase3_controlled_errors",
+		"controlledErrorTraffic",
+		"investigateBackendHotspot",
+		"X-CETS-Gateway-Replica",
+		"X-CETS-Frontend-Replica",
+		"X-CETS-Backend-Replica",
+	} {
+		assert.Contains(t, script, fragment)
+	}
+	for _, fragment := range []string{
+		"header_replicas",
+		"K6_PHASE3_REPLICA_SAMPLES",
+		"expected at least 3 gateway replicas",
+		"expected at least 3 frontend replicas",
+		"expected at least 3 backend replicas",
+		"grafana/k6",
+	} {
+		assert.Contains(t, wrapper, fragment)
+	}
+}
+
+func TestPhase3OTelTraceIDCompatibilityContract(t *testing.T) {
+	router := readText(t, filepath.Join("..", "internal", "httpapi", "router.go"))
+	datasources := readText(t, filepath.Join("observability", "phase3", "grafana", "provisioning", "datasources", "datasources.yml"))
+	dashboard := readText(t, filepath.Join("observability", "phase3", "grafana", "dashboards", "cets-phase3-compose.json"))
+	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
+
+	for _, source := range []string{router, datasources, dashboard, verify} {
+		assert.Contains(t, source, "otel_trace_id")
+	}
+	assert.Contains(t, datasources, `[a-fA-F0-9]{32}`)
+	assert.Contains(t, router, "otelTraceIDFromContext")
+	assert.Contains(t, router, "observability.TraceHTTP")
 }
 
 func TestPhase3ComposeReplacesLocalK3sAssets(t *testing.T) {

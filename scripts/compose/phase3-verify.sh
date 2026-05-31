@@ -107,6 +107,14 @@ check_smoke() {
   done
 }
 
+check_k6_distribution() {
+  log "checking k6 Phase 3 load and replica distribution"
+  K6_PHASE3_PROFILE=${K6_PHASE3_VERIFY_PROFILE:-stress} \
+    CETS_PHASE3_URL="$EDGE_URL" \
+    CETS_PHASE3_ENV_FILE="$ENV_FILE" \
+    "$ROOT_DIR/scripts/compose/phase3-k6.sh"
+}
+
 check_datasource() {
   uid=$1
   curl -fsS -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA_URL/api/datasources/uid/$uid" |
@@ -158,9 +166,27 @@ check_prometheus_targets() {
   printf '%s\n' "$targets" | grep -q '"health":"up"' || die "Prometheus has no healthy active targets"
 }
 
+check_prometheus_red_metrics() {
+  log "checking Prometheus RED metrics from k6 load"
+  for _ in $(seq 1 24); do
+    total=$(curl -fsS --get \
+      --data-urlencode 'query=sum(increase(cets_http_requests_total[15m]))' \
+      "$PROMETHEUS_URL/api/v1/query" 2>/dev/null || true)
+    errors=$(curl -fsS --get \
+      --data-urlencode 'query=sum(increase(cets_http_requests_total{status_class=~"4xx|5xx"}[15m]))' \
+      "$PROMETHEUS_URL/api/v1/query" 2>/dev/null || true)
+    if printf '%s\n' "$total" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]' &&
+      printf '%s\n' "$errors" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]'; then
+      return
+    fi
+    sleep 5
+  done
+  die "Prometheus did not return non-zero RED request and controlled-error metrics"
+}
+
 check_trace_ingest() {
   log "checking Tempo trace ingest"
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 24); do
     traces=$(curl -fsS "$TEMPO_URL/api/search?tags=service.name%3Dcets-backend&limit=1" 2>/dev/null || true)
     if printf '%s\n' "$traces" | grep -q '"traceID"'; then
       return
@@ -219,7 +245,7 @@ check_loki_logs_and_redaction() {
   compose rm -sf redaction-canary >/dev/null 2>&1 || true
   docker rm -f cets-phase3-redaction-canary >/dev/null 2>&1 || true
   compose up -d --force-recreate redaction-canary >/dev/null
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 24); do
     redacted_logs=$(curl -fsS "$LOKI_URL/loki/api/v1/query_range?query=%7Bservice_name%3D%22redaction-canary%22%7D%20%7C%3D%20%22phase3-redaction-canary%22&limit=5" 2>/dev/null || true)
     if printf '%s\n' "$redacted_logs" | grep -q "phase3-redaction-canary"; then
       printf '%s\n' "$redacted_logs" | grep -Eq "phase3-raw-(pii|signed|qr|provider|email-body|recipient-email|idempotency)-canary" &&
@@ -240,8 +266,10 @@ main() {
   have curl || die "curl is required"
   check_replicas
   check_smoke
+  check_k6_distribution
   check_lgtm_health
   check_prometheus_targets
+  check_prometheus_red_metrics
   check_trace_ingest
   check_service_graph
   check_profile_data

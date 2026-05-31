@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type Pinger interface {
@@ -55,7 +57,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
 	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
-	return withTraceID(withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))
+	return withBackendReplicaHeader(withTraceID(observability.TraceHTTP(routePattern, withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))))
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -127,7 +129,7 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		started := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		logger.Info("request handled",
+		attrs := []any{
 			"trace_id", traceid.FromContext(r.Context()),
 			"method", r.Method,
 			"route", routePattern(r),
@@ -135,7 +137,11 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 			"status", recorder.status,
 			"status_class", statusClass(recorder.status),
 			"duration_ms", time.Since(started).Milliseconds(),
-		)
+		}
+		if otelTraceID := otelTraceIDFromContext(r.Context()); otelTraceID != "" {
+			attrs = append(attrs, "otel_trace_id", otelTraceID)
+		}
+		logger.Info("request handled", attrs...)
 	})
 }
 
@@ -153,6 +159,16 @@ func withTraceID(next http.Handler) http.Handler {
 		id := traceid.Ensure(r.Header.Get(traceid.Header))
 		w.Header().Set(traceid.Header, id)
 		next.ServeHTTP(w, r.WithContext(traceid.WithContext(r.Context(), id)))
+	})
+}
+
+func withBackendReplicaHeader(next http.Handler) http.Handler {
+	replica := backendReplicaName()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if replica != "" {
+			w.Header().Set("X-CETS-Backend-Replica", replica)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -185,4 +201,20 @@ func statusClass(status int) string {
 		return "unknown"
 	}
 	return string(rune('0'+status/100)) + "xx"
+}
+
+func otelTraceIDFromContext(ctx context.Context) string {
+	spanContext := oteltrace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() || !spanContext.HasTraceID() {
+		return ""
+	}
+	return spanContext.TraceID().String()
+}
+
+func backendReplicaName() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(hostname)
 }

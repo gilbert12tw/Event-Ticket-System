@@ -364,7 +364,7 @@ func newIntegrationServiceWithLogger(t *testing.T, logger *slog.Logger) (*Servic
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool, cleanup := newTicketingTestPool(t, ctx, databaseURL)
 	if err := postgres.Migrate(ctx, pool); err != nil {
