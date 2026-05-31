@@ -104,6 +104,8 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 	assert.Equal(t, "trace-test-123", rec.Header().Get("X-Trace-ID"))
 	assert.Equal(t, "trace-test-123", service.createTrace)
 	assertEnvelope(t, logs.String(), `"trace_id":"trace-test-123"`, `"path":"/api/v1/admin/events"`, `"status":201`)
+	assert.NotContains(t, logs.String(), "otel_trace_id")
+	assert.NotContains(t, logs.String(), "otel_span_id")
 }
 
 func TestRouterDoesNotEmitHTTPSpanWhenTracingDisabled(t *testing.T) {
@@ -123,8 +125,12 @@ func TestRouterDoesNotEmitHTTPSpanWhenTracingDisabled(t *testing.T) {
 func TestRouterEmitsRouteBoundedHTTPSpanWhenTracingEnabled(t *testing.T) {
 	exporter, shutdown := installTestTracer(t)
 	defer shutdown()
+	var logs bytes.Buffer
 
-	router := testRouter(Dependencies{TracingEnabled: true})
+	router := testRouter(Dependencies{
+		TracingEnabled: true,
+		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -135,6 +141,11 @@ func TestRouterEmitsRouteBoundedHTTPSpanWhenTracingEnabled(t *testing.T) {
 	require.Len(t, spans, 1)
 	assert.Equal(t, "GET /healthz", spans[0].Name)
 	assert.Contains(t, spans[0].Attributes, attribute.String("cets.route", "/healthz"))
+	assertEnvelope(t, logs.String(),
+		`"route":"/healthz"`,
+		`"otel_trace_id":"`+spans[0].SpanContext.TraceID().String()+`"`,
+		`"otel_span_id":"`+spans[0].SpanContext.SpanID().String()+`"`,
+	)
 }
 
 func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {

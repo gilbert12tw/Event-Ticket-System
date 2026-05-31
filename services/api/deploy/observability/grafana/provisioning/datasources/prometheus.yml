@@ -13,6 +13,13 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - name: Tempo trace
+          matcherRegex: '"otel_trace_id":"([a-f0-9]{32})"'
+          datasourceUid: Tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: "Open trace"
     editable: false
   - name: Tempo
     uid: Tempo
