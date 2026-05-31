@@ -136,6 +136,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
 	require.NoError(t, err)
+	goldenSignalsDashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-golden-signals.json")
+	require.NoError(t, err)
 	useDashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-use-exporters.json")
 	require.NoError(t, err)
 
@@ -149,6 +151,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		string(promtail),
 		string(tempo),
 		string(dashboardFile),
+		string(goldenSignalsDashboardFile),
 		string(useDashboardFile),
 	}, "\n")
 	required := []string{
@@ -226,6 +229,20 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"cets:http_request_duration_seconds:p99_5m",
 		"cets:outbox_oldest_lag_seconds:max5m",
 		"cets:db_lock_waiting_sessions:max5m",
+		"CETS Golden Signals",
+		"Golden Signal: Traffic",
+		"Golden Signal: Errors",
+		"Golden Signal: Success Latency",
+		"Golden Signal: Error Latency",
+		"Golden Signal: Saturation - DB Pool",
+		"Golden Signal: Saturation - Queue Lag",
+		"Golden Signal: Saturation - DB Locks",
+		"sum(rate(cets_http_requests_total[1m]))",
+		"cets_http_requests_total{status_class=~\\\"4xx|5xx\\\"}",
+		"cets_http_request_seconds_bucket{status_class=~\\\"2xx|3xx\\\"}",
+		"cets_http_request_seconds_bucket{status_class=~\\\"4xx|5xx\\\"}",
+		"rate(cets_db_pool_acquire_wait_seconds_total[5m]) / clamp_min(rate(cets_db_pool_acquire_count_total[5m]), 1)",
+		"max(cets_outbox_oldest_lag_seconds)",
 		"USE CPU Utilization",
 		"USE CPU Saturation",
 		"USE Memory Utilization",
@@ -242,6 +259,10 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	var dashboard map[string]interface{}
 	require.NoError(t, json.Unmarshal(dashboardFile, &dashboard))
 	assert.Equal(t, "CETS Observability", dashboard["title"])
+
+	var goldenSignalsDashboard map[string]interface{}
+	require.NoError(t, json.Unmarshal(goldenSignalsDashboardFile, &goldenSignalsDashboard))
+	assert.Equal(t, "CETS Golden Signals", goldenSignalsDashboard["title"])
 
 	var useDashboard map[string]interface{}
 	require.NoError(t, json.Unmarshal(useDashboardFile, &useDashboard))
