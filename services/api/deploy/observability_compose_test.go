@@ -69,6 +69,10 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"/sys:/sys:ro",
 		"/var/lib/docker/:/var/lib/docker:ro",
 		"/dev/disk/:/dev/disk:ro",
+		"pyroscope:",
+		"image: grafana/pyroscope:1.18.1",
+		"${PYROSCOPE_PORT:-4040}:4040",
+		"pyroscope_data:",
 		"./observability/rules:/etc/prometheus/rules:ro",
 		"grafana:",
 		"image: grafana/grafana:12.2.0",
@@ -90,6 +94,10 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318",
 		"OTEL_SERVICE_NAME=cets-api",
 		"OTEL_SERVICE_VERSION=local-compose",
+		"PYROSCOPE_PORT=4040",
+		"PYROSCOPE_ENABLED=false",
+		"PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040",
+		"PYROSCOPE_APPLICATION_NAME=cets-api",
 		"GRAFANA_PORT=3000",
 	}
 	for _, fragment := range required {
@@ -167,6 +175,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		`urlDisplayLabel: "Open trace"`,
 		"type: tempo",
 		"url: http://tempo:3200",
+		"type: grafana-pyroscope-datasource",
+		"url: http://pyroscope:4040",
 		"url: http://loki:3100/loki/api/v1/push",
 		"job_name: cets-compose",
 		"regex: \"(app|worker)\"",
@@ -212,6 +222,11 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	assert.Equal(t, `"otel_trace_id":"([a-f0-9]{32})"`, lokiDatasource.JSONData.DerivedFields[0].MatcherRegex)
 	assert.Equal(t, "Tempo", lokiDatasource.JSONData.DerivedFields[0].DatasourceUID)
 	assert.Equal(t, "$${__value.raw}", lokiDatasource.JSONData.DerivedFields[0].URL)
+
+	pyroscopeDatasource := datasourceProvisioning.findDatasource("Pyroscope")
+	require.NotNil(t, pyroscopeDatasource)
+	assert.Equal(t, "grafana-pyroscope-datasource", pyroscopeDatasource.Type)
+	assert.Equal(t, "http://pyroscope:4040", pyroscopeDatasource.URL)
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
@@ -228,12 +243,17 @@ func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
 		assert.NotContains(t, serviceBlock, "LOKI_", "%s must continue to write logs to stdout/stderr", serviceName)
 		assert.NotContains(t, serviceBlock, "TEMPO_", "%s must not require Tempo to serve product traffic", serviceName)
 		assert.NotContains(t, serviceBlock, "ALERTMANAGER_", "%s must not require Alertmanager to serve product traffic", serviceName)
+		assert.NotContains(t, serviceBlock, "\n      pyroscope:", "%s must not depend on Pyroscope for runtime behavior", serviceName)
 	}
 	appBlock := composeServiceBlock(t, composeText, "app")
 	assert.Contains(t, appBlock, "OTEL_TRACES_ENABLED: ${OTEL_TRACES_ENABLED:-false}")
 	assert.Contains(t, appBlock, "OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}")
+	assert.Contains(t, appBlock, "PYROSCOPE_ENABLED: ${PYROSCOPE_ENABLED:-false}")
+	assert.Contains(t, appBlock, "PYROSCOPE_SERVER_ADDRESS: ${PYROSCOPE_SERVER_ADDRESS:-http://pyroscope:4040}")
+	assert.Contains(t, appBlock, "PYROSCOPE_APPLICATION_NAME: ${PYROSCOPE_APPLICATION_NAME:-cets-api}")
 	workerBlock := composeServiceBlock(t, composeText, "worker")
 	assert.NotContains(t, workerBlock, "OTEL_", "worker must not enable trace export without worker span coverage")
+	assert.NotContains(t, workerBlock, "PYROSCOPE_", "worker must not enable profiling without worker profile coverage")
 }
 
 func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
@@ -328,6 +348,8 @@ func (p grafanaDatasourceProvisioning) findDatasource(name string) *grafanaDatas
 
 type grafanaDatasource struct {
 	Name     string `yaml:"name"`
+	Type     string `yaml:"type"`
+	URL      string `yaml:"url"`
 	JSONData struct {
 		DerivedFields []grafanaDerivedField `yaml:"derivedFields"`
 	} `yaml:"jsonData"`
