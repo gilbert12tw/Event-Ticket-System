@@ -73,12 +73,12 @@ Current implementation slice:
 - `GET /metrics` exposes Prometheus text format from the existing app process.
 - HTTP RED metrics use route pattern, method, and status class labels; raw IDs, signed tokens, QR payloads, and provider tokens must not appear in labels.
 - PostgreSQL pool acquire wait, current lock-waiting sessions, outbox backlog / oldest lag, and terminal outbox publish latency are scrapeable as white-box signals for the Phase 2 baseline.
-- Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus, Grafana, blackbox exporter, node exporter, cAdvisor, Loki, Promtail, and Tempo with provisioned Grafana datasources. This is a review/demo profile, not a required production backing service.
+- Optional local pipeline: `docker compose --profile observability ... up` starts Prometheus, Alertmanager, Grafana, blackbox exporter, node exporter, cAdvisor, Loki, Promtail, and Tempo with provisioned Grafana datasources. This is a review/demo profile, not a required production backing service.
 - Loki stores app/worker stdout logs collected by Promtail from the Docker socket, keeping the application log contract as stdout/stderr only.
 - Tempo exposes local OTLP gRPC/HTTP receivers for trace ingestion, but the app does not emit spans in this slice; OTLP export must remain a future opt-in typed config change.
 - Black-box probing is provided by optional `blackbox-exporter`; Prometheus probes `http://app:8080/`, `http://app:8080/healthz`, and `http://app:8080/readyz` through `/probe` to represent the external symptom view separately from in-process white-box metrics. Probes do not call product APIs and do not change booking, check-in, worker, or reporting behavior.
 - Host and container USE metrics are provided by optional `node-exporter` and `cadvisor` services. Prometheus scrapes them for CPU, memory, disk, network, and container saturation signals only; app and worker do not depend on these exporters and expose no new product API for them.
-- Prometheus loads starter alert rules from `services/api/deploy/observability/rules/`. This adds version-controlled SLO breach detection for PR #43 metrics only; it does not add Alertmanager routing, paging, or a production monitoring dependency.
+- Prometheus loads starter alert rules from `services/api/deploy/observability/rules/` and routes them to the local Alertmanager `local-review` receiver. This adds version-controlled SLO breach detection and local alert grouping for PR #43 metrics only; it does not add paging, PagerDuty secrets, or a production monitoring dependency.
 
 ```text
 current shipped metrics (prometheus-style):
@@ -144,10 +144,10 @@ cets seed --profile=phase2-50k [--events=N] [--eligibility-coverage=0.0..1.0]
 
 ## 7. 12-Factor Notes
 
-- **Config**: The current metrics slice uses the existing app listener and adds only local observability profile knobs in compose (`PROMETHEUS_PORT`, `BLACKBOX_EXPORTER_PORT`, `NODE_EXPORTER_PORT`, `CADVISOR_PORT`, `LOKI_PORT`, `TEMPO_PORT`, `TEMPO_OTLP_GRPC_PORT`, `TEMPO_OTLP_HTTP_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`). Future k6, seed, or application OTLP export knobs must be added through typed config before their implementations land. No secrets.
-- **Backing services**: No required production backing service is added. Metrics scrape is pull-based against the existing app/worker ports and optional exporters; local Prometheus, blackbox exporter, node exporter, cAdvisor, Loki, Tempo, and Grafana are optional review/demo services.
+- **Config**: The current metrics slice uses the existing app listener and adds only local observability profile knobs in compose (`PROMETHEUS_PORT`, `ALERTMANAGER_PORT`, `BLACKBOX_EXPORTER_PORT`, `NODE_EXPORTER_PORT`, `CADVISOR_PORT`, `LOKI_PORT`, `TEMPO_PORT`, `TEMPO_OTLP_GRPC_PORT`, `TEMPO_OTLP_HTTP_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`). Future k6, seed, production Alertmanager receiver, PagerDuty, or application OTLP export knobs must be added through typed config before their implementations land. No secrets.
+- **Backing services**: No required production backing service is added. Metrics scrape is pull-based against the existing app/worker ports and optional exporters; local Prometheus, Alertmanager, blackbox exporter, node exporter, cAdvisor, Loki, Tempo, and Grafana are optional review/demo services.
 - **Build / release / run**: Same binary; metrics wiring is in-process. k6 runs from `grafana/k6:1.7.1-with-browser` (already used by Phase 1 gate).
-- **Processes**: No new application process types; seed runs as `cets seed` admin one-off. Promtail, Loki, Tempo, node exporter, and cAdvisor are optional local observability profile services only.
+- **Processes**: No new application process types; seed runs as `cets seed` admin one-off. Promtail, Loki, Tempo, Alertmanager, node exporter, and cAdvisor are optional local observability profile services only.
 - **Logs**: Structured JSON to stdout — additive fields only, never logging tokens or full PII. CI log-scan from Phase 1 (`ci.yml` "Scan live gate logs") stays green.
 - **Admin processes**: `cets seed --profile=phase2-50k` is a same-codebase admin command; baseline report run is a one-off `k6 run` + write to artifact path.
 - **Disposability**: Metric exporters drain on SIGTERM with the rest of the app.
@@ -155,8 +155,10 @@ cets seed --profile=phase2-50k [--events=N] [--eligibility-coverage=0.0..1.0]
 ## 8. Tests / Verification
 
 - `cd services/api && go test ./deploy -run 'Observability|Blackbox|Infra|Exporter|USE' -count=1` — Compose/profile contract plus black-box probe target boundaries and optional exporter contracts.
+- `docker manifest inspect prom/alertmanager:v0.28.1` — optional Alertmanager image tag resolves.
 - `docker manifest inspect prom/node-exporter:v1.9.1` and `docker manifest inspect gcr.io/cadvisor/cadvisor:v0.52.1` — optional exporter image tags resolve.
 - `docker run --rm --entrypoint promtool -v "$PWD/services/api/deploy/observability:/etc/prometheus:ro" prom/prometheus:v3.6.0 check config /etc/prometheus/prometheus.yml` — Prometheus scrape config parses, including black-box relabeling and infra exporter jobs.
+- `docker run --rm --entrypoint amtool -v "$PWD/services/api/deploy/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml` — Alertmanager route and receivers parse.
 - `docker run --rm -v "$PWD/services/api/deploy/observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro" prom/blackbox-exporter:v0.27.0 --config.file=/etc/blackbox_exporter/config.yml --config.check` — blackbox exporter config parses.
 - `cd services/api && go test ./internal/observability/... -count=1` (new package) — metric registration, label cardinality bound, redaction.
 - Seed command test: `go test ./services/api/cmd/cets -run TestSeedPhase2 -count=1` against a temp DB; asserts deterministic counts.

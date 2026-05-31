@@ -26,6 +26,13 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/prometheus/prometheus.yml",
 		"${PROMETHEUS_PORT:-9090}:9090",
 		"./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+		"alertmanager:",
+		"image: prom/alertmanager:v0.28.1",
+		"--config.file=/etc/alertmanager/alertmanager.yml",
+		"--storage.path=/alertmanager",
+		"${ALERTMANAGER_PORT:-9093}:9093",
+		"./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
+		"alertmanager_data:",
 		"loki:",
 		"image: grafana/loki:3.5.0",
 		"-config.file=/etc/loki/config.yml",
@@ -71,6 +78,7 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro",
 		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
 		"PROMETHEUS_PORT=9090",
+		"ALERTMANAGER_PORT=9093",
 		"BLACKBOX_EXPORTER_PORT=9115",
 		"NODE_EXPORTER_PORT=9100",
 		"CADVISOR_PORT=8081",
@@ -90,6 +98,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	blackbox, err := os.ReadFile("observability/blackbox.yml")
 	require.NoError(t, err)
+	alertmanager, err := os.ReadFile("observability/alertmanager.yml")
+	require.NoError(t, err)
 	prometheusDatasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
 	require.NoError(t, err)
 	loki, err := os.ReadFile("observability/loki.yml")
@@ -106,6 +116,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	combined := strings.Join([]string{
 		string(prometheus),
 		string(blackbox),
+		string(alertmanager),
 		string(prometheusDatasource),
 		string(loki),
 		string(promtail),
@@ -118,6 +129,13 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"metrics_path: /metrics",
 		"rule_files:",
 		"/etc/prometheus/rules/*.yml",
+		"alerting:",
+		"alertmanagers:",
+		"alertmanager:9093",
+		"receiver: local-review",
+		"group_by:",
+		"severity",
+		"repeat_interval: 4h",
 		"app:8080",
 		"job_name: cets-blackbox",
 		"metrics_path: /probe",
@@ -186,9 +204,11 @@ func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
 		assert.NotContains(t, serviceBlock, "loki:", "%s must not depend on Loki for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "promtail:", "%s must not depend on Promtail for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "tempo:", "%s must not depend on Tempo for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "alertmanager:", "%s must not depend on Alertmanager for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "OTEL_", "%s must not enable trace export without typed app config", serviceName)
 		assert.NotContains(t, serviceBlock, "LOKI_", "%s must continue to write logs to stdout/stderr", serviceName)
 		assert.NotContains(t, serviceBlock, "TEMPO_", "%s must not require Tempo to serve product traffic", serviceName)
+		assert.NotContains(t, serviceBlock, "ALERTMANAGER_", "%s must not require Alertmanager to serve product traffic", serviceName)
 	}
 }
 

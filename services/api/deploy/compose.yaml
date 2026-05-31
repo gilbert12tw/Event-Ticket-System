@@ -244,10 +244,25 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      alertmanager:
+        condition: service_started
       node-exporter:
         condition: service_started
       cadvisor:
         condition: service_started
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
 
   loki:
     image: grafana/loki:3.5.0
@@ -348,6 +363,8 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+      alertmanager:
+        condition: service_started
       loki:
         condition: service_started
       tempo:
@@ -364,5 +381,6 @@ volumes:
   redis_data:
   minio_data:
   prometheus_data:
+  alertmanager_data:
   loki_data:
   tempo_data:
