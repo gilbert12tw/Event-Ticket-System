@@ -70,6 +70,16 @@ live=false
 k6=false
 phase3=false
 
+enable_fast_full() {
+  backend_lint=true
+  backend_test=true
+  frontend_static=true
+  frontend_unit=true
+  frontend_e2e=true
+  openapi=true
+  compose=true
+}
+
 run_full_ci="${INPUT_RUN_FULL_CI:-false}"
 run_live_playwright="${INPUT_RUN_LIVE_PLAYWRIGHT:-false}"
 run_k6_smoke="${INPUT_RUN_K6_SMOKE:-false}"
@@ -89,32 +99,24 @@ elif [[ "$event_name" == "workflow_dispatch" ]]; then
   fi
 fi
 
-if [[ "$full" == "false" ]] && grep -Eq '^(\.github/workflows/ci\.yml$|\.github/actions/setup-web/action\.yml$|scripts/ci/detect-changes\.sh$)' "$changed_file"; then
-  full=true
+ci_config_changed=false
+if grep -Eq '^(\.actrc$|\.github/workflows/ci\.yml$|\.github/actions/setup-web/action\.yml$|scripts/ci/detect-changes\.sh$)' "$changed_file"; then
+  ci_config_changed=true
 fi
 
 if [[ "$full" == "false" ]]; then
+  [[ "$ci_config_changed" == "true" ]] && enable_fast_full
+
   grep -Eq '^(services/api/.*\.go|services/api/go\.(mod|sum)|go\.work(\.sum)?$)' "$changed_file" && backend_lint=true
   grep -Eq '^(services/api/.*\.go|services/api/go\.(mod|sum)|go\.work(\.sum)?$)' "$changed_file" && backend_test=true
   grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' "$changed_file" && openapi=true
   grep -Eq '^(services/api/deploy/|services/api/Dockerfile$|scripts/compose/)' "$changed_file" && compose=true
-  grep -Eq '^(infra/aws/|scripts/aws/|goal\.md$|docs/specs/phase3-|docs/reports/phase3-)' "$changed_file" && phase3=true
+  grep -Eq '^(goal\.md$|docs/specs/phase3-|docs/reports/phase3-)' "$changed_file" && phase3=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' "$changed_file" && frontend_static=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$)' "$changed_file" && frontend_unit=true
-  grep -Eq '^(apps/web/e2e/|apps/web/playwright\.config\.ts$|apps/web/package\.json$|pnpm-lock\.yaml$|apps/web/src/App\.tsx$|apps/web/src/app/routes\.ts$|apps/web/src/components/layout/|apps/web/src/features/auth/)' "$changed_file" && frontend_e2e=true
-  grep -Eq '^(apps/web/e2e-live/|services/api/deploy/|services/api/Dockerfile$|scripts/compose/|services/api/cmd/cets/worker.*\.go$|services/api/internal/config/|services/api/internal/postgres/schema\.sql$|services/api/internal/ticketing/(worker|outbox|notification).*\.go$|services/api/internal/observability/)' "$changed_file" && live=true
-  if grep -Eq '^k6/' "$changed_file"; then
-    live=true
-    k6=true
-  fi
+  grep -Eq '^(apps/web/src/|apps/web/e2e/|apps/web/playwright\.config\.ts$|apps/web/package\.json$|pnpm-lock\.yaml$)' "$changed_file" && frontend_e2e=true
 else
-  backend_lint=true
-  backend_test=true
-  frontend_static=true
-  frontend_unit=true
-  frontend_e2e=true
-  openapi=true
-  compose=true
+  enable_fast_full
   live=true
   k6=true
   phase3=true

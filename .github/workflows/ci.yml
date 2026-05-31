@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/ci.yml"
+      - ".actrc"
       - ".dockerignore"
       - ".npmrc"
       - ".prettierignore"
@@ -25,12 +26,10 @@ on:
       - "go.work"
       - "go.work.sum"
       - "goal.md"
-      - "infra/aws/**"
       - "k6/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - "scripts/aws/**"
       - "scripts/compose/**"
       - "scripts/ci/**"
       - "scripts/*openapi*"
@@ -43,6 +42,7 @@ on:
       - "v*"
     paths:
       - ".github/workflows/ci.yml"
+      - ".actrc"
       - ".dockerignore"
       - ".npmrc"
       - ".prettierignore"
@@ -62,12 +62,10 @@ on:
       - "go.work"
       - "go.work.sum"
       - "goal.md"
-      - "infra/aws/**"
       - "k6/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - "scripts/aws/**"
       - "scripts/compose/**"
       - "scripts/ci/**"
       - "scripts/*openapi*"
@@ -320,17 +318,45 @@ jobs:
       - name: Set up web workspace
         uses: ./.github/actions/setup-web
       - name: Test web
-        run: pnpm --filter cets-web test
+        env:
+          VITEST_MAX_WORKERS: ${{ vars.CI_VITEST_MAX_WORKERS || '2' }}
+          VITEST_TEST_TIMEOUT: ${{ vars.CI_VITEST_TEST_TIMEOUT || '20000' }}
+        run: |
+          if [ "${ACT:-}" = "true" ] && [ "${VITEST_MAX_WORKERS}" = "2" ]; then
+            export VITEST_MAX_WORKERS=1
+          fi
+          pnpm --filter cets-web test
       - name: Build web
         run: pnpm --filter cets-web build
 
-  frontend-e2e:
+  playwright-browsers:
     needs: changes
-    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.live == 'true' || needs.changes.outputs.full == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up web workspace
+        uses: ./.github/actions/setup-web
+      - name: Verify GitHub Chrome runtime
+        if: env.ACT != 'true'
+        run: scripts/ci/verify-playwright-runtime.sh chrome
+      - name: Verify local act Playwright runtime
+        if: env.ACT == 'true'
+        run: scripts/ci/install-playwright.sh chromium
+
+  frontend-e2e:
+    needs:
+      - changes
+      - playwright-browsers
+    if: >-
+      always() &&
+      (needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true') &&
+      needs['playwright-browsers'].result == 'success'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 3
       matrix:
         include:
           - shard: 1
@@ -346,13 +372,11 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up web workspace
         uses: ./.github/actions/setup-web
-      - name: Restore Playwright browser cache
+      - name: Verify GitHub Chrome runtime
         if: env.ACT != 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install Playwright browsers
+        run: scripts/ci/verify-playwright-runtime.sh chrome
+      - name: Verify local act Playwright runtime
+        if: env.ACT == 'true'
         run: scripts/ci/install-playwright.sh chromium
       - name: Run mocked Playwright viewport checks shard ${{ matrix.shard }}/4
         env:
@@ -360,8 +384,16 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT: test-results/mock-shard-${{ matrix.shard }}/playwright-results.json
           PLAYWRIGHT_MOCK_PORT: ${{ matrix.port }}
           PLAYWRIGHT_OUTPUT_DIR: test-results/mock-shard-${{ matrix.shard }}
-          PLAYWRIGHT_WORKERS: 2
-        run: pnpm --filter cets-web exec playwright test --shard=${{ matrix.shard }}/4
+          PLAYWRIGHT_WORKERS: ${{ vars.CI_PLAYWRIGHT_WORKERS || '2' }}
+        run: |
+          if [ "${ACT:-}" != "true" ]; then
+            export PLAYWRIGHT_BROWSER_CHANNEL=chrome
+            export PLAYWRIGHT_DISABLE_VIDEO=true
+          fi
+          if [ "${ACT:-}" = "true" ] && [ "${PLAYWRIGHT_WORKERS}" = "2" ]; then
+            export PLAYWRIGHT_WORKERS=1
+          fi
+          pnpm --filter cets-web exec playwright test --shard=${{ matrix.shard }}/4
       - name: Upload mocked Playwright artifacts on failure
         if: failure() && env.ACT != 'true'
         uses: actions/upload-artifact@v4
@@ -388,6 +420,7 @@ jobs:
       - frontend-static
       - frontend-unit-build
       - frontend-e2e
+      - playwright-browsers
     if: >-
       always() &&
       needs.changes.outputs.live == 'true' &&
@@ -397,7 +430,8 @@ jobs:
       (needs['compose-contract'].result == 'success' || needs['compose-contract'].result == 'skipped') &&
       (needs['frontend-static'].result == 'success' || needs['frontend-static'].result == 'skipped') &&
       (needs['frontend-unit-build'].result == 'success' || needs['frontend-unit-build'].result == 'skipped') &&
-      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped')
+      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped') &&
+      needs['playwright-browsers'].result == 'success'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     env:
       K6_IMAGE: grafana/k6:1.7.1-with-browser
@@ -418,13 +452,11 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up web workspace
         uses: ./.github/actions/setup-web
-      - name: Restore Playwright browser cache
+      - name: Verify GitHub Chrome runtime
         if: env.ACT != 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install Playwright browsers
+        run: scripts/ci/verify-playwright-runtime.sh chrome
+      - name: Verify local act Playwright runtime
+        if: env.ACT == 'true'
         run: scripts/ci/install-playwright.sh chromium
       - name: Set up Docker CLI for local act runs
         if: env.ACT == 'true'
@@ -473,7 +505,12 @@ jobs:
           curl -fsS "$LIVE_BASE_URL/readyz" >/dev/null
       - name: Run live Playwright workflow checks
         if: github.event_name != 'workflow_dispatch' || inputs.run_full_ci || inputs.run_live_playwright
-        run: PLAYWRIGHT_LIVE_BASE_URL="$LIVE_BASE_URL" pnpm --filter cets-web test:e2e:live
+        run: |
+          if [ "${ACT:-}" != "true" ]; then
+            export PLAYWRIGHT_BROWSER_CHANNEL=chrome
+            export PLAYWRIGHT_DISABLE_VIDEO=true
+          fi
+          PLAYWRIGHT_LIVE_BASE_URL="$LIVE_BASE_URL" pnpm --filter cets-web test:e2e:live
       - name: Inject WS4 notification failure pressure
         run: |
           WORKER_NOTIFICATION_MAILER_HOST=127.0.0.1 WORKER_NOTIFICATION_MAILER_PORT=1 \

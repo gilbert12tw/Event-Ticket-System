@@ -3,6 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 const isCI = process.env.CI === "true";
 const port = Number(process.env.PLAYWRIGHT_MOCK_PORT || "4173");
 const baseURL = `http://127.0.0.1:${port}`;
+const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL || undefined;
+const videoMode =
+  process.env.PLAYWRIGHT_DISABLE_VIDEO === "true" ? "off" : "retain-on-failure";
 const workerCount = process.env.PLAYWRIGHT_WORKERS
   ? Number(process.env.PLAYWRIGHT_WORKERS)
   : isCI
@@ -48,7 +51,7 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    video: videoMode,
   },
   forbidOnly: isCI,
   webServer: {
@@ -61,6 +64,7 @@ export default defineConfig({
     name: `chromium-${viewport.name}`,
     use: {
       ...devices["Desktop Chrome"],
+      ...(browserChannel ? { channel: browserChannel } : {}),
       viewport: {
         width: viewport.width,
         height: viewport.height,
