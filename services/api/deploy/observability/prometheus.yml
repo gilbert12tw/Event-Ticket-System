@@ -41,6 +41,14 @@ scrape_configs:
           service: cets-containers
           signal_scope: use
 
+  - job_name: cets-redis-exporter
+    static_configs:
+      - targets:
+          - redis-exporter:9121
+        labels:
+          service: cets-redis
+          signal_scope: backing-service
+
   - job_name: cets-blackbox
     metrics_path: /probe
     params:

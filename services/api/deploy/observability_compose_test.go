@@ -55,6 +55,10 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/blackbox_exporter/config.yml",
 		"${BLACKBOX_EXPORTER_PORT:-9115}:9115",
 		"./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro",
+		"redis-exporter:",
+		"image: oliver006/redis_exporter:v1.77.0",
+		"--redis.addr=redis://redis:6379",
+		"${REDIS_EXPORTER_PORT:-9121}:9121",
 		"node-exporter:",
 		"image: prom/node-exporter:v1.9.1",
 		"--path.rootfs=/host",
@@ -84,6 +88,7 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"PROMETHEUS_PORT=9090",
 		"ALERTMANAGER_PORT=9093",
 		"BLACKBOX_EXPORTER_PORT=9115",
+		"REDIS_EXPORTER_PORT=9121",
 		"NODE_EXPORTER_PORT=9100",
 		"CADVISOR_PORT=8081",
 		"LOKI_PORT=3100",
@@ -160,6 +165,10 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"node-exporter:9100",
 		"job_name: cets-cadvisor",
 		"cadvisor:8080",
+		"job_name: cets-redis-exporter",
+		"redis-exporter:9121",
+		"service: cets-redis",
+		"signal_scope: backing-service",
 		"signal_scope: use",
 		"prober: http",
 		"probe_success{probe_scope=\\\"blackbox\\\"}",
@@ -194,12 +203,16 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"node_vmstat_pgpgin{signal_scope=\\\"use\\\"}",
 		"container_cpu_usage_seconds_total{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
 		"container_memory_working_set_bytes{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
+		"redis_memory_used_bytes{signal_scope=\\\"backing-service\\\"}",
+		"redis_connected_clients{signal_scope=\\\"backing-service\\\"}",
 		"USE CPU Utilization",
 		"USE CPU Saturation",
 		"USE Memory Utilization",
 		"USE Memory Saturation",
 		"Container CPU Usage",
 		"Container Memory Working Set",
+		"Redis Memory Used",
+		"Redis Connected Clients",
 	}
 	for _, fragment := range required {
 		assert.Contains(t, combined, fragment, "observability provisioning is missing %q", fragment)
@@ -276,8 +289,10 @@ func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
 
 	for _, serviceName := range []string{"app", "worker"} {
 		serviceBlock := composeServiceBlock(t, composeText, serviceName)
+		assert.NotContains(t, serviceBlock, "redis-exporter:", "%s must not depend on Redis exporter for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "node-exporter:", "%s must not depend on node exporter for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "cadvisor:", "%s must not depend on cAdvisor for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "REDIS_EXPORTER", "%s must not receive Redis exporter config", serviceName)
 		assert.NotContains(t, serviceBlock, "NODE_EXPORTER", "%s must not receive exporter config", serviceName)
 		assert.NotContains(t, serviceBlock, "CADVISOR", "%s must not receive cAdvisor config", serviceName)
 	}

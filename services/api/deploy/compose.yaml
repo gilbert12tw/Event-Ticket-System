@@ -253,6 +253,8 @@ services:
         condition: service_healthy
       alertmanager:
         condition: service_started
+      redis-exporter:
+        condition: service_started
       node-exporter:
         condition: service_started
       cadvisor:
@@ -326,6 +328,18 @@ services:
       - ./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
     depends_on:
       app:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.77.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "--redis.addr=redis://redis:6379"
+    ports:
+      - "${REDIS_EXPORTER_PORT:-9121}:9121"
+    depends_on:
+      redis:
         condition: service_healthy
 
   node-exporter:
