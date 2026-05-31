@@ -26,6 +26,8 @@ product runtime behavior:
   PagerDuty-style on-call receiver examples, without real credential values or active paging.
 - `log-sidecar-example.yaml` shows the container log forwarding sidecar pattern: the app still
   writes stdout, while a Fluent Bit sidecar tails a shared stdout spool and forwards structured logs.
+- `log-format-reference.yaml` documents parser shapes for unstructured logs, semi-structured
+  logfmt / Common Log Format lines, and the structured JSON stdout format used by the app.
 - `log-collector-alternatives.yaml` shows Fluentd and Vector collector config alternatives for
   tailing container JSON logs and forwarding them to Loki.
 - `plg-log-stack.yaml` shows a Loki + Grafana log analysis/viewing stack for the PLG pattern.
