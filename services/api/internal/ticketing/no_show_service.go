@@ -137,7 +137,7 @@ func (s *Service) recordNoShow(ctx context.Context, actor Actor, registrationID 
 		"cooldown_until":  cooldownUntil,
 		"cooldown_status": status,
 	})
-	if err := insertAudit(ctx, tx, auditID, actor, "registration.no_show_recorded", "registration", registrationID, noShowMetadata); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "registration.no_show_recorded", "registration", registrationID, noShowMetadata)); err != nil {
 		return false, false, err
 	}
 	noShowPayload := mergeMetadata(eventContext, map[string]interface{}{

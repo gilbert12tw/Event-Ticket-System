@@ -2,7 +2,7 @@ import { QRCodeSVG } from "qrcode.react";
 
 const QR_SIZE = 180;
 
-export function TicketQrCode({ token }: { token: string }) {
+export function TicketQrCode({ token }: Readonly<{ token: string }>) {
   if (!token) {
     return (
       <div className="qr qr-empty" aria-label="二維碼無法使用">

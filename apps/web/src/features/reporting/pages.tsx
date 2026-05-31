@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { createReportExport, getReportExport, reports } from "@/lib/api";
-import type { ReportExport, ReportRow } from "@/lib/api";
+import {
+  createReportExport,
+  getReportExport,
+  reports,
+  type ReportExport,
+  type ReportRow,
+} from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
 import {
   Alert,
@@ -60,7 +65,7 @@ export function HrReportsPage() {
         const current = await getReportExport(requested.export_id);
         setLastExport(current);
         if (current.status === "ready" || current.status === "failed") return;
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 500));
       }
     } catch (error) {
       setMessage(errorMessage(error));
@@ -355,7 +360,8 @@ function capacityLabel(row: ReportRow) {
 }
 
 function numberOrDash(value: number | null) {
-  return value === null ? "—" : value;
+  if (value === null) return "—";
+  return value;
 }
 
 function cityDistributionLabel(distribution: Record<string, number>) {

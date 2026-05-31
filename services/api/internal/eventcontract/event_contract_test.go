@@ -130,27 +130,42 @@ func validateEnvelope(env map[string]any) error {
 func walkRejectKeys(node any, path string) error {
 	switch v := node.(type) {
 	case map[string]any:
-		keys := make([]string, 0, len(v))
-		for k := range v {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			if _, banned := eventcontract.ForbiddenKeys[k]; banned {
-				return fmt.Errorf("forbidden key %q at %s/%s", k, path, k)
-			}
-			if err := walkRejectKeys(v[k], path+"/"+k); err != nil {
-				return err
-			}
-		}
+		return walkRejectMapKeys(v, path)
 	case []any:
-		for i, item := range v {
-			if err := walkRejectKeys(item, fmt.Sprintf("%s/[%d]", path, i)); err != nil {
-				return err
-			}
+		return walkRejectSliceKeys(v, path)
+	}
+	return nil
+}
+
+func walkRejectMapKeys(node map[string]any, path string) error {
+	keys := sortedMapKeys(node)
+	for _, key := range keys {
+		if _, banned := eventcontract.ForbiddenKeys[key]; banned {
+			return fmt.Errorf("forbidden key %q at %s/%s", key, path, key)
+		}
+		if err := walkRejectKeys(node[key], path+"/"+key); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func walkRejectSliceKeys(node []any, path string) error {
+	for i, item := range node {
+		if err := walkRejectKeys(item, fmt.Sprintf("%s/[%d]", path, i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sortedMapKeys(node map[string]any) []string {
+	keys := make([]string, 0, len(node))
+	for key := range node {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func TestValidatorRejectsMissingSchemaVersion(t *testing.T) {

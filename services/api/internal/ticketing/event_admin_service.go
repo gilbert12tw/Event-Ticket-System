@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Service) ListAdminEvents(ctx context.Context, actor Actor) ([]EventSummary, error) {
@@ -62,92 +64,8 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if event.Status == EventStatusArchived || !event.ArchivedAt.IsZero() {
 		return EventSummary{}, conflict("archived events cannot be edited")
 	}
-	if req.Title != nil {
-		title := strings.TrimSpace(*req.Title)
-		if title == "" {
-			return EventSummary{}, badRequest("title is required")
-		}
-		event.Title = title
-	}
-	if req.Description != nil {
-		event.Description = *req.Description
-	}
-	if req.Location != nil {
-		event.Location = *req.Location
-		if req.EventCity == nil && strings.TrimSpace(storedEventCity) == "" {
-			event.EventCity = eventCityOrFallback("", event.Location)
-		}
-		if req.EventSite == nil && strings.TrimSpace(storedEventSite) == "" {
-			event.EventSite = eventSiteOrFallback("", event.Location)
-		}
-	}
-	if req.EventCity != nil {
-		event.EventCity = eventCityOrFallback(*req.EventCity, event.Location)
-	}
-	if req.EventSite != nil {
-		event.EventSite = eventSiteOrFallback(*req.EventSite, event.Location)
-	}
-	if req.StartsAt != nil {
-		event.StartsAt = *req.StartsAt
-	}
-	if req.RegistrationStart != nil {
-		event.RegistrationStart = *req.RegistrationStart
-	}
-	if req.RegistrationClose != nil {
-		event.RegistrationClose = *req.RegistrationClose
-	}
-	if !event.RegistrationStart.Before(event.RegistrationClose) {
-		return EventSummary{}, badRequest("registration_start must be before registration_close")
-	}
-	if req.CapacityType != nil {
-		event.CapacityType = strings.TrimSpace(*req.CapacityType)
-	}
-	if req.capacitySet || req.Capacity != nil {
-		event.Capacity = req.Capacity
-	}
-	if req.AllowsFamily != nil {
-		event.AllowsFamily = *req.AllowsFamily
-	}
-	if event.CapacityType == CapacityTypeUnlimited {
-		event.Capacity = nil
-		event.AllowsFamily = true
-	}
-	if err := validateEventCapacity(event); err != nil {
+	if err := s.applyEventUpdateRequest(ctx, tx, &event, req, storedEventCity, storedEventSite); err != nil {
 		return EventSummary{}, err
-	}
-	if event.CapacityType == CapacityTypeLimited {
-		confirmed, err := s.confirmedCountTx(ctx, tx, eventID)
-		if err != nil {
-			return EventSummary{}, err
-		}
-		if *event.Capacity < confirmed {
-			return EventSummary{}, conflict("capacity cannot be lower than confirmed registrations")
-		}
-		familyRegistrations, err := s.activeFamilyRegistrationCountTx(ctx, tx, eventID)
-		if err != nil {
-			return EventSummary{}, err
-		}
-		if familyRegistrations > 0 {
-			return EventSummary{}, conflict("limited events cannot contain family registrations")
-		}
-	}
-	if req.Category != nil {
-		event.Category = strings.TrimSpace(*req.Category)
-	}
-	if req.Tags != nil {
-		event.Tags = normalizeTags(req.Tags)
-	}
-	if req.EntryMethod != nil {
-		event.EntryMethod = strings.TrimSpace(*req.EntryMethod)
-	}
-	if event.EntryMethod == "" {
-		event.EntryMethod = "qr"
-	}
-	if req.Visibility != nil {
-		event.Visibility = strings.TrimSpace(*req.Visibility)
-	}
-	if event.Visibility == "" {
-		event.Visibility = "eligible"
 	}
 	event.Version++
 
@@ -169,13 +87,135 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if err != nil {
 		return EventSummary{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "event.updated", "event", eventID, map[string]interface{}{"version": event.Version, "capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily}); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "event.updated", "event", eventID, map[string]interface{}{"version": event.Version, "capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily})); err != nil {
 		return EventSummary{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return EventSummary{}, err
 	}
 	return s.GetEventSummary(ctx, actor, eventID, "")
+}
+
+func (s *Service) applyEventUpdateRequest(ctx context.Context, tx pgx.Tx, event *Event, req UpdateEventRequest, storedEventCity string, storedEventSite string) error {
+	if err := applyEventContentUpdate(event, req, storedEventCity, storedEventSite); err != nil {
+		return err
+	}
+	applyEventScheduleUpdate(event, req)
+	if !event.RegistrationStart.Before(event.RegistrationClose) {
+		return badRequest("registration_start must be before registration_close")
+	}
+	if err := s.applyEventCapacityUpdate(ctx, tx, event, req); err != nil {
+		return err
+	}
+	applyEventMetadataUpdate(event, req)
+	return nil
+}
+
+func applyEventContentUpdate(event *Event, req UpdateEventRequest, storedEventCity string, storedEventSite string) error {
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			return badRequest("title is required")
+		}
+		event.Title = title
+	}
+	if req.Description != nil {
+		event.Description = *req.Description
+	}
+	if req.Location != nil {
+		event.Location = *req.Location
+		applyLocationDerivedFields(event, req, storedEventCity, storedEventSite)
+	}
+	if req.EventCity != nil {
+		event.EventCity = eventCityOrFallback(*req.EventCity, event.Location)
+	}
+	if req.EventSite != nil {
+		event.EventSite = eventSiteOrFallback(*req.EventSite, event.Location)
+	}
+	return nil
+}
+
+func applyLocationDerivedFields(event *Event, req UpdateEventRequest, storedEventCity string, storedEventSite string) {
+	if req.EventCity == nil && strings.TrimSpace(storedEventCity) == "" {
+		event.EventCity = eventCityOrFallback("", event.Location)
+	}
+	if req.EventSite == nil && strings.TrimSpace(storedEventSite) == "" {
+		event.EventSite = eventSiteOrFallback("", event.Location)
+	}
+}
+
+func applyEventScheduleUpdate(event *Event, req UpdateEventRequest) {
+	if req.StartsAt != nil {
+		event.StartsAt = *req.StartsAt
+	}
+	if req.RegistrationStart != nil {
+		event.RegistrationStart = *req.RegistrationStart
+	}
+	if req.RegistrationClose != nil {
+		event.RegistrationClose = *req.RegistrationClose
+	}
+}
+
+func (s *Service) applyEventCapacityUpdate(ctx context.Context, tx pgx.Tx, event *Event, req UpdateEventRequest) error {
+	if req.CapacityType != nil {
+		event.CapacityType = strings.TrimSpace(*req.CapacityType)
+	}
+	if req.capacitySet || req.Capacity != nil {
+		event.Capacity = req.Capacity
+	}
+	if req.AllowsFamily != nil {
+		event.AllowsFamily = *req.AllowsFamily
+	}
+	if event.CapacityType == CapacityTypeUnlimited {
+		event.Capacity = nil
+		event.AllowsFamily = true
+	}
+	if err := validateEventCapacity(*event); err != nil {
+		return err
+	}
+	return s.validateLimitedEventUpdateTx(ctx, tx, *event)
+}
+
+func (s *Service) validateLimitedEventUpdateTx(ctx context.Context, tx pgx.Tx, event Event) error {
+	if event.CapacityType != CapacityTypeLimited {
+		return nil
+	}
+	confirmed, err := s.confirmedCountTx(ctx, tx, event.EventID)
+	if err != nil {
+		return err
+	}
+	if *event.Capacity < confirmed {
+		return conflict("capacity cannot be lower than confirmed registrations")
+	}
+	familyRegistrations, err := s.activeFamilyRegistrationCountTx(ctx, tx, event.EventID)
+	if err != nil {
+		return err
+	}
+	if familyRegistrations > 0 {
+		return conflict("limited events cannot contain family registrations")
+	}
+	return nil
+}
+
+func applyEventMetadataUpdate(event *Event, req UpdateEventRequest) {
+	if req.Category != nil {
+		event.Category = strings.TrimSpace(*req.Category)
+	}
+	if req.Tags != nil {
+		event.Tags = normalizeTags(req.Tags)
+	}
+	if req.EntryMethod != nil {
+		event.EntryMethod = strings.TrimSpace(*req.EntryMethod)
+	}
+	if event.EntryMethod == "" {
+		event.EntryMethod = "qr"
+	}
+	if req.Visibility != nil {
+		event.Visibility = strings.TrimSpace(*req.Visibility)
+	}
+	if event.Visibility == "" {
+		event.Visibility = "eligible"
+	}
 }
 
 func (s *Service) ChangeEventState(ctx context.Context, actor Actor, eventID string, req ChangeEventStateRequest) (EventSummary, error) {
@@ -217,7 +257,7 @@ func (s *Service) ChangeEventState(ctx context.Context, actor Actor, eventID str
 	if err != nil {
 		return EventSummary{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "event.state_changed", "event", eventID, map[string]interface{}{"from": previousStatus, "to": next, "reason": req.Reason, "version": event.Version}); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "event.state_changed", "event", eventID, map[string]interface{}{"from": previousStatus, "to": next, "reason": req.Reason, "version": event.Version})); err != nil {
 		return EventSummary{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

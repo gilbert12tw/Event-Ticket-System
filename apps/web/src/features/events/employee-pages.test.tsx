@@ -1,7 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bookEvent, cancelMyRegistration, listEvents } from "@/lib/api";
+import {
+  type Ticket,
+  bookEvent,
+  cancelMyRegistration,
+  listEvents,
+} from "@/lib/api";
+import {
+  canBook,
+  messageTone,
+  registrationIDFor,
+} from "./employee-event-components";
 import { EmployeeEventsPage } from "./employee-pages";
 import { claims, eventFixture } from "@/test/event-fixtures";
 
@@ -21,6 +31,21 @@ const mockBookEvent = vi.mocked(bookEvent);
 const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
 
 type EventOverrides = Parameters<typeof eventFixture>[0];
+
+function ticket(
+  ticket_id: string,
+  registration_id = ticket_id.replace("T", "R"),
+): Ticket {
+  return {
+    employee_id: "E1001",
+    event_id: "evt-1",
+    issued_at: "2026-05-06T10:00:00Z",
+    non_transferable: true,
+    registration_id,
+    status: "active",
+    ticket_id,
+  };
+}
 
 function showEvents(...events: EventOverrides[]) {
   mockListEvents.mockResolvedValue(events.map((event) => eventFixture(event)));
@@ -199,6 +224,49 @@ describe("EmployeeEventsPage", () => {
     render(<EmployeeEventsPage claims={claims} />);
 
     expect(await screen.findByText("No Eligibility Event")).toBeInTheDocument();
+  });
+
+  it("classifies reusable event action helpers", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T00:00:00Z"));
+
+    try {
+      expect(messageTone("booking confirmed")).toBe("ok");
+      expect(messageTone("報名已取消")).toBe("ok");
+      expect(messageTone("waitlist closed")).toBe("warn");
+      expect(messageTone("冷卻中")).toBe("warn");
+      expect(messageTone("failed: not eligible")).toBe("fail");
+      expect(messageTone("不符合資格")).toBe("fail");
+      expect(messageTone("pending review")).toBe("info");
+
+      expect(
+        registrationIDFor(
+          eventFixture({ current_user_registration_id: "R-direct" }),
+        ),
+      ).toBe("R-direct");
+      expect(
+        registrationIDFor(
+          eventFixture({
+            current_user_registration_id: "",
+            current_user_ticket: ticket("T-ticket", "R-ticket"),
+          }),
+        ),
+      ).toBe("R-ticket");
+      expect(
+        registrationIDFor(
+          eventFixture({
+            current_user_registration_id: "",
+            current_user_ticket: undefined,
+          }),
+        ),
+      ).toBe("");
+
+      expect(canBook(eventFixture({ remaining_capacity: 1 }))).toBe(true);
+      expect(canBook(eventFixture({ remaining_capacity: 0 }))).toBe(true);
+      expect(canBook(eventFixture({ status: "draft" }))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows a disabled blocker action for unavailable event rows", async () => {

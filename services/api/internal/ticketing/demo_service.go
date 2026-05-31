@@ -2,6 +2,8 @@ package ticketing
 
 import "context"
 
+const demoSiteTaipeiHQ = "Taipei HQ"
+
 func (s *Service) SeedDemoData(ctx context.Context) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -9,10 +11,10 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 	}
 	defer rollback(ctx, tx)
 	employees := []Employee{
-		{EmployeeID: "E1001", FullName: "Ariel Chen", Department: "Engineering", Site: "Taipei HQ", JobGrade: 6, EmploymentStatus: "active"},
-		{EmployeeID: "E1002", FullName: "Ben Lin", Department: "Engineering", Site: "Taipei HQ", JobGrade: 5, EmploymentStatus: "active"},
+		{EmployeeID: "E1001", FullName: "Ariel Chen", Department: "Engineering", Site: demoSiteTaipeiHQ, JobGrade: 6, EmploymentStatus: "active"},
+		{EmployeeID: "E1002", FullName: "Ben Lin", Department: "Engineering", Site: demoSiteTaipeiHQ, JobGrade: 5, EmploymentStatus: "active"},
 		{EmployeeID: "E1003", FullName: "Tainan User", Department: "Engineering", Site: "Tainan HQ", JobGrade: 5, EmploymentStatus: "active"},
-		{EmployeeID: "E2001", FullName: "Carla Wu", Department: "Sales", Site: "Taipei HQ", JobGrade: 4, EmploymentStatus: "active"},
+		{EmployeeID: "E2001", FullName: "Carla Wu", Department: "Sales", Site: demoSiteTaipeiHQ, JobGrade: 4, EmploymentStatus: "active"},
 	}
 	for _, employee := range employees {
 		_, err := tx.Exec(ctx, `INSERT INTO employees (employee_id, full_name, department, site, job_grade, employment_status)

@@ -10,6 +10,8 @@
     "lint:web": "turbo run lint",
     "lint:go": "cd services/api && golangci-lint run ./...",
     "type-check": "pnpm --filter cets-web type-check",
+    "test:coverage": "scripts/coverage/sonar-go-coverage.sh && pnpm --filter cets-web test:coverage",
+    "sonar:scan": "pnpm test:coverage && sonar-scanner",
     "format": "pnpm format:check",
     "format:check": "prettier --check \"package.json\" \"pnpm-workspace.yaml\" \"turbo.json\" \"eslint.config.mjs\" \".github/**/*.{yaml,yml}\" \"apps/web/**/*.{css,js,json,jsonc,md,ts,tsx,yaml,yml}\" \"services/api/.golangci.yml\" \"services/api/deploy/*.{yaml,yml}\"",
     "format:write": "prettier --write \"package.json\" \"pnpm-workspace.yaml\" \"turbo.json\" \"eslint.config.mjs\" \".github/**/*.{yaml,yml}\" \"apps/web/**/*.{css,js,json,jsonc,md,ts,tsx,yaml,yml}\" \"services/api/.golangci.yml\" \"services/api/deploy/*.{yaml,yml}\"",

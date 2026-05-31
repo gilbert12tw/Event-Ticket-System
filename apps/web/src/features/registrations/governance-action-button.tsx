@@ -4,11 +4,11 @@ export function GovernanceActionButton({
   buttonLabel,
   disabled,
   onClick,
-}: {
+}: Readonly<{
   buttonLabel: string;
   disabled: boolean;
   onClick: () => void;
-}) {
+}>) {
   return (
     <div className="inline-action-cell">
       <Button

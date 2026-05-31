@@ -1,0 +1,54 @@
+name: Set up web workspace
+description: Install pnpm, Node.js, and web dependencies for CI jobs.
+
+inputs:
+  install:
+    description: Run pnpm install after Node setup.
+    default: "true"
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10.33.3
+
+    - name: Restore Node path for local act runs
+      if: env.ACT == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v node >/dev/null 2>&1; then
+          dirname "$(command -v node)" >> "$GITHUB_PATH"
+          exit 0
+        fi
+        node_bin="$(dirname "$(/usr/bin/find /opt/acttoolcache/node -path '*/bin/node' -type f | /usr/bin/sort -V | /usr/bin/tail -n 1)")"
+        echo "$node_bin" >> "$GITHUB_PATH"
+
+    - name: Set up Node.js
+      if: env.ACT != 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+
+    - name: Set up Node.js for local act runs
+      if: env.ACT == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install web dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${ACT:-}" == "true" ]] && command -v flock >/dev/null 2>&1; then
+          mkdir -p .pnpm-store
+          flock .pnpm-store/act-install.lock pnpm install --frozen-lockfile
+          exit 0
+        fi
+        pnpm install --frozen-lockfile

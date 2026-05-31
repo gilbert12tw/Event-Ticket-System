@@ -3,6 +3,14 @@
 .env.*
 !.env.example
 !services/api/deploy/.env.example
+**/terraform.tfvars
+**/terraform.tfvars.json
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/aws/free-tier-compose/cost-reports/
+infra/aws/free-tier-compose/selected-region.env
 
 # OS / editor noise
 .DS_Store
@@ -20,6 +28,7 @@ pnpm-debug.log*
 tmp/
 temp/
 .cache/
+.scannerwork/
 
 # Dependencies / build outputs
 node_modules/
@@ -31,7 +40,9 @@ services/api/internal/httpapi/static/*
 !services/api/internal/httpapi/static/placeholder.txt
 dist/
 build/
-coverage/
+/coverage/
+apps/web/coverage/
+services/api/coverage*.out
 
 # Test result
 playwright-report/

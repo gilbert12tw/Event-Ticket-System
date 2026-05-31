@@ -13,7 +13,12 @@ import (
 	"event-ticket-system/internal/ticketing"
 )
 
-const authSourceProvider = "provider"
+const (
+	authSourceProvider      = "provider"
+	authRequiredMessage     = "authentication required"
+	authRoleNotAllowed      = "role is not allowed"
+	mockProfileSiteTaipeiHQ = "Taipei HQ"
+)
 
 const mockProviderTokenTTL = 8 * time.Hour
 
@@ -62,7 +67,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("Software Engineer"),
 		RoleClaims:       []string{ticketing.RoleEmployee},
 		Department:       "Engineering",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            6,
 		EmploymentStatus: "active",
@@ -73,7 +78,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("Product Designer"),
 		RoleClaims:       []string{ticketing.RoleEmployee},
 		Department:       "Engineering",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            5,
 		EmploymentStatus: "active",
@@ -95,7 +100,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("Account Manager"),
 		RoleClaims:       []string{ticketing.RoleEmployee},
 		Department:       "Sales",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            4,
 		EmploymentStatus: "active",
@@ -106,7 +111,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("Activity Owner"),
 		RoleClaims:       []string{ticketing.RoleActivityAdmin},
 		Department:       "Welfare Committee",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            7,
 		EmploymentStatus: "active",
@@ -117,7 +122,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("Check-in Staff"),
 		RoleClaims:       []string{ticketing.RoleCheckinStaff},
 		Department:       "Operations",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            5,
 		EmploymentStatus: "active",
@@ -128,7 +133,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("HR Partner"),
 		RoleClaims:       []string{ticketing.RoleHRAdmin},
 		Department:       "Human Resources",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            6,
 		EmploymentStatus: "active",
@@ -139,7 +144,7 @@ var mockProviderProfiles = []providerClaims{
 		JobTitle:         stringPointer("System Administrator"),
 		RoleClaims:       []string{ticketing.RoleSystemAdmin},
 		Department:       "IT",
-		Site:             "Taipei HQ",
+		Site:             mockProfileSiteTaipeiHQ,
 		City:             "Taipei",
 		Grade:            8,
 		EmploymentStatus: "active",
@@ -156,7 +161,7 @@ func handleMe(provider *ProviderVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bearer, ok := bearerToken(r)
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeError(w, http.StatusUnauthorized, authRequiredMessage)
 			return
 		}
 		identity, status, err := providerIdentity(provider, bearer)
@@ -223,7 +228,7 @@ func requireActor(provider *ProviderVerifier, next http.HandlerFunc) http.Handle
 	return func(w http.ResponseWriter, r *http.Request) {
 		bearer, ok := bearerToken(r)
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeError(w, http.StatusUnauthorized, authRequiredMessage)
 			return
 		}
 		identity, status, err := providerIdentity(provider, bearer)
@@ -284,9 +289,9 @@ func providerIdentity(provider *ProviderVerifier, token string) (authIdentity, i
 
 func authErrorMessage(status int) string {
 	if status == http.StatusForbidden {
-		return "role is not allowed"
+		return authRoleNotAllowed
 	}
-	return "authentication required"
+	return authRequiredMessage
 }
 
 func mockProfilePayloads() []mockProfilePayload {

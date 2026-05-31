@@ -3,7 +3,9 @@ import { formatDate } from "@/lib/formatting";
 import { MetaList, StatusBadge } from "@/components/shared";
 import { checkinStatusView, localizedMessage } from "@/lib/ui/options";
 
-export function CheckinResult({ result }: { result: CheckinResponse }) {
+export function CheckinResult({
+  result,
+}: Readonly<{ result: CheckinResponse }>) {
   const status = checkinStatusView(result.status, result.duplicate);
   const holder = result.holder;
   const reasonCode = result.reason_code || result.conflict_reason || "";
@@ -17,13 +19,7 @@ export function CheckinResult({ result }: { result: CheckinResponse }) {
     >
       <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
       <h3>{checkinHeading(result.status, result.duplicate)}</h3>
-      <p className="checkin-result-copy">
-        {result.duplicate
-          ? "此票券先前已完成入場，請依首次核銷資訊核對現場紀錄。"
-          : result.status === "accepted"
-            ? "請核對持票人、部門、城市與同行人數後放行。"
-            : "請依拒絕原因處理，必要時轉交主辦人工確認。"}
-      </p>
+      <p className="checkin-result-copy">{checkinBodyCopy(result)}</p>
       <MetaList
         rows={[
           [
@@ -104,6 +100,16 @@ function checkinHeading(status: string, duplicate: boolean) {
   if (status === "accepted") return "驗票成功";
   if (status === "rejected") return "驗票失敗，票券不可入場";
   return "驗票結果已更新";
+}
+
+function checkinBodyCopy(result: { duplicate: boolean; status: string }) {
+  if (result.duplicate) {
+    return "此票券先前已完成入場，請依首次核銷資訊核對現場紀錄。";
+  }
+  if (result.status === "accepted") {
+    return "請核對持票人、部門、城市與同行人數後放行。";
+  }
+  return "請依拒絕原因處理，必要時轉交主辦人工確認。";
 }
 
 function recoveryCopy(reasonCode: string, rejectionMessage?: string) {

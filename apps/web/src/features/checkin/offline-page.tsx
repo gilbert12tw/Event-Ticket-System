@@ -78,7 +78,7 @@ export function OfflineCheckinBoundaryPage() {
     try {
       const nextEvents = await listAdminEvents();
       setEvents(nextEvents);
-      if (!eventID) setEventID(nextEvents[0]?.event_id || "");
+      if (!eventID) setEventID(nextEvents[0]?.event_id ?? "");
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -221,7 +221,7 @@ function OfflinePackageStep({
   onDownload,
   onEventChange,
   onLoadEvents,
-}: {
+}: Readonly<{
   busy: boolean;
   customDeviceID: string;
   deviceID: string;
@@ -236,7 +236,7 @@ function OfflinePackageStep({
   onDownload: () => void;
   onEventChange: (value: string) => void;
   onLoadEvents: () => void;
-}) {
+}>) {
   return (
     <div className="split-grid offline-package-grid">
       <div>
@@ -329,7 +329,7 @@ function OfflineScanStep({
   parsedBatchTokens,
   onBatchFormChange,
   onSync,
-}: {
+}: Readonly<{
   batchForm: string;
   busy: boolean;
   ignoredBatchLines: number;
@@ -337,7 +337,7 @@ function OfflineScanStep({
   parsedBatchTokens: string[];
   onBatchFormChange: (value: string) => void;
   onSync: () => void;
-}) {
+}>) {
   return (
     <div className="split-grid">
       <div>
@@ -376,12 +376,7 @@ function OfflineScanStep({
           {busy ? "同步中" : "同步名單"}
         </Button>
       </div>
-      {!packageSummary ? (
-        <EmptyState
-          title="尚未下載名單"
-          action="請先回到第一步下載離線名單。"
-        />
-      ) : (
+      {packageSummary ? (
         <ResponsiveTable label="離線驗票同步結果">
           <thead>
             <tr>
@@ -413,6 +408,11 @@ function OfflineScanStep({
             ))}
           </tbody>
         </ResponsiveTable>
+      ) : (
+        <EmptyState
+          title="尚未下載名單"
+          action="請先回到第一步下載離線名單。"
+        />
       )}
     </div>
   );

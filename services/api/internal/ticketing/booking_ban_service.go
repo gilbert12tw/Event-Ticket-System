@@ -54,12 +54,12 @@ func (s *Service) createBookingBanTx(ctx context.Context, tx pgx.Tx, actor Actor
 	if err != nil {
 		return err
 	}
-	return insertAudit(ctx, tx, auditID, actor, "booking.ban_created", "booking_ban", activeBanID, map[string]interface{}{
+	return insertAudit(ctx, tx, newAuditRecord(auditID, actor, "booking.ban_created", "booking_ban", activeBanID, map[string]interface{}{
 		"event_id":        eventID,
 		"employee_id":     employeeID,
 		"registration_id": registrationID,
 		"reason":          reason,
-	})
+	}))
 }
 
 // LiftBookingBan resolves an active per-event ban, allowing the employee to book the event again.
@@ -92,10 +92,10 @@ func (s *Service) LiftBookingBan(ctx context.Context, actor Actor, eventID, empl
 	if err != nil {
 		return err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "booking.ban_lifted", "booking_ban", banID, map[string]interface{}{
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "booking.ban_lifted", "booking_ban", banID, map[string]interface{}{
 		"event_id":    eventID,
 		"employee_id": employeeID,
-	}); err != nil {
+	})); err != nil {
 		return err
 	}
 

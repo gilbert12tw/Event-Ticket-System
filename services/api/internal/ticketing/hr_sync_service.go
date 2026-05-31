@@ -3,6 +3,8 @@ package ticketing
 import (
 	"context"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Service) RunHRSync(ctx context.Context, actor Actor, req HRSyncRequest) (HRSyncBatch, error) {
@@ -31,71 +33,18 @@ func (s *Service) RunHRSync(ctx context.Context, actor Actor, req HRSyncRequest)
 		return HRSyncBatch{}, err
 	}
 
-	rows, err := tx.Query(ctx, `SELECT e.event_id, r.department, r.site, r.min_grade, r.employment_status
-		FROM events e
-		JOIN eligibility_rules r ON r.event_id = e.event_id
-		WHERE e.archived_at IS NULL
-		ORDER BY e.created_at DESC`)
+	eventRules, err := hrSyncEventRules(ctx, tx)
 	if err != nil {
 		return HRSyncBatch{}, err
 	}
 
-	eventRules := []struct {
-		eventID string
-		rule    RuleInput
-	}{}
-	defer rows.Close()
-	for rows.Next() {
-		var eventRule struct {
-			eventID string
-			rule    RuleInput
-		}
-		if err := rows.Scan(
-			&eventRule.eventID,
-			&eventRule.rule.Department,
-			&eventRule.rule.Site,
-			&eventRule.rule.MinGrade,
-			&eventRule.rule.EmploymentStatus,
-		); err != nil {
-			return HRSyncBatch{}, err
-		}
-		eventRules = append(eventRules, eventRule)
-	}
-	if err := rows.Err(); err != nil {
-		return HRSyncBatch{}, err
-	}
-	rows.Close()
-
 	totalImpacted := 0
 	for _, eventRule := range eventRules {
-		normalizedRule := normalizeRuleInput(eventRule.rule)
-		impacted, err := s.createEligibilityImpactReviewsTx(ctx, tx, eventRule.eventID, normalizedRule)
+		impacted, err := s.applyHRSyncEventRuleTx(ctx, tx, actor, batchID, source, eventRule)
 		if err != nil {
 			return HRSyncBatch{}, err
-		}
-		if impacted == 0 {
-			continue
 		}
 		totalImpacted += impacted
-		eventAuditID, err := newID("aud")
-		if err != nil {
-			return HRSyncBatch{}, err
-		}
-		if err := insertAudit(ctx, tx, eventAuditID, actor, "eligibility_impact.created", "event", eventRule.eventID, map[string]interface{}{
-			"batch_id":     batchID,
-			"source":       source,
-			"review_count": impacted,
-		}); err != nil {
-			return HRSyncBatch{}, err
-		}
-		if err := insertOutbox(ctx, tx, "eligibility.impact_review.created", eventRule.eventID, map[string]interface{}{
-			"batch_id":     batchID,
-			"event_id":     eventRule.eventID,
-			"review_count": impacted,
-			"source":       source,
-		}); err != nil {
-			return HRSyncBatch{}, err
-		}
 	}
 
 	if _, err := tx.Exec(ctx, `UPDATE hr_sync_batches SET status = 'applied', employee_count = $2, completed_at = $3 WHERE batch_id = $1`, batchID, totalImpacted, s.now()); err != nil {
@@ -106,11 +55,11 @@ func (s *Service) RunHRSync(ctx context.Context, actor Actor, req HRSyncRequest)
 	if err != nil {
 		return HRSyncBatch{}, err
 	}
-	if err := insertAudit(ctx, tx, batchAuditID, actor, "hr_sync.completed", "hr_sync_batch", batchID, map[string]interface{}{
+	if err := insertAudit(ctx, tx, newAuditRecord(batchAuditID, actor, "hr_sync.completed", "hr_sync_batch", batchID, map[string]interface{}{
 		"batch_id":       batchID,
 		"source":         source,
 		"employee_count": totalImpacted,
-	}); err != nil {
+	})); err != nil {
 		return HRSyncBatch{}, err
 	}
 	if err := insertOutbox(ctx, tx, "hr_sync.completed", batchID, map[string]interface{}{
@@ -133,4 +82,61 @@ func (s *Service) RunHRSync(ctx context.Context, actor Actor, req HRSyncRequest)
 		StartedAt:     now,
 		CompletedAt:   s.now(),
 	}, nil
+}
+
+type hrSyncEventRule struct {
+	eventID string
+	rule    RuleInput
+}
+
+func hrSyncEventRules(ctx context.Context, tx pgx.Tx) ([]hrSyncEventRule, error) {
+	rows, err := tx.Query(ctx, `SELECT e.event_id, r.department, r.site, r.min_grade, r.employment_status
+		FROM events e
+		JOIN eligibility_rules r ON r.event_id = e.event_id
+		WHERE e.archived_at IS NULL
+		ORDER BY e.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	eventRules := []hrSyncEventRule{}
+	for rows.Next() {
+		var eventRule hrSyncEventRule
+		if err := rows.Scan(
+			&eventRule.eventID,
+			&eventRule.rule.Department,
+			&eventRule.rule.Site,
+			&eventRule.rule.MinGrade,
+			&eventRule.rule.EmploymentStatus,
+		); err != nil {
+			return nil, err
+		}
+		eventRules = append(eventRules, eventRule)
+	}
+	return eventRules, rows.Err()
+}
+
+func (s *Service) applyHRSyncEventRuleTx(ctx context.Context, tx pgx.Tx, actor Actor, batchID string, source string, eventRule hrSyncEventRule) (int, error) {
+	impacted, err := s.createEligibilityImpactReviewsTx(ctx, tx, eventRule.eventID, normalizeRuleInput(eventRule.rule))
+	if err != nil || impacted == 0 {
+		return impacted, err
+	}
+	eventAuditID, err := newID("aud")
+	if err != nil {
+		return 0, err
+	}
+	if err := insertAudit(ctx, tx, newAuditRecord(eventAuditID, actor, "eligibility_impact.created", "event", eventRule.eventID, map[string]interface{}{
+		"batch_id":     batchID,
+		"source":       source,
+		"review_count": impacted,
+	})); err != nil {
+		return 0, err
+	}
+	return impacted, insertOutbox(ctx, tx, "eligibility.impact_review.created", eventRule.eventID, map[string]interface{}{
+		"batch_id":     batchID,
+		"event_id":     eventRule.eventID,
+		"review_count": impacted,
+		"source":       source,
+	})
 }

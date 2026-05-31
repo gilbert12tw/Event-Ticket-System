@@ -1,0 +1,3 @@
+-P ubuntu-latest=mcr.microsoft.com/playwright:v1.59.1-noble
+--env PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+--concurrent-jobs 1

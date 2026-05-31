@@ -53,8 +53,8 @@ func (s *Service) ListRegistrations(ctx context.Context, actor Actor, eventID st
 }
 
 func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID string, registrationID string, req CancelRegistrationRequest) (BookingResponse, error) {
-	cancelID := strings.TrimSpace(req.IdempotencyKey)
-	if cancelID == "" {
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	if req.IdempotencyKey == "" {
 		return BookingResponse{}, badRequest("idempotency_key is required")
 	}
 	tx, err := s.db.Begin(ctx)
@@ -74,107 +74,139 @@ func (s *Service) CancelRegistration(ctx context.Context, actor Actor, eventID s
 	if reg.EventID != eventID {
 		return BookingResponse{}, notFound("registration not found")
 	}
-	isEmployeeCancel := actor.Role == RoleEmployee
-	if isEmployeeCancel {
-		if actor.ID != reg.EmployeeID {
-			return BookingResponse{}, forbidden("employees may only cancel their own registrations")
-		}
-	} else if err := requireRole(actor, RoleActivityAdmin); err != nil {
+	if err := s.validateCancellationActorAccess(actor, event, reg); err != nil {
 		return BookingResponse{}, err
 	}
-	if reg.Status == RegistrationCancelled {
-		if reg.CancelKey == cancelID {
-			ticket, err := s.findTicketByRegistrationTx(ctx, tx, reg.RegistrationID)
-			if err != nil {
-				return BookingResponse{}, err
-			}
-			remaining, err := s.remainingForResponseTx(ctx, tx, event)
-			if err != nil {
-				return BookingResponse{}, err
-			}
-			return BookingResponse{Registration: reg, Ticket: sanitizeTicket(ticket), RemainingCapacity: remaining, Message: "registration already cancelled"}, tx.Commit(ctx)
-		}
+	if response, found, err := s.cancelledRegistrationResponseTx(ctx, tx, event, reg, req.IdempotencyKey); err != nil || found {
+		return response, err
 	}
-	if isEmployeeCancel {
-		if s.now().After(event.RegistrationClose) {
-			return BookingResponse{}, conflict("registration window is closed; contact an activity admin")
-		}
-	} else if strings.TrimSpace(req.Reason) == "" {
-		return BookingResponse{}, badRequest("reason is required for admin exception cancellation")
-	}
-	if reg.Status != RegistrationConfirmed && reg.Status != RegistrationWaitlisted {
-		return BookingResponse{}, conflict("registration cannot be cancelled")
+	if err := s.validateNewCancellationRequest(actor, req); err != nil {
+		return BookingResponse{}, err
 	}
 	wasConfirmed := reg.Status == RegistrationConfirmed
-	cancelledAt := s.now()
-	_, err = tx.Exec(ctx, `UPDATE registrations SET status = 'cancelled', cancel_idempotency_key = $1, cancel_reason = $2, cancelled_at = $3
-		WHERE registration_id = $4`, cancelID, req.Reason, cancelledAt, registrationID)
-	if err != nil {
-		return BookingResponse{}, err
-	}
-	reg.Status = RegistrationCancelled
-	reg.CancelKey = cancelID
-	reg.CancelReason = req.Reason
-	reg.CancelledAt = cancelledAt
-
-	if wasConfirmed {
-		if err := s.createBookingBanTx(ctx, tx, actor, eventID, reg.EmployeeID, registrationID, req.Reason); err != nil {
-			return BookingResponse{}, err
-		}
-	}
-
-	if _, err := tx.Exec(ctx, `UPDATE tickets SET status = 'revoked', revoked_reason = $1 WHERE registration_id = $2 AND status = 'active'`, "registration cancelled", registrationID); err != nil {
-		return BookingResponse{}, err
-	}
-	auditID, err := newID("aud")
-	if err != nil {
-		return BookingResponse{}, err
-	}
-	eventContext := eventContextMetadata(event)
-	cancellationMetadata := mergeMetadata(eventContext, map[string]interface{}{
-		"registration_id": registrationID,
-		"reason":          req.Reason,
-	})
-	if err := insertAudit(ctx, tx, auditID, actor, "registration.cancelled", "registration", registrationID, cancellationMetadata); err != nil {
-		return BookingResponse{}, err
-	}
-	cancellationPayload := mergeMetadata(eventContext, map[string]interface{}{
-		"registration_id": registrationID,
-		"employee_id":     reg.EmployeeID,
-		"reason":          req.Reason,
-	})
-	if err := insertOutbox(ctx, tx, "registration.cancelled", registrationID, cancellationPayload); err != nil {
+	if err := s.applyRegistrationCancellationTx(ctx, tx, actor, event, &reg, registrationID, req); err != nil {
 		return BookingResponse{}, err
 	}
 	ticket, err := s.findTicketByRegistrationTx(ctx, tx, reg.RegistrationID)
 	if err != nil {
 		return BookingResponse{}, err
 	}
-
-	remaining := 0
-	if event.CapacityType == CapacityTypeLimited {
-		capacity, err := limitedCapacity(event)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		if wasConfirmed {
-			promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, eventID, capacity, rule)
-			if err != nil {
-				return BookingResponse{}, err
-			}
-			remaining = promotion.RemainingCapacity
-		} else {
-			remaining, err = s.remainingCapacityTx(ctx, tx, eventID, capacity)
-			if err != nil {
-				return BookingResponse{}, err
-			}
-		}
+	remaining, err := s.remainingAfterCancellationTx(ctx, tx, actor, event, rule, wasConfirmed)
+	if err != nil {
+		return BookingResponse{}, err
 	}
-
 	if err := tx.Commit(ctx); err != nil {
 		return BookingResponse{}, err
 	}
 	return BookingResponse{Registration: reg, Ticket: sanitizeTicket(ticket), RemainingCapacity: remaining, Message: "registration cancelled"}, nil
+}
+
+func (s *Service) validateCancellationActorAccess(actor Actor, event Event, reg Registration) error {
+	if actor.Role == RoleEmployee {
+		if actor.ID != reg.EmployeeID {
+			return forbidden("employees may only cancel their own registrations")
+		}
+		if s.now().After(event.RegistrationClose) {
+			return conflict("registration window is closed; contact an activity admin")
+		}
+		return nil
+	}
+	return requireRole(actor, RoleActivityAdmin)
+}
+
+func (s *Service) validateNewCancellationRequest(actor Actor, req CancelRegistrationRequest) error {
+	if actor.Role == RoleEmployee {
+		return nil
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return badRequest("reason is required for admin exception cancellation")
+	}
+	return nil
+}
+
+func (s *Service) cancelledRegistrationResponseTx(ctx context.Context, tx pgx.Tx, event Event, reg Registration, cancelID string) (BookingResponse, bool, error) {
+	if reg.Status != RegistrationCancelled {
+		return BookingResponse{}, false, nil
+	}
+	if reg.CancelKey != cancelID {
+		return BookingResponse{}, true, conflict("registration cannot be cancelled")
+	}
+	ticket, err := s.findTicketByRegistrationTx(ctx, tx, reg.RegistrationID)
+	if err != nil {
+		return BookingResponse{}, true, err
+	}
+	remaining, err := s.remainingForResponseTx(ctx, tx, event)
+	if err != nil {
+		return BookingResponse{}, true, err
+	}
+	return BookingResponse{Registration: reg, Ticket: sanitizeTicket(ticket), RemainingCapacity: remaining, Message: "registration already cancelled"}, true, tx.Commit(ctx)
+}
+
+func (s *Service) applyRegistrationCancellationTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, reg *Registration, registrationID string, req CancelRegistrationRequest) error {
+	if reg.Status != RegistrationConfirmed && reg.Status != RegistrationWaitlisted {
+		return conflict("registration cannot be cancelled")
+	}
+	wasConfirmed := reg.Status == RegistrationConfirmed
+	cancelledAt := s.now()
+	_, err := tx.Exec(ctx, `UPDATE registrations SET status = 'cancelled', cancel_idempotency_key = $1, cancel_reason = $2, cancelled_at = $3
+		WHERE registration_id = $4`, req.IdempotencyKey, req.Reason, cancelledAt, registrationID)
+	if err != nil {
+		return err
+	}
+	reg.Status = RegistrationCancelled
+	reg.CancelKey = req.IdempotencyKey
+	reg.CancelReason = req.Reason
+	reg.CancelledAt = cancelledAt
+	if wasConfirmed {
+		if err := s.createBookingBanTx(ctx, tx, actor, event.EventID, reg.EmployeeID, registrationID, req.Reason); err != nil {
+			return err
+		}
+	}
+	if err := revokeRegistrationTicketTx(ctx, tx, registrationID); err != nil {
+		return err
+	}
+	return insertRegistrationCancellationEffectsTx(ctx, tx, actor, event, *reg, registrationID, req.Reason)
+}
+
+func revokeRegistrationTicketTx(ctx context.Context, tx pgx.Tx, registrationID string) error {
+	_, err := tx.Exec(ctx, `UPDATE tickets SET status = 'revoked', revoked_reason = $1 WHERE registration_id = $2 AND status = 'active'`, "registration cancelled", registrationID)
+	return err
+}
+
+func insertRegistrationCancellationEffectsTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, reg Registration, registrationID string, reason string) error {
+	auditID, err := newID("aud")
+	if err != nil {
+		return err
+	}
+	eventContext := eventContextMetadata(event)
+	cancellationMetadata := mergeMetadata(eventContext, map[string]interface{}{
+		"registration_id": registrationID,
+		"reason":          reason,
+	})
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "registration.cancelled", "registration", registrationID, cancellationMetadata)); err != nil {
+		return err
+	}
+	cancellationPayload := mergeMetadata(eventContext, map[string]interface{}{
+		"registration_id": registrationID,
+		"employee_id":     reg.EmployeeID,
+		"reason":          reason,
+	})
+	return insertOutbox(ctx, tx, "registration.cancelled", registrationID, cancellationPayload)
+}
+
+func (s *Service) remainingAfterCancellationTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, rule EligibilityRule, wasConfirmed bool) (int, error) {
+	if event.CapacityType != CapacityTypeLimited {
+		return 0, nil
+	}
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return 0, err
+	}
+	if wasConfirmed {
+		promotion, err := s.promoteWaitlistedRegistrationTx(ctx, tx, actor, event.EventID, capacity, rule)
+		return promotion.RemainingCapacity, err
+	}
+	return s.remainingCapacityTx(ctx, tx, event.EventID, capacity)
 }
 
 func (s *Service) CancelMyRegistration(ctx context.Context, actor Actor, registrationID string, req CancelRegistrationRequest) (BookingResponse, error) {

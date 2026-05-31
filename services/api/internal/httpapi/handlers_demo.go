@@ -14,11 +14,11 @@ func handleSeedDemo(service TicketingService, appEnv string) http.HandlerFunc {
 		}
 		actor := actorFromRequest(r)
 		if actor.ID == "" || actor.Role == "" {
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeError(w, http.StatusUnauthorized, authRequiredMessage)
 			return
 		}
 		if actor.Role != ticketing.RoleActivityAdmin && actor.Role != ticketing.RoleHRAdmin && actor.Role != ticketing.RoleSystemAdmin {
-			writeError(w, http.StatusForbidden, "role is not allowed")
+			writeError(w, http.StatusForbidden, authRoleNotAllowed)
 			return
 		}
 		if err := service.SeedDemoData(r.Context()); err != nil {

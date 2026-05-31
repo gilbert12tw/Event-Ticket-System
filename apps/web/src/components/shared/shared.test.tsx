@@ -231,7 +231,7 @@ describe("shared product components", () => {
     expect(container.querySelector(".meta-list")).not.toBeInTheDocument();
   });
 
-  it("renders responsive tables with a keyboard-scroll region and caption", () => {
+  it("renders responsive tables with accessible scroll container and caption", () => {
     render(
       <ResponsiveTable label="報名名單">
         <thead>
@@ -247,8 +247,7 @@ describe("shared product components", () => {
       </ResponsiveTable>,
     );
 
-    const region = screen.getByRole("region", { name: "報名名單" });
-    expect(region).toHaveAttribute("tabindex", "0");
+    const region = screen.getByLabelText("報名名單");
     expect(within(region).getByRole("table")).toBeInTheDocument();
     expect(within(region).getByText("報名名單")).toHaveClass("sr-only");
   });

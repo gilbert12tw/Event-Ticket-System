@@ -53,6 +53,16 @@ import { Card } from "@/components/ui/card";
 import { runClientNavigation } from "@/lib/navigation";
 import { isDebugChromeEnabled, setDebugChromeQuery } from "@/lib/ui/debug";
 
+async function settle<T>(
+  promise: Promise<T>,
+): Promise<[T | null, Error | null]> {
+  try {
+    return [await promise, null];
+  } catch (error) {
+    return [null, error instanceof Error ? error : new Error(String(error))];
+  }
+}
+
 function App() {
   const [route, setRoute] = useState<RouteKey>(currentRoute);
   const [auth, setAuth] = useState<AuthSession | null>(null);
@@ -90,8 +100,8 @@ function App() {
       setRoute(currentRoute());
       setDebugChrome(isDebugChromeEnabled(debugChromeAvailable));
     };
-    window.addEventListener("popstate", onRoute);
-    return () => window.removeEventListener("popstate", onRoute);
+    globalThis.addEventListener("popstate", onRoute);
+    return () => globalThis.removeEventListener("popstate", onRoute);
   }, [debugChromeAvailable]);
 
   useEffect(() => {
@@ -103,39 +113,33 @@ function App() {
 
   useEffect(() => {
     let active = true;
+
+    const resetDebugSessionState = () => {
+      setMockProfilesEnabled(false);
+      setMockProfiles([]);
+      setDebugChromeAvailable(false);
+      setDebugChrome(false);
+      setDebugChromeQuery(false);
+    };
+
     async function loadAuth() {
       try {
-        const session = await me();
+        const [session, sessionError] = await settle(me());
         if (!active) return;
-        setAuth(session);
-        try {
-          const bootstrap = await authBootstrap();
-          if (!active) return;
+        setAuth(session ?? null);
+
+        const [bootstrap, bootstrapError] = await settle(authBootstrap());
+        if (!active) return;
+
+        if (bootstrap) {
           applyBootstrap(bootstrap);
-        } catch {
-          if (!active) return;
-          setMockProfilesEnabled(false);
-          setMockProfiles([]);
-          setDebugChromeAvailable(false);
-          setDebugChrome(false);
-          setDebugChromeQuery(false);
+          setAuthMessage("");
+          return;
         }
-        setAuthMessage("");
-      } catch {
-        if (!active) return;
-        setAuth(null);
-        try {
-          const bootstrap = await authBootstrap();
-          if (!active) return;
-          applyBootstrap(bootstrap);
-        } catch (error) {
-          if (!active) return;
-          setMockProfilesEnabled(false);
-          setMockProfiles([]);
-          setDebugChromeAvailable(false);
-          setDebugChrome(false);
-          setDebugChromeQuery(false);
-          setAuthMessage(errorMessage(error));
+
+        resetDebugSessionState();
+        if (!session) {
+          setAuthMessage(errorMessage(bootstrapError || sessionError));
         }
       } finally {
         if (active) setAuthLoading(false);
@@ -285,6 +289,15 @@ function App() {
   );
 }
 
+type AuthRequiredStateProps = {
+  readonly debugChrome: boolean;
+  readonly debugChromeAvailable: boolean;
+  readonly health: string;
+  readonly ready: string;
+  readonly message: string;
+  readonly onToggleDebugChrome: (enabled: boolean) => void;
+};
+
 function AuthRequiredState({
   debugChrome,
   debugChromeAvailable,
@@ -292,14 +305,7 @@ function AuthRequiredState({
   ready,
   message,
   onToggleDebugChrome,
-}: {
-  debugChrome: boolean;
-  debugChromeAvailable: boolean;
-  health: string;
-  ready: string;
-  message: string;
-  onToggleDebugChrome: (enabled: boolean) => void;
-}) {
+}: AuthRequiredStateProps) {
   return (
     <main className="login-shell">
       <section className="login-panel compact-login">
@@ -331,15 +337,17 @@ function AuthRequiredState({
   );
 }
 
+type UnauthorizedStateProps = {
+  readonly requestedRoute: RouteKey;
+  readonly fallbackRoute: RouteKey;
+  readonly onReturn: () => void;
+};
+
 function UnauthorizedState({
   requestedRoute,
   fallbackRoute,
   onReturn,
-}: {
-  requestedRoute: RouteKey;
-  fallbackRoute: RouteKey;
-  onReturn: () => void;
-}) {
+}: UnauthorizedStateProps) {
   const requested =
     routes.find((candidate) => candidate.key === requestedRoute) || routes[0];
   const fallback =

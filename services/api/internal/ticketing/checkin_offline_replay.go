@@ -58,23 +58,39 @@ func (s *Service) replayOfflineScan(ctx context.Context, req OfflineCheckinSyncR
 		return CheckinResponse{}, offlineScanStatusConflict, false, err
 	}
 
-	result, err := s.replayedOfflineResultTx(ctx, tx, req, ticketID, status, conflictReason, scannedAt, claims)
+	result, err := s.replayedOfflineResultTx(ctx, tx, replayedOfflineResultInput{
+		req:            req,
+		ticketID:       ticketID,
+		status:         status,
+		conflictReason: conflictReason,
+		scannedAt:      scannedAt,
+		claims:         claims,
+	})
 	if err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, false, err
 	}
 	return result, status, true, tx.Commit(ctx)
 }
 
-func (s *Service) replayedOfflineResultTx(ctx context.Context, tx pgx.Tx, req OfflineCheckinSyncRequest, ticketID string, status string, conflictReason string, scannedAt time.Time, claims TicketClaims) (CheckinResponse, error) {
-	if ticketID == "" {
-		return conflictResultFromClaims(req, claims, scannedAt, conflictReason), nil
+type replayedOfflineResultInput struct {
+	req            OfflineCheckinSyncRequest
+	ticketID       string
+	status         string
+	conflictReason string
+	scannedAt      time.Time
+	claims         TicketClaims
+}
+
+func (s *Service) replayedOfflineResultTx(ctx context.Context, tx pgx.Tx, input replayedOfflineResultInput) (CheckinResponse, error) {
+	if input.ticketID == "" {
+		return conflictResultFromClaims(input.req, input.claims, input.scannedAt, input.conflictReason), nil
 	}
 
-	existing, found, err := s.findCheckinByTicketTx(ctx, tx, ticketID)
+	existing, found, err := s.findCheckinByTicketTx(ctx, tx, input.ticketID)
 	if err != nil {
 		return CheckinResponse{}, err
 	}
-	if status == offlineScanStatusAccepted {
+	if input.status == offlineScanStatusAccepted {
 		if !found {
 			return CheckinResponse{}, conflict("offline check-in accepted scan is missing check-in record")
 		}
@@ -82,14 +98,14 @@ func (s *Service) replayedOfflineResultTx(ctx context.Context, tx pgx.Tx, req Of
 		existing.Duplicate = false
 		return existing, nil
 	}
-	if status == offlineScanStatusDuplicate {
+	if input.status == offlineScanStatusDuplicate {
 		if !found {
 			return CheckinResponse{}, conflict("offline check-in duplicate scan is missing first check-in record")
 		}
 		return duplicateOfflineResult(existing), nil
 	}
 
-	ticket, err := ticketSnapshotTx(ctx, tx, ticketID)
+	ticket, err := ticketSnapshotTx(ctx, tx, input.ticketID)
 	if err != nil {
 		return CheckinResponse{}, err
 	}
@@ -99,8 +115,8 @@ func (s *Service) replayedOfflineResultTx(ctx context.Context, tx pgx.Tx, req Of
 		EmployeeID:     ticket.EmployeeID,
 		Status:         offlineScanStatusConflict,
 		ReasonCode:     "offline_conflict",
-		ScannedAt:      scannedAt,
-		ConflictReason: conflictReason,
+		ScannedAt:      input.scannedAt,
+		ConflictReason: input.conflictReason,
 		Holder:         ticketHolderFromTicket(ticket),
 		FamilyCount:    ticket.FamilyCount,
 	}, nil

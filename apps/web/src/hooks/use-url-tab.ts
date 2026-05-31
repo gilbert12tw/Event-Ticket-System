@@ -11,16 +11,16 @@ export function useUrlTab<T extends string>(
 
   useEffect(() => {
     const onPopState = () => setValue(readTab(param, allowed, fallback));
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    globalThis.addEventListener("popstate", onPopState);
+    return () => globalThis.removeEventListener("popstate", onPopState);
   }, [allowed, fallback, param]);
 
   const update = useCallback(
     (next: T) => {
       setValue(next);
-      const url = new URL(window.location.href);
+      const url = new URL(globalThis.location.href);
       url.searchParams.set(param, next);
-      window.history.replaceState(window.history.state ?? {}, "", url);
+      globalThis.history.replaceState(globalThis.history.state ?? {}, "", url);
     },
     [param],
   );
@@ -33,6 +33,6 @@ function readTab<T extends string>(
   allowed: readonly T[],
   fallback: T,
 ) {
-  const current = new URLSearchParams(window.location.search).get(param);
+  const current = new URLSearchParams(globalThis.location.search).get(param);
   return allowed.includes(current as T) ? (current as T) : fallback;
 }

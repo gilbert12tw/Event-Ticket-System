@@ -69,7 +69,7 @@ func (s *Service) ReplayOutbox(ctx context.Context, actor Actor, req ReplayOutbo
 	}
 	result.AuditID = auditID
 	metadata := replayAuditMetadata(req, result, replayedRows, replayedRowsTruncated)
-	if err := insertAudit(ctx, tx, auditID, actor, outboxReplayAction, "outbox_queue", req.Kind, metadata); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, outboxReplayAction, "outbox_queue", req.Kind, metadata)); err != nil {
 		return ReplayOutboxResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

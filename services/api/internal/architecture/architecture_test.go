@@ -213,39 +213,6 @@ func TestPhase2AsyncPlatformDoesNotDependOnExternalBrokerClients(t *testing.T) {
 	assert.Empty(t, offenders, "Phase 2 WS4 must stay on the PostgreSQL outbox, not external broker clients: %s", strings.Join(offenders, "; "))
 }
 
-func TestPhase2WorkersUseSingleGoCommandEntrypoint(t *testing.T) {
-	root := repoRoot(t)
-
-	dockerfile, err := os.ReadFile(filepath.Join(root, "services", "api", "Dockerfile"))
-	require.NoError(t, err)
-	assert.Contains(t, string(dockerfile), "go build -o /out/cets ./cmd/cets",
-		"the deployable API image must build the single cets command binary")
-
-	for _, relPath := range []string{
-		filepath.Join("services", "api", "deploy", "compose.yaml"),
-		filepath.Join("services", "api", "deploy", "compose.worker-isolation.yaml"),
-		filepath.Join("services", "api", "deploy", "k8s", "worker.yaml"),
-	} {
-		data, err := os.ReadFile(filepath.Join(root, relPath))
-		require.NoError(t, err)
-		content := string(data)
-		assert.NotContains(t, content, "reservation_experiment",
-			"Phase 2 WS4 worker deployments must not use diagnostic or experiment binaries: "+relPath)
-		assert.NotContains(t, content, "cmd/",
-			"Phase 2 WS4 worker deployments must use the built cets binary command modes: "+relPath)
-	}
-
-	compose, err := os.ReadFile(filepath.Join(root, "services", "api", "deploy", "compose.yaml"))
-	require.NoError(t, err)
-	assert.Contains(t, string(compose), `command: ["worker"]`,
-		"Compose worker must remain the cets worker command mode")
-
-	k8sWorker, err := os.ReadFile(filepath.Join(root, "services", "api", "deploy", "k8s", "worker.yaml"))
-	require.NoError(t, err)
-	assert.Equal(t, 4, strings.Count(string(k8sWorker), "- worker"),
-		"K8s worker deployments must remain cets worker command modes")
-}
-
 func TestOpsNotificationDeliveriesOpenAPIRolesMatchRuntime(t *testing.T) {
 	root := repoRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, "docs", "openapi", "paths", "admin-ops.yaml"))
@@ -383,17 +350,11 @@ func forbiddenMarkdownPhrases(root string, forbidden []string) ([]string, error)
 			if entry.IsDir() || !strings.HasSuffix(path, ".md") {
 				return nil
 			}
-			data, err := os.ReadFile(path)
+			fileOffenders, err := forbiddenMarkdownPhrasesInFile(root, path, forbidden)
 			if err != nil {
 				return err
 			}
-			content := strings.ToLower(string(data))
-			for _, phrase := range forbidden {
-				if strings.Contains(content, phrase) {
-					rel, _ := filepath.Rel(root, path)
-					offenders = append(offenders, rel+": "+phrase)
-				}
-			}
+			offenders = append(offenders, fileOffenders...)
 			return nil
 		})
 		if err != nil {

@@ -174,7 +174,8 @@ func TestCheckinTransferRejectionAuditOmitsFreeTextDetail(t *testing.T) {
 	tx, err := service.db.Begin(ctx)
 	require.NoError(t, err)
 	defer rollback(ctx, tx)
-	require.NoError(t, insertCheckinRejectionAuditTx(ctx, tx, Actor{ID: "staff-1", Role: RoleCheckinStaff}, "", event.EventID, "gate-transfer", "transfer_rejected", "Ariel Chen e1001@example.com raw.token.value"))
+	require.NoError(t, insertCheckinRejectionAuditTx(ctx, tx, Actor{ID: "staff-1", Role: RoleCheckinStaff},
+		newCheckinRejection("", event.EventID, "gate-transfer", "transfer_rejected", "Ariel Chen e1001@example.com raw.token.value")))
 	require.NoError(t, tx.Commit(ctx))
 
 	logs, err := service.AuditLogs(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, AuditLogQuery{Action: "checkin.rejected", EntityID: "gate-transfer"})

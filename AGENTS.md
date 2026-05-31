@@ -7,7 +7,9 @@ This file is the concise entry point for coding agents and developers working in
 - Architecture decisions: follow `docs/ARCHITECTURE.md`.
 - Implementation discipline: follow this file and task-relevant `docs/agent-rules/*.md`.
 - Product and design context: see `docs/PRODUCT.md` and `docs/DESIGN.md`.
+- Documentation map: start with `docs/INDEX.md`.
 - Specs: use `docs/specs/` for task-specific acceptance criteria.
+- Completed or superseded workstream notes live in `docs/archive/`; do not treat them as current scope without cross-checking active docs.
 - Backend directory refactors: start from `docs/specs/backend-directory-architecture.md`.
 - If architecture or implementation strategy changes, update the relevant docs before changing code.
 

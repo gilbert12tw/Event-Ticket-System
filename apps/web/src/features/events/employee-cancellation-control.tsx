@@ -24,13 +24,13 @@ export function CancellationControl({
   onCancel,
   onReasonChange,
   reason,
-}: {
+}: Readonly<{
   busy?: boolean;
   event: EventSummary;
   onCancel: () => void;
   onReasonChange: (value: string) => void;
   reason: string;
-}) {
+}>) {
   const registrationID = registrationIDFor(event);
   const booked =
     event.current_user_status === "confirmed" ||
@@ -72,6 +72,7 @@ export function CancellationControl({
               [
                 "目前狀態",
                 <StatusBadge
+                  key="current-status"
                   tone={registrationStatusView(event.current_user_status).tone}
                 >
                   {registrationStatusView(event.current_user_status).label}

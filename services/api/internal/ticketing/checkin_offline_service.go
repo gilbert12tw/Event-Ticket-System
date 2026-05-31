@@ -3,7 +3,6 @@ package ticketing
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 
@@ -89,26 +88,9 @@ func (s *Service) SyncOfflineCheckins(ctx context.Context, actor Actor, req Offl
 	if err := requireRole(actor, RoleCheckinStaff); err != nil {
 		return OfflineCheckinSyncResponse{}, err
 	}
-	req.BatchID = strings.TrimSpace(req.BatchID)
-	req.EventID = strings.TrimSpace(req.EventID)
-	req.DeviceID = strings.TrimSpace(req.DeviceID)
-	req.PackageSignature = strings.TrimSpace(req.PackageSignature)
-	if req.BatchID == "" {
-		return OfflineCheckinSyncResponse{}, badRequest("batch_id is required")
-	}
-	if req.EventID == "" {
-		return OfflineCheckinSyncResponse{}, badRequest("event_id is required")
-	}
-	if req.DeviceID == "" {
-		return OfflineCheckinSyncResponse{}, badRequest("device_id is required")
-	}
-	if req.PackageSignature == "" {
-		return OfflineCheckinSyncResponse{}, badRequest("package_signature is required")
-	}
-	for i, scan := range req.Scans {
-		if scan.ScannedAt.IsZero() {
-			return OfflineCheckinSyncResponse{}, badRequest("scans[" + strconv.Itoa(i) + "].scanned_at is required")
-		}
+	req, err := normalizeOfflineCheckinSyncRequest(req)
+	if err != nil {
+		return OfflineCheckinSyncResponse{}, err
 	}
 	batchLockTx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -126,24 +108,11 @@ func (s *Service) SyncOfflineCheckins(ctx context.Context, actor Actor, req Offl
 		}
 		return s.replayOfflineSync(ctx, req)
 	}
-	response := OfflineCheckinSyncResponse{BatchID: req.BatchID}
-	for _, scan := range req.Scans {
-		result, status, err := s.syncOfflineScan(ctx, actor, req, scan)
-		if err != nil {
-			return OfflineCheckinSyncResponse{}, err
-		}
-		response.Results = append(response.Results, result)
-		switch status {
-		case offlineScanStatusAccepted:
-			response.Accepted++
-		case offlineScanStatusDuplicate:
-			response.Duplicate++
-		default:
-			response.Conflict++
-		}
-	}
-	_, err = batchLockTx.Exec(ctx, `UPDATE offline_checkin_batches SET status = CASE WHEN $2 > 0 THEN 'conflict' ELSE 'synced' END, synced_at = now() WHERE batch_id = $1`, req.BatchID, response.Conflict)
+	response, err := s.syncOpenOfflineBatch(ctx, actor, req)
 	if err != nil {
+		return OfflineCheckinSyncResponse{}, err
+	}
+	if err := finishOfflineBatchSyncTx(ctx, batchLockTx, response); err != nil {
 		return OfflineCheckinSyncResponse{}, err
 	}
 	return response, batchLockTx.Commit(ctx)
@@ -203,51 +172,88 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 	tokenHash := s.signer.HashToken(scan.SignedToken)
 	claims, err := s.signer.Verify(scan.SignedToken)
 	if err != nil {
-		if result, status, found, replayErr := s.replayOfflineScan(ctx, req, scan, TicketClaims{}, tokenHash); replayErr != nil || found {
-			return result, status, replayErr
-		}
-		return s.recordOfflineUnknownConflict(ctx, actor, req, scan, TicketClaims{}, offlineConflictInvalidToken)
+		return s.syncInvalidOfflineToken(ctx, actor, req, scan, tokenHash)
 	}
 	if result, status, found, err := s.replayOfflineScan(ctx, req, scan, claims, tokenHash); err != nil || found {
 		return result, status, err
 	}
+	return s.recordVerifiedOfflineScan(ctx, actor, req, scan, claims, tokenHash)
+}
+
+func (s *Service) syncInvalidOfflineToken(ctx context.Context, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput, tokenHash string) (CheckinResponse, string, error) {
+	if result, status, found, replayErr := s.replayOfflineScan(ctx, req, scan, TicketClaims{}, tokenHash); replayErr != nil || found {
+		return result, status, replayErr
+	}
+	return s.recordOfflineUnknownConflict(ctx, actor, req, scan, TicketClaims{}, offlineConflictInvalidToken)
+}
+
+func (s *Service) recordVerifiedOfflineScan(ctx context.Context, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput, claims TicketClaims, tokenHash string) (CheckinResponse, string, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
 	defer rollback(ctx, tx)
 
+	ticket, found, err := scanOfflineTicketByHashTx(ctx, tx, tokenHash)
+	if err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	if !found {
+		return s.recordMissingOfflineTicketTx(ctx, tx, actor, req, scan, claims, tokenHash)
+	}
+	if !claimsMatchTicket(claims, ticket) {
+		return s.recordKnownOfflineConflict(ctx, tx, actor, newKnownOfflineConflict(req, ticket, scan.ScannedAt, tokenHash, offlineConflictClaimsMismatch))
+	}
+	if ticket.EventID != req.EventID {
+		return s.recordKnownOfflineConflict(ctx, tx, actor, newKnownOfflineConflict(req, ticket, scan.ScannedAt, tokenHash, offlineConflictEventMismatch))
+	}
+	result, status, err := s.applyOfflineTicketScanTx(ctx, tx, actor, req, scan, ticket)
+	if err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	if err := s.insertRecordedOfflineScanEffectsTx(ctx, tx, actor, offlineRecordedScanEffects{
+		req:       req,
+		scan:      scan,
+		tokenHash: tokenHash,
+		ticket:    ticket,
+		result:    result,
+		status:    status,
+	}); err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	return result, status, tx.Commit(ctx)
+}
+
+func scanOfflineTicketByHashTx(ctx context.Context, tx pgx.Tx, tokenHash string) (Ticket, bool, error) {
 	var ticket Ticket
-	err = scanCheckinTicketRow(tx.QueryRow(ctx, `SELECT `+checkinTicketSelectColumns+`
+	err := scanCheckinTicketRow(tx.QueryRow(ctx, `SELECT `+checkinTicketSelectColumns+`
 		FROM tickets t
 		JOIN registrations r ON r.registration_id = t.registration_id
 		JOIN events ev ON ev.event_id = t.event_id
 		JOIN employees e ON e.employee_id = t.employee_id
 		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash), &ticket)
 	if errors.Is(err, pgx.ErrNoRows) {
-		result := conflictResultFromClaims(req, claims, scan.ScannedAt, offlineConflictNotFound)
-		if err := s.insertOfflineScanTx(ctx, tx, req, "", offlineScanStatusConflict, scan.ScannedAt, tokenHash, result.ConflictReason); err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
-		}
-		if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, req, "offline_checkin_batch", req.BatchID, result.EventID, offlineScanStatusConflict, result.ConflictReason); err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
-		}
-		return result, offlineScanStatusConflict, tx.Commit(ctx)
+		return Ticket{}, false, nil
 	}
-	if err != nil {
+	return ticket, err == nil, err
+}
+
+func (s *Service) recordMissingOfflineTicketTx(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput, claims TicketClaims, tokenHash string) (CheckinResponse, string, error) {
+	result := conflictResultFromClaims(req, claims, scan.ScannedAt, offlineConflictNotFound)
+	if err := s.insertOfflineScanTx(ctx, tx, newOfflineScanRecord(req, "", offlineScanStatusConflict, scan.ScannedAt, tokenHash, result.ConflictReason)); err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
-	if !claimsMatchTicket(claims, ticket) {
-		return s.recordKnownOfflineConflict(ctx, tx, actor, req, ticket, scan.ScannedAt, tokenHash, offlineConflictClaimsMismatch)
+	if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, newOfflineConflictAudit(req, "offline_checkin_batch", req.BatchID, result.EventID, offlineScanStatusConflict, result.ConflictReason)); err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
-	if ticket.EventID != req.EventID {
-		return s.recordKnownOfflineConflict(ctx, tx, actor, req, ticket, scan.ScannedAt, tokenHash, offlineConflictEventMismatch)
-	}
+	return result, offlineScanStatusConflict, tx.Commit(ctx)
+}
+
+func (s *Service) applyOfflineTicketScanTx(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput, ticket Ticket) (CheckinResponse, string, error) {
 	existing, found, err := s.findCheckinByTicketTx(ctx, tx, ticket.TicketID)
 	if err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
-	status := offlineScanStatusAccepted
 	result := CheckinResponse{
 		TicketID:    ticket.TicketID,
 		EventID:     ticket.EventID,
@@ -260,58 +266,79 @@ func (s *Service) syncOfflineScan(ctx context.Context, actor Actor, req OfflineC
 		FamilyCount: ticket.FamilyCount,
 	}
 	if found {
-		status = offlineScanStatusDuplicate
-		result = duplicateOfflineResult(existing)
+		return duplicateOfflineResult(existing), offlineScanStatusDuplicate, nil
 	} else if ticket.Status != TicketActive {
-		status = offlineScanStatusConflict
 		result.Status = offlineScanStatusConflict
 		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictNotActive
+		return result, offlineScanStatusConflict, nil
 	} else if !ticket.ExpiresAt.IsZero() && s.now().After(ticket.ExpiresAt) {
-		status = offlineScanStatusConflict
 		result.Status = offlineScanStatusConflict
 		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictExpired
-	} else {
-		checkinID, err := newID("chk")
-		if err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
-		}
-		err = tx.QueryRow(ctx, `INSERT INTO checkin_records (checkin_id, ticket_id, staff_id, device_id, status, scanned_at)
-			VALUES ($1,$2,$3,$4,'accepted',$5)
-			ON CONFLICT (ticket_id) DO NOTHING
-			RETURNING checkin_id`, checkinID, ticket.TicketID, actor.ID, req.DeviceID, scan.ScannedAt).Scan(&result.CheckinID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			existing, found, err := s.findCheckinByTicketTx(ctx, tx, ticket.TicketID)
-			if err != nil {
-				return CheckinResponse{}, offlineScanStatusConflict, err
-			}
-			if !found {
-				return CheckinResponse{}, offlineScanStatusConflict, conflict("ticket check-in winner was not found")
-			}
-			status = offlineScanStatusDuplicate
-			result = duplicateOfflineResult(existing)
-		} else if err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
-		} else if _, err := tx.Exec(ctx, `UPDATE tickets SET status = 'redeemed' WHERE ticket_id = $1`, ticket.TicketID); err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
-		} else if err := insertOfflineAcceptedSideEffectsTx(ctx, tx, actor, req, ticket); err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
-		}
+		return result, offlineScanStatusConflict, nil
 	}
-	if err := s.insertOfflineScanTx(ctx, tx, req, ticket.TicketID, status, scan.ScannedAt, tokenHash, result.ConflictReason); err != nil {
+	return s.acceptOfflineTicketScanTx(ctx, tx, actor, req, scan, ticket, result)
+}
+
+func (s *Service) acceptOfflineTicketScanTx(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput, ticket Ticket, result CheckinResponse) (CheckinResponse, string, error) {
+	checkinID, err := newID("chk")
+	if err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
-	if status != offlineScanStatusAccepted {
-		reason := result.ConflictReason
+	err = tx.QueryRow(ctx, `INSERT INTO checkin_records (checkin_id, ticket_id, staff_id, device_id, status, scanned_at)
+		VALUES ($1,$2,$3,$4,'accepted',$5)
+		ON CONFLICT (ticket_id) DO NOTHING
+		RETURNING checkin_id`, checkinID, ticket.TicketID, actor.ID, req.DeviceID, scan.ScannedAt).Scan(&result.CheckinID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.duplicateOfflineWinnerResultTx(ctx, tx, ticket.TicketID)
+	}
+	if err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tickets SET status = 'redeemed' WHERE ticket_id = $1`, ticket.TicketID); err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	if err := insertOfflineAcceptedSideEffectsTx(ctx, tx, actor, req, ticket); err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	return result, offlineScanStatusAccepted, nil
+}
+
+func (s *Service) duplicateOfflineWinnerResultTx(ctx context.Context, tx pgx.Tx, ticketID string) (CheckinResponse, string, error) {
+	existing, found, err := s.findCheckinByTicketTx(ctx, tx, ticketID)
+	if err != nil {
+		return CheckinResponse{}, offlineScanStatusConflict, err
+	}
+	if !found {
+		return CheckinResponse{}, offlineScanStatusConflict, conflict("ticket check-in winner was not found")
+	}
+	return duplicateOfflineResult(existing), offlineScanStatusDuplicate, nil
+}
+
+type offlineRecordedScanEffects struct {
+	req       OfflineCheckinSyncRequest
+	scan      OfflineCheckinScanInput
+	tokenHash string
+	ticket    Ticket
+	result    CheckinResponse
+	status    string
+}
+
+func (s *Service) insertRecordedOfflineScanEffectsTx(ctx context.Context, tx pgx.Tx, actor Actor, effects offlineRecordedScanEffects) error {
+	if err := s.insertOfflineScanTx(ctx, tx, newOfflineScanRecord(effects.req, effects.ticket.TicketID, effects.status, effects.scan.ScannedAt, effects.tokenHash, effects.result.ConflictReason)); err != nil {
+		return err
+	}
+	if effects.status != offlineScanStatusAccepted {
+		reason := effects.result.ConflictReason
 		if reason == "" {
 			reason = offlineConflictRedeemed
 		}
-		if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, req, "ticket", ticket.TicketID, ticket.EventID, status, reason); err != nil {
-			return CheckinResponse{}, offlineScanStatusConflict, err
+		if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, newOfflineConflictAudit(effects.req, "ticket", effects.ticket.TicketID, effects.ticket.EventID, effects.status, reason)); err != nil {
+			return err
 		}
 	}
-	return result, status, tx.Commit(ctx)
+	return nil
 }
 
 func (s *Service) recordOfflineUnknownConflict(ctx context.Context, actor Actor, req OfflineCheckinSyncRequest, scan OfflineCheckinScanInput, claims TicketClaims, reason string) (CheckinResponse, string, error) {
@@ -321,58 +348,97 @@ func (s *Service) recordOfflineUnknownConflict(ctx context.Context, actor Actor,
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
 	defer rollback(ctx, tx)
-	if err := s.insertOfflineScanTx(ctx, tx, req, "", offlineScanStatusConflict, scan.ScannedAt, s.signer.HashToken(scan.SignedToken), reason); err != nil {
+	if err := s.insertOfflineScanTx(ctx, tx, newOfflineScanRecord(req, "", offlineScanStatusConflict, scan.ScannedAt, s.signer.HashToken(scan.SignedToken), reason)); err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
-	if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, req, "offline_checkin_batch", req.BatchID, result.EventID, offlineScanStatusConflict, reason); err != nil {
+	if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, newOfflineConflictAudit(req, "offline_checkin_batch", req.BatchID, result.EventID, offlineScanStatusConflict, reason)); err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
 	return result, offlineScanStatusConflict, tx.Commit(ctx)
 }
 
-func (s *Service) recordKnownOfflineConflict(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, ticket Ticket, scannedAt time.Time, tokenHash string, reason string) (CheckinResponse, string, error) {
+type knownOfflineConflict struct {
+	req       OfflineCheckinSyncRequest
+	ticket    Ticket
+	scannedAt time.Time
+	tokenHash string
+	reason    string
+}
+
+func newKnownOfflineConflict(req OfflineCheckinSyncRequest, ticket Ticket, scannedAt time.Time, tokenHash string, reason string) knownOfflineConflict {
+	return knownOfflineConflict{req: req, ticket: ticket, scannedAt: scannedAt, tokenHash: tokenHash, reason: reason}
+}
+
+func (s *Service) recordKnownOfflineConflict(ctx context.Context, tx pgx.Tx, actor Actor, conflict knownOfflineConflict) (CheckinResponse, string, error) {
 	result := CheckinResponse{
-		TicketID:       ticket.TicketID,
-		EventID:        ticket.EventID,
-		EventTitle:     ticket.EventTitle,
-		EmployeeID:     ticket.EmployeeID,
+		TicketID:       conflict.ticket.TicketID,
+		EventID:        conflict.ticket.EventID,
+		EventTitle:     conflict.ticket.EventTitle,
+		EmployeeID:     conflict.ticket.EmployeeID,
 		Status:         offlineScanStatusConflict,
 		ReasonCode:     "offline_conflict",
-		ScannedAt:      scannedAt,
-		ConflictReason: reason,
-		Holder:         ticketHolderFromTicket(ticket),
-		FamilyCount:    ticket.FamilyCount,
+		ScannedAt:      conflict.scannedAt,
+		ConflictReason: conflict.reason,
+		Holder:         ticketHolderFromTicket(conflict.ticket),
+		FamilyCount:    conflict.ticket.FamilyCount,
 	}
-	if err := s.insertOfflineScanTx(ctx, tx, req, ticket.TicketID, offlineScanStatusConflict, scannedAt, tokenHash, reason); err != nil {
+	if err := s.insertOfflineScanTx(ctx, tx, newOfflineScanRecord(conflict.req, conflict.ticket.TicketID, offlineScanStatusConflict, conflict.scannedAt, conflict.tokenHash, conflict.reason)); err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
-	if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, req, "ticket", ticket.TicketID, ticket.EventID, offlineScanStatusConflict, reason); err != nil {
+	if err := s.insertOfflineConflictAuditTx(ctx, tx, actor, newOfflineConflictAudit(conflict.req, "ticket", conflict.ticket.TicketID, conflict.ticket.EventID, offlineScanStatusConflict, conflict.reason)); err != nil {
 		return CheckinResponse{}, offlineScanStatusConflict, err
 	}
 	return result, offlineScanStatusConflict, tx.Commit(ctx)
 }
 
-func (s *Service) insertOfflineScanTx(ctx context.Context, tx pgx.Tx, req OfflineCheckinSyncRequest, ticketID string, status string, scannedAt time.Time, tokenHash string, conflictReason string) error {
+type offlineScanRecord struct {
+	req            OfflineCheckinSyncRequest
+	ticketID       string
+	status         string
+	scannedAt      time.Time
+	tokenHash      string
+	conflictReason string
+}
+
+func newOfflineScanRecord(req OfflineCheckinSyncRequest, ticketID string, status string, scannedAt time.Time, tokenHash string, conflictReason string) offlineScanRecord {
+	return offlineScanRecord{req: req, ticketID: ticketID, status: status, scannedAt: scannedAt, tokenHash: tokenHash, conflictReason: conflictReason}
+}
+
+func (s *Service) insertOfflineScanTx(ctx context.Context, tx pgx.Tx, scan offlineScanRecord) error {
 	scanID, err := newID("ofs")
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO offline_checkin_scans
 		(scan_id, batch_id, ticket_id, device_id, status, token_hash, conflict_reason, scanned_at)
-		VALUES ($1,$2,NULLIF($3, ''),$4,$5,$6,$7,$8)`, scanID, req.BatchID, ticketID, req.DeviceID, status, tokenHash, conflictReason, scannedAt)
+		VALUES ($1,$2,NULLIF($3, ''),$4,$5,$6,$7,$8)`,
+		scanID, scan.req.BatchID, scan.ticketID, scan.req.DeviceID, scan.status, scan.tokenHash, scan.conflictReason, scan.scannedAt)
 	return err
 }
 
-func (s *Service) insertOfflineConflictAuditTx(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, entityType string, entityID string, eventID string, status string, reason string) error {
+type offlineConflictAudit struct {
+	req        OfflineCheckinSyncRequest
+	entityType string
+	entityID   string
+	eventID    string
+	status     string
+	reason     string
+}
+
+func newOfflineConflictAudit(req OfflineCheckinSyncRequest, entityType string, entityID string, eventID string, status string, reason string) offlineConflictAudit {
+	return offlineConflictAudit{req: req, entityType: entityType, entityID: entityID, eventID: eventID, status: status, reason: reason}
+}
+
+func (s *Service) insertOfflineConflictAuditTx(ctx context.Context, tx pgx.Tx, actor Actor, audit offlineConflictAudit) error {
 	auditID, err := newID("aud")
 	if err != nil {
 		return err
 	}
-	metadata := map[string]interface{}{"event_id": eventID, "batch_id": req.BatchID, "device_id": req.DeviceID, "status": status, "reason": reason}
-	if eventID != req.EventID {
-		metadata["batch_event_id"] = req.EventID
+	metadata := map[string]interface{}{"event_id": audit.eventID, "batch_id": audit.req.BatchID, "device_id": audit.req.DeviceID, "status": audit.status, "reason": audit.reason}
+	if audit.eventID != audit.req.EventID {
+		metadata["batch_event_id"] = audit.req.EventID
 	}
-	return insertAudit(ctx, tx, auditID, actor, "offline_checkin.conflict", entityType, entityID, metadata)
+	return insertAudit(ctx, tx, newAuditRecord(auditID, actor, "offline_checkin.conflict", audit.entityType, audit.entityID, metadata))
 }
 
 func insertOfflineAcceptedSideEffectsTx(ctx context.Context, tx pgx.Tx, actor Actor, req OfflineCheckinSyncRequest, ticket Ticket) error {
@@ -380,15 +446,15 @@ func insertOfflineAcceptedSideEffectsTx(ctx context.Context, tx pgx.Tx, actor Ac
 	if err != nil {
 		return err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "ticket.redeemed", "ticket", ticket.TicketID, map[string]interface{}{
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, ticketRedeemedEventType, "ticket", ticket.TicketID, map[string]interface{}{
 		"event_id":  ticket.EventID,
 		"batch_id":  req.BatchID,
 		"device_id": req.DeviceID,
 		"mode":      "offline_sync",
-	}); err != nil {
+	})); err != nil {
 		return err
 	}
-	return insertOutbox(ctx, tx, "ticket.redeemed", ticket.TicketID, ticketOutboxPayload(ticket, map[string]interface{}{
+	return insertOutbox(ctx, tx, ticketRedeemedEventType, ticket.TicketID, ticketOutboxPayload(ticket, map[string]interface{}{
 		"batch_id":  req.BatchID,
 		"device_id": req.DeviceID,
 		"mode":      "offline_sync",

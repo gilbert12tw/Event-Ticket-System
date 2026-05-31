@@ -182,7 +182,7 @@ func (s *Service) promoteWaitlistedRegistrationTx(ctx context.Context, tx pgx.Tx
 	if err != nil {
 		return nil, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "waitlist.promoted", "registration", reg.RegistrationID, map[string]interface{}{"event_id": eventID, "employee_id": reg.EmployeeID}); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "waitlist.promoted", "registration", reg.RegistrationID, map[string]interface{}{"event_id": eventID, "employee_id": reg.EmployeeID})); err != nil {
 		return nil, err
 	}
 	if err := insertOutbox(ctx, tx, "waitlist.promoted", reg.RegistrationID, map[string]interface{}{"registration_id": reg.RegistrationID, "event_id": eventID, "employee_id": reg.EmployeeID}); err != nil {
@@ -201,11 +201,11 @@ func insertPromotionNoopAuditTx(ctx context.Context, tx pgx.Tx, actor Actor, eve
 	if err != nil {
 		return err
 	}
-	return insertAudit(ctx, tx, auditID, actor, "waitlist.promotion_noop", "event", eventID, map[string]interface{}{
+	return insertAudit(ctx, tx, newAuditRecord(auditID, actor, "waitlist.promotion_noop", "event", eventID, map[string]interface{}{
 		"event_id":           eventID,
 		"reason":             reason,
 		"remaining_capacity": remaining,
-	})
+	}))
 }
 
 func (s *Service) confirmedCountTx(ctx context.Context, tx pgx.Tx, eventID string) (int, error) {

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { auditLogs } from "@/lib/api";
-import type { AuditLog, AuditLogFilters } from "@/lib/api";
+import { auditLogs, type AuditLog, type AuditLogFilters } from "@/lib/api";
 import { errorMessage, normalizeAuditFilters } from "@/lib/formatting";
 import {
   Alert,
@@ -66,10 +65,11 @@ export function AdminAuditPage() {
       const normalized = normalizeAuditFilters(nextFilters);
       const rows = await auditLogs(normalized);
       setAuditRows(rows);
-      const selected =
-        rows.find((row) => row.audit_id === nextSelectedID)?.audit_id ||
-        rows[0]?.audit_id ||
-        "";
+      const matchingRowID = rows.find(
+        (row) => row.audit_id === nextSelectedID,
+      )?.audit_id;
+      const firstRowID = rows[0]?.audit_id;
+      const selected = matchingRowID ?? firstRowID ?? "";
       setSelectedID(selected);
       replaceAuditUrl(nextFilters, nextPreset, selected);
     } catch (error) {
@@ -85,7 +85,7 @@ export function AdminAuditPage() {
     auditPresetMatches(row, activePreset),
   );
   const selected =
-    presetRows.find((row) => row.audit_id === selectedID) || presetRows[0];
+    presetRows.find((row) => row.audit_id === selectedID) ?? presetRows[0];
   const auditStats = useMemo(
     () => ({
       total: presetRows.length,
@@ -99,9 +99,8 @@ export function AdminAuditPage() {
   const activeFilterCount = Object.entries(filters).filter(
     ([key, value]) => key !== "limit" && key !== "cursor" && Boolean(value),
   ).length;
-  const nextCursor = auditRows.at(-1)
-    ? auditCursorFromRow(auditRows[auditRows.length - 1])
-    : "";
+  const latestAudit = auditRows.at(-1);
+  const nextCursor = latestAudit ? auditCursorFromRow(latestAudit) : "";
 
   function applyFilters(nextFilters: AuditLogFilters) {
     setFilters(nextFilters);
@@ -121,13 +120,13 @@ export function AdminAuditPage() {
   function goToNextCursorPage() {
     if (!nextCursor) return;
     const nextFilters = { ...filters, cursor: nextCursor };
-    setCursorStack((stack) => [...stack, filters.cursor || ""]);
+    setCursorStack((stack) => [...stack, filters.cursor ?? ""]);
     applyFilters(nextFilters);
   }
 
   function goToPreviousCursorPage() {
     const previousCursor = cursorStack.at(-1);
-    const nextFilters = { ...filters, cursor: previousCursor || undefined };
+    const nextFilters = { ...filters, cursor: previousCursor ?? undefined };
     setCursorStack((stack) => stack.slice(0, -1));
     applyFilters(nextFilters);
   }
@@ -145,19 +144,19 @@ export function AdminAuditPage() {
           <div className="toolbar">
             <SelectField
               label="角色"
-              value={filters.role || ""}
+              value={filters.role ?? ""}
               options={auditRoleOptions}
               onChange={(value) => setFilters({ ...filters, role: value })}
             />
             <SelectField
               label="操作"
-              value={filters.action || ""}
+              value={filters.action ?? ""}
               options={auditActionOptions}
               onChange={(value) => setFilters({ ...filters, action: value })}
             />
             <SelectField
               label="物件"
-              value={filters.entity_type || ""}
+              value={filters.entity_type ?? ""}
               options={auditEntityTypeOptions}
               onChange={(value) =>
                 setFilters({ ...filters, entity_type: value })
@@ -165,7 +164,7 @@ export function AdminAuditPage() {
             />
             <SelectField
               label="筆數"
-              value={filters.limit || "50"}
+              value={filters.limit ?? "50"}
               options={auditLimitOptions}
               onChange={(value) => setFilters({ ...filters, limit: value })}
             />
@@ -186,20 +185,19 @@ export function AdminAuditPage() {
           </div>
           <details className="advanced-filter">
             <summary>
-              進階篩選
-              <span>{activeFilterCount} 個條件</span>
+              進階篩選 <span>{activeFilterCount} 個條件</span>
             </summary>
             <div className="form-grid mt-14">
               <Field
                 label="執行者編號"
-                value={filters.actor_id || ""}
+                value={filters.actor_id ?? ""}
                 onChange={(value) =>
                   setFilters({ ...filters, actor_id: value })
                 }
               />
               <Field
                 label="物件編號"
-                value={filters.entity_id || ""}
+                value={filters.entity_id ?? ""}
                 onChange={(value) =>
                   setFilters({ ...filters, entity_id: value })
                 }
@@ -207,13 +205,13 @@ export function AdminAuditPage() {
               <Field
                 label="起始時間"
                 type="datetime-local"
-                value={filters.from || ""}
+                value={filters.from ?? ""}
                 onChange={(value) => setFilters({ ...filters, from: value })}
               />
               <Field
                 label="結束時間"
                 type="datetime-local"
-                value={filters.to || ""}
+                value={filters.to ?? ""}
                 onChange={(value) => setFilters({ ...filters, to: value })}
               />
             </div>
@@ -250,13 +248,13 @@ export function AdminAuditPage() {
         />
         <TabsContent value={activePreset}>
           <AuditRowsTable
-            cursor={filters.cursor || ""}
+            cursor={filters.cursor ?? ""}
             hasPreviousCursor={cursorStack.length > 0}
             nextCursor={nextCursor}
             onNextCursor={goToNextCursorPage}
             onPreviousCursor={goToPreviousCursorPage}
             rows={presetRows}
-            selectedID={selected?.audit_id || ""}
+            selectedID={selected?.audit_id ?? ""}
             onSelect={selectAuditRow}
           />
         </TabsContent>
@@ -290,25 +288,25 @@ export function AdminAuditPage() {
                 ["稽核編號", selected.audit_id, "mono-cell id-cell"],
                 [
                   "執行者",
-                  <>
+                  <span key="actor" className="meta-value-stack">
                     {selected.actor_id}
                     <span className="table-muted">
                       {roleViewLabel(selected.role)}
                     </span>
-                  </>,
+                  </span>,
                 ],
                 [
                   "物件",
-                  <>
+                  <span key="entity" className="meta-value-stack">
                     {entityTypeLabel(selected.entity_type)}
                     <span className="table-muted mono-cell">
                       {selected.entity_id}
                     </span>
-                  </>,
+                  </span>,
                 ],
                 [
                   "稽核中繼資料，敏感值已由系統遮蔽",
-                  <AuditMetadata metadata={selected.metadata} />,
+                  <AuditMetadata key="metadata" metadata={selected.metadata} />,
                   undefined,
                   "full",
                 ],
@@ -327,7 +325,13 @@ function auditPresetMatches(row: AuditLog, preset: AuditPreset) {
   return row.entity_type === preset;
 }
 
-function AuditMetadata({ metadata }: { metadata: string }) {
+function AuditMetadata({ metadata }: Readonly<{ metadata: string }>) {
+  const formatMetadataValue = (value: unknown) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") return value;
+    return JSON.stringify(value) ?? "";
+  };
+
   try {
     const parsed = JSON.parse(metadata) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -338,7 +342,7 @@ function AuditMetadata({ metadata }: { metadata: string }) {
         {Object.entries(parsed).map(([key, value]) => (
           <div key={key}>
             <dt>{key}</dt>
-            <dd className="mono-cell">{String(value)}</dd>
+            <dd className="mono-cell">{formatMetadataValue(value)}</dd>
           </div>
         ))}
       </dl>

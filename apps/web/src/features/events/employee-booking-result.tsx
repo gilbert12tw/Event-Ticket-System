@@ -23,10 +23,10 @@ export type BookingResultState = {
 export function BookingResultBlock({
   eventID,
   result,
-}: {
+}: Readonly<{
   eventID: string;
   result?: BookingResultState;
-}) {
+}>) {
   if (!result) return null;
   return (
     <div
@@ -47,11 +47,11 @@ export function ActionSummary({
   claims,
   event,
   familyCount,
-}: {
+}: Readonly<{
   claims: AuthMeClaims;
   event: EventSummary;
   familyCount: number;
-}) {
+}>) {
   const action = attendeeActionState(event);
   return (
     <div className="pre-submit-summary">
@@ -146,7 +146,7 @@ export function bookingResultFromExistingEvent(
 }
 
 export function focusBookingResult(eventID: string) {
-  window.setTimeout(() => {
+  globalThis.setTimeout(() => {
     document.getElementById(`booking-result-${eventID}`)?.focus();
   }, 0);
 }
@@ -181,7 +181,9 @@ function duplicateBookingResult(response: BookingResponse): BookingResultState {
   };
 }
 
-function BookingResultAction({ result }: { result: BookingResultState }) {
+function BookingResultAction({
+  result,
+}: Readonly<{ result: BookingResultState }>) {
   const ticketID = result.ticketID;
   if (ticketID) {
     return (

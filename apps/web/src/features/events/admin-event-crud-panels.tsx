@@ -1,4 +1,3 @@
-import type { FormEvent } from "react";
 import {
   Alert,
   EmptyState,
@@ -35,6 +34,10 @@ import {
 export { AdminEventEligibilityTab } from "./admin-event-eligibility-tab";
 export { AdminEventStatusTab } from "./admin-event-status-tab";
 
+type FormSubmitHandler = (event: {
+  preventDefault: () => void;
+}) => void | Promise<void>;
+
 export function AdminEventListTab({
   events,
   busy,
@@ -42,14 +45,14 @@ export function AdminEventListTab({
   onRefresh,
   onSelect,
   onTabChange,
-}: {
+}: Readonly<{
   events: EventSummary[];
   busy: boolean;
   selectedEvent?: EventSummary;
   onRefresh: () => void;
   onSelect: (event: EventSummary) => void;
   onTabChange: (tab: AdminEventTab) => void;
-}) {
+}>) {
   return (
     <div className="task-panel">
       <div className="section-heading">
@@ -155,7 +158,7 @@ export function AdminEventCreateTab({
   onReset,
   onSeed,
   onSubmit,
-}: {
+}: Readonly<{
   busy: boolean;
   canSubmit: boolean;
   capacityReady: boolean;
@@ -168,10 +171,10 @@ export function AdminEventCreateTab({
   onFormChange: (next: AdminCreateForm) => void;
   onReset: () => void;
   onSeed: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
-}) {
+  onSubmit: FormSubmitHandler;
+}>) {
   return (
-    <form className="form-grid" onSubmit={(event) => void onSubmit(event)}>
+    <form className="form-grid" onSubmit={onSubmit}>
       <div className="section-heading full">
         <div>
           <h2>建立活動</h2>
@@ -236,13 +239,7 @@ export function AdminEventCreateTab({
       <ReadinessMessage
         tone={previewEmployees.length > 0 ? "ok" : "warn"}
         label={previewEmployees.length > 0 ? "資格命中" : "0 人符合"}
-        message={
-          previewEmployees.length > 0
-            ? `符合：${previewEmployees.map((item) => item.employee_id).join(", ")}`
-            : form.status === "published"
-              ? "目前資格設定沒有符合員工，不能直接發布。請調整資格或先儲存草稿。"
-              : "目前資格設定沒有符合員工，草稿可先儲存。"
-        }
+        message={readinessMessage(previewEmployees, form.status)}
       />
       {zeroAudiencePublishBlocked && (
         <Alert tone="warn">
@@ -278,17 +275,17 @@ export function AdminEventEditTab({
   windowReady,
   onEditFormChange,
   onSave,
-}: {
+}: Readonly<{
   busy: boolean;
   editForm: AdminEditForm;
   selectedEvent?: EventSummary;
   windowReady: boolean;
   onEditFormChange: (next: AdminEditForm) => void;
-  onSave: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
-}) {
+  onSave: FormSubmitHandler;
+}>) {
   if (!selectedEvent) return <SelectEventFirst action="編輯" />;
   return (
-    <form className="form-grid" onSubmit={(event) => void onSave(event)}>
+    <form className="form-grid" onSubmit={onSave}>
       <div className="section-heading full">
         <div>
           <h2>編輯活動</h2>
@@ -357,4 +354,19 @@ function submitLabel(status: string, zeroAudiencePublishBlocked: boolean) {
   if (zeroAudiencePublishBlocked) return "資格 0 人，不能發布";
   if (status === "draft") return "儲存草稿";
   return "建立並發布";
+}
+
+function readinessMessage(
+  previewEmployees: EmployeeProfile[],
+  eventStatus: string,
+) {
+  if (previewEmployees.length > 0) {
+    return `符合：${previewEmployees
+      .map((employee) => employee.employee_id)
+      .join(", ")}`;
+  }
+  if (eventStatus === "published") {
+    return "目前資格設定沒有符合員工，不能直接發布。請調整資格或先儲存草稿。";
+  }
+  return "目前資格設定沒有符合員工，草稿可先儲存。";
 }

@@ -102,13 +102,13 @@ func insertOutboxFailureAuditInTx(ctx context.Context, tx pgx.Tx, action string,
 	if err != nil {
 		return err
 	}
-	return insertAudit(ctx, tx, auditID, outboxWorkerAuditActor(), action, outboxDeadLetterEntityType, claim.outboxID, map[string]interface{}{
+	return insertAudit(ctx, tx, newAuditRecord(auditID, outboxWorkerAuditActor(), action, outboxDeadLetterEntityType, claim.outboxID, map[string]interface{}{
 		"event_type":     safeOutboxTelemetryEventType(claim.eventType),
 		"worker_kind":    safeOutboxTelemetryWorkerKind(claim.eventType),
 		"retry_count":    claim.attempts,
 		"schema_version": claim.schemaVersion,
 		"reason":         reason,
-	})
+	}))
 }
 
 func outboxWorkerAuditActor() Actor {

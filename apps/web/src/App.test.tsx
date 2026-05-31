@@ -1,16 +1,27 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthSession } from "@/lib/api";
 import App from "./App";
-import { authBootstrap, me, readiness } from "@/lib/api";
+import {
+  authBootstrap,
+  clearProviderToken,
+  listEvents,
+  me,
+  readiness,
+  selectMockProfile,
+} from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     authBootstrap: vi.fn(),
+    clearProviderToken: vi.fn(),
+    listEvents: vi.fn(),
     me: vi.fn(),
     readiness: vi.fn(),
+    selectMockProfile: vi.fn(),
     setApiObserver: vi.fn(),
   };
 });
@@ -18,11 +29,15 @@ vi.mock("@/lib/api", async () => {
 const mockMe = vi.mocked(me);
 const mockAuthBootstrap = vi.mocked(authBootstrap);
 const mockReadiness = vi.mocked(readiness);
+const mockSelectMockProfile = vi.mocked(selectMockProfile);
+const mockClearProviderToken = vi.mocked(clearProviderToken);
+const mockListEvents = vi.mocked(listEvents);
 
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.pushState({}, "", "/");
+    mockListEvents.mockResolvedValue([]);
   });
 
   it("renders unauthorized state when an invalid role enters a forbidden route", async () => {
@@ -118,5 +133,73 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: "選擇一個本機身分" }),
     ).toBeInTheDocument();
+  });
+
+  it("selects and switches local mock profiles", async () => {
+    const session: AuthSession = {
+      actor: {
+        id: "E1001",
+        role: "employee",
+      },
+      expires_at: "2026-05-06T10:00:00Z",
+      claims: {
+        employee_id: "E1001",
+        display_name: "Ariel Chen",
+        role_claims: ["employee"],
+        mapped_roles: ["employee"],
+        department: "Engineering",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 6,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      source: "mock",
+    };
+
+    mockMe.mockRejectedValueOnce(new Error("authentication required"));
+    mockAuthBootstrap.mockResolvedValueOnce({
+      mock_profiles_enabled: true,
+      mock_profiles: [
+        {
+          profile_id: "E1001",
+          display_name: "Ariel Chen",
+          role_claims: ["employee"],
+          mapped_roles: ["employee"],
+          department: "Engineering",
+          site: "Taipei HQ",
+          city: "Taipei",
+          grade: 6,
+          employment_status: "active",
+        },
+      ],
+      debug_chrome_enabled: true,
+    });
+    mockReadiness.mockResolvedValue({});
+    mockSelectMockProfile.mockResolvedValueOnce(session);
+
+    render(<App />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Ariel Chen/ }),
+    );
+
+    await waitFor(() =>
+      expect(mockSelectMockProfile).toHaveBeenCalledWith("E1001"),
+    );
+    expect(await screen.findByText("活動列表")).toBeInTheDocument();
+
+    const debugButtons = await screen.findAllByRole("button", {
+      name: /Debug/,
+    });
+    await userEvent.click(debugButtons[0]);
+    const switchButtons = await screen.findAllByRole("button", {
+      name: /切換身分/,
+    });
+    await userEvent.click(switchButtons[0]);
+
+    expect(mockClearProviderToken).toHaveBeenCalled();
+    expect(await screen.findByLabelText("本機身分清單")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/user/events");
   });
 });

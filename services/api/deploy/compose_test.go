@@ -2,7 +2,6 @@ package deploy
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,6 +33,7 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 
 	required := []string{
 		"DATABASE_URL: postgresql://",
+		"${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}",
 		"TOKEN_SIGNING_SECRET:",
 		"PROVIDER_TOKEN_SECRET:",
 		"REQUEST_TIMEOUT_MS:",
@@ -161,116 +161,4 @@ func TestDockerfileBuildsSingleRuntimeBinary(t *testing.T) {
 	for _, fragment := range required {
 		assert.Contains(t, content, fragment, "Dockerfile is missing %q", fragment)
 	}
-}
-
-func TestKubernetesManifestsDeclareApplicationContracts(t *testing.T) {
-	manifests := readKubernetesManifests(t)
-
-	required := []string{
-		"kind: Kustomization",
-		"namespace: cets",
-		"name: cets-api",
-		"name: cets-worker-notification",
-		"name: cets-worker-projection",
-		"name: cets-worker-compensation",
-		"name: cets-worker-export",
-		"name: cets-api-config",
-		"name: cets-api-secret",
-		"APP_ADDR: \":8080\"",
-		"APP_ENV: staging",
-		"AUTH_MODE: external_sso",
-		"AUTO_MIGRATE: \"false\"",
-		"REDIS_URL: redis://cets-redis:6379/0",
-		"QUEUE_URL: redis://cets-redis:6379/1",
-		"OBJECT_STORAGE_ENDPOINT: http://cets-minio:9000",
-		"OBJECT_STORAGE_BUCKET: cets-staging",
-		"MAILER_HOST: cets-mailhog",
-		"DATABASE_URL: postgresql://cets:change-me-postgres-password@cets-postgres:5432/cets",
-		"TOKEN_SIGNING_SECRET: replace-with-staging-token-signing-secret-32chars",
-		"PROVIDER_TOKEN_SECRET: replace-with-staging-provider-token-secret-32chars",
-		"imagePullPolicy: IfNotPresent",
-		"path: /healthz",
-		"path: /readyz",
-	}
-	for _, fragment := range required {
-		assert.Contains(t, manifests, fragment, "k8s manifest contract is missing %q", fragment)
-	}
-
-	assert.GreaterOrEqual(t, strings.Count(manifests, "image: cets-api:dev"), 7, "app, per-kind workers, migrate, and seed must share the API image contract")
-}
-
-func TestKubernetesManifestsDeclareFullLocalStackContracts(t *testing.T) {
-	manifests := readKubernetesManifests(t)
-
-	required := []string{
-		"name: cets-postgres",
-		"image: postgres:16.13-alpine",
-		"name: cets-redis",
-		"image: redis:7.4.8-alpine",
-		"name: cets-minio",
-		"image: minio/minio:RELEASE.2025-09-07T16-13-09Z",
-		"name: cets-mailhog",
-		"image: mailhog/mailhog:v1.0.1",
-		"name: cets-minio-init",
-		"image: minio/mc:RELEASE.2025-08-13T08-35-41Z",
-		"mc mb --ignore-existing",
-		"kind: StatefulSet",
-		"volumeClaimTemplates:",
-		"kind: Deployment",
-		"kind: Service",
-	}
-	for _, fragment := range required {
-		assert.Contains(t, manifests, fragment, "k8s local stack contract is missing %q", fragment)
-	}
-}
-
-func TestKubernetesManifestsDeclareAdminProcessContracts(t *testing.T) {
-	manifests := readKubernetesManifests(t)
-
-	required := []string{
-		"name: cets-migrate",
-		"- migrate",
-		"name: cets-seed",
-		"suspend: true",
-		"- seed",
-		"name: cets-worker-notification",
-		"- worker",
-		"restartPolicy: OnFailure",
-	}
-	for _, fragment := range required {
-		assert.Contains(t, manifests, fragment, "k8s admin process contract is missing %q", fragment)
-	}
-}
-
-func TestKubernetesManifestsDoNotCommitComposeLocalSecrets(t *testing.T) {
-	manifests := readKubernetesManifests(t)
-
-	forbidden := []string{
-		"cets_dev_password",
-		"local_dev_ticket_signing_secret_change_me",
-		"local_dev_provider_token_secret_change_me",
-		"minioadmin_dev_password",
-	}
-	for _, fragment := range forbidden {
-		assert.NotContains(t, manifests, fragment, "k8s manifests must not commit compose local secret %q", fragment)
-	}
-}
-
-func readKubernetesManifests(t *testing.T) string {
-	t.Helper()
-
-	entries, err := os.ReadDir("k8s")
-	require.NoError(t, err)
-
-	var builder strings.Builder
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
-			continue
-		}
-		content, err := os.ReadFile(filepath.Join("k8s", entry.Name()))
-		require.NoError(t, err)
-		builder.Write(content)
-		builder.WriteString("\n")
-	}
-	return builder.String()
 }

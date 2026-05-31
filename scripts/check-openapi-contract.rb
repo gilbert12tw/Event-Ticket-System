@@ -15,17 +15,22 @@ BANNED_PATHS = [
   "/admin/ops/queues/{kind}/replay"
 ].freeze
 
+ADMIN_EVENTS_PATH = "/admin/events"
+ADMIN_EVENT_PATH = "/admin/events/{event_id}"
+CHECKINS_PATH = "/checkins"
+NOTIFICATION_PREFERENCES_PATH = "/notifications/preferences"
+
 EXPECTED_OPERATIONS = {
   "/auth/me" => %w[get],
   "/auth/bootstrap" => %w[get],
-  "/admin/events" => %w[get post],
+  ADMIN_EVENTS_PATH => %w[get post],
   "/events" => %w[get],
   "/events/{event_id}" => %w[get],
   "/events/{event_id}/eligibility" => %w[get],
   "/events/{event_id}/bookings" => %w[post],
   "/me/tickets" => %w[get],
   "/me/registrations/{registration_id}/cancel" => %w[post],
-  "/admin/events/{event_id}" => %w[patch delete],
+  ADMIN_EVENT_PATH => %w[patch delete],
   "/admin/events/{event_id}/state" => %w[post],
   "/admin/events/{event_id}/duplicate" => %w[post],
   "/admin/events/{event_id}/eligibility/preview" => %w[post],
@@ -39,10 +44,10 @@ EXPECTED_OPERATIONS = {
   "/admin/events/{event_id}/lottery-runs" => %w[post],
   "/tickets/{ticket_id}" => %w[get],
   "/admin/tickets/{ticket_id}/revoke" => %w[post],
-  "/checkins" => %w[post],
+  CHECKINS_PATH => %w[post],
   "/checkins/events/{event_id}/offline-package" => %w[get],
   "/checkins/offline-sync" => %w[post],
-  "/notifications/preferences" => %w[get put],
+  NOTIFICATION_PREFERENCES_PATH => %w[get put],
   "/admin/notifications/deliveries" => %w[get],
   "/admin/notifications/deliveries/{delivery_id}/retry" => %w[post],
   "/admin/reports" => %w[get],
@@ -62,16 +67,16 @@ PUBLIC_OPERATIONS = [
 
 EXPECTED_REQUIRED_ROLES = {
   ["get", "/auth/me"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
-  ["get", "/admin/events"] => %w[activity_admin checkin_staff hr_admin system_admin],
-  ["post", "/admin/events"] => %w[activity_admin],
+  ["get", ADMIN_EVENTS_PATH] => %w[activity_admin checkin_staff hr_admin system_admin],
+  ["post", ADMIN_EVENTS_PATH] => %w[activity_admin],
   ["get", "/events"] => %w[employee],
   ["get", "/events/{event_id}"] => %w[employee],
   ["get", "/events/{event_id}/eligibility"] => %w[employee],
   ["post", "/events/{event_id}/bookings"] => %w[employee],
   ["get", "/me/tickets"] => %w[employee],
   ["post", "/me/registrations/{registration_id}/cancel"] => %w[employee],
-  ["patch", "/admin/events/{event_id}"] => %w[activity_admin],
-  ["delete", "/admin/events/{event_id}"] => %w[activity_admin],
+  ["patch", ADMIN_EVENT_PATH] => %w[activity_admin],
+  ["delete", ADMIN_EVENT_PATH] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/state"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/duplicate"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/eligibility/preview"] => %w[activity_admin],
@@ -85,11 +90,11 @@ EXPECTED_REQUIRED_ROLES = {
   ["post", "/admin/events/{event_id}/lottery-runs"] => %w[activity_admin],
   ["get", "/tickets/{ticket_id}"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
   ["post", "/admin/tickets/{ticket_id}/revoke"] => %w[activity_admin hr_admin system_admin],
-  ["post", "/checkins"] => %w[checkin_staff],
+  ["post", CHECKINS_PATH] => %w[checkin_staff],
   ["get", "/checkins/events/{event_id}/offline-package"] => %w[checkin_staff],
   ["post", "/checkins/offline-sync"] => %w[checkin_staff],
-  ["get", "/notifications/preferences"] => %w[employee],
-  ["put", "/notifications/preferences"] => %w[employee],
+  ["get", NOTIFICATION_PREFERENCES_PATH] => %w[employee],
+  ["put", NOTIFICATION_PREFERENCES_PATH] => %w[employee],
   ["get", "/admin/notifications/deliveries"] => %w[activity_admin hr_admin system_admin],
   ["post", "/admin/notifications/deliveries/{delivery_id}/retry"] => %w[activity_admin hr_admin system_admin],
   ["get", "/admin/reports"] => %w[hr_admin system_admin],
@@ -163,6 +168,8 @@ def each_ref(value, refs = [])
     value.each_value { |child| each_ref(child, refs) }
   when Array
     value.each { |child| each_ref(child, refs) }
+  else
+    nil
   end
   refs
 end
@@ -174,6 +181,8 @@ def walk_hashes(value, path = [], &block)
     value.each { |key, child| walk_hashes(child, path + [key], &block) }
   when Array
     value.each_with_index { |child, index| walk_hashes(child, path + [index], &block) }
+  else
+    nil
   end
 end
 
@@ -295,6 +304,12 @@ unless ticket_status.fetch("enum").sort == %w[active expired redeemed revoked]
   fail_contract("TicketStatus must match API ticket status values")
 end
 
+notification_delivery_status = require_schema_ref(root, "NotificationDeliveryStatus")
+expected_delivery_statuses = %w[dead_letter failed pending sending sent suppressed]
+unless notification_delivery_status.fetch("enum").sort == expected_delivery_statuses
+  fail_contract("NotificationDeliveryStatus must match API notification delivery status values")
+end
+
 allocation_mode = require_schema_ref(root, "AllocationMode")
 unless allocation_mode.fetch("enum").sort == %w[fcfs lottery]
   fail_contract("AllocationMode must match API allocation mode values")
@@ -338,7 +353,7 @@ fail_contract("CheckInErrorResponse must require data") unless checkin_error.fet
 unless checkin_error.dig("properties", "error", "type") == "string"
   fail_contract("CheckInErrorResponse must expose string error")
 end
-checkin_operation = path_item_for(root, "/checkins").fetch("post")
+checkin_operation = path_item_for(root, CHECKINS_PATH).fetch("post")
 checkin_success_description = checkin_operation.dig("responses", "200", "description").to_s.downcase
 %w[duplicated rejected conflicted].each do |stale_status|
   if checkin_success_description.include?(stale_status)
@@ -503,6 +518,8 @@ walk = lambda do |node, trail|
     end
   when Array
     node.each_with_index { |item, idx| walk.call(item, trail + ["[#{idx}]"]) }
+  else
+    nil
   end
 end
 walk.call(root, [])

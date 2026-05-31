@@ -137,14 +137,14 @@ func (s *Service) RetryNotificationDelivery(ctx context.Context, actor Actor, de
 	if err != nil {
 		return NotificationDelivery{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "notification.delivery.retry", "notification_delivery", delivery.DeliveryID, map[string]interface{}{
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "notification.delivery.retry", "notification_delivery", delivery.DeliveryID, map[string]interface{}{
 		"outbox_id":           outboxID,
 		"channel":             channel,
 		"previous_status":     previousStatus,
 		"next_status":         delivery.Status,
 		"retry_budget_reset":  true,
 		"dead_letter_cleared": deadLetterCleared,
-	}); err != nil {
+	})); err != nil {
 		return NotificationDelivery{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

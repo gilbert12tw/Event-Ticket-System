@@ -123,6 +123,8 @@ type eventWithRule struct {
 	Rule         EligibilityRule
 }
 
+const errEventNotFoundMessage = "event not found"
+
 func (s *Service) loadEventWithRule(ctx context.Context, eventID string) (eventWithRule, error) {
 	var ev eventWithRule
 	err := s.db.QueryRow(ctx, `
@@ -138,7 +140,7 @@ func (s *Service) loadEventWithRule(ctx context.Context, eventID string) (eventW
 		&ev.Rule.MinGrade, &ev.Rule.EmploymentStatus,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ev, notFound("event not found")
+		return ev, notFound(errEventNotFoundMessage)
 	}
 	if err != nil {
 		return ev, err
@@ -168,7 +170,7 @@ func (s *Service) requireEventExists(ctx context.Context, eventID string) error 
 		return err
 	}
 	if !exists {
-		return notFound("event not found")
+		return notFound(errEventNotFoundMessage)
 	}
 	return nil
 }
@@ -192,47 +194,65 @@ func (s *Service) UpdateEligibility(ctx context.Context, actor Actor, eventID st
 	}
 	defer rollback(ctx, tx)
 
-	var nextVersion int
-	err = tx.QueryRow(ctx, `UPDATE eligibility_rules
-		SET department = $1, site = $2, min_grade = $3, employment_status = $4, version = version + 1
-		WHERE event_id = $5
-		RETURNING version`, rule.Department, rule.Site, rule.MinGrade, rule.EmploymentStatus, eventID).Scan(&nextVersion)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return EligibilityPreviewResponse{}, notFound("event not found")
-	}
-	if err != nil {
+	if _, _, err := s.updateEligibilityRuleTx(ctx, tx, actor, eventID, rule, count); err != nil {
 		return EligibilityPreviewResponse{}, err
-	}
-	if err := insertEligibilityRuleVersionTx(ctx, tx, eventID, nextVersion, rule, count, actor.ID); err != nil {
-		return EligibilityPreviewResponse{}, err
-	}
-	impactCount, err := s.createEligibilityImpactReviewsTx(ctx, tx, eventID, rule)
-	if err != nil {
-		return EligibilityPreviewResponse{}, err
-	}
-	auditID, err := newID("aud")
-	if err != nil {
-		return EligibilityPreviewResponse{}, err
-	}
-	if err := insertAudit(ctx, tx, auditID, actor, "eligibility.updated", "event", eventID, map[string]interface{}{"version": nextVersion, "match_count": count, "impact_reviews": impactCount}); err != nil {
-		return EligibilityPreviewResponse{}, err
-	}
-	if impactCount > 0 {
-		if err := insertOutbox(ctx, tx, "eligibility.impact_review.created", eventID, map[string]interface{}{"event_id": eventID, "review_count": impactCount}); err != nil {
-			return EligibilityPreviewResponse{}, err
-		}
-		outboxAuditID, err := newID("aud")
-		if err != nil {
-			return EligibilityPreviewResponse{}, err
-		}
-		if err := insertAudit(ctx, tx, outboxAuditID, actor, "eligibility_impact.created", "event", eventID, map[string]interface{}{"review_count": impactCount}); err != nil {
-			return EligibilityPreviewResponse{}, err
-		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return EligibilityPreviewResponse{}, err
 	}
 	return EligibilityPreviewResponse{EventID: eventID, MatchCount: count, ZeroMatch: count == 0}, nil
+}
+
+func (s *Service) updateEligibilityRuleTx(ctx context.Context, tx pgx.Tx, actor Actor, eventID string, rule RuleInput, matchCount int) (int, int, error) {
+	nextVersion, err := updateEligibilityRuleVersionTx(ctx, tx, eventID, rule)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := insertEligibilityRuleVersionTx(ctx, tx, eventID, nextVersion, rule, matchCount, actor.ID); err != nil {
+		return 0, 0, err
+	}
+	impactCount, err := s.createEligibilityImpactReviewsTx(ctx, tx, eventID, rule)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := insertEligibilityUpdateAuditTx(ctx, tx, actor, eventID, nextVersion, matchCount, impactCount); err != nil {
+		return 0, 0, err
+	}
+	return nextVersion, impactCount, insertEligibilityImpactOutboxTx(ctx, tx, actor, eventID, impactCount)
+}
+
+func updateEligibilityRuleVersionTx(ctx context.Context, tx pgx.Tx, eventID string, rule RuleInput) (int, error) {
+	var nextVersion int
+	err := tx.QueryRow(ctx, `UPDATE eligibility_rules
+		SET department = $1, site = $2, min_grade = $3, employment_status = $4, version = version + 1
+		WHERE event_id = $5
+		RETURNING version`, rule.Department, rule.Site, rule.MinGrade, rule.EmploymentStatus, eventID).Scan(&nextVersion)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, notFound(errEventNotFoundMessage)
+	}
+	return nextVersion, err
+}
+
+func insertEligibilityUpdateAuditTx(ctx context.Context, tx pgx.Tx, actor Actor, eventID string, nextVersion int, matchCount int, impactCount int) error {
+	auditID, err := newID("aud")
+	if err != nil {
+		return err
+	}
+	return insertAudit(ctx, tx, newAuditRecord(auditID, actor, "eligibility.updated", "event", eventID, map[string]interface{}{"version": nextVersion, "match_count": matchCount, "impact_reviews": impactCount}))
+}
+
+func insertEligibilityImpactOutboxTx(ctx context.Context, tx pgx.Tx, actor Actor, eventID string, impactCount int) error {
+	if impactCount == 0 {
+		return nil
+	}
+	if err := insertOutbox(ctx, tx, "eligibility.impact_review.created", eventID, map[string]interface{}{"event_id": eventID, "review_count": impactCount}); err != nil {
+		return err
+	}
+	outboxAuditID, err := newID("aud")
+	if err != nil {
+		return err
+	}
+	return insertAudit(ctx, tx, newAuditRecord(outboxAuditID, actor, "eligibility_impact.created", "event", eventID, map[string]interface{}{"review_count": impactCount}))
 }
 
 func (s *Service) EligibilityImpactReviews(ctx context.Context, actor Actor) ([]EligibilityImpactReview, error) {
@@ -290,7 +310,7 @@ func (s *Service) ResolveEligibilityImpactReview(ctx context.Context, actor Acto
 	if err != nil {
 		return EligibilityImpactReview{}, err
 	}
-	if err := insertAudit(ctx, tx, auditID, actor, "eligibility_impact.resolved", "eligibility_impact_review", reviewID, map[string]interface{}{"event_id": review.EventID, "employee_ref": review.EmployeeRef}); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "eligibility_impact.resolved", "eligibility_impact_review", reviewID, map[string]interface{}{"event_id": review.EventID, "employee_ref": review.EmployeeRef})); err != nil {
 		return EligibilityImpactReview{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

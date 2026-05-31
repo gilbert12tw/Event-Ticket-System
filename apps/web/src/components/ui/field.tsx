@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 function Field({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      role="group"
       data-slot="field"
       className={cn(
         "group/field flex w-full flex-col gap-2 data-[invalid=true]:text-destructive",

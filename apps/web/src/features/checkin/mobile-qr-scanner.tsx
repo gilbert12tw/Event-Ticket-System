@@ -12,9 +12,9 @@ const CAMERA_UNAVAILABLE_COPY =
 
 export function MobileQrScanner({
   onTokenDetected,
-}: {
+}: Readonly<{
   onTokenDetected: (token: string) => void;
-}) {
+}>) {
   const [state, setState] = useState<ScannerState>("idle");
   const [message, setMessage] = useState("");
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -100,11 +100,7 @@ export function MobileQrScanner({
           disabled={scanning}
         >
           <Icon name="scan" />
-          {state === "starting"
-            ? "啟動中..."
-            : state === "scanning"
-              ? "掃描中"
-              : "手機掃描 QR"}
+          {scanButtonLabel(state)}
         </Button>
         <Button
           variant="outline"
@@ -126,4 +122,10 @@ export function MobileQrScanner({
       )}
     </div>
   );
+}
+
+function scanButtonLabel(state: ScannerState) {
+  if (state === "starting") return "啟動中...";
+  if (state === "scanning") return "掃描中";
+  return "手機掃描 QR";
 }

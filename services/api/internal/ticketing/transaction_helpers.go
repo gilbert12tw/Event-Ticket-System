@@ -14,13 +14,27 @@ func rollback(ctx context.Context, tx pgx.Tx) {
 	_ = tx.Rollback(ctx)
 }
 
-func insertAudit(ctx context.Context, tx pgx.Tx, auditID string, actor Actor, action string, entityType string, entityID string, metadata map[string]interface{}) error {
-	payload, err := json.Marshal(metadata)
+type auditRecord struct {
+	auditID    string
+	actor      Actor
+	action     string
+	entityType string
+	entityID   string
+	metadata   map[string]interface{}
+}
+
+func newAuditRecord(auditID string, actor Actor, action string, entityType string, entityID string, metadata map[string]interface{}) auditRecord {
+	return auditRecord{auditID: auditID, actor: actor, action: action, entityType: entityType, entityID: entityID, metadata: metadata}
+}
+
+func insertAudit(ctx context.Context, tx pgx.Tx, audit auditRecord) error {
+	payload, err := json.Marshal(audit.metadata)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_logs (audit_id, actor_id, role, action, entity_type, entity_id, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`, auditID, actor.ID, actor.Role, action, entityType, entityID, string(payload))
+		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+		audit.auditID, audit.actor.ID, audit.actor.Role, audit.action, audit.entityType, audit.entityID, string(payload))
 	return err
 }
 

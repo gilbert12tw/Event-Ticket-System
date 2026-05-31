@@ -14,11 +14,11 @@ export function BoundaryContext({
   title,
   description,
   icon,
-}: {
+}: Readonly<{
   title: string;
   description: string;
   icon: IconName;
-}) {
+}>) {
   return (
     <section className="boundary-strip span-12">
       <div>
@@ -33,7 +33,7 @@ export function BoundaryContext({
   );
 }
 
-export function IdentityCard({ claims }: { claims: AuthMeClaims }) {
+export function IdentityCard({ claims }: Readonly<{ claims: AuthMeClaims }>) {
   const role = claims.mapped_roles[0] || "employee";
   return (
     <div className="identity-card" aria-label="目前登入身份">
@@ -44,7 +44,9 @@ export function IdentityCard({ claims }: { claims: AuthMeClaims }) {
   );
 }
 
-export function ProviderClaimsCard({ claims }: { claims: AuthMeClaims }) {
+export function ProviderClaimsCard({
+  claims,
+}: Readonly<{ claims: AuthMeClaims }>) {
   return (
     <Card asChild className="panel span-4">
       <aside>
@@ -75,9 +77,9 @@ export function ProviderClaimsCard({ claims }: { claims: AuthMeClaims }) {
 
 export function EmployeeProfileCard({
   employee,
-}: {
+}: Readonly<{
   employee: EmployeeProfile;
-}) {
+}>) {
   return (
     <Card asChild className="panel span-4">
       <aside>

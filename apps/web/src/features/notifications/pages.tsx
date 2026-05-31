@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  listNotificationDeliveries,
   listEvents,
+  listNotificationDeliveries,
   listTickets,
   retryNotificationDelivery,
+  type EventSummary,
   type NotificationDelivery,
+  type Ticket,
 } from "@/lib/api";
-import type { EventSummary, Ticket } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -188,7 +189,7 @@ type NotificationStatusProps = { kind: string; status?: string };
 function NotificationStatusBadge({
   kind,
   status = "",
-}: NotificationStatusProps) {
+}: Readonly<NotificationStatusProps>) {
   const view =
     kind === "票券" ? ticketStatusView(status) : registrationStatusView(status);
   return <StatusBadge tone={view.tone}>{view.label}</StatusBadge>;
@@ -376,7 +377,7 @@ type RetryActionProps = {
   onRetry: (delivery: NotificationDelivery) => void;
 };
 
-function DeliveryStatusBadge({ status }: { status: string }) {
+function DeliveryStatusBadge({ status }: Readonly<{ status: string }>) {
   const view = deliveryStatusView(status);
   return <StatusBadge tone={view.tone}>{view.label}</StatusBadge>;
 }
@@ -386,7 +387,7 @@ function DeliveryRetryAction({
   retrying,
   row,
   onRetry,
-}: RetryActionProps) {
+}: Readonly<RetryActionProps>) {
   const isRetrying = retrying === row.delivery_id;
   const disabledReason = canRetryDelivery(row) ? "" : retryDisabledReason(row);
 
@@ -415,12 +416,12 @@ function RetryDeliveryDialog({
   delivery,
   onClose,
   onConfirm,
-}: {
+}: Readonly<{
   busy: boolean;
   delivery: NotificationDelivery | null;
   onClose: () => void;
   onConfirm: (delivery: NotificationDelivery) => void;
-}) {
+}>) {
   return (
     <Dialog
       open={Boolean(delivery)}

@@ -27,13 +27,13 @@ export function AdminEventStatusTab({
   stateForm,
   onChangeState,
   onStateFormChange,
-}: {
+}: Readonly<{
   busy: boolean;
   selectedEvent?: EventSummary;
   stateForm: EventStateForm;
   onChangeState: () => void;
   onStateFormChange: (next: EventStateForm) => void;
-}) {
+}>) {
   const [confirming, setConfirming] = useState(false);
   if (!selectedEvent) return <SelectEventFirst action="變更狀態" />;
   const statusUnchanged = stateForm.status === selectedEvent.status;

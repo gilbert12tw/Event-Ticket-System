@@ -52,7 +52,7 @@ const iconComponents: Record<IconName, LucideIcon> = {
   x: X,
 };
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({ name }: Readonly<{ name: IconName }>) {
   const Component = iconComponents[name];
   return (
     <Component

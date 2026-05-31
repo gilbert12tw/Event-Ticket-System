@@ -24,7 +24,9 @@ import {
   ticketListMeta,
 } from "./ticket-readiness";
 
-export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
+export function EmployeeTicketsPage({
+  claims,
+}: Readonly<{ claims: AuthMeClaims }>) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [detailID, setDetailID] = useState(ticketIDFromLocation);
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
@@ -75,8 +77,8 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
 
   useEffect(() => {
     const syncTicketID = () => setDetailID(ticketIDFromLocation());
-    window.addEventListener("popstate", syncTicketID);
-    return () => window.removeEventListener("popstate", syncTicketID);
+    globalThis.addEventListener("popstate", syncTicketID);
+    return () => globalThis.removeEventListener("popstate", syncTicketID);
   }, []);
 
   useEffect(() => {
@@ -90,7 +92,7 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
       setDetailMessage("");
       if (pendingListFocusRef.current) {
         pendingListFocusRef.current = false;
-        window.setTimeout(() => listHeadingRef.current?.focus(), 0);
+        globalThis.setTimeout(() => listHeadingRef.current?.focus(), 0);
       }
       return;
     }
@@ -121,7 +123,7 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
 
   useEffect(() => {
     if (!detailID) return;
-    window.setTimeout(() => detailHeadingRef.current?.focus(), 0);
+    globalThis.setTimeout(() => detailHeadingRef.current?.focus(), 0);
   }, [detailID]);
 
   function openTicket(event: MouseEvent<HTMLAnchorElement>, ticketID: string) {
@@ -241,10 +243,10 @@ export function EmployeeTicketsPage({ claims }: { claims: AuthMeClaims }) {
 function TicketRow({
   onOpen,
   ticket,
-}: {
+}: Readonly<{
   onOpen: (event: MouseEvent<HTMLAnchorElement>, ticketID: string) => void;
   ticket: Ticket;
-}) {
+}>) {
   const readiness = ticketEntryReadinessView(ticket);
   const statusView = ticketStatusView(ticket.status);
   return (
@@ -273,11 +275,11 @@ export function TicketPanel({
   compact = false,
   onRefresh,
   ticket,
-}: {
+}: Readonly<{
   compact?: boolean;
   onRefresh?: () => void;
   ticket?: Ticket;
-}) {
+}>) {
   if (!ticket) {
     return (
       <EmptyState
@@ -403,5 +405,5 @@ function ticketMetaRows(ticket: Ticket): Array<[string, ReactNode]> {
 }
 
 function ticketIDFromLocation() {
-  return new URLSearchParams(window.location.search).get("ticket_id") || "";
+  return new URLSearchParams(globalThis.location.search).get("ticket_id") || "";
 }

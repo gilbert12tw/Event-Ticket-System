@@ -178,14 +178,14 @@ export function routeKeyForPath(pathname: string): RouteKey {
 }
 
 export function currentRoute(): RouteKey {
-  const match = routeMatchForPath(window.location.pathname);
+  const match = routeMatchForPath(globalThis.location.pathname);
   preserveEventIDQuery(match);
   return match.key;
 }
 
 export function navigate(path: string, state: unknown = {}) {
-  window.history.pushState(state, "", debugChromePath(path));
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  globalThis.history.pushState(state, "", debugChromePath(path));
+  globalThis.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 export function canAccessRoute(route: RouteKey, role: Role) {
@@ -215,14 +215,15 @@ export function ticketDetailPath(ticketID: string) {
 
 function preserveEventIDQuery(match: RouteMatch) {
   if (!match.eventID) return;
-  const params = new URLSearchParams(window.location.search);
+  const params = new URLSearchParams(globalThis.location.search);
   if (params.has("event_id")) return;
   params.set("event_id", match.eventID);
   const query = params.toString();
-  window.history.replaceState(
+  const querySuffix = query ? `?${query}` : "";
+  globalThis.history.replaceState(
     {},
     "",
-    `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+    `${globalThis.location.pathname}${querySuffix}${globalThis.location.hash}`,
   );
 }
 

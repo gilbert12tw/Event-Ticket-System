@@ -167,14 +167,21 @@ export function AdminRegistrationsPage() {
     setPendingReason("");
   }
 
-  const renderCancellationAction =
-    (kind: "cancel-registration" | "cancel-waitlist", buttonLabel: string) =>
-    (row: RegistrationDetail) => (
-      <GovernanceActionButton
-        buttonLabel={buttonLabel}
-        disabled={busy || row.status === "cancelled"}
-        onClick={() => openGovernanceAction({ kind, row })}
-      />
+  const renderCancelRegistrationAction = (row: RegistrationDetail) =>
+    renderCancellationAction(
+      row,
+      "cancel-registration",
+      "取消",
+      busy,
+      openGovernanceAction,
+    );
+  const renderCancelWaitlistAction = (row: RegistrationDetail) =>
+    renderCancellationAction(
+      row,
+      "cancel-waitlist",
+      "取消候補",
+      busy,
+      openGovernanceAction,
     );
   const renderTicketAction = (row: RegistrationDetail) =>
     row.ticket ? (
@@ -263,10 +270,7 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={confirmedRows}
             emptyTitle="尚無已報名資料"
-            renderAction={renderCancellationAction(
-              "cancel-registration",
-              "取消",
-            )}
+            renderAction={renderCancelRegistrationAction}
           />
         </TabsContent>
         <TabsContent value="waitlist">
@@ -283,10 +287,7 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={waitlistRows}
             emptyTitle="尚無候補名單"
-            renderAction={renderCancellationAction(
-              "cancel-waitlist",
-              "取消候補",
-            )}
+            renderAction={renderCancelWaitlistAction}
           />
         </TabsContent>
         <TabsContent value="allocation">
@@ -309,7 +310,7 @@ export function AdminRegistrationsPage() {
           <RegistrationTable
             rows={historyRows}
             emptyTitle="尚無取消或撤銷紀錄"
-            renderAction={() => <span className="table-muted">只讀紀錄</span>}
+            renderAction={renderHistoryAction}
           />
         </TabsContent>
       </Tabs>
@@ -332,11 +333,11 @@ function RegistrationTable({
   emptyTitle,
   renderAction,
   rows,
-}: {
+}: Readonly<{
   emptyTitle: string;
   renderAction: (row: RegistrationDetail) => ReactNode;
   rows: RegistrationDetail[];
-}) {
+}>) {
   if (rows.length === 0) {
     return (
       <EmptyState title={emptyTitle} action="切換活動或先建立報名資料。" />
@@ -386,8 +387,28 @@ function RegistrationTable({
   );
 }
 
+function renderHistoryAction() {
+  return <span className="table-muted">只讀紀錄</span>;
+}
+
 function renderStatusBadge(view: ReturnType<typeof registrationStatusView>) {
   return <StatusBadge tone={view.tone}>{view.label}</StatusBadge>;
+}
+
+function renderCancellationAction(
+  row: RegistrationDetail,
+  kind: "cancel-registration" | "cancel-waitlist",
+  buttonLabel: string,
+  busy: boolean,
+  onOpen: (action: GovernanceAction) => void,
+) {
+  return (
+    <GovernanceActionButton
+      buttonLabel={buttonLabel}
+      disabled={busy || row.status === "cancelled"}
+      onClick={() => onOpen({ kind, row })}
+    />
+  );
 }
 
 function GovernanceConfirmationDialog({
@@ -397,14 +418,14 @@ function GovernanceConfirmationDialog({
   onClose,
   onConfirm,
   reason,
-}: {
+}: Readonly<{
   action: GovernanceAction | null;
   busy: boolean;
   onChangeReason: (reason: string) => void;
   onClose: () => void;
   onConfirm: () => void;
   reason: string;
-}) {
+}>) {
   const copy = action ? governanceActionCopies[action.kind] : null;
   const options =
     action?.kind === "revoke-ticket"

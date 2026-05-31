@@ -163,11 +163,11 @@ func insertTicketIssuedAuditTx(ctx context.Context, tx pgx.Tx, actor Actor, tick
 	if err != nil {
 		return err
 	}
-	return insertAudit(ctx, tx, auditID, actor, "ticket.issued", "ticket", ticket.TicketID, map[string]interface{}{
+	return insertAudit(ctx, tx, newAuditRecord(auditID, actor, "ticket.issued", "ticket", ticket.TicketID, map[string]interface{}{
 		"event_id":        ticket.EventID,
 		"registration_id": ticket.RegistrationID,
 		"employee_id":     ticket.EmployeeID,
-	})
+	}))
 }
 
 func (s *Service) ticketForActor(actor Actor, ticket Ticket) (Ticket, error) {

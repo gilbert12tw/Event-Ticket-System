@@ -136,6 +136,42 @@ describe("AdminEventsPage CRUD tabs", () => {
     expect(workspace?.querySelector(".panel")).not.toBeNull();
   });
 
+  it("submits create, duplicate, and archive actions from their workspaces", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+    await userEvent.click(screen.getByRole("button", { name: "建立並發布" }));
+
+    await waitFor(() =>
+      expect(createEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "台北家庭電影夜",
+          capacity_type: "limited",
+          tags: ["家庭活動", "台北"],
+          rule: expect.objectContaining({
+            department: "Engineering",
+            site: "Taipei",
+          }),
+        }),
+      ),
+    );
+    expect(
+      await screen.findByText("活動已建立並寫入稽核紀錄。"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "危險操作" }));
+    await userEvent.click(screen.getByRole("button", { name: "複製活動" }));
+    await waitFor(() => expect(duplicateEvent).toHaveBeenCalledWith("evt-1"));
+    expect(
+      await screen.findByText("已複製活動：活動 copy"),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("輸入活動名稱才能封存"), "活動");
+    await userEvent.click(screen.getByRole("button", { name: "封存活動" }));
+    await waitFor(() => expect(archiveEvent).toHaveBeenCalledWith("evt-1"));
+    expect(await screen.findByText("活動已封存：活動")).toBeInTheDocument();
+  });
+
   it("requires explicit confirmation before saving a zero-match eligibility rule", async () => {
     vi.mocked(previewEligibility).mockResolvedValueOnce({
       event_id: "evt-1",
