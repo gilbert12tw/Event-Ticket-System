@@ -491,7 +491,7 @@ Phase 1 文件不把任何雲供應商作為必備前提。Compose 中的 backin
 
 Current scrape surface: `/metrics` is unauthenticated operational telemetry for local/CI scraping. It must stay additive, bounded-cardinality, and free of full PII, signed tokens, QR payloads, provider tokens, and raw path identifiers.
 
-The optional local observability profile also provisions Loki for app/worker stdout log search, Tempo as a local trace backend, node exporter / cAdvisor for host and container USE metrics, and Alertmanager for local SLO alert routing. This does not change app/worker runtime behavior: logs still go to stdout/stderr, app HTTP trace export is opt-in through typed OTEL config and defaults off, infra exporters are scrape-only review/demo services, and Alertmanager is not a product dependency.
+The optional local observability profile also provisions Loki for app/worker stdout log search, Tempo as a local trace backend, node exporter / cAdvisor for host and container USE metrics, and Alertmanager for local SLO alert routing. This does not change app/worker runtime behavior: logs still go to stdout/stderr, app HTTP trace export is opt-in through typed OTEL config and defaults off, infra exporters are scrape-only review/demo services, and Alertmanager is not a product dependency. When OTEL tracing is enabled, request logs add `otel_trace_id` and `otel_span_id`; Grafana's Loki datasource uses `otel_trace_id` as a derived field into Tempo for log-to-trace navigation.
 
 | 類別 | 指標 / 紀錄 |
 | --- | --- |
