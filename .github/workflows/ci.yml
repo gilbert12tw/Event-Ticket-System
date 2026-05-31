@@ -343,7 +343,7 @@ jobs:
         run: scripts/ci/verify-playwright-runtime.sh chrome
       - name: Verify local act Playwright runtime
         if: env.ACT == 'true'
-        run: scripts/ci/install-playwright.sh chromium
+        run: bash scripts/ci/install-playwright.sh chromium
 
   frontend-e2e:
     needs:
@@ -377,7 +377,7 @@ jobs:
         run: scripts/ci/verify-playwright-runtime.sh chrome
       - name: Verify local act Playwright runtime
         if: env.ACT == 'true'
-        run: scripts/ci/install-playwright.sh chromium
+        run: bash scripts/ci/install-playwright.sh chromium
       - name: Run mocked Playwright viewport checks shard ${{ matrix.shard }}/4
         env:
           PLAYWRIGHT_HTML_REPORT: playwright-report/mock-shard-${{ matrix.shard }}
@@ -457,7 +457,7 @@ jobs:
         run: scripts/ci/verify-playwright-runtime.sh chrome
       - name: Verify local act Playwright runtime
         if: env.ACT == 'true'
-        run: scripts/ci/install-playwright.sh chromium
+        run: bash scripts/ci/install-playwright.sh chromium
       - name: Set up Docker CLI for local act runs
         if: env.ACT == 'true'
         run: |
