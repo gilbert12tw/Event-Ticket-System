@@ -28,6 +28,7 @@ type Dependencies struct {
 	Ticketing                   TicketingService
 	Logger                      *slog.Logger
 	Metrics                     *observability.Registry
+	TracingEnabled              bool
 	RequestTimeout              time.Duration
 	AppEnv                      string
 	OpsAPIEnabled               bool
@@ -55,7 +56,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
 	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
-	return withTraceID(withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))
+	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
+	if deps.TracingEnabled {
+		handler = observability.TraceHTTP(routePattern, handler)
+	}
+	return withTraceID(handler)
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
