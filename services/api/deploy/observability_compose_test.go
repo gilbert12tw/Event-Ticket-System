@@ -86,6 +86,10 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"TEMPO_PORT=3200",
 		"TEMPO_OTLP_GRPC_PORT=4317",
 		"TEMPO_OTLP_HTTP_PORT=4318",
+		"OTEL_TRACES_ENABLED=false",
+		"OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318",
+		"OTEL_SERVICE_NAME=cets-api",
+		"OTEL_SERVICE_VERSION=local-compose",
 		"GRAFANA_PORT=3000",
 	}
 	for _, fragment := range required {
@@ -203,13 +207,17 @@ func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
 		serviceBlock := composeServiceBlock(t, composeText, serviceName)
 		assert.NotContains(t, serviceBlock, "loki:", "%s must not depend on Loki for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "promtail:", "%s must not depend on Promtail for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "tempo:", "%s must not depend on Tempo for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "\n      tempo:", "%s must not depend on Tempo for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "alertmanager:", "%s must not depend on Alertmanager for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "OTEL_", "%s must not enable trace export without typed app config", serviceName)
 		assert.NotContains(t, serviceBlock, "LOKI_", "%s must continue to write logs to stdout/stderr", serviceName)
 		assert.NotContains(t, serviceBlock, "TEMPO_", "%s must not require Tempo to serve product traffic", serviceName)
 		assert.NotContains(t, serviceBlock, "ALERTMANAGER_", "%s must not require Alertmanager to serve product traffic", serviceName)
 	}
+	appBlock := composeServiceBlock(t, composeText, "app")
+	assert.Contains(t, appBlock, "OTEL_TRACES_ENABLED: ${OTEL_TRACES_ENABLED:-false}")
+	assert.Contains(t, appBlock, "OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}")
+	workerBlock := composeServiceBlock(t, composeText, "worker")
+	assert.NotContains(t, workerBlock, "OTEL_", "worker must not enable trace export without worker span coverage")
 }
 
 func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {

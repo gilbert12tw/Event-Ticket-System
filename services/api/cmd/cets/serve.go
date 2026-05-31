@@ -60,6 +60,7 @@ func serve(cfg config.Config, logger *slog.Logger) error {
 			DB:             pool,
 			Ticketing:      ticketingService,
 			Logger:         logger,
+			TracingEnabled: cfg.OTelTracesEnabled,
 			RequestTimeout: cfg.RequestTimeout,
 			AppEnv:         cfg.AppEnv,
 			OpsAPIEnabled:  cfg.OpsAPIEnabled,
