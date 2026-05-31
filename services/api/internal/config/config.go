@@ -65,6 +65,7 @@ type Config struct {
 	ReservationTTL                  time.Duration
 	ReservationGraceTTL             time.Duration
 	ReservationOperationTimeout     time.Duration
+	ReservationCompensationInterval time.Duration
 	BookingReservationHashSecret    string
 	OTelTracesEnabled               bool
 	OTelEndpoint                    string
@@ -122,6 +123,7 @@ func Load() Config {
 		ReservationTTL:                  parseSecondsEnv("RESERVATION_TTL_SECONDS", "20", &loadErrors),
 		ReservationGraceTTL:             parseSecondsEnv("RESERVATION_TTL_GRACE_SECONDS", "10", &loadErrors),
 		ReservationOperationTimeout:     parseDurationMSEnv("REDIS_OPERATION_TIMEOUT_MS", "150", &loadErrors),
+		ReservationCompensationInterval: parseSecondsEnv("RESERVATION_COMPENSATION_INTERVAL_SECONDS", "30", &loadErrors),
 		BookingReservationHashSecret:    os.Getenv("BOOKING_RESERVATION_HASH_SECRET"),
 		OTelTracesEnabled:               parseBoolEnv("OTEL_TRACES_ENABLED", "false", &loadErrors),
 		OTelEndpoint:                    strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
