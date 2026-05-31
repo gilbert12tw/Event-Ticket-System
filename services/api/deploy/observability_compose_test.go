@@ -33,6 +33,12 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"${ALERTMANAGER_PORT:-9093}:9093",
 		"./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
 		"alertmanager_data:",
+		"victoria-metrics:",
+		"image: victoriametrics/victoria-metrics:v1.129.1",
+		"-storageDataPath=/storage",
+		"-retentionPeriod=30d",
+		"${VICTORIA_METRICS_PORT:-8428}:8428",
+		"victoria_metrics_data:",
 		"loki:",
 		"image: grafana/loki:3.5.0",
 		"-config.file=/etc/loki/config.yml",
@@ -87,6 +93,7 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
 		"PROMETHEUS_PORT=9090",
 		"ALERTMANAGER_PORT=9093",
+		"VICTORIA_METRICS_PORT=8428",
 		"BLACKBOX_EXPORTER_PORT=9115",
 		"REDIS_EXPORTER_PORT=9121",
 		"NODE_EXPORTER_PORT=9100",
@@ -119,6 +126,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	prometheusDatasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
 	require.NoError(t, err)
+	rollups, err := os.ReadFile("observability/rules/cets-rollups.yml")
+	require.NoError(t, err)
 	loki, err := os.ReadFile("observability/loki.yml")
 	require.NoError(t, err)
 	promtail, err := os.ReadFile("observability/promtail.yml")
@@ -135,6 +144,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		string(blackbox),
 		string(alertmanager),
 		string(prometheusDatasource),
+		string(rollups),
 		string(loki),
 		string(promtail),
 		string(tempo),
@@ -149,6 +159,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"alerting:",
 		"alertmanagers:",
 		"alertmanager:9093",
+		"remote_write:",
+		"http://victoria-metrics:8428/api/v1/write",
 		"receiver: local-review",
 		"group_by:",
 		"severity",
@@ -174,6 +186,9 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"probe_success{probe_scope=\\\"blackbox\\\"}",
 		"probe_duration_seconds{probe_scope=\\\"blackbox\\\"}",
 		"url: http://prometheus:9090",
+		"name: VictoriaMetrics",
+		"uid: VictoriaMetrics",
+		"url: http://victoria-metrics:8428",
 		"type: loki",
 		"url: http://loki:3100",
 		"derivedFields:",
@@ -205,6 +220,12 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"container_memory_working_set_bytes{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
 		"redis_memory_used_bytes{signal_scope=\\\"backing-service\\\"}",
 		"redis_connected_clients{signal_scope=\\\"backing-service\\\"}",
+		"cets-red-rollups",
+		"cets:http_requests:rate5m",
+		"cets:http_request_duration_seconds:p95_5m",
+		"cets:http_request_duration_seconds:p99_5m",
+		"cets:outbox_oldest_lag_seconds:max5m",
+		"cets:db_lock_waiting_sessions:max5m",
 		"USE CPU Utilization",
 		"USE CPU Saturation",
 		"USE Memory Utilization",
@@ -240,6 +261,11 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NotNil(t, pyroscopeDatasource)
 	assert.Equal(t, "grafana-pyroscope-datasource", pyroscopeDatasource.Type)
 	assert.Equal(t, "http://pyroscope:4040", pyroscopeDatasource.URL)
+
+	victoriaMetricsDatasource := datasourceProvisioning.findDatasource("VictoriaMetrics")
+	require.NotNil(t, victoriaMetricsDatasource)
+	assert.Equal(t, "prometheus", victoriaMetricsDatasource.Type)
+	assert.Equal(t, "http://victoria-metrics:8428", victoriaMetricsDatasource.URL)
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
@@ -274,12 +300,13 @@ func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
 	require.NoError(t, err)
 	prometheus, err := os.ReadFile("observability/prometheus.yml")
 	require.NoError(t, err)
-	combined := string(compose) + "\n" + string(prometheus)
+	composeText := string(compose)
+	blackboxJob := prometheusJobBlock(t, string(prometheus), "cets-blackbox")
 
-	assert.NotContains(t, combined, "/api/v1/", "black-box probes must not exercise product APIs")
-	assert.NotContains(t, combined, "Authorization:", "black-box probes must not depend on product credentials")
-	assert.NotContains(t, combined, "app:\n    depends_on:\n      blackbox-exporter:", "app must not depend on probe health")
-	assert.NotContains(t, combined, "worker:\n    depends_on:\n      blackbox-exporter:", "worker must not depend on probe health")
+	assert.NotContains(t, blackboxJob, "/api/v1/", "black-box probes must not exercise product APIs")
+	assert.NotContains(t, blackboxJob, "Authorization:", "black-box probes must not depend on product credentials")
+	assert.NotContains(t, composeText, "app:\n    depends_on:\n      blackbox-exporter:", "app must not depend on probe health")
+	assert.NotContains(t, composeText, "worker:\n    depends_on:\n      blackbox-exporter:", "worker must not depend on probe health")
 }
 
 func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
@@ -289,9 +316,11 @@ func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
 
 	for _, serviceName := range []string{"app", "worker"} {
 		serviceBlock := composeServiceBlock(t, composeText, serviceName)
+		assert.NotContains(t, serviceBlock, "victoria-metrics:", "%s must not depend on VictoriaMetrics for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "redis-exporter:", "%s must not depend on Redis exporter for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "node-exporter:", "%s must not depend on node exporter for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "cadvisor:", "%s must not depend on cAdvisor for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "VICTORIA_METRICS", "%s must not receive long-term metrics storage config", serviceName)
 		assert.NotContains(t, serviceBlock, "REDIS_EXPORTER", "%s must not receive Redis exporter config", serviceName)
 		assert.NotContains(t, serviceBlock, "NODE_EXPORTER", "%s must not receive exporter config", serviceName)
 		assert.NotContains(t, serviceBlock, "CADVISOR", "%s must not receive cAdvisor config", serviceName)
@@ -399,4 +428,20 @@ func composeServiceBlock(t *testing.T, composeText string, serviceName string) s
 	block := pattern.FindString(normalized)
 	require.NotEmpty(t, block, "compose service %s must exist", serviceName)
 	return block
+}
+
+func prometheusJobBlock(t *testing.T, prometheusText string, jobName string) string {
+	t.Helper()
+
+	normalized := strings.ReplaceAll(prometheusText, "\r\n", "\n")
+	marker := "  - job_name: " + jobName + "\n"
+	start := strings.Index(normalized, marker)
+	require.NotEqual(t, -1, start, "prometheus job %s must exist", jobName)
+
+	rest := normalized[start:]
+	nextStart := strings.Index(rest[len(marker):], "\n  - job_name: ")
+	if nextStart == -1 {
+		return rest
+	}
+	return rest[:len(marker)+nextStart]
 }

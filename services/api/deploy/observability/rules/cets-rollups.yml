@@ -1,0 +1,33 @@
+groups:
+  - name: cets-red-rollups
+    interval: 5m
+    rules:
+      - record: cets:http_requests:rate5m
+        expr: |
+          sum by (route, method, status_class) (
+            rate(cets_http_requests_total[5m])
+          )
+
+      - record: cets:http_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, route, method) (
+              rate(cets_http_request_seconds_bucket[5m])
+            )
+          )
+
+      - record: cets:http_request_duration_seconds:p99_5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, route, method) (
+              rate(cets_http_request_seconds_bucket[5m])
+            )
+          )
+
+      - record: cets:outbox_oldest_lag_seconds:max5m
+        expr: max_over_time(cets_outbox_oldest_lag_seconds[5m])
+
+      - record: cets:db_lock_waiting_sessions:max5m
+        expr: max_over_time(cets_db_lock_waiting_sessions[5m])
