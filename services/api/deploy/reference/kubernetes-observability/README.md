@@ -24,9 +24,11 @@ product runtime behavior:
 - `app-lifecycle-service-discovery.yaml` shows the application lifecycle and networking automation
   shape: rolling updates, health probes, self-healing restarts, stable Service discovery, HPA
   scaling, a PodDisruptionBudget, and node-spread hints.
+- `opentelemetry-collector.yaml` shows a vendor-neutral OpenTelemetry Collector entry point that
+  accepts OTLP traces/logs, batches them, and routes traces to Tempo and logs to Loki.
 
-Together, these files keep the logging and metrics stack as code for review without making it the
-active deployment path.
+Together, these files keep the logging and metrics stack as code for review, with tracing pipeline
+examples included, without making it the active deployment path.
 
 Keep application behavior independent from these files. Booking, ticket, check-in, worker,
 reporting, and audit correctness still rely on PostgreSQL-backed application contracts, not

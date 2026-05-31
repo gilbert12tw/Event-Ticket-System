@@ -151,6 +151,42 @@ func TestKubernetesObservabilityReferenceDocumentsContainerLogPipeline(t *testin
 	}
 }
 
+func TestKubernetesObservabilityReferenceDocumentsOpenTelemetryCollector(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "opentelemetry-collector.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"kind: ConfigMap",
+		"name: opentelemetry-collector-reference-config",
+		"receivers:",
+		"otlp:",
+		"grpc:",
+		"endpoint: 0.0.0.0:4317",
+		"http:",
+		"endpoint: 0.0.0.0:4318",
+		"processors:",
+		"batch:",
+		"exporters:",
+		"otlphttp/tempo:",
+		"endpoint: http://tempo.cets-observability.svc:4318",
+		"loki:",
+		"endpoint: http://loki.cets-observability.svc:3100/loki/api/v1/push",
+		"traces:",
+		"logs:",
+		"extensions: [health_check]",
+		"kind: Deployment",
+		"otel/opentelemetry-collector-contrib:0.142.0",
+		"name: otlp-grpc",
+		"name: otlp-http",
+		"kind: Service",
+		"vendor-neutral OpenTelemetry Collector",
+		"routes traces to Tempo and logs to Loki",
+	} {
+		assert.Contains(t, combined, fragment, "OpenTelemetry collector reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsAppLifecycleAndServiceDiscovery(t *testing.T) {
 	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "app-lifecycle-service-discovery.yaml"))
 	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
