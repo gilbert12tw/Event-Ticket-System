@@ -137,6 +137,30 @@ func TestKubernetesObservabilityReferenceDocumentsMetricsStorageAlternatives(t *
 	}
 }
 
+func TestKubernetesObservabilityReferenceDocumentsAlertRouting(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "alert-routing-reference.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"name: alert-routing-reference",
+		"alertmanager.yml: |",
+		"receiver: local-review",
+		"severity=\"critical\"",
+		"receiver: pagerduty-on-call-reference",
+		"pagerduty_configs:",
+		"routing_key: managed-outside-reference",
+		"inhibit_rules:",
+		"prom/alertmanager:v0.28.1",
+		"--config.file=/etc/alertmanager/alertmanager.yml",
+		"Alertmanager route tree",
+		"PagerDuty-style on-call receiver",
+		"without real credential values or active paging",
+	} {
+		assert.Contains(t, combined, fragment, "alert routing reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceDocumentsContainerLogPipeline(t *testing.T) {
 	sidecar := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "log-sidecar-example.yaml"))
 	plg := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "plg-log-stack.yaml"))

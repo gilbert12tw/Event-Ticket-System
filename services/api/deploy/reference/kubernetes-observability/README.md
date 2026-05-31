@@ -20,6 +20,8 @@ product runtime behavior:
   review profile.
 - `prometheus-scrape-example.yaml` shows the Prometheus scrape job shape for
   `kube-state-metrics.cets-observability.svc:8080`.
+- `alert-routing-reference.yaml` shows an Alertmanager route tree with local-review and
+  PagerDuty-style on-call receiver examples, without real credential values or active paging.
 - `log-sidecar-example.yaml` shows the container log forwarding sidecar pattern: the app still
   writes stdout, while a Fluent Bit sidecar tails a shared stdout spool and forwards structured logs.
 - `log-collector-alternatives.yaml` shows Fluentd and Vector collector config alternatives for
