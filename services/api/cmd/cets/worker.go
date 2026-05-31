@@ -84,7 +84,11 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 		return err
 	}
 	if redisClient != nil {
-		defer redisClient.Close()
+		defer func() {
+			if err := redisClient.Close(); err != nil {
+				logger.Warn("compensation redis client close failed", "error_class", "redis_error")
+			}
+		}()
 	}
 
 	var wg sync.WaitGroup

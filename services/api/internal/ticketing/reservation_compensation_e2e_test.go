@@ -57,7 +57,7 @@ func TestCompensatorReleasesOrphanHoldThroughLiveLookup(t *testing.T) {
 	require.NoError(t, err)
 
 	client := redisClientFromEnv(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	comp := newE2ECompensator(t, service, client)
 
 	// Seed an orphan hold: counter decremented to 2, hold + pending member
@@ -101,7 +101,7 @@ func TestCompensatorDropsHoldWhenLiveBookingConfirmed(t *testing.T) {
 	require.NoError(t, err)
 
 	client := redisClientFromEnv(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Drive a real booking through the gate so the hash matches what's in
 	// PostgreSQL; PR3 e2e contract is "real adapter, real Redis, real PG".
@@ -150,7 +150,7 @@ func TestCompensatorCapsDriftedCounterAgainstLiveCapacityProbe(t *testing.T) {
 	require.NoError(t, err)
 
 	client := redisClientFromEnv(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	comp := newE2ECompensator(t, service, client)
 
 	require.NoError(t, client.Set(ctx, "cets:v1:resv:"+event.EventID+":remaining", 999, 0).Err())
