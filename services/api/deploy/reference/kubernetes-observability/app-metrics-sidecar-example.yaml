@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cets-api-metrics-sidecar-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cets-api
+      observability.cets.dev/reference-only: "true"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cets-api
+        app.kubernetes.io/part-of: cets-observability-reference
+        observability.cets.dev/reference-only: "true"
+    spec:
+      containers:
+        - name: app
+          image: cets-api:decision-gate
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: app-metrics
+              containerPort: 8080
+        - name: app-specific-exporter
+          image: prometheuscommunity/json-exporter:v0.7.0
+          args:
+            - --config.file=/etc/json-exporter/config.yml
+          ports:
+            - name: metrics
+              containerPort: 7979
+          volumeMounts:
+            - name: app-exporter-config
+              mountPath: /etc/json-exporter
+              readOnly: true
+      volumes:
+        - name: app-exporter-config
+          configMap:
+            name: cets-app-exporter-sidecar-example
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cets-app-exporter-sidecar-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+data:
+  config.yml: |
+    modules:
+      cets_ready:
+        metrics:
+          - name: cets_reference_ready
+            path: "{.success}"
+            help: Reference-only app readiness exporter sidecar example.
+            type: value
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cets-api-metrics-sidecar-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  selector:
+    app.kubernetes.io/name: cets-api
+    observability.cets.dev/reference-only: "true"
+  ports:
+    - name: metrics
+      port: 7979
+      targetPort: metrics
