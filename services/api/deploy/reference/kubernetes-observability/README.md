@@ -21,6 +21,9 @@ product runtime behavior:
   writes stdout, while a Fluent Bit sidecar tails a shared stdout spool and forwards structured logs.
 - `plg-log-stack.yaml` shows a Loki + Grafana log analysis/viewing stack for the PLG pattern.
 - `efk-log-stack.yaml` shows Elasticsearch + Kibana analysis/viewing resources for the EFK pattern.
+- `app-lifecycle-service-discovery.yaml` shows the application lifecycle and networking automation
+  shape: rolling updates, health probes, self-healing restarts, stable Service discovery, HPA
+  scaling, a PodDisruptionBudget, and node-spread hints.
 
 Together, these files keep the logging and metrics stack as code for review without making it the
 active deployment path.

@@ -151,6 +151,48 @@ func TestKubernetesObservabilityReferenceDocumentsContainerLogPipeline(t *testin
 	}
 }
 
+func TestKubernetesObservabilityReferenceDocumentsAppLifecycleAndServiceDiscovery(t *testing.T) {
+	manifest := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "app-lifecycle-service-discovery.yaml"))
+	readme := readDeployText(t, filepath.Join(kubernetesObservabilityReferenceDir, "README.md"))
+	combined := manifest + "\n" + readme
+
+	for _, fragment := range []string{
+		"kind: Deployment",
+		"name: cets-api-lifecycle-example",
+		"replicas: 3",
+		"type: RollingUpdate",
+		"maxUnavailable: 0",
+		"maxSurge: 1",
+		"restartPolicy: Always",
+		"readinessProbe:",
+		"path: /readyz",
+		"livenessProbe:",
+		"path: /healthz",
+		"topologySpreadConstraints:",
+		"topologyKey: kubernetes.io/hostname",
+		"podAntiAffinity:",
+		"kind: Service",
+		"name: cets-api",
+		"type: ClusterIP",
+		"targetPort: http",
+		"kind: PodDisruptionBudget",
+		"minAvailable: 2",
+		"kind: HorizontalPodAutoscaler",
+		"minReplicas: 3",
+		"maxReplicas: 9",
+		"name: cpu",
+		"averageUtilization: 70",
+		"name: cets_http_requests_per_second",
+		"averageValue: \"25\"",
+		"rolling updates",
+		"stable Service discovery",
+		"HPA",
+		"PodDisruptionBudget",
+	} {
+		assert.Contains(t, combined, fragment, "app lifecycle reference is missing %q", fragment)
+	}
+}
+
 func TestKubernetesObservabilityReferenceStaysOutsideProductRuntime(t *testing.T) {
 	reference := readFilesUnder(t, kubernetesObservabilityReferenceDir)
 	compose := readDeployText(t, "compose.yaml")

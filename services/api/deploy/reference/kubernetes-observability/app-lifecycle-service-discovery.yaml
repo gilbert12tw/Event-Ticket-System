@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cets-api-lifecycle-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cets-api
+      observability.cets.dev/lifecycle-example: "true"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cets-api
+        app.kubernetes.io/part-of: cets-observability-reference
+        observability.cets.dev/lifecycle-example: "true"
+    spec:
+      restartPolicy: Always
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: cets-api
+              observability.cets.dev/lifecycle-example: "true"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: cets-api
+                    observability.cets.dev/lifecycle-example: "true"
+      containers:
+        - name: app
+          image: cets-api:decision-gate
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cets-api
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: cets-api
+    observability.cets.dev/lifecycle-example: "true"
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cets-api-lifecycle-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cets-api
+      observability.cets.dev/lifecycle-example: "true"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cets-api-lifecycle-example
+  namespace: cets-observability
+  labels:
+    app.kubernetes.io/name: cets-api
+    app.kubernetes.io/part-of: cets-observability-reference
+    observability.cets.dev/reference-only: "true"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cets-api-lifecycle-example
+  minReplicas: 3
+  maxReplicas: 9
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: cets_http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "25"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
