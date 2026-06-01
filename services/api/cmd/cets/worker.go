@@ -79,7 +79,7 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 	)
 
 	outboxKinds, compensationEnabled := splitWorkerKinds(cfg.WorkerKinds)
-	compensator, redisClient, err := buildWorkerCompensator(cfg, service, logger, compensationEnabled)
+	compensator, redisClient, err := buildWorkerCompensator(cfg, service, service, logger, compensationEnabled)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 		}()
 	}
 
-	if compensationEnabled {
+	if compensator != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -134,6 +134,10 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 				ShutdownGrace: cfg.WorkerShutdownGrace,
 			})
 		}()
+	}
+
+	if len(outboxKinds) == 0 && compensator == nil {
+		logger.Warn("worker has no active loops; compensation requested but BOOKING_PREADMISSION=off and no outbox kinds configured")
 	}
 
 	wg.Wait()
@@ -167,12 +171,17 @@ func splitWorkerKinds(kinds []string) ([]string, bool) {
 // requested or when the gate is off (no advisory holds exist that need
 // reconciliation). On nil client + nil compensator, the caller skips the
 // dedicated compensation loop.
-func buildWorkerCompensator(cfg config.Config, lookup reservation.BookingLookup, logger *slog.Logger, enabled bool) (*reservation.Compensator, *redisClientCloser, error) {
+func buildWorkerCompensator(cfg config.Config, lookup reservation.BookingLookup, metrics reservation.CompensationMetrics, logger *slog.Logger, enabled bool) (*reservation.Compensator, *redisClientCloser, error) {
 	if !enabled {
 		return nil, nil, nil
 	}
 	if !cfg.BookingPreadmission {
-		logger.Info("compensation kind enabled but BOOKING_PREADMISSION=off; sweep will run but no orphan holds exist")
+		// Preadmission off means no Redis reservation holds are ever created,
+		// so there is nothing to reconcile. Skip the Redis client and the
+		// compensation loop entirely instead of hard-failing on an unset
+		// REDIS_URL — a DB-only worker must start cleanly in this mode.
+		logger.Info("compensation kind requested but BOOKING_PREADMISSION=off; skipping compensation loop (no reservation holds to reconcile)")
+		return nil, nil, nil
 	}
 	client, err := newWorkerRedisClient(cfg)
 	if err != nil {
@@ -185,6 +194,6 @@ func buildWorkerCompensator(cfg config.Config, lookup reservation.BookingLookup,
 		DriftMarkerTTL:   60 * time.Second,
 		OperationTimeout: cfg.ReservationOperationTimeout,
 	}
-	compensator := reservation.NewCompensator(client.client, cfgCompensation, lookup, logger, reservation.LogCompensationMetrics{Logger: logger})
+	compensator := reservation.NewCompensator(client.client, cfgCompensation, lookup, logger, metrics)
 	return compensator, client, nil
 }

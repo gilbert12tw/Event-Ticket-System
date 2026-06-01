@@ -191,11 +191,12 @@ func TestWorkerOutcomeMetricsExposeAuditBackedRetryAndDeadLetterCounters(t *test
 }
 
 type fakeSQLMetricsDB struct {
-	lockWaitCount          int64
-	queries                *[]string
-	outboxRows             [][]any
-	outboxLagHistogramRows [][]any
-	workerOutcomeRows      [][]any
+	lockWaitCount               int64
+	queries                     *[]string
+	outboxRows                  [][]any
+	outboxLagHistogramRows      [][]any
+	workerOutcomeRows           [][]any
+	reservationCompensationRows [][]any
 }
 
 func (db fakeSQLMetricsDB) QueryRow(context.Context, string, ...interface{}) pgx.Row {
@@ -211,6 +212,9 @@ func (db fakeSQLMetricsDB) Query(_ context.Context, query string, _ ...interface
 	}
 	if strings.Contains(query, "worker_outbox_audit_totals") {
 		return &fakeMetricRows{rows: db.workerOutcomeRows}, nil
+	}
+	if strings.Contains(query, "reservation_compensation_metric_totals") {
+		return &fakeMetricRows{rows: db.reservationCompensationRows}, nil
 	}
 	return &fakeMetricRows{rows: db.outboxRows}, nil
 }

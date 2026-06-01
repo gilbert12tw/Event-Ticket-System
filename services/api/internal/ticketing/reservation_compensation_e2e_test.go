@@ -1,11 +1,13 @@
 package ticketing
 
 import (
+	"bytes"
 	"context"
 	"strconv"
 	"testing"
 	"time"
 
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/reservation"
 
 	"github.com/redis/go-redis/v9"
@@ -26,7 +28,7 @@ func newE2ECompensator(t *testing.T, service *Service, client redis.UniversalCli
 		MaxEvents:        16,
 		DriftMarkerTTL:   5 * time.Second,
 		OperationTimeout: 500 * time.Millisecond,
-	}, service, nil, nil)
+	}, service, nil, service)
 }
 
 // expirePendingMember backdates the pending zset score so the
@@ -159,4 +161,66 @@ func TestCompensatorCapsDriftedCounterAgainstLiveCapacityProbe(t *testing.T) {
 	remaining, err := client.Get(ctx, "cets:v1:resv:"+event.EventID+":remaining").Int()
 	require.NoError(t, err)
 	assert.Equal(t, 5, remaining, "drift cap must clamp to DB-derived remaining capacity (5 - 0 confirmed)")
+}
+
+// PR #60 review blocker 2: the compensation sweep must feed the real
+// Prometheus metrics path, not just structured logs. The worker has no
+// /metrics endpoint, so the Service-backed sink accumulates durable totals in
+// reservation_compensation_metrics and serve's /metrics derives the counters.
+// This drives the production sink + the serve collector against live PG+Redis.
+func TestCompensatorMetricsPersistedAndExposedThroughServeCollector(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	flushRedis := withRedisGate(t, service)
+	defer flushRedis()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "E2E Metrics",
+		Capacity: 3,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+
+	client := redisClientFromEnv(t)
+	defer func() { _ = client.Close() }()
+	comp := newE2ECompensator(t, service, client)
+
+	// Orphan hold (Redis granted, DB tx never committed) → release path.
+	orphanHash := "orphan-metric-" + strconv.FormatInt(time.Now().UnixNano(), 16)
+	require.NoError(t, client.Set(ctx, "cets:v1:resv:"+event.EventID+":remaining", 2, 0).Err())
+	require.NoError(t, client.HSet(ctx, "cets:v1:resv:"+event.EventID+":hold:"+orphanHash,
+		"reservation_id", "resv_metric",
+		"event_id", event.EventID,
+		"idempotency_hash", orphanHash,
+		"seats", "1",
+		"state", "reserved",
+	).Err())
+	expirePendingMember(t, client, event.EventID, orphanHash)
+
+	require.NoError(t, comp.Sweep(ctx))
+
+	// The sink wrote durable counters: a release outcome and a drift outcome.
+	var releaseTotal int64
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT total FROM reservation_compensation_metrics
+		   WHERE metric = 'compensation' AND action = 'release' AND result = 'released'`,
+	).Scan(&releaseTotal))
+	assert.GreaterOrEqual(t, releaseTotal, int64(1), "release outcome must be persisted")
+
+	var driftTotal int64
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT COALESCE(sum(total), 0) FROM reservation_compensation_metrics WHERE metric = 'counter_drift'`,
+	).Scan(&driftTotal))
+	assert.GreaterOrEqual(t, driftTotal, int64(1), "drift-guard outcome must be persisted")
+
+	// serve /metrics derives the Prometheus counters from those rows.
+	var body bytes.Buffer
+	observability.NewRegistry().WritePrometheus(ctx, &body, service.db)
+	metrics := body.String()
+	assert.Contains(t, metrics, `# TYPE cets_reservation_compensation_total counter`)
+	assert.Contains(t, metrics, `cets_reservation_compensation_total{action="release",result="released"}`)
+	assert.Contains(t, metrics, `# TYPE cets_reservation_counter_drift_total counter`)
 }
