@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="40" y="42" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="28" font-weight="700" fill="#0f172a">支援/非同步/報表 ERD</text>
+<text x="40" y="72" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="15" fill="#475569">虛線代表 logical relationship 或 polymorphic reference，非實體 FK。</text>
+<line x1="520" y1="155" x2="910" y2="295" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="670" y="206" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="715" y="219" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="155" x2="900" y2="125" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="482" y="121" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="528" y="134" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:0..1</text>
+<line x1="155" y1="155" x2="910" y2="295" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="488" y="206" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="532" y="219" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="275" x2="510" y2="345" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="288" y="291" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="332" y="304" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="510" y1="345" x2="925" y2="485" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="672" y="396" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="718" y="409" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="275" x2="925" y2="485" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="495" y="361" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="540" y="374" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="165" y1="395" x2="925" y2="485" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="500" y="421" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="545" y="434" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="155" x2="925" y2="485" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="495" y="301" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="540" y="314" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="515" x2="925" y2="485" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="495" y="481" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="540" y="494" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="275" x2="530" y2="560" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="298" y="398" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="342" y="412" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="530" y1="560" x2="915" y2="660" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="678" y="591" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="722" y="604" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="515" x2="915" y2="660" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="490" y="568" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="535" y="582" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:N</text>
+<line x1="155" y1="275" x2="1265" y2="335" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="665" y="286" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="710" y="299" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">1:0..1</text>
+<line x1="520" y1="155" x2="1265" y2="335" stroke="#475569" stroke-width="1.7" stroke-dasharray="7 6" marker-end="url(#arrow)"/>
+<rect x="848" y="226" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="892" y="239" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">projection</text>
+<line x1="520" y1="155" x2="1265" y2="665" stroke="#475569" stroke-width="1.7" stroke-dasharray="7 6" marker-end="url(#arrow)"/>
+<rect x="848" y="391" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="892" y="404" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">aggregate_id/entity_id</text>
+<line x1="155" y1="155" x2="1265" y2="665" stroke="#475569" stroke-width="1.7" stroke-dasharray="7 6" marker-end="url(#arrow)"/>
+<rect x="665" y="391" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="710" y="404" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">actor_id logical</text>
+<line x1="520" y1="760" x2="155" y2="155" stroke="#475569" stroke-width="1.7" stroke-dasharray="7 6" marker-end="url(#arrow)"/>
+<rect x="292" y="438" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="338" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">sync source</text>
+<rect x="60" y="120" width="190" height="70" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.8"/>
+<text x="155" y="144" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">employees</text>
+<text x="155" y="162" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK employee_id</text>
+<rect x="60" y="240" width="190" height="70" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.8"/>
+<text x="155" y="264" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">events</text>
+<text x="155" y="282" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK event_id</text>
+<rect x="60" y="360" width="210" height="70" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.8"/>
+<text x="165" y="384" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">registrations</text>
+<text x="165" y="402" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK registration_id</text>
+<rect x="60" y="480" width="190" height="70" rx="8" fill="#fce7f3" stroke="#be185d" stroke-width="1.8"/>
+<text x="155" y="504" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">tickets</text>
+<text x="155" y="522" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK ticket_id</text>
+<rect x="380" y="90" width="280" height="130" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.8"/>
+<text x="520" y="114" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">outbox_events</text>
+<text x="520" y="132" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK outbox_id</text>
+<text x="520" y="150" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">aggregate_id, event_type</text>
+<text x="520" y="168" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">publish_status, idempotency_key</text>
+<rect x="760" y="70" width="280" height="110" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+<text x="900" y="94" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">notification_preferences</text>
+<text x="900" y="112" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK/FK employee_id</text>
+<text x="900" y="130" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">email_enabled, in_app_enabled</text>
+<rect x="760" y="230" width="300" height="130" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+<text x="910" y="254" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">notification_deliveries</text>
+<text x="910" y="272" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK delivery_id</text>
+<text x="910" y="290" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">FK outbox_id, employee_id</text>
+<text x="910" y="308" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">UK outbox_id + channel</text>
+<rect x="380" y="290" width="260" height="110" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="510" y="314" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">lottery_runs</text>
+<text x="510" y="332" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK run_id</text>
+<text x="510" y="350" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">FK event_id</text>
+<text x="510" y="368" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">UK event_id + seed</text>
+<rect x="760" y="420" width="330" height="130" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="925" y="444" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">lottery_results</text>
+<text x="925" y="462" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK result_id</text>
+<text x="925" y="480" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">FK run_id, event_id, registration_id, employee_id, ticket_id</text>
+<rect x="380" y="500" width="300" height="120" rx="8" fill="#fee2e2" stroke="#dc2626" stroke-width="1.8"/>
+<text x="530" y="524" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">offline_checkin_batches</text>
+<text x="530" y="542" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK batch_id</text>
+<text x="530" y="560" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">FK event_id</text>
+<text x="530" y="578" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">device_id, staff_id, status</text>
+<rect x="760" y="600" width="310" height="120" rx="8" fill="#fee2e2" stroke="#dc2626" stroke-width="1.8"/>
+<text x="915" y="624" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">offline_checkin_scans</text>
+<text x="915" y="642" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK scan_id</text>
+<text x="915" y="660" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">FK batch_id, ticket_id</text>
+<text x="915" y="678" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">token_hash, conflict_reason</text>
+<rect x="1130" y="110" width="270" height="100" rx="8" fill="#ecfccb" stroke="#65a30d" stroke-width="1.8"/>
+<text x="1265" y="134" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">report_exports</text>
+<text x="1265" y="152" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK export_id</text>
+<text x="1265" y="170" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">requested_by, status, object_key</text>
+<rect x="1130" y="280" width="270" height="110" rx="8" fill="#ecfccb" stroke="#65a30d" stroke-width="1.8"/>
+<text x="1265" y="304" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">reporting_event_summary</text>
+<text x="1265" y="322" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK event_id</text>
+<text x="1265" y="340" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">counts + department_breakdown</text>
+<rect x="1130" y="450" width="280" height="100" rx="8" fill="#ecfccb" stroke="#65a30d" stroke-width="1.8"/>
+<text x="1270" y="474" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">reporting_projection_offsets</text>
+<text x="1270" y="492" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK projection_name</text>
+<text x="1270" y="510" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">last_processed_at</text>
+<rect x="1130" y="610" width="270" height="110" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.8"/>
+<text x="1265" y="634" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">audit_logs</text>
+<text x="1265" y="652" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK audit_id</text>
+<text x="1265" y="670" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">actor_id, entity_type, entity_id, metadata</text>
+<rect x="380" y="710" width="280" height="100" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.8"/>
+<text x="520" y="734" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">hr_sync_batches</text>
+<text x="520" y="752" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">PK batch_id</text>
+<text x="520" y="770" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">source, status, employee_count</text>
+</svg>

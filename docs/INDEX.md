@@ -8,6 +8,7 @@ Use this page as the first stop when deciding which document is current.
 - `docs/ARCHITECTURE.md` - architecture decisions, phase boundaries, and deployment shape.
 - `docs/PRODUCT.md` - product scope and business flows.
 - `docs/DESIGN.md` - UI design system and product interaction direction.
+- `docs/diagrams/` - editable draw.io deployment architecture and ERD diagrams with SVG exports.
 - `docs/openapi.yaml` and `docs/openapi/` - public API contract.
 - `docs/ci-self-hosted-runner.md` - opt-in self-hosted GitHub Actions runner setup for billing or quota blocks.
 

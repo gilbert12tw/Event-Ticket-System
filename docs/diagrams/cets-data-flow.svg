@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="40" y="42" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="28" font-weight="700" fill="#0f172a">資料與依賴流：backend、workers、backing services</text>
+<text x="40" y="72" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="15" fill="#475569">同一 Go image 以 HTTP backend 與 worker process 運行；PostgreSQL 是 booking/ticket/check-in/audit final truth。</text>
+<line x1="190" y1="165" x2="495" y2="165" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="298" y="146" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="342" y="159" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">/api via backend Service</text>
+<line x1="495" y1="165" x2="900" y2="145" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="652" y="136" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="698" y="149" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">DATABASE_URL -&gt; rw</text>
+<line x1="495" y1="165" x2="900" y2="290" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="652" y="208" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="698" y="222" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">REDIS_URL / QUEUE_URL</text>
+<line x1="515" y1="380" x2="900" y2="145" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="662" y="244" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="708" y="256" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">outbox lease / state updates</text>
+<line x1="515" y1="380" x2="900" y2="290" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="662" y="316" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="708" y="329" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">queue/reservation cleanup</text>
+<line x1="515" y1="380" x2="890" y2="420" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="658" y="381" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="702" y="394" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">export files</text>
+<line x1="515" y1="380" x2="890" y2="550" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="658" y="446" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="702" y="459" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">notification SMTP</text>
+<line x1="495" y1="165" x2="1245" y2="320" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="825" y="224" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="870" y="236" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">metrics/traces/profiles</text>
+<line x1="515" y1="380" x2="1245" y2="320" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="835" y="331" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="880" y="344" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">logs/traces/profiles</text>
+<line x1="900" y1="145" x2="515" y2="380" stroke="#475569" stroke-width="1.7" marker-end="url(#arrow)"/>
+<rect x="662" y="244" width="90" height="18" rx="4" fill="#ffffff" opacity="0.88"/>
+<text x="708" y="256" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#334155">outbox_events</text>
+<rect x="80" y="130" width="220" height="70" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.8"/>
+<text x="190" y="154" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">React SPA / frontend nginx</text>
+<rect x="380" y="120" width="230" height="90" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.8"/>
+<text x="495" y="144" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">backend x3</text>
+<text x="495" y="162" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">Go modular monolith</text>
+<rect x="380" y="330" width="270" height="100" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.8"/>
+<text x="515" y="354" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">workers</text>
+<text x="515" y="372" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">notification / projection / compensation / export</text>
+<rect x="760" y="100" width="280" height="90" rx="18" fill="#fce7f3" stroke="#be185d" stroke-width="1.8"/>
+<text x="900" y="124" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">CloudNativePG PostgreSQL</text>
+<text x="900" y="142" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">source of truth + outbox_events</text>
+<rect x="760" y="250" width="280" height="80" rx="18" fill="#fee2e2" stroke="#dc2626" stroke-width="1.8"/>
+<text x="900" y="274" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Redis</text>
+<text x="900" y="292" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">pre-admission / idempotency / queue URL</text>
+<rect x="760" y="380" width="260" height="80" rx="18" fill="#ecfccb" stroke="#65a30d" stroke-width="1.8"/>
+<text x="890" y="404" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">MinIO</text>
+<text x="890" y="422" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">report export artifacts</text>
+<rect x="760" y="510" width="260" height="80" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.8"/>
+<text x="890" y="534" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Mailhog</text>
+<text x="890" y="552" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">SMTP mock delivery</text>
+<rect x="1090" y="260" width="310" height="120" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.8"/>
+<text x="1245" y="284" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Observability</text>
+<text x="1245" y="302" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">Prometheus / Grafana / Loki / Tempo / Pyroscope</text>
+<rect x="80" y="510" width="360" height="90" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.8"/>
+<text x="260" y="534" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="14" font-weight="700" fill="#0f172a">目前程式只讀 DATABASE_URL</text>
+<text x="260" y="552" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">實際連 cets-postgres-rw</text>
+<text x="260" y="570" text-anchor="middle" font-family="Arial, Noto Sans CJK TC, sans-serif" font-size="12" font-weight="400" fill="#0f172a">DATABASE_READ_URL 尚未進入 app config</text>
+</svg>
