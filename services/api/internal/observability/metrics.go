@@ -158,6 +158,7 @@ func writeSQLMetrics(ctx context.Context, w io.Writer, db any) {
 	writeLockWaitMetric(ctx, w, sqlDB)
 	writeOutboxMetrics(ctx, w, sqlDB)
 	writeWorkerOutcomeMetrics(ctx, w, sqlDB)
+	writeReservationCompensationMetrics(ctx, w, sqlDB)
 }
 
 func writeLockWaitMetric(ctx context.Context, w io.Writer, db SQLMetricsDB) {
