@@ -1,0 +1,30 @@
+flowchart LR
+  front["React SPA / frontend nginx"]
+  backend["backend x3<br/>Go modular monolith"]
+  workers["workers<br/>notification / projection / compensation / export"]
+  pg[("CloudNativePG PostgreSQL<br/>source of truth + outbox_events")]
+  redis[("Redis<br/>pre-admission / idempotency / queue URL")]
+  minio[("MinIO<br/>report export artifacts")]
+  mail["Mailhog<br/>SMTP mock delivery"]
+  obs["Observability<br/>Prometheus / Grafana / Loki / Tempo / Pyroscope"]
+  note["目前程式只讀 DATABASE_URL<br/>實際連 cets-postgres-rw<br/>DATABASE_READ_URL 尚未進入 app config"]
+
+  front -->|"/api via backend Service"| backend
+  backend -->|"DATABASE_URL -> rw"| pg
+  backend -->|"REDIS_URL / QUEUE_URL"| redis
+  backend -->|"metrics / traces / profiles"| obs
+  pg -->|"outbox_events"| workers
+  workers -->|"outbox lease / state updates"| pg
+  workers -->|"queue / reservation cleanup"| redis
+  workers -->|"export files"| minio
+  workers -->|"notification SMTP"| mail
+  workers -->|"logs / traces / profiles"| obs
+
+  classDef app fill:#fefce8,stroke:#ca8a04,color:#0f172a;
+  classDef worker fill:#fff7ed,stroke:#ea580c,color:#0f172a;
+  classDef data fill:#fce7f3,stroke:#be185d,color:#0f172a;
+  classDef note fill:#f1f5f9,stroke:#64748b,color:#0f172a;
+  class backend app;
+  class workers worker;
+  class pg,redis,minio data;
+  class note note;
