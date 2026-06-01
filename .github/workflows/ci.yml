@@ -254,17 +254,7 @@ jobs:
           cache: ${{ env.ACT != 'true' }}
           cache-dependency-path: services/api/go.sum
       - name: Set up Docker CLI for local act runs
-        if: env.ACT == 'true'
-        run: |
-          if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-            docker --version
-            docker compose version
-            exit 0
-          fi
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
-          docker --version
-          docker compose version
+        uses: ./.github/actions/setup-docker-act
       - name: Validate Compose configs
         run: |
           docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config
@@ -317,6 +307,15 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up web workspace
         uses: ./.github/actions/setup-web
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
+            ${{ runner.os }}-turbo-main-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'apps/web/turbo.json') }}-
+            ${{ runner.os }}-turbo-
       - name: Test web
         env:
           VITEST_MAX_WORKERS: ${{ vars.CI_VITEST_MAX_WORKERS || '2' }}
@@ -329,30 +328,10 @@ jobs:
       - name: Build web
         run: pnpm --filter cets-web build
 
-  playwright-browsers:
-    needs: changes
-    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.live == 'true' || needs.changes.outputs.full == 'true'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up web workspace
-        uses: ./.github/actions/setup-web
-      - name: Verify GitHub Chrome runtime
-        if: env.ACT != 'true'
-        run: scripts/ci/verify-playwright-runtime.sh chrome
-      - name: Verify local act Playwright runtime
-        if: env.ACT == 'true'
-        run: bash scripts/ci/install-playwright.sh chromium
-
   frontend-e2e:
     needs:
       - changes
-      - playwright-browsers
-    if: >-
-      always() &&
-      (needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true') &&
-      needs['playwright-browsers'].result == 'success'
+    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     strategy:
       fail-fast: false
@@ -420,7 +399,6 @@ jobs:
       - frontend-static
       - frontend-unit-build
       - frontend-e2e
-      - playwright-browsers
     if: >-
       always() &&
       needs.changes.outputs.live == 'true' &&
@@ -430,8 +408,7 @@ jobs:
       (needs['compose-contract'].result == 'success' || needs['compose-contract'].result == 'skipped') &&
       (needs['frontend-static'].result == 'success' || needs['frontend-static'].result == 'skipped') &&
       (needs['frontend-unit-build'].result == 'success' || needs['frontend-unit-build'].result == 'skipped') &&
-      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped') &&
-      needs['playwright-browsers'].result == 'success'
+      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped')
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     env:
       K6_IMAGE: grafana/k6:1.7.1-with-browser
@@ -459,17 +436,7 @@ jobs:
         if: env.ACT == 'true'
         run: bash scripts/ci/install-playwright.sh chromium
       - name: Set up Docker CLI for local act runs
-        if: env.ACT == 'true'
-        run: |
-          if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-            docker --version
-            docker compose version
-            exit 0
-          fi
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
-          docker --version
-          docker compose version
+        uses: ./.github/actions/setup-docker-act
       - name: Validate Phase 3 Compose scripts
         run: bash -n scripts/compose/phase3-deploy.sh scripts/compose/phase3-verify.sh scripts/compose/phase3-drill.sh
       - name: Reset local act live volumes

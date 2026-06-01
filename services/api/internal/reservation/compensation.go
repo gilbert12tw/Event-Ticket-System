@@ -27,12 +27,14 @@ type BookingLookup interface {
 	RemainingCapacity(ctx context.Context, eventID string) (int, error)
 }
 
-// CompensationMetrics is the metric sink the Compensator calls. PR3 wires
-// this to the observability Registry; PR2 ships a logging implementation so
-// the compensation worker is observable from day one.
+// CompensationMetrics is the metric sink the Compensator calls. The worker
+// wires a PostgreSQL-backed sink (ticketing.Service) so the serve /metrics
+// endpoint can derive cets_reservation_compensation_total{action,result} and
+// cets_reservation_counter_drift_total{result}; LogCompensationMetrics is the
+// structured-log fallback used in tests and when no DB sink is supplied.
 type CompensationMetrics interface {
-	RecordAction(action, result string)
-	RecordCounterDrift(result string)
+	RecordAction(ctx context.Context, action, result string)
+	RecordCounterDrift(ctx context.Context, result string)
 }
 
 // CompensationConfig controls how aggressively the Compensator scans Redis.
@@ -111,7 +113,7 @@ func (c *Compensator) Sweep(ctx context.Context) error {
 			c.logger.Warn("compensation sweep event failed",
 				"event_id", eventID,
 				"error_class", classify(err))
-			c.metrics.RecordAction("sweep_event", "error")
+			c.metrics.RecordAction(ctx, "sweep_event", "error")
 		}
 	}
 	return nil
@@ -143,7 +145,7 @@ func (c *Compensator) reconcile(ctx context.Context, eventID, idempotencyHash st
 		c.logger.Warn("compensation lookup failed",
 			"event_id", eventID,
 			"error_class", classify(err))
-		c.metrics.RecordAction("lookup", "error")
+		c.metrics.RecordAction(ctx, "lookup", "error")
 		return
 	}
 	if !status.Found || !status.Completed {
@@ -168,7 +170,7 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 		c.logger.Warn("compensation capacity probe failed",
 			"event_id", eventID,
 			"error_class", classify(err))
-		c.metrics.RecordAction("release", "error")
+		c.metrics.RecordAction(ctx, "release", "error")
 		return
 	}
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
@@ -181,7 +183,7 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 		c.logger.Warn("compensation release lua failed",
 			"event_id", eventID,
 			"error_class", classify(err))
-		c.metrics.RecordAction("release", "error")
+		c.metrics.RecordAction(ctx, "release", "error")
 		return
 	}
 	outcome, _ := raw.(string)
@@ -190,7 +192,7 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 		"action", "release",
 		"reason", reason,
 		"result", outcome)
-	c.metrics.RecordAction("release", outcome)
+	c.metrics.RecordAction(ctx, "release", outcome)
 }
 
 func (c *Compensator) dropHold(ctx context.Context, eventID, idempotencyHash, reason string) {
@@ -204,7 +206,7 @@ func (c *Compensator) dropHold(ctx context.Context, eventID, idempotencyHash, re
 		c.logger.Warn("compensation drop lua failed",
 			"event_id", eventID,
 			"error_class", classify(err))
-		c.metrics.RecordAction("drop", "error")
+		c.metrics.RecordAction(ctx, "drop", "error")
 		return
 	}
 	outcome, _ := raw.(string)
@@ -213,7 +215,7 @@ func (c *Compensator) dropHold(ctx context.Context, eventID, idempotencyHash, re
 		"action", "drop",
 		"reason", reason,
 		"result", outcome)
-	c.metrics.RecordAction("drop", outcome)
+	c.metrics.RecordAction(ctx, "drop", outcome)
 }
 
 func (c *Compensator) capCounter(ctx context.Context, eventID string) error {
@@ -240,7 +242,7 @@ func (c *Compensator) capCounter(ctx context.Context, eventID string) error {
 			"event_id", eventID,
 			"capacity", capacity)
 	}
-	c.metrics.RecordCounterDrift(outcome)
+	c.metrics.RecordCounterDrift(ctx, outcome)
 	return nil
 }
 
@@ -288,19 +290,20 @@ func eventIDFromPendingKey(key string) (string, bool) {
 
 func driftKey(eventID string) string { return keyPrefix + eventID + ":drift" }
 
-// LogCompensationMetrics is the default CompensationMetrics: it does not
-// emit Prometheus counters, only structured logs. PR3 wires a real metric
-// sink to the observability Registry once the worker bootstrap exists.
+// LogCompensationMetrics is the structured-log fallback CompensationMetrics
+// used in tests and when no DB sink is supplied. The worker wires the
+// PostgreSQL-backed sink (ticketing.Service) so the serve /metrics endpoint
+// can derive the Prometheus counters from durable rows.
 type LogCompensationMetrics struct{ Logger *slog.Logger }
 
-func (m LogCompensationMetrics) RecordAction(action, result string) {
+func (m LogCompensationMetrics) RecordAction(_ context.Context, action, result string) {
 	if m.Logger == nil {
 		return
 	}
 	m.Logger.Info("metric cets_reservation_compensation_total", "action", action, "result", result, "delta", 1)
 }
 
-func (m LogCompensationMetrics) RecordCounterDrift(result string) {
+func (m LogCompensationMetrics) RecordCounterDrift(_ context.Context, result string) {
 	if m.Logger == nil {
 		return
 	}

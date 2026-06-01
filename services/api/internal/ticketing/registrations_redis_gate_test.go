@@ -403,7 +403,11 @@ func (g *recordingReservationGate) Release(context.Context, string, string) erro
 
 func redisClientFromEnv(t *testing.T) *redis.Client {
 	t.Helper()
-	opts, err := redis.ParseURL(os.Getenv("REDIS_URL"))
+	url := os.Getenv("REDIS_URL")
+	if url == "" {
+		t.Skip("REDIS_URL not set; skipping Redis-backed test")
+	}
+	opts, err := redis.ParseURL(url)
 	require.NoError(t, err)
 	return redis.NewClient(opts)
 }
