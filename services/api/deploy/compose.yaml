@@ -56,6 +56,10 @@ services:
       RESERVATION_COMPENSATION_INTERVAL_SECONDS: ${RESERVATION_COMPENSATION_INTERVAL_SECONDS:-30}
       REDIS_OPERATION_TIMEOUT_MS: ${REDIS_OPERATION_TIMEOUT_MS:-150}
       BOOKING_RESERVATION_HASH_SECRET: ${BOOKING_RESERVATION_HASH_SECRET:-local_dev_reservation_hash_secret_change_me}
+      OTEL_TRACES_ENABLED: ${OTEL_TRACES_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-cets-api}
+      OTEL_SERVICE_VERSION: ${OTEL_SERVICE_VERSION:-local-compose}
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:
@@ -251,6 +255,25 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      alertmanager:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+      cadvisor:
+        condition: service_started
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
 
   loki:
     image: grafana/loki:3.5.0
@@ -309,6 +332,31 @@ services:
       app:
         condition: service_healthy
 
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "--path.rootfs=/host"
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    volumes:
+      - /:/host:ro,rslave
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    privileged: true
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
   grafana:
     image: grafana/grafana:12.2.0
     restart: unless-stopped
@@ -326,11 +374,17 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+      alertmanager:
+        condition: service_started
       loki:
         condition: service_started
       tempo:
         condition: service_started
       blackbox-exporter:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+      cadvisor:
         condition: service_started
 
 volumes:
@@ -338,5 +392,6 @@ volumes:
   redis_data:
   minio_data:
   prometheus_data:
+  alertmanager_data:
   loki_data:
   tempo_data:
