@@ -39,9 +39,11 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err != nil {
 		return BookingResponse{}, err
 	}
-	gateConfirmed = result.status == RegistrationConfirmed
+	gateConfirmed = result.confirmedNewRegistration
 
-	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", result.action, "status", result.status, "event_id", eventID, "actor_role", actor.Role)
+	if result.action != "" {
+		s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", result.action, "status", result.status, "event_id", eventID, "actor_role", actor.Role)
+	}
 	return result.response, nil
 }
 
@@ -52,9 +54,10 @@ type bookingIdentity struct {
 }
 
 type bookingTxResult struct {
-	response BookingResponse
-	action   string
-	status   string
+	response                 BookingResponse
+	action                   string
+	status                   string
+	confirmedNewRegistration bool
 }
 
 type bookingCreation struct {
@@ -93,14 +96,14 @@ func (s *Service) bookInTransaction(ctx context.Context, actor Actor, eventID st
 		return bookingTxResult{}, err
 	}
 	creation := bookingCreation{actor: actor, event: event, employee: employee, identity: identity, status: status, capacity: capacity, confirmedCount: confirmedCount}
-	response, action, err := s.createBookingResponseTx(ctx, tx, creation)
+	response, action, confirmedNewRegistration, err := s.createBookingResponseTx(ctx, tx, creation)
 	if err != nil {
 		return bookingTxResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return bookingTxResult{}, err
 	}
-	return bookingTxResult{response: response, action: action, status: status}, nil
+	return bookingTxResult{response: response, action: action, status: status, confirmedNewRegistration: confirmedNewRegistration}, nil
 }
 
 func (s *Service) replayLockedBookingTx(ctx context.Context, tx pgx.Tx, eventID string, identity bookingIdentity, idempotencyHash string) (bookingTxResult, bool, error) {
@@ -243,18 +246,18 @@ func (s *Service) resolveBookingStatusTx(ctx context.Context, tx pgx.Tx, event E
 	return RegistrationConfirmed, capacity, confirmedCount, nil
 }
 
-func (s *Service) createBookingResponseTx(ctx context.Context, tx pgx.Tx, creation bookingCreation) (BookingResponse, string, error) {
+func (s *Service) createBookingResponseTx(ctx context.Context, tx pgx.Tx, creation bookingCreation) (BookingResponse, string, bool, error) {
 	result, err := s.insertBookingRegistrationTx(ctx, tx, creation)
 	if err != nil {
-		return BookingResponse{}, "", err
+		return BookingResponse{}, "", false, err
 	}
 	if result.replayed != nil {
-		return *result.replayed, bookingAction(result.replayed.Registration.Status), nil
+		return *result.replayed, "", false, nil
 	}
 	reg := result.registration
 	action := bookingAction(creation.status)
 	if err := s.recordBookingSideEffectsTx(ctx, tx, creation.actor, creation.event, reg, action); err != nil {
-		return BookingResponse{}, "", err
+		return BookingResponse{}, "", false, err
 	}
 	response := BookingResponse{
 		Registration:      reg,
@@ -263,9 +266,9 @@ func (s *Service) createBookingResponseTx(ctx context.Context, tx pgx.Tx, creati
 		Message:           bookingMessage(creation.status),
 	}
 	if err := s.completeBookingIdempotencyResultTx(ctx, tx, creation.identity.idempotencyKey, response); err != nil {
-		return BookingResponse{}, "", err
+		return BookingResponse{}, "", false, err
 	}
-	return response, action, nil
+	return response, action, creation.status == RegistrationConfirmed, nil
 }
 
 type bookingRegistrationResult struct {

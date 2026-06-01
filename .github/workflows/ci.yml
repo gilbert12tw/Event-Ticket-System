@@ -218,6 +218,7 @@ jobs:
           cache-dependency-path: services/api/go.sum
       - name: Run Go tests
         working-directory: services/api
+        # Keep package tests serialized because integration suites share the CI Postgres service.
         run: go test ./... -count=1 -p=1 -timeout=20m
 
   openapi:
