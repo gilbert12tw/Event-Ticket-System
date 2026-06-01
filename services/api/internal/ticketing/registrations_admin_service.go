@@ -143,7 +143,7 @@ func (s *Service) cancelledRegistrationResponseTx(ctx context.Context, tx pgx.Tx
 }
 
 func (s *Service) applyRegistrationCancellationTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, reg *Registration, registrationID string, req CancelRegistrationRequest) error {
-	if reg.Status != RegistrationConfirmed && reg.Status != RegistrationWaitlisted {
+	if reg.Status != RegistrationReceived && reg.Status != RegistrationConfirmed && reg.Status != RegistrationWaitlisted {
 		return conflict("registration cannot be cancelled")
 	}
 	wasConfirmed := reg.Status == RegistrationConfirmed

@@ -44,6 +44,7 @@ import {
   CheckinPage,
   OfflineCheckinBoundaryPage,
 } from "@/features/checkin/pages";
+import { OpsControlPlanePage } from "@/features/ops/pages";
 import { HrReportsPage } from "@/features/reporting/pages";
 import { HrSyncSettingsPage } from "@/features/hr-settings/pages";
 import { AdminAuditPage } from "@/features/audit/pages";
@@ -75,10 +76,19 @@ function App() {
   const [ready, setReady] = useState<"checking" | "ok" | "down">("checking");
   const [debugChromeAvailable, setDebugChromeAvailable] = useState(false);
   const [debugChrome, setDebugChrome] = useState(isDebugChromeEnabled);
+  const [demoDebugAvailable, setDemoDebugAvailable] = useState(false);
+  const [opsAPIAvailable, setOpsAPIAvailable] = useState(false);
   const canUseDemo = Boolean(auth && mockProfilesEnabled);
-  const demoRouteBlocked = auth ? route === "admin-demo" && !canUseDemo : false;
+  const demoRouteBlocked = Boolean(
+    auth && route === "admin-demo" && !canUseDemo,
+  );
+  const opsRouteBlocked = Boolean(
+    auth && route === "admin-ops" && !opsAPIAvailable,
+  );
   const unauthorizedRoute = auth
-    ? !canAccessRoute(route, auth.actor.role) || demoRouteBlocked
+    ? !canAccessRoute(route, auth.actor.role) ||
+      demoRouteBlocked ||
+      opsRouteBlocked
     : false;
   const safeRoute =
     auth && unauthorizedRoute ? defaultRouteForRole(auth.actor.role) : route;
@@ -92,7 +102,8 @@ function App() {
       auth &&
       item.key !== "user-event-detail" &&
       canAccessRoute(item.key, auth.actor.role) &&
-      (item.key !== "admin-demo" || canUseDemo),
+      (item.key !== "admin-demo" || canUseDemo) &&
+      (item.key !== "admin-ops" || opsAPIAvailable),
   );
 
   useEffect(() => {
@@ -118,6 +129,8 @@ function App() {
       setMockProfilesEnabled(false);
       setMockProfiles([]);
       setDebugChromeAvailable(false);
+      setDemoDebugAvailable(false);
+      setOpsAPIAvailable(false);
       setDebugChrome(false);
       setDebugChromeQuery(false);
     };
@@ -138,9 +151,13 @@ function App() {
         }
 
         resetDebugSessionState();
-        if (!session) {
-          setAuthMessage(errorMessage(bootstrapError || sessionError));
-        }
+        setAuthMessage(
+          errorMessage(
+            bootstrapError ||
+              sessionError ||
+              new Error("bootstrap features are unavailable"),
+          ),
+        );
       } finally {
         if (active) setAuthLoading(false);
       }
@@ -194,6 +211,8 @@ function App() {
     setMockProfilesEnabled(bootstrap.mock_profiles_enabled);
     setMockProfiles(bootstrap.mock_profiles);
     setDebugChromeAvailable(available);
+    setDemoDebugAvailable(Boolean(bootstrap.demo_debug_enabled));
+    setOpsAPIAvailable(Boolean(bootstrap.ops_api_enabled));
     if (!available) setDebugChromeQuery(false);
     setDebugChrome(isDebugChromeEnabled(available));
   }
@@ -274,12 +293,14 @@ function App() {
           {safeRoute === "admin-offline-checkin" && (
             <OfflineCheckinBoundaryPage />
           )}
+          {safeRoute === "admin-ops" && <OpsControlPlanePage />}
           {safeRoute === "admin-reports" && <HrReportsPage />}
           {safeRoute === "admin-hr-settings" && <HrSyncSettingsPage />}
           {safeRoute === "admin-audit" && <AdminAuditPage />}
           {safeRoute === "admin-demo" && canUseDemo && (
             <DemoRunbookPage
               session={auth}
+              demoDebugAvailable={demoDebugAvailable}
               onSessionChange={(next) => setAuth(next)}
             />
           )}

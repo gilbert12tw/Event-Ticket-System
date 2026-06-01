@@ -28,11 +28,19 @@ func newAuditRecord(auditID string, actor Actor, action string, entityType strin
 }
 
 func insertAudit(ctx context.Context, tx pgx.Tx, audit auditRecord) error {
+	return insertAuditWithExecutor(ctx, tx, audit)
+}
+
+type auditExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
+}
+
+func insertAuditWithExecutor(ctx context.Context, exec auditExecutor, audit auditRecord) error {
 	payload, err := json.Marshal(audit.metadata)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_logs (audit_id, actor_id, role, action, entity_type, entity_id, metadata)
+	_, err = exec.Exec(ctx, `INSERT INTO audit_logs (audit_id, actor_id, role, action, entity_type, entity_id, metadata)
 		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
 		audit.auditID, audit.actor.ID, audit.actor.Role, audit.action, audit.entityType, audit.entityID, string(payload))
 	return err

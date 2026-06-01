@@ -15,6 +15,7 @@ services:
       APP_ENV: ${APP_ENV:-local}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
       OPS_API_ENABLED: ${OPS_API_ENABLED:-false}
+      DEMO_DEBUG_ENABLED: ${DEMO_DEBUG_ENABLED:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
       PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
@@ -166,7 +167,7 @@ services:
         condition: service_completed_successfully
 
   postgres:
-    image: postgres:16.13-alpine
+    image: postgres:16.13-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cets}
@@ -184,7 +185,7 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7.4.8-alpine
+    image: redis:7.4.8-alpine@sha256:7aec734b2bb298a1d769fd8729f13b8514a41bf90fcdd1f38ec52267fbaa8ee6
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -199,7 +200,7 @@ services:
       start_period: 5s
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -212,7 +213,7 @@ services:
       - minio_data:/data
 
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     restart: "no"
     depends_on:
       minio:
@@ -229,14 +230,14 @@ services:
         mc mb --ignore-existing "local/$$OBJECT_STORAGE_BUCKET"
 
   mailhog:
-    image: mailhog/mailhog:v1.0.1
+    image: mailhog/mailhog:v1.0.1@sha256:8d76a3d4ffa32a3661311944007a415332c4bb855657f4f6c57996405c009bea
     restart: unless-stopped
     ports:
       - "${MAILHOG_SMTP_PORT:-1025}:1025"
       - "${MAILHOG_UI_PORT:-8025}:8025"
 
   prometheus:
-    image: prom/prometheus:v3.6.0
+    image: prom/prometheus:v3.6.0@sha256:76947e7ef22f8a698fc638f706685909be425dbe09bd7a2cd7aca849f79b5f64
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -253,7 +254,7 @@ services:
         condition: service_healthy
 
   loki:
-    image: grafana/loki:3.5.0
+    image: grafana/loki:3.5.0@sha256:4c431d2e6b9b38718694b31c5d56be7c80dc69c513215fde1aeb5b02cd4e2665
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -265,7 +266,7 @@ services:
       - loki_data:/loki
 
   promtail:
-    image: grafana/promtail:3.5.0
+    image: grafana/promtail:3.5.0@sha256:507dfecd2f0949475d071c124bea1c26fc4f8c1cff0372eee57478d5b1c5fbff
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -282,7 +283,7 @@ services:
         condition: service_started
 
   tempo:
-    image: grafana/tempo:2.8.2
+    image: grafana/tempo:2.8.2@sha256:0ef775495967cd5d7a6b2e146b6ea695d624803c8db8349fb8ce4164f719f9b7
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -296,7 +297,7 @@ services:
       - tempo_data:/tmp/tempo
 
   blackbox-exporter:
-    image: prom/blackbox-exporter:v0.27.0
+    image: prom/blackbox-exporter:v0.27.0@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -310,7 +311,7 @@ services:
         condition: service_healthy
 
   grafana:
-    image: grafana/grafana:12.2.0
+    image: grafana/grafana:12.2.0@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
     restart: unless-stopped
     profiles: ["observability"]
     environment:

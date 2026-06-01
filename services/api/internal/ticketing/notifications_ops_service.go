@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Service) NotificationDeliveryOpsFeed(ctx context.Context, actor Actor, query ...NotificationDeliveryOpsQuery) (NotificationDeliveryOpsPage, error) {
-	if err := requireRole(actor, RoleHRAdmin); err != nil {
+	if err := s.requireOpsFeedRole(ctx, actor, "notification_deliveries"); err != nil {
 		return NotificationDeliveryOpsPage{}, err
 	}
 	q, err := effectiveNotificationDeliveryOpsQuery(query)

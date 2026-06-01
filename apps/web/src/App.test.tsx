@@ -6,9 +6,11 @@ import App from "./App";
 import {
   authBootstrap,
   clearProviderToken,
+  getOpsDashboard,
   listEvents,
   me,
   readiness,
+  reports,
   selectMockProfile,
 } from "@/lib/api";
 
@@ -18,26 +20,51 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     authBootstrap: vi.fn(),
     clearProviderToken: vi.fn(),
+    getOpsDashboard: vi.fn(),
     listEvents: vi.fn(),
     me: vi.fn(),
     readiness: vi.fn(),
+    reports: vi.fn(),
     selectMockProfile: vi.fn(),
     setApiObserver: vi.fn(),
   };
 });
+
+vi.mock("@/features/demo-runbook/pages", () => ({
+  DemoRunbookPage: ({
+    session,
+    onSessionChange,
+  }: {
+    session: AuthSession;
+    onSessionChange: (session: AuthSession | null) => void;
+  }) => (
+    <button type="button" onClick={() => onSessionChange(session)}>
+      restore demo session
+    </button>
+  ),
+}));
 
 const mockMe = vi.mocked(me);
 const mockAuthBootstrap = vi.mocked(authBootstrap);
 const mockReadiness = vi.mocked(readiness);
 const mockSelectMockProfile = vi.mocked(selectMockProfile);
 const mockClearProviderToken = vi.mocked(clearProviderToken);
+const mockGetOpsDashboard = vi.mocked(getOpsDashboard);
 const mockListEvents = vi.mocked(listEvents);
+const mockReports = vi.mocked(reports);
 
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.pushState({}, "", "/");
     mockListEvents.mockResolvedValue([]);
+    mockReports.mockResolvedValue([]);
+    mockGetOpsDashboard.mockResolvedValue({
+      capacity_pressure: { events: [] },
+      queues: { queues: [] },
+      reports_freshness: { projections: [] },
+      dead_letter_recent: [],
+    });
   });
 
   it("renders unauthorized state when an invalid role enters a forbidden route", async () => {
@@ -201,5 +228,172 @@ describe("App", () => {
     expect(mockClearProviderToken).toHaveBeenCalled();
     expect(await screen.findByLabelText("本機身分清單")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/user/events");
+  });
+
+  it("shows ops navigation only when the ops API is registered", async () => {
+    const session: AuthSession = {
+      actor: {
+        id: "system-1",
+        role: "system_admin",
+      },
+      expires_at: "2026-05-31T08:00:00Z",
+      claims: {
+        employee_id: "system-1",
+        display_name: "System One",
+        role_claims: ["system_admin"],
+        mapped_roles: ["system_admin"],
+        department: "IT",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 8,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      source: "provider",
+    };
+    mockMe.mockResolvedValueOnce(session);
+    mockAuthBootstrap.mockResolvedValueOnce({
+      mock_profiles_enabled: false,
+      mock_profiles: [],
+      debug_chrome_enabled: false,
+      ops_api_enabled: true,
+    });
+    mockReadiness.mockResolvedValue({});
+    window.history.pushState({}, "", "/admin/reports");
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("link", { name: /營運監控/ }).length).toBe(1),
+    );
+  });
+
+  it("surfaces bootstrap failures for signed-in users", async () => {
+    const session: AuthSession = {
+      actor: {
+        id: "admin-1",
+        role: "activity_admin",
+      },
+      expires_at: "2026-05-31T08:00:00Z",
+      claims: {
+        employee_id: "admin-1",
+        display_name: "Admin One",
+        role_claims: ["activity_admin"],
+        mapped_roles: ["activity_admin"],
+        department: "Welfare Committee",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 7,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      source: "provider",
+    };
+    mockMe.mockResolvedValueOnce(session);
+    mockAuthBootstrap.mockRejectedValueOnce(new Error("bootstrap unavailable"));
+    mockReadiness.mockResolvedValue({});
+    window.history.pushState({}, "", "/admin/demo");
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByText("權限不足")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("bootstrap unavailable")).toBeInTheDocument();
+  });
+
+  it("keeps admin demo available for provider sessions during restoration", async () => {
+    const session: AuthSession = {
+      actor: {
+        id: "external-admin",
+        role: "activity_admin",
+      },
+      expires_at: "2026-05-31T08:00:00Z",
+      claims: {
+        employee_id: "external-admin",
+        display_name: "External Admin",
+        role_claims: ["activity_admin"],
+        mapped_roles: ["activity_admin"],
+        department: "Welfare Committee",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 7,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      source: "provider",
+    };
+    mockMe.mockResolvedValueOnce(session);
+    mockAuthBootstrap.mockResolvedValueOnce({
+      mock_profiles_enabled: true,
+      mock_profiles: [
+        {
+          profile_id: "admin-1",
+          display_name: "Admin One",
+          role_claims: ["activity_admin"],
+          mapped_roles: ["activity_admin"],
+          department: "Welfare Committee",
+          site: "Taipei HQ",
+          city: "Taipei",
+          grade: 7,
+          employment_status: "active",
+        },
+      ],
+      debug_chrome_enabled: true,
+      demo_debug_enabled: true,
+    });
+    mockReadiness.mockResolvedValue({});
+    window.history.pushState({}, "", "/admin/demo");
+
+    render(<App />);
+
+    const restore = await screen.findByRole("button", {
+      name: "restore demo session",
+    });
+    await userEvent.click(restore);
+
+    expect(
+      screen.getByRole("button", { name: "restore demo session" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("權限不足")).not.toBeInTheDocument();
+  });
+
+  it("blocks ops deep links when the ops API is not registered", async () => {
+    const session: AuthSession = {
+      actor: {
+        id: "system-1",
+        role: "system_admin",
+      },
+      expires_at: "2026-05-31T08:00:00Z",
+      claims: {
+        employee_id: "system-1",
+        display_name: "System One",
+        role_claims: ["system_admin"],
+        mapped_roles: ["system_admin"],
+        department: "IT",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 8,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      source: "provider",
+    };
+    mockMe.mockResolvedValueOnce(session);
+    mockAuthBootstrap.mockResolvedValueOnce({
+      mock_profiles_enabled: false,
+      mock_profiles: [],
+      debug_chrome_enabled: false,
+      ops_api_enabled: false,
+    });
+    mockReadiness.mockResolvedValue({});
+    window.history.pushState({}, "", "/admin/ops");
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByText("權限不足")).toBeInTheDocument(),
+    );
+    expect(mockGetOpsDashboard).not.toHaveBeenCalled();
   });
 });

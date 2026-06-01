@@ -41,8 +41,11 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, appEn
 	mux.HandleFunc("GET /api/v1/admin/notifications/deliveries", protected(handleNotificationDeliveries(service)))
 	mux.HandleFunc("POST /api/v1/admin/notifications/deliveries/{delivery_id}/retry", protected(handleRetryNotificationDelivery(service)))
 	if opsAPIEnabled {
+		mux.HandleFunc("GET /api/v1/admin/ops/capacity-pressure", protected(handleOpsCapacityPressure(service)))
 		mux.HandleFunc("GET /api/v1/admin/ops/queues", protected(handleOpsQueues(service)))
 		mux.HandleFunc("GET /api/v1/admin/ops/notification-deliveries", protected(handleOpsNotificationDeliveries(service)))
+		mux.HandleFunc("GET /api/v1/admin/ops/report-freshness", protected(handleOpsReportFreshness(service, reportStaleThresholdSeconds)))
+		mux.HandleFunc("GET /api/v1/admin/ops/dashboard", protected(handleOpsDashboard(service, reportStaleThresholdSeconds)))
 	}
 	mux.HandleFunc("GET /api/v1/admin/reports", protected(handleReports(service, reportStaleThresholdSeconds, logger)))
 	mux.HandleFunc("POST /api/v1/admin/reports/exports", protected(handleCreateReportExport(service)))

@@ -74,6 +74,7 @@ func normalizeReplayEventTypes(kind string, eventTypes []string) ([]string, erro
 func buildRegisteredReplayEventTypes() map[string]struct{} {
 	registered := map[string]struct{}{
 		"booking.confirmed":                 {},
+		"booking.received":                  {},
 		"booking.waitlisted":                {},
 		"eligibility.impact_review.created": {},
 		"event.updated":                     {},

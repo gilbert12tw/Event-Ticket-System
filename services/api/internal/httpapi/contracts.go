@@ -80,6 +80,9 @@ type AuditService interface {
 
 type OpsService interface {
 	OutboxQueueStatus(ctx context.Context, actor ticketing.Actor) (ticketing.OutboxQueueStatus, error)
+	CapacityPressure(ctx context.Context, actor ticketing.Actor) (ticketing.CapacityPressure, error)
+	ReportFreshness(ctx context.Context, actor ticketing.Actor, thresholdSeconds int) (ticketing.ReportFreshness, error)
+	OpsDashboard(ctx context.Context, actor ticketing.Actor, thresholdSeconds int) (ticketing.OpsDashboard, error)
 }
 
 type DemoService interface {

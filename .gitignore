@@ -27,6 +27,8 @@ tmp/
 temp/
 .cache/
 .scannerwork/
+goal.md
+note.md
 
 # Dependencies / build outputs
 node_modules/

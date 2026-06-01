@@ -50,7 +50,7 @@ func handleOpsNotificationDeliveries(service TicketingService) http.HandlerFunc 
 			return
 		}
 		result, err := service.NotificationDeliveryOpsFeed(r.Context(), actorFromRequest(r), query)
-		writeServiceResult(w, http.StatusOK, result, err)
+		writeOpsResult(w, result, err, operationalOpsMeta())
 	}
 }
 

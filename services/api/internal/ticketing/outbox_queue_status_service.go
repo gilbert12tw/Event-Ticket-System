@@ -6,7 +6,7 @@ import (
 )
 
 func (s *Service) OutboxQueueStatus(ctx context.Context, actor Actor) (OutboxQueueStatus, error) {
-	if err := requireRole(actor, RoleHRAdmin); err != nil {
+	if err := s.requireOpsFeedRole(ctx, actor, "outbox_queues"); err != nil {
 		return OutboxQueueStatus{}, err
 	}
 	status := OutboxQueueStatus{Queues: defaultOutboxQueueStatusRows()}

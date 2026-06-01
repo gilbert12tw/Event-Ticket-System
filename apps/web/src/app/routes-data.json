@@ -64,6 +64,17 @@
       ["候補提升", "取消報名", "撤銷票券"]
     ],
     [
+      "admin-ops",
+      "/admin/ops",
+      "營運監控",
+      "監控",
+      45,
+      "檢視容量壓力、佇列深度、報表新鮮度與 dead letter。",
+      "database",
+      ["容量壓力", "佇列健康", "報表新鮮度"],
+      { "mobileOverflow": true }
+    ],
+    [
       "admin-notifications",
       "/admin/notifications",
       "通知投遞",
@@ -130,9 +141,9 @@
       "流程檢查",
       "流程",
       90,
-      "一鍵檢查活動建立、報名、候補、驗票、報表與稽核流程。",
+      "逐步展示活動建立、報名、抽籤、驗票、報表與稽核流程。",
       "play",
-      ["流程檢查", "端到端", "可重跑"],
+      ["逐步展示", "端到端", "快進時間"],
       { "mobileOverflow": true }
     ]
   ],
@@ -145,6 +156,7 @@
     "/admin/offline-checkin": "admin-offline-checkin",
     "/admin/checkin/offline": "admin-offline-checkin",
     "/hr/reports": "admin-reports",
+    "/ops": "admin-ops",
     "/admin/hr-sync": "admin-hr-settings",
     "/admin/settings": "admin-hr-settings",
     "/demo": "admin-demo",
@@ -161,12 +173,19 @@
       "admin-events",
       "admin-registrations",
       "admin-notifications",
+      "admin-ops",
       "admin-demo"
     ],
     "checkin_staff": ["admin-checkin", "admin-offline-checkin"],
-    "hr_admin": ["admin-reports", "admin-hr-settings", "admin-audit"],
+    "hr_admin": [
+      "admin-reports",
+      "admin-ops",
+      "admin-hr-settings",
+      "admin-audit"
+    ],
     "system_admin": [
       "admin-reports",
+      "admin-ops",
       "admin-hr-settings",
       "admin-audit",
       "admin-notifications"

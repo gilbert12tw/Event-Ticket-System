@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const reservationCompensationScrapeErrorMetric = `cets_metrics_scrape_errors_total{collector="reservation_compensation"} 1`
+
 // writeReservationCompensationMetrics derives the PH2-23 compensation counters
 // from the reservation_compensation_metrics table the worker accumulates. The
 // compensation sweep runs in the worker process (never scraped directly), so
@@ -21,7 +23,7 @@ func writeReservationCompensationMetrics(ctx context.Context, w io.Writer, db SQ
 		FROM reservation_compensation_metrics
 		ORDER BY metric, action, result`)
 	if err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"reservation_compensation\"} 1")
+		writeLine(w, reservationCompensationScrapeErrorMetric)
 		return
 	}
 	defer rows.Close()
@@ -30,7 +32,7 @@ func writeReservationCompensationMetrics(ctx context.Context, w io.Writer, db SQ
 		var metric, action, result string
 		var total int64
 		if err := rows.Scan(&metric, &action, &result, &total); err != nil {
-			writeLine(w, "cets_metrics_scrape_errors_total{collector=\"reservation_compensation\"} 1")
+			writeLine(w, reservationCompensationScrapeErrorMetric)
 			return
 		}
 		switch metric {
@@ -43,7 +45,7 @@ func writeReservationCompensationMetrics(ctx context.Context, w io.Writer, db SQ
 		}
 	}
 	if err := rows.Err(); err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"reservation_compensation\"} 1")
+		writeLine(w, reservationCompensationScrapeErrorMetric)
 	}
 }
 

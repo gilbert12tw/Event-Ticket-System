@@ -19,10 +19,12 @@ ADMIN_EVENTS_PATH = "/admin/events"
 ADMIN_EVENT_PATH = "/admin/events/{event_id}"
 CHECKINS_PATH = "/checkins"
 NOTIFICATION_PREFERENCES_PATH = "/notifications/preferences"
+DEBUG_DEMO_CLOCK_PATH = "/debug/demo-clock"
 
 EXPECTED_OPERATIONS = {
   "/auth/me" => %w[get],
   "/auth/bootstrap" => %w[get],
+  DEBUG_DEMO_CLOCK_PATH => %w[get put],
   ADMIN_EVENTS_PATH => %w[get post],
   "/events" => %w[get],
   "/events/{event_id}" => %w[get],
@@ -67,6 +69,8 @@ PUBLIC_OPERATIONS = [
 
 EXPECTED_REQUIRED_ROLES = {
   ["get", "/auth/me"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
+  ["get", DEBUG_DEMO_CLOCK_PATH] => %w[activity_admin system_admin],
+  ["put", DEBUG_DEMO_CLOCK_PATH] => %w[activity_admin system_admin],
   ["get", ADMIN_EVENTS_PATH] => %w[activity_admin checkin_staff hr_admin system_admin],
   ["post", ADMIN_EVENTS_PATH] => %w[activity_admin],
   ["get", "/events"] => %w[employee],

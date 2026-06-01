@@ -9,6 +9,8 @@ import type {
   BookingResponse,
   CheckinResponse,
   CreateEventRequest,
+  DemoClockSnapshot,
+  DemoClockUpdateRequest,
   EligibilityDecision,
   EligibilityImpactReview,
   EligibilityPreviewRequest,
@@ -33,6 +35,7 @@ import type {
   UpdateNotificationPreferencesRequest,
   UpdateEventRequest,
 } from "./contracts";
+import type { OpsDashboard } from "./ops-contracts";
 import { redact } from "./redaction";
 
 export { employees } from "./demo-data";
@@ -43,6 +46,9 @@ type RequestOptions = Omit<RequestInit, "headers" | "body"> & {
 
 export type ApiObserver = (entry: ApiLogEntry) => void;
 export type ProviderTokenProvider = () => string | null | undefined;
+export type ProviderTokenSnapshot = Readonly<{
+  explicitProviderToken: string | null;
+}>;
 
 let observer: ApiObserver | null = null;
 let apiLogSequence = 0;
@@ -55,6 +61,14 @@ export function setApiObserver(next: ApiObserver | null) {
 
 export function setProviderToken(token: string | null) {
   explicitProviderToken = token;
+}
+
+export function captureProviderToken(): ProviderTokenSnapshot {
+  return { explicitProviderToken };
+}
+
+export function restoreProviderToken(snapshot: ProviderTokenSnapshot) {
+  explicitProviderToken = snapshot.explicitProviderToken;
 }
 
 export function setProviderTokenProvider(next: ProviderTokenProvider | null) {
@@ -195,6 +209,16 @@ export const me = (): Promise<AuthSession> =>
   api<AuthMeClaims>("/api/v1/auth/me").then(authSessionFromClaims);
 
 export const authBootstrap = () => api<AuthBootstrap>("/api/v1/auth/bootstrap");
+
+export const getDemoClock = () =>
+  api<DemoClockSnapshot>("/api/v1/debug/demo-clock");
+
+export function updateDemoClock(body: DemoClockUpdateRequest) {
+  return api<DemoClockSnapshot>("/api/v1/debug/demo-clock", {
+    method: "PUT",
+    body,
+  });
+}
 
 export function mockProviderToken(profileID: string) {
   return post<MockProviderToken>("/api/v1/auth/mock-provider-token", {
@@ -428,6 +452,9 @@ export function getReportExport(exportID: string) {
     `/api/v1/admin/reports/exports/${encoded(exportID)}`,
   );
 }
+
+export const getOpsDashboard = () =>
+  api<OpsDashboard>("/api/v1/admin/ops/dashboard");
 
 export function auditLogs(filters: AuditLogFilters = {}) {
   const params = new URLSearchParams();

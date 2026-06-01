@@ -214,6 +214,12 @@ func (s *Service) confirmedCountTx(ctx context.Context, tx pgx.Tx, eventID strin
 	return count, err
 }
 
+func (s *Service) registrationCountTx(ctx context.Context, tx pgx.Tx, eventID string) (int, error) {
+	var count int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM registrations WHERE event_id = $1`, eventID).Scan(&count)
+	return count, err
+}
+
 func (s *Service) activeFamilyRegistrationCountTx(ctx context.Context, tx pgx.Tx, eventID string) (int, error) {
 	var count int
 	err := tx.QueryRow(ctx, `SELECT count(*) FROM registrations WHERE event_id = $1 AND status <> 'cancelled' AND family_count > 0`, eventID).Scan(&count)
@@ -230,6 +236,8 @@ func (s *Service) remainingCapacityTx(ctx context.Context, tx pgx.Tx, eventID st
 
 func bookingMessage(status string) string {
 	switch status {
+	case RegistrationReceived:
+		return "lottery registration received"
 	case RegistrationConfirmed:
 		return "booking confirmed and ticket issued"
 	case RegistrationWaitlisted:

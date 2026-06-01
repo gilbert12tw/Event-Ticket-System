@@ -64,5 +64,5 @@ The app should scan from role context to current task to operational proof. Page
 - **Admin Events:** Publish readiness, zero-match eligibility, capacity, and audit consequence must be visible before submit.
 - **Check-in:** Manual token entry remains the Phase 1 scanner boundary. Duplicate scan handling is explicit and high contrast.
 - **Reports and Audit:** Tables prioritize scanability, filtering, aggregation, and metadata detail without exposing unnecessary personal data.
-- **Demo Runbook:** The AC-9 flow is preserved as a practical verification tool with clear step progress and rerun state.
+- **Demo Control Panel:** The AC-9 flow is preserved as a practical verification tool with manual steps, visible API activity, real data artifacts, and optional debug-clock time travel.
 - **Responsive and Accessibility:** Verify 375px, 768px, 1024px, and 1440px. Maintain WCAG AA contrast, visible keyboard focus, reduced motion support, and no incoherent text overlap.

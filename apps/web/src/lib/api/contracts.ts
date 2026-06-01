@@ -38,6 +38,8 @@ export type AuthBootstrap = {
   mock_profiles_enabled: boolean;
   mock_profiles: MockProfile[];
   debug_chrome_enabled: boolean;
+  demo_debug_enabled?: boolean;
+  ops_api_enabled?: boolean;
 };
 
 export type MockProfile = EmployeeClaims & {
@@ -107,6 +109,7 @@ export type ResolveImpactReviewRequest = {
 };
 
 export type CapacityType = "limited" | "unlimited";
+export type AllocationMode = "fcfs" | "lottery";
 
 export interface EligibilityWarning {
   code: string;
@@ -136,6 +139,7 @@ type EventMutableFields = {
   capacity_type: CapacityType;
   capacity: number | null;
   allows_family: boolean;
+  allocation_mode?: AllocationMode;
   category?: string;
   tags?: string[];
   entry_method?: string;
@@ -145,7 +149,7 @@ type EventMutableFields = {
 export type EventSummary = EventMutableFields & {
   event_id: string;
   status: string;
-  allocation_mode: string;
+  allocation_mode: AllocationMode;
   version?: number;
   archived_at?: string;
   created_by: string;
@@ -388,9 +392,32 @@ export type LotteryRun = {
   event_id: string;
   seed: string;
   status: string;
+  input_snapshot_at: string;
+  algorithm_version: string;
+  candidate_count: number;
+  eligibility_rule_id: string;
+  eligibility_rule_version: number;
+  eligibility_snapshot: EligibilityRuleInput;
   winner_count: number;
   created_by: string;
   created_at: string;
+};
+
+export type DemoClockMode = "real" | "fixed";
+
+export type DemoClockSnapshot = {
+  enabled: boolean;
+  mode: DemoClockMode;
+  now: string;
+  real_now: string;
+  updated_at?: string;
+  reason?: string;
+};
+
+export type DemoClockUpdateRequest = {
+  mode: DemoClockMode;
+  now?: string;
+  reason: string;
 };
 
 export type AuditLog = {

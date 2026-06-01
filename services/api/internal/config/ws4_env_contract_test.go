@@ -14,6 +14,7 @@ func TestEnvExampleDocumentsWS4AsyncWorkerSettings(t *testing.T) {
 	env := loadEnvExample(t)
 	expected := map[string]string{
 		"OPS_API_ENABLED":                 "false",
+		"DEMO_DEBUG_ENABLED":              "false",
 		"WORKER_SHUTDOWN_GRACE_SECONDS":   "30",
 		"OUTBOX_BATCH_SIZE":               "100",
 		"OUTBOX_LEASE_TTL_SECONDS":        "60",

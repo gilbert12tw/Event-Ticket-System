@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS registrations (
 		registration_id TEXT PRIMARY KEY,
 		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
 		employee_id TEXT NOT NULL REFERENCES employees(employee_id),
-		status TEXT NOT NULL CHECK (status IN ('confirmed', 'waitlisted', 'cancelled')),
+		status TEXT NOT NULL CHECK (status IN ('received', 'confirmed', 'waitlisted', 'cancelled')),
 		idempotency_key TEXT NOT NULL UNIQUE,
 		rejection_reason TEXT NOT NULL DEFAULT '',
 		cancel_idempotency_key TEXT,
@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS booking_idempotency_results (
 		employee_id TEXT NOT NULL,
 		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
 		registration_id TEXT REFERENCES registrations(registration_id) ON DELETE CASCADE,
-		registration_status TEXT NOT NULL DEFAULT '' CHECK (registration_status IN ('', 'confirmed', 'waitlisted', 'cancelled')),
+		registration_status TEXT NOT NULL DEFAULT '' CHECK (registration_status IN ('', 'received', 'confirmed', 'waitlisted', 'cancelled')),
 		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
 		remaining_capacity INTEGER NOT NULL DEFAULT 0 CHECK (remaining_capacity >= 0),
 		message TEXT NOT NULL DEFAULT '',
@@ -249,7 +249,13 @@ CREATE TABLE IF NOT EXISTS lottery_runs (
 		run_id TEXT PRIMARY KEY,
 		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
 		seed TEXT NOT NULL,
-		status TEXT NOT NULL CHECK (status IN ('completed')),
+		status TEXT NOT NULL CHECK (status IN ('completed', 'superseded')),
+		input_snapshot_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		algorithm_version TEXT NOT NULL DEFAULT 'deterministic-sha256-v1',
+		candidate_count INTEGER NOT NULL DEFAULT 0 CHECK (candidate_count >= 0),
+		eligibility_rule_id TEXT NOT NULL DEFAULT '',
+		eligibility_rule_version INTEGER NOT NULL DEFAULT 0,
+		eligibility_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
 		winner_count INTEGER NOT NULL DEFAULT 0,
 		created_by TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -336,7 +342,43 @@ ALTER TABLE notification_deliveries ADD CONSTRAINT notification_deliveries_statu
 
 CREATE INDEX IF NOT EXISTS idx_lottery_runs_event ON lottery_runs(event_id, created_at DESC);
 
+ALTER TABLE lottery_runs DROP CONSTRAINT IF EXISTS lottery_runs_status_check;
+
+ALTER TABLE lottery_runs ADD CONSTRAINT lottery_runs_status_check CHECK (status IN ('completed', 'superseded'));
+
+WITH ranked_completed_lottery_runs AS (
+		SELECT run_id,
+			row_number() OVER (PARTITION BY event_id ORDER BY created_at DESC, run_id DESC) AS rank
+		FROM lottery_runs
+		WHERE status = 'completed'
+	)
+	UPDATE lottery_runs lr
+	SET status = 'superseded'
+	FROM ranked_completed_lottery_runs ranked
+	WHERE lr.run_id = ranked.run_id
+		AND ranked.rank > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lottery_runs_one_completed_event
+		ON lottery_runs (event_id)
+		WHERE status = 'completed';
+
 CREATE INDEX IF NOT EXISTS idx_lottery_results_run ON lottery_results(run_id, draw_order);
+
+ALTER TABLE lottery_runs ADD COLUMN IF NOT EXISTS input_snapshot_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE lottery_runs ADD COLUMN IF NOT EXISTS algorithm_version TEXT NOT NULL DEFAULT 'deterministic-sha256-v1';
+
+ALTER TABLE lottery_runs ADD COLUMN IF NOT EXISTS candidate_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE lottery_runs ADD COLUMN IF NOT EXISTS eligibility_rule_id TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE lottery_runs ADD COLUMN IF NOT EXISTS eligibility_rule_version INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE lottery_runs ADD COLUMN IF NOT EXISTS eligibility_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE lottery_runs DROP CONSTRAINT IF EXISTS lottery_runs_candidate_count_check;
+
+ALTER TABLE lottery_runs ADD CONSTRAINT lottery_runs_candidate_count_check CHECK (candidate_count >= 0);
 
 ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check;
 
@@ -420,6 +462,10 @@ ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_family_count_c
 
 ALTER TABLE registrations ADD CONSTRAINT registrations_family_count_check CHECK (family_count BETWEEN 0 AND 10);
 
+ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_status_check;
+
+ALTER TABLE registrations ADD CONSTRAINT registrations_status_check CHECK (status IN ('received', 'confirmed', 'waitlisted', 'cancelled'));
+
 ALTER TABLE registrations DROP CONSTRAINT IF EXISTS registrations_event_id_employee_id_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_active_employee
@@ -432,13 +478,18 @@ CREATE TABLE IF NOT EXISTS booking_idempotency_results (
 		employee_id TEXT NOT NULL,
 		family_count INTEGER NOT NULL DEFAULT 0 CHECK (family_count BETWEEN 0 AND 10),
 		registration_id TEXT REFERENCES registrations(registration_id) ON DELETE CASCADE,
-		registration_status TEXT NOT NULL DEFAULT '' CHECK (registration_status IN ('', 'confirmed', 'waitlisted', 'cancelled')),
+		registration_status TEXT NOT NULL DEFAULT '' CHECK (registration_status IN ('', 'received', 'confirmed', 'waitlisted', 'cancelled')),
 		ticket_id TEXT REFERENCES tickets(ticket_id) ON DELETE SET NULL,
 		remaining_capacity INTEGER NOT NULL DEFAULT 0 CHECK (remaining_capacity >= 0),
 		message TEXT NOT NULL DEFAULT '',
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		completed_at TIMESTAMPTZ
 	);
+
+ALTER TABLE booking_idempotency_results DROP CONSTRAINT IF EXISTS booking_idempotency_results_registration_status_check;
+
+ALTER TABLE booking_idempotency_results ADD CONSTRAINT booking_idempotency_results_registration_status_check
+		CHECK (registration_status IN ('', 'received', 'confirmed', 'waitlisted', 'cancelled'));
 
 CREATE INDEX IF NOT EXISTS idx_booking_idempotency_results_registration ON booking_idempotency_results(registration_id);
 

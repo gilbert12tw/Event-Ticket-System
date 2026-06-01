@@ -57,6 +57,11 @@ fi
 
 cat "$changed_file"
 
+if grep -Eq '^(goal\.md|note\.md)$' "$changed_file"; then
+  echo "goal.md and note.md are local agent notes and must not be included in PR or push diffs." >&2
+  exit 1
+fi
+
 full=$force_full
 backend=false
 backend_lint=false
@@ -84,6 +89,7 @@ run_full_ci="${INPUT_RUN_FULL_CI:-false}"
 run_live_playwright="${INPUT_RUN_LIVE_PLAYWRIGHT:-false}"
 run_k6_smoke="${INPUT_RUN_K6_SMOKE:-false}"
 run_k6_release="${INPUT_RUN_K6_RELEASE:-false}"
+run_phase3_compose="${INPUT_RUN_PHASE3_COMPOSE:-false}"
 
 if [[ "$release_full" == "true" ]]; then
   full=true
@@ -96,11 +102,15 @@ elif [[ "$event_name" == "workflow_dispatch" ]]; then
       live=true
       k6=true
     fi
+    if [[ "$run_phase3_compose" == "true" ]]; then
+      compose=true
+      phase3=true
+    fi
   fi
 fi
 
 ci_config_changed=false
-if grep -Eq '^(\.actrc$|\.github/workflows/ci\.yml$|\.github/actions/setup-web/action\.yml$|scripts/ci/detect-changes\.sh$)' "$changed_file"; then
+if grep -Eq '^(\.actrc$|\.github/workflows/ci\.yml$|\.github/actions/setup-docker-act/|\.github/actions/setup-web/|scripts/ci/detect-changes\.sh$)' "$changed_file"; then
   ci_config_changed=true
 fi
 
@@ -111,7 +121,7 @@ if [[ "$full" == "false" ]]; then
   grep -Eq '^(services/api/.*\.go|services/api/go\.(mod|sum)|go\.work(\.sum)?$)' "$changed_file" && backend_test=true
   grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' "$changed_file" && openapi=true
   grep -Eq '^(services/api/deploy/|services/api/Dockerfile$|scripts/compose/)' "$changed_file" && compose=true
-  grep -Eq '^(goal\.md$|docs/specs/phase3-|docs/reports/phase3-)' "$changed_file" && phase3=true
+  grep -Eq '^(docs/specs/phase3-|docs/reports/phase3-)' "$changed_file" && phase3=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' "$changed_file" && frontend_static=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$)' "$changed_file" && frontend_unit=true
   grep -Eq '^(apps/web/src/|apps/web/e2e/|apps/web/playwright\.config\.ts$|apps/web/package\.json$|pnpm-lock\.yaml$)' "$changed_file" && frontend_e2e=true

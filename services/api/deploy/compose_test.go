@@ -50,6 +50,8 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 		"OUTBOX_RETRY_MAX:",
 		"OUTBOX_BACKOFF_BASE_MS:",
 		"OUTBOX_BACKOFF_MAX_MS:",
+		"DEMO_DEBUG_ENABLED=false",
+		"DEMO_DEBUG_ENABLED: ${DEMO_DEBUG_ENABLED:-false}",
 		"worker:",
 		`command: ["worker"]`,
 		"migrate:",
@@ -77,6 +79,27 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	}
 }
 
+func TestComposeExternalImagesAreDigestPinned(t *testing.T) {
+	for _, file := range []string{
+		"compose.yaml",
+		"compose.phase3-ha.yaml",
+		"compose.dev.yaml",
+	} {
+		content := readComposeTestFile(t, file)
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "image: ") {
+				continue
+			}
+			image := strings.TrimSpace(strings.TrimPrefix(line, "image: "))
+			if strings.Contains(image, "${") {
+				continue
+			}
+			assert.Contains(t, image, "@sha256:", "%s must pin external image %q by digest", file, image)
+		}
+	}
+}
+
 func TestComposePassesNoShowPolicyConfig(t *testing.T) {
 	compose, err := os.ReadFile("compose.yaml")
 	require.NoError(t, err)
@@ -89,6 +112,13 @@ func TestComposePassesNoShowPolicyConfig(t *testing.T) {
 		assert.Contains(t, envText, name+"=", ".env.example must expose %s for local operators", name)
 		assert.GreaterOrEqual(t, strings.Count(composeText, name+":"), 3, "app, worker, and seed must receive %s", name)
 	}
+}
+
+func readComposeTestFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return string(content)
 }
 
 func TestComposeDevOverlayDeclaresFrontendHotReloadContract(t *testing.T) {

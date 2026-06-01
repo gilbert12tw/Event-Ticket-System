@@ -17,6 +17,7 @@ x-backend-env: &backend-env
   APP_ENV: ${APP_ENV:-local}
   AUTO_MIGRATE: "false"
   OPS_API_ENABLED: ${OPS_API_ENABLED:-false}
+  DEMO_DEBUG_ENABLED: ${DEMO_DEBUG_ENABLED:-false}
   DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
   TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
   PROVIDER_TOKEN_SECRET: ${PROVIDER_TOKEN_SECRET:-local_dev_provider_token_secret_change_me}
@@ -68,7 +69,7 @@ x-backend-service: &backend-service
     start_period: 15s
 
 x-nginx-service: &nginx-service
-  image: public.ecr.aws/docker/library/nginx:1.29-alpine
+  image: public.ecr.aws/docker/library/nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
   profiles: ["phase3-ha"]
   restart: unless-stopped
   expose:
@@ -281,7 +282,7 @@ services:
       PYROSCOPE_APPLICATION_NAME: cets-worker-export
 
   prometheus:
-    image: prom/prometheus:v3.6.0
+    image: prom/prometheus:v3.6.0@sha256:76947e7ef22f8a698fc638f706685909be425dbe09bd7a2cd7aca849f79b5f64
     profiles: ["observability", "phase3-ha"]
     depends_on: !reset []
     command:
@@ -296,7 +297,7 @@ services:
       - prometheus_data:/prometheus
 
   grafana:
-    image: grafana/grafana:12.4.0
+    image: grafana/grafana:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20
     profiles: ["observability", "phase3-ha"]
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -319,7 +320,7 @@ services:
         condition: service_started
 
   loki:
-    image: grafana/loki:3.6.0
+    image: grafana/loki:3.6.0@sha256:6a705de65df88aa0d90a44779606b0042722c86637335a73858f65f9fe9f9557
     profiles: ["observability", "phase3-ha"]
     user: "0"
     command: ["-config.file=/etc/loki/loki.yml"]
@@ -338,7 +339,7 @@ services:
     depends_on: !reset []
 
   tempo:
-    image: grafana/tempo:2.10.0
+    image: grafana/tempo:2.10.0@sha256:d7f4c72e0bad2b42b4e7263b0addaf3f5bbc105cec6b1917eba0aae3b9b70364
     profiles: ["observability", "phase3-ha"]
     user: "0"
     command: ["-config.file=/etc/tempo/tempo.yml"]
@@ -352,7 +353,7 @@ services:
         condition: service_started
 
   pyroscope:
-    image: grafana/pyroscope:1.18.1
+    image: grafana/pyroscope:1.18.1@sha256:0ad897bb457228c7d1133ce7004f83052e635be9daf4a7cc90364317637e9754
     profiles: ["observability", "phase3-ha"]
     ports:
       - "${PYROSCOPE_PORT:-4040}:4040"
@@ -360,7 +361,7 @@ services:
       - pyroscope_data:/var/lib/pyroscope
 
   alloy:
-    image: grafana/alloy:v1.16.0
+    image: grafana/alloy:v1.16.0@sha256:6e00cf7c5a692ff5f24844529416ed017d76fce922f8199004e73d5eca46b6b8
     profiles: ["observability", "phase3-ha"]
     command:
       - run
@@ -380,7 +381,7 @@ services:
         condition: service_started
 
   redaction-canary:
-    image: curlimages/curl:8.17.0
+    image: curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
     profiles: ["phase3-canary"]
     container_name: cets-phase3-redaction-canary
     command:

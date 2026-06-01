@@ -1,0 +1,32 @@
+.ops-overview {
+  display: grid;
+  gap: 8px;
+}
+
+.ops-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.ops-panel .section-heading h3 {
+  font-size: 1rem;
+}
+
+.ops-panel table {
+  min-width: 640px;
+}
+
+.ops-page .mobile-summary-card {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-page .mobile-summary-card h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+
+.ops-page .compact-stats-bar {
+  margin-bottom: 0;
+}

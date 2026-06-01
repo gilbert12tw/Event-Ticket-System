@@ -73,6 +73,7 @@ type CreateEventRequest struct {
 	CapacityType      string    `json:"capacity_type"`
 	Capacity          int       `json:"capacity"`
 	AllowsFamily      bool      `json:"allows_family"`
+	AllocationMode    string    `json:"allocation_mode"`
 	Status            string    `json:"status"`
 	Category          string    `json:"category"`
 	Tags              []string  `json:"tags"`
@@ -93,6 +94,7 @@ type UpdateEventRequest struct {
 	CapacityType      *string    `json:"capacity_type,omitempty"`
 	Capacity          *int       `json:"capacity,omitempty"`
 	AllowsFamily      *bool      `json:"allows_family,omitempty"`
+	AllocationMode    *string    `json:"allocation_mode,omitempty"`
 	Category          *string    `json:"category,omitempty"`
 	Tags              []string   `json:"tags,omitempty"`
 	EntryMethod       *string    `json:"entry_method,omitempty"`

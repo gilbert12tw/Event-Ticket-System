@@ -84,6 +84,8 @@ AuthBootstrap:
     - mock_profiles_enabled
     - mock_profiles
     - debug_chrome_enabled
+    - demo_debug_enabled
+    - ops_api_enabled
   properties:
     mock_profiles_enabled:
       type: boolean
@@ -93,6 +95,12 @@ AuthBootstrap:
         "$ref": "#/MockProfile"
     debug_chrome_enabled:
       type: boolean
+    demo_debug_enabled:
+      type: boolean
+      description: True only when local/demo/test debug clock routes are registered.
+    ops_api_enabled:
+      type: boolean
+      description: True when Phase 2 read-only ops API routes are registered.
 MockProfile:
   type: object
   required:
@@ -201,6 +209,7 @@ EventStatus:
 BookingStatus:
   type: string
   enum:
+    - received
     - confirmed
     - waitlisted
     - rejected

@@ -1,6 +1,6 @@
 services:
   web-dev:
-    image: node:24.14.1-alpine3.22
+    image: node:24.14.1-alpine3.22@sha256:4f33c7804fa7775b87875f512e25e515692210bfdeafd715eb8bc441c364e2f6
     working_dir: /src
     environment:
       WEB_DEV_PORT: ${WEB_DEV_PORT:-5173}

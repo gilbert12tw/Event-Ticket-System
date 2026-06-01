@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"event-ticket-system/internal/observability"
+	"event-ticket-system/internal/ticketing"
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
@@ -28,6 +29,7 @@ type Dependencies struct {
 	Ticketing                   TicketingService
 	Logger                      *slog.Logger
 	Metrics                     *observability.Registry
+	DemoClock                   *ticketing.DemoClock
 	RequestTimeout              time.Duration
 	AppEnv                      string
 	OpsAPIEnabled               bool
@@ -52,7 +54,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /readyz", handleReady(deps.DB, deps.RequestTimeout))
 	mux.Handle("GET /metrics", deps.Metrics.Handler(deps.DB))
 	provider := NewProviderVerifier(deps.ProviderAuth)
-	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
+	registerAuthRoutes(mux, provider, deps.AppEnv, deps.DemoClock != nil, deps.OpsAPIEnabled, deps.Logger)
+	registerDemoDebugRoutes(mux, provider, deps.DemoClock, deps.Logger)
 	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
 	return withTraceID(withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))

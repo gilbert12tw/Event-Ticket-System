@@ -273,6 +273,28 @@ func TestAuthBootstrapReportsMockProfiles(t *testing.T) {
 	}
 }
 
+func TestAuthBootstrapReportsDemoDebugAvailability(t *testing.T) {
+	router := testRouter(Dependencies{DemoClock: ticketing.NewDemoClock()})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/bootstrap", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assertEnvelope(t, rec.Body.String(), `"demo_debug_enabled":true`)
+}
+
+func TestAuthBootstrapReportsOpsAPIAvailability(t *testing.T) {
+	router := testRouter(Dependencies{OpsAPIEnabled: true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/bootstrap", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assertEnvelope(t, rec.Body.String(), `"ops_api_enabled":true`)
+}
+
 func TestMockProviderTokenUsesProviderBearerPath(t *testing.T) {
 	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", bytes.NewBufferString(`{"profile_id":"staff-1"}`))

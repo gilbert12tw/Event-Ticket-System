@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"event-ticket-system/internal/config"
+	"event-ticket-system/internal/notification"
 	"event-ticket-system/internal/objectstore"
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/reservation"
@@ -55,7 +56,7 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 	}
 
 	service := newTicketingService(pool, cfg, logger)
-	sender := ticketing.SMTPNotificationSender{Host: cfg.MailerHost, Port: cfg.MailerPort, From: cfg.MailerFrom}
+	sender := notification.SMTPNotificationSender{Host: cfg.MailerHost, Port: cfg.MailerPort, From: cfg.MailerFrom}
 	sender.RedirectTo = cfg.MailerRedirectTo
 	reportStore := objectstore.S3CompatibleStore{
 		Endpoint:  cfg.ObjectEndpoint,
@@ -91,53 +92,66 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 		}()
 	}
 
+	return runConfiguredWorkerLoops(loopCtx, configuredWorkerLoops{
+		Config:      cfg,
+		Logger:      logger,
+		Service:     service,
+		Sender:      sender,
+		ReportStore: reportStore,
+		OutboxKinds: outboxKinds,
+		Compensator: compensator,
+	})
+}
+
+type configuredWorkerLoops struct {
+	Config      config.Config
+	Logger      *slog.Logger
+	Service     outboxProcessor
+	Sender      notification.SMTPNotificationSender
+	ReportStore objectstore.S3CompatibleStore
+	OutboxKinds []string
+	Compensator *reservation.Compensator
+}
+
+type outboxProcessor interface {
+	ProcessOutboxOnceWithOptions(context.Context, ticketing.OutboxProcessorOptions) (int, error)
+}
+
+func runConfiguredWorkerLoops(loopCtx context.Context, loops configuredWorkerLoops) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 
-	if len(outboxKinds) > 0 {
+	if len(loops.OutboxKinds) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			errCh <- runWorkerKindLoops(loopCtx, workerKindLoopOptions{
-				Logger:            logger,
-				PollInterval:      cfg.WorkerPollInterval,
-				RequestTimeout:    cfg.RequestTimeout,
-				ShutdownGrace:     cfg.WorkerShutdownGrace,
-				WorkerKinds:       outboxKinds,
-				WorkerConcurrency: cfg.WorkerConcurrency,
-				Process: func(workCtx context.Context, spec workerKindLoopSpec) (int, error) {
-					return service.ProcessOutboxOnceWithOptions(workCtx, ticketing.OutboxProcessorOptions{
-						Sender:      sender,
-						ReportStore: reportStore,
-						BatchSize:   cfg.WorkerBatchSize,
-						WorkerKinds: []string{spec.Kind},
-						LeaseTTL:    cfg.OutboxLeaseTTL,
-						RetryPolicy: &ticketing.OutboxRetryPolicy{
-							MaxAttempts: cfg.OutboxRetryMax,
-							BackoffBase: cfg.OutboxBackoffBase,
-							BackoffMax:  cfg.OutboxBackoffMax,
-						},
-					})
-				},
+				Logger:            loops.Logger,
+				PollInterval:      loops.Config.WorkerPollInterval,
+				RequestTimeout:    loops.Config.RequestTimeout,
+				ShutdownGrace:     loops.Config.WorkerShutdownGrace,
+				WorkerKinds:       loops.OutboxKinds,
+				WorkerConcurrency: loops.Config.WorkerConcurrency,
+				Process:           loops.processOutboxKind,
 			})
 		}()
 	}
 
-	if compensator != nil {
+	if loops.Compensator != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			errCh <- runCompensationLoop(loopCtx, compensationLoopOptions{
-				Logger:        logger.With("loop", "compensation"),
-				Compensator:   compensator,
-				Interval:      cfg.ReservationCompensationInterval,
-				ShutdownGrace: cfg.WorkerShutdownGrace,
+				Logger:        loops.Logger.With("loop", "compensation"),
+				Compensator:   loops.Compensator,
+				Interval:      loops.Config.ReservationCompensationInterval,
+				ShutdownGrace: loops.Config.WorkerShutdownGrace,
 			})
 		}()
 	}
 
-	if len(outboxKinds) == 0 && compensator == nil {
-		logger.Warn("worker has no active loops; compensation requested but BOOKING_PREADMISSION=off and no outbox kinds configured")
+	if len(loops.OutboxKinds) == 0 && loops.Compensator == nil {
+		loops.Logger.Warn("worker has no active loops; compensation requested but BOOKING_PREADMISSION=off and no outbox kinds configured")
 	}
 
 	wg.Wait()
@@ -148,6 +162,21 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 		}
 	}
 	return nil
+}
+
+func (loops configuredWorkerLoops) processOutboxKind(workCtx context.Context, spec workerKindLoopSpec) (int, error) {
+	return loops.Service.ProcessOutboxOnceWithOptions(workCtx, ticketing.OutboxProcessorOptions{
+		Sender:      loops.Sender,
+		ReportStore: loops.ReportStore,
+		BatchSize:   loops.Config.WorkerBatchSize,
+		WorkerKinds: []string{spec.Kind},
+		LeaseTTL:    loops.Config.OutboxLeaseTTL,
+		RetryPolicy: &ticketing.OutboxRetryPolicy{
+			MaxAttempts: loops.Config.OutboxRetryMax,
+			BackoffBase: loops.Config.OutboxBackoffBase,
+			BackoffMax:  loops.Config.OutboxBackoffMax,
+		},
+	})
 }
 
 // splitWorkerKinds separates compensation (Redis-driven periodic sweep) from

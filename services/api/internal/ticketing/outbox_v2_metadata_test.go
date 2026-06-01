@@ -48,6 +48,16 @@ func TestOutboxV2MetadataFollowsContractRecipes(t *testing.T) {
 			wantPartitionKey:   "evt_1",
 		},
 		{
+			name:      "registration received",
+			eventType: "registration.received.v2",
+			payload: map[string]interface{}{
+				"registration_id": "reg_1",
+				"event_id":        "evt_1",
+			},
+			wantIdempotencyKey: "registration.received:reg_1",
+			wantPartitionKey:   "evt_1",
+		},
+		{
 			name:      "registration promoted",
 			eventType: "registration.promoted.v2",
 			payload: map[string]interface{}{

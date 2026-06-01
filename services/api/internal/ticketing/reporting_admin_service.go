@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 )
+
+const lotteryAlgorithmVersion = "deterministic-sha256-v1"
 
 func (s *Service) CreateReportExport(ctx context.Context, actor Actor, req ReportExportRequest) (ReportExport, error) {
 	if err := requireRole(actor, RoleHRAdmin); err != nil {
@@ -124,7 +127,17 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 	if found {
 		return existing, tx.Commit(ctx)
 	}
-	if err := validateLotteryEvent(event); err != nil {
+	existing, found, err = findLatestLotteryRunForEventTx(ctx, tx, eventID)
+	if err != nil {
+		return LotteryRun{}, err
+	}
+	if found {
+		if existing.Seed != seed {
+			return LotteryRun{}, conflict("lottery run already completed for event")
+		}
+		return existing, tx.Commit(ctx)
+	}
+	if err := validateLotteryEvent(event, s.now()); err != nil {
 		return LotteryRun{}, err
 	}
 
@@ -139,22 +152,43 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 }
 
 func (s *Service) findLotteryRun(ctx context.Context, eventID string, seed string) (LotteryRun, bool, error) {
-	return scanLotteryRunRow(s.db.QueryRow(ctx, `SELECT run_id, event_id, seed, status, winner_count, created_by, created_at FROM lottery_runs WHERE event_id = $1 AND seed = $2`, eventID, seed))
+	return scanLotteryRunRow(s.db.QueryRow(ctx, `SELECT run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
+			eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at
+		FROM lottery_runs WHERE event_id = $1 AND seed = $2 AND status IN ('completed', 'superseded')`, eventID, seed))
 }
 
 func findLotteryRunTx(ctx context.Context, tx pgx.Tx, eventID string, seed string) (LotteryRun, bool, error) {
-	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, winner_count, created_by, created_at
-		FROM lottery_runs WHERE event_id = $1 AND seed = $2`, eventID, seed))
+	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
+			eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at
+		FROM lottery_runs WHERE event_id = $1 AND seed = $2 AND status IN ('completed', 'superseded')`, eventID, seed))
+}
+
+func findLatestLotteryRunForEventTx(ctx context.Context, tx pgx.Tx, eventID string) (LotteryRun, bool, error) {
+	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
+			eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at
+		FROM lottery_runs WHERE event_id = $1 AND status = 'completed'
+		ORDER BY created_at DESC
+		LIMIT 1`, eventID))
 }
 
 func scanLotteryRunRow(row pgx.Row) (LotteryRun, bool, error) {
 	var run LotteryRun
-	err := row.Scan(&run.RunID, &run.EventID, &run.Seed, &run.Status, &run.WinnerCount, &run.CreatedBy, &run.CreatedAt)
+	var eligibilitySnapshot []byte
+	err := row.Scan(&run.RunID, &run.EventID, &run.Seed, &run.Status, &run.InputSnapshotAt, &run.AlgorithmVersion, &run.CandidateCount,
+		&run.EligibilityRuleID, &run.EligibilityRuleVersion, &eligibilitySnapshot, &run.WinnerCount, &run.CreatedBy, &run.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LotteryRun{}, false, nil
 	}
 	if err != nil {
 		return LotteryRun{}, false, err
+	}
+	if len(eligibilitySnapshot) > 0 {
+		if err := json.Unmarshal(eligibilitySnapshot, &run.EligibilitySnapshot); err != nil {
+			return LotteryRun{}, false, err
+		}
+	}
+	if run.Status == "superseded" {
+		run.Status = "completed"
 	}
 	return run, true, nil
 }
@@ -173,7 +207,13 @@ func (s *Service) createLotteryRunTx(ctx context.Context, tx pgx.Tx, actor Actor
 		return LotteryRun{}, err
 	}
 	capacity := max(eventCapacity-confirmed, 0)
-	winnerLimit := len(candidates)
+	eligibleCount := 0
+	for _, candidate := range candidates {
+		if candidate.eligible {
+			eligibleCount++
+		}
+	}
+	winnerLimit := eligibleCount
 	if capacity < winnerLimit {
 		winnerLimit = capacity
 	}
@@ -182,8 +222,17 @@ func (s *Service) createLotteryRunTx(ctx context.Context, tx pgx.Tx, actor Actor
 		return LotteryRun{}, err
 	}
 	now := s.now()
-	_, err = tx.Exec(ctx, `INSERT INTO lottery_runs (run_id, event_id, seed, status, winner_count, created_by, created_at)
-		VALUES ($1,$2,$3,'completed',0,$4,$5)`, runID, eventID, seed, actor.ID, now)
+	eligibilitySnapshot := lotteryEligibilitySnapshot(rule)
+	eligibilitySnapshotJSON, err := json.Marshal(eligibilitySnapshot)
+	if err != nil {
+		return LotteryRun{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO lottery_runs
+			(run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
+			 eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at)
+		VALUES ($1,$2,$3,'completed',$4,$5,$6,$7,$8,$9::jsonb,0,$10,$11)`,
+		runID, eventID, seed, now, lotteryAlgorithmVersion, len(candidates),
+		rule.RuleID, rule.Version, string(eligibilitySnapshotJSON), actor.ID, now)
 	if err != nil {
 		return LotteryRun{}, err
 	}
@@ -194,10 +243,34 @@ func (s *Service) createLotteryRunTx(ctx context.Context, tx pgx.Tx, actor Actor
 	if _, err := tx.Exec(ctx, `UPDATE lottery_runs SET winner_count = $2 WHERE run_id = $1`, runID, winnerCount); err != nil {
 		return LotteryRun{}, err
 	}
-	if err := insertLotteryCompletionEffectsTx(ctx, tx, actor, runID, eventID, seed, winnerCount); err != nil {
+	if err := insertLotteryCompletionEffectsTx(ctx, tx, lotteryCompletionEffects{
+		actor:           actor,
+		runID:           runID,
+		eventID:         eventID,
+		seed:            seed,
+		rule:            rule,
+		ruleSnapshot:    eligibilitySnapshot,
+		winnerCount:     winnerCount,
+		candidateCount:  len(candidates),
+		ineligibleCount: len(candidates) - eligibleCount,
+	}); err != nil {
 		return LotteryRun{}, err
 	}
-	return LotteryRun{RunID: runID, EventID: eventID, Seed: seed, Status: "completed", WinnerCount: winnerCount, CreatedBy: actor.ID, CreatedAt: now}, nil
+	return LotteryRun{
+		RunID:                  runID,
+		EventID:                eventID,
+		Seed:                   seed,
+		Status:                 "completed",
+		InputSnapshotAt:        now,
+		AlgorithmVersion:       lotteryAlgorithmVersion,
+		CandidateCount:         len(candidates),
+		EligibilityRuleID:      rule.RuleID,
+		EligibilityRuleVersion: rule.Version,
+		EligibilitySnapshot:    eligibilitySnapshot,
+		WinnerCount:            winnerCount,
+		CreatedBy:              actor.ID,
+		CreatedAt:              now,
+	}, nil
 }
 
 func (s *Service) insertLotteryDrawResultsTx(ctx context.Context, tx pgx.Tx, actor Actor, runID string, eventID string, candidates []lotteryCandidate, winnerLimit int) (int, error) {
@@ -239,6 +312,9 @@ func (s *Service) insertLotteryWinnerTx(ctx context.Context, tx pgx.Tx, actor Ac
 }
 
 func insertLotteryWaitlistResultTx(ctx context.Context, tx pgx.Tx, runID string, eventID string, candidate lotteryCandidate, drawOrder int) error {
+	if _, err := tx.Exec(ctx, `UPDATE registrations SET status = 'waitlisted' WHERE registration_id = $1`, candidate.registrationID); err != nil {
+		return err
+	}
 	return insertLotteryResultTx(ctx, tx, lotteryResultInsert{
 		runID:          runID,
 		eventID:        eventID,
@@ -249,25 +325,60 @@ func insertLotteryWaitlistResultTx(ctx context.Context, tx pgx.Tx, runID string,
 	})
 }
 
-func insertLotteryCompletionEffectsTx(ctx context.Context, tx pgx.Tx, actor Actor, runID string, eventID string, seed string, winnerCount int) error {
+type lotteryCompletionEffects struct {
+	actor           Actor
+	runID           string
+	eventID         string
+	seed            string
+	rule            EligibilityRule
+	ruleSnapshot    RuleInput
+	winnerCount     int
+	candidateCount  int
+	ineligibleCount int
+}
+
+func insertLotteryCompletionEffectsTx(ctx context.Context, tx pgx.Tx, effects lotteryCompletionEffects) error {
 	auditID, err := newID("aud")
 	if err != nil {
 		return err
 	}
-	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "lottery.completed", "event", eventID,
-		map[string]interface{}{"seed": seed, "winner_count": winnerCount, "event_id": eventID})); err != nil {
+	metadata := map[string]interface{}{
+		"seed":                     effects.seed,
+		"winner_count":             effects.winnerCount,
+		"candidate_count":          effects.candidateCount,
+		"ineligible_count":         effects.ineligibleCount,
+		"algorithm_version":        lotteryAlgorithmVersion,
+		"event_id":                 effects.eventID,
+		"eligibility_rule_id":      effects.rule.RuleID,
+		"eligibility_rule_version": effects.rule.Version,
+		"eligibility_snapshot":     effects.ruleSnapshot,
+	}
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, effects.actor, "lottery.completed", "event", effects.eventID,
+		metadata)); err != nil {
 		return err
 	}
-	return insertOutbox(ctx, tx, "lottery.completed", runID,
-		map[string]interface{}{"event_id": eventID, "seed": seed, "winner_count": winnerCount})
+	return insertOutbox(ctx, tx, "lottery.completed", effects.runID,
+		metadata)
 }
 
-func validateLotteryEvent(event Event) error {
+func lotteryEligibilitySnapshot(rule EligibilityRule) RuleInput {
+	return RuleInput{
+		Department:       rule.Department,
+		Site:             rule.Site,
+		MinGrade:         rule.MinGrade,
+		EmploymentStatus: rule.EmploymentStatus,
+	}
+}
+
+func validateLotteryEvent(event Event, now time.Time) error {
 	if event.Status != EventStatusPublished {
 		return conflict("lottery can only run for published events")
 	}
 	if event.AllocationMode != AllocationModeLottery {
 		return conflict("lottery allocation is not enabled for this event")
+	}
+	if !now.After(event.RegistrationClose) {
+		return conflict("lottery can only run after registration window closes")
 	}
 	return nil
 }
@@ -299,6 +410,7 @@ type lotteryCandidate struct {
 	registration   Registration
 	employee       Employee
 	drawSeed       string
+	eligible       bool
 }
 
 func lotteryDrawKey(seed string, registrationID string) string {
@@ -313,7 +425,7 @@ func (s *Service) lotteryCandidatesTx(ctx context.Context, tx pgx.Tx, eventID st
 			e.full_name, e.department, e.site, e.job_grade, e.employment_status
 		FROM registrations r
 		JOIN employees e ON e.employee_id = r.employee_id
-		WHERE r.event_id = $1 AND r.status = 'waitlisted'
+		WHERE r.event_id = $1 AND r.status = 'received'
 		FOR UPDATE OF r`, eventID)
 	if err != nil {
 		return nil, err
@@ -332,14 +444,13 @@ func (s *Service) lotteryCandidatesTx(ctx context.Context, tx pgx.Tx, eventID st
 			return nil, err
 		}
 		employee.EmployeeID = reg.EmployeeID
-		if eligible, _ := EvaluateEligibility(employee, rule); !eligible {
-			continue
-		}
+		eligible, _ := EvaluateEligibility(employee, rule)
 		candidates = append(candidates, lotteryCandidate{
 			registrationID: reg.RegistrationID,
 			registration:   reg,
 			employee:       employee,
 			drawSeed:       lotteryDrawKey(seed, reg.RegistrationID),
+			eligible:       eligible,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -347,6 +458,12 @@ func (s *Service) lotteryCandidatesTx(ctx context.Context, tx pgx.Tx, eventID st
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].eligible != candidates[j].eligible {
+			return candidates[i].eligible
+		}
+		if !candidates[i].eligible {
+			return candidates[i].registrationID < candidates[j].registrationID
+		}
 		switch cmp := strings.Compare(candidates[i].drawSeed, candidates[j].drawSeed); {
 		case cmp < 0:
 			return true

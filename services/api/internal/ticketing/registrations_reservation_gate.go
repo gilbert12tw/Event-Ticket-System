@@ -12,9 +12,10 @@ import (
 const reservationOperation = "registration.book"
 
 type eventCapacityPeek struct {
-	CapacityType string
-	Capacity     int
-	Version      int64
+	CapacityType   string
+	Capacity       int
+	AllocationMode string
+	Version        int64
 }
 
 // peekEventCapacity reads the event capacity_type and capacity outside any
@@ -26,8 +27,8 @@ func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventC
 	var peek eventCapacityPeek
 	var capacity *int
 	var version int64
-	err := s.db.QueryRow(ctx, `SELECT capacity_type, capacity, version FROM events WHERE event_id = $1`, eventID).
-		Scan(&peek.CapacityType, &capacity, &version)
+	err := s.db.QueryRow(ctx, `SELECT capacity_type, capacity, allocation_mode, version FROM events WHERE event_id = $1`, eventID).
+		Scan(&peek.CapacityType, &capacity, &peek.AllocationMode, &version)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return eventCapacityPeek{}, notFound("event not found")
 	}
@@ -56,7 +57,7 @@ func (s *Service) preadmitBooking(ctx context.Context, eventID, employeeID, idem
 		// Event missing or DB error: let the booking tx surface the real error.
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
-	if peek.CapacityType != CapacityTypeLimited {
+	if peek.CapacityType != CapacityTypeLimited || peek.AllocationMode == AllocationModeLottery {
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
 	if familyCount > 0 {

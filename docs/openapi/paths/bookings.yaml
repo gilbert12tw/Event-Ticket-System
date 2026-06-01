@@ -6,7 +6,7 @@
     x-required-roles:
       - employee
     summary: Book the current employee for an event.
-    description: Creates a booking for the current employee derived from provider claims. Limited events allow at most one ticket per employee, reject family members, and must not oversell. Unlimited events do not decrement inventory, do not create waitlist entries, and persist family_count on the employee's main registration.
+    description: Creates a booking for the current employee derived from provider claims. Limited FCFS events allow at most one ticket per employee, reject family members, and must not oversell. Lottery events collect received registrations until cutoff and issue tickets only when the lottery run completes. Unlimited events do not decrement inventory, do not create waitlist entries, and persist family_count on the employee's main registration.
     parameters:
       - "$ref": "../components/parameters.yaml#/EventId"
     requestBody:
@@ -17,7 +17,7 @@
             "$ref": "../components/schemas/bookings.yaml#/CreateBookingRequest"
     responses:
       "201":
-        description: Booking confirmed or waitlisted.
+        description: Booking received, confirmed, or waitlisted.
         content:
           application/json:
             schema:

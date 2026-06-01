@@ -250,6 +250,12 @@ LotteryRun:
     - event_id
     - seed
     - status
+    - input_snapshot_at
+    - algorithm_version
+    - candidate_count
+    - eligibility_rule_id
+    - eligibility_rule_version
+    - eligibility_snapshot
     - winner_count
     - created_at
   properties:
@@ -265,8 +271,22 @@ LotteryRun:
       type: string
       enum:
         - completed
-        - replayed
-        - failed
+    input_snapshot_at:
+      type: string
+      format: date-time
+    algorithm_version:
+      type: string
+    candidate_count:
+      type: integer
+      minimum: 0
+    eligibility_rule_id:
+      type: string
+      description: Opaque eligibility rule identifier captured for the lottery run.
+    eligibility_rule_version:
+      type: integer
+      minimum: 0
+    eligibility_snapshot:
+      "$ref": "./eligibility.yaml#/EligibilityRuleInput"
     winner_count:
       type: integer
       minimum: 0

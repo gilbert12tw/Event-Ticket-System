@@ -176,6 +176,67 @@ func TestLiveGatesRunWorkerIsolationLagK6Gate(t *testing.T) {
 	assert.Contains(t, scriptContent, "exec.test.abort")
 }
 
+func TestSonarCoverageConfigStaysLocalOnly(t *testing.T) {
+	workflow, err := os.ReadFile("../../../.github/workflows/ci.yml")
+	require.NoError(t, err)
+	actrc, err := os.ReadFile("../../../.actrc")
+	require.NoError(t, err)
+	detector, err := os.ReadFile("../../../scripts/ci/detect-changes.sh")
+	require.NoError(t, err)
+	packageJSON, err := os.ReadFile("../../../package.json")
+	require.NoError(t, err)
+
+	workflowContent := string(workflow)
+	actrcContent := string(actrc)
+	detectorContent := string(detector)
+	packageContent := string(packageJSON)
+	assert.Contains(t, workflowContent, `".github/actions/setup-docker-act/**"`)
+	assert.Contains(t, workflowContent, `".github/actions/setup-web/**"`)
+	assert.Contains(t, workflowContent, `"docs/reports/**"`)
+	assert.Contains(t, workflowContent, `"goal.md"`,
+		"agent notes must start CI so detect-changes can reject PR or push diffs that include them")
+	assert.Contains(t, workflowContent, `"note.md"`,
+		"agent notes must start CI so detect-changes can reject PR or push diffs that include them")
+	assert.Contains(t, detectorContent, `.github/actions/setup-docker-act/`)
+	assert.Contains(t, detectorContent, `.github/actions/setup-web/`)
+	assert.Contains(t, detectorContent, `docs/reports/phase3-`)
+	assert.Contains(t, detectorContent, `goal\.md|note\.md`)
+	gitignore, err := os.ReadFile("../../../.gitignore")
+	require.NoError(t, err)
+	assert.Contains(t, string(gitignore), "\ngoal.md\n")
+	assert.Contains(t, string(gitignore), "\nnote.md\n")
+	assert.Contains(t, workflowContent, `"sonar-project.properties"`)
+	assert.Contains(t, workflowContent, `"scripts/coverage/**"`)
+	assert.NotContains(t, workflowContent, "sonar-analysis:")
+	assert.NotContains(t, workflowContent, "INPUT_RUN_SONAR")
+	assert.NotContains(t, workflowContent, "run_sonar:")
+	assert.NotContains(t, workflowContent, "SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}")
+	assert.NotContains(t, workflowContent, "SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}")
+	assert.NotContains(t, workflowContent, "sonarsource/sonar-scanner-cli")
+	assert.NotContains(t, detectorContent, `sonar-project\.properties`)
+	assert.NotContains(t, detectorContent, `scripts/coverage/`)
+	assert.NotContains(t, detectorContent, "INPUT_RUN_SONAR")
+	assert.NotContains(t, detectorContent, `run_sonar=`)
+	assert.Contains(t, packageContent, `"test:coverage": "scripts/coverage/sonar-go-coverage.sh && pnpm --filter cets-web test:coverage"`)
+	assert.Contains(t, packageContent, `"sonar:scan": "pnpm test:coverage && sonar-scanner"`)
+	assert.Contains(t, actrcContent, "--concurrent-jobs 1")
+	assert.Equal(t, 1, strings.Count(workflowContent, "image: postgres:16.13-alpine@sha256:"),
+		"CI must not add a second PostgreSQL service only for Sonar analysis")
+	assert.Equal(t, 1, strings.Count(workflowContent, "image: redis:7.4.8-alpine@sha256:"),
+		"CI must not add a second Redis service only for Sonar analysis")
+	assert.Contains(t, workflowContent, "- 26379:6379")
+	assert.Contains(t, workflowContent, "- 25432:5432")
+	assert.Contains(t, workflowContent, "REDIS_URL: redis://localhost:26379/0")
+	assert.Contains(t, workflowContent, "TEST_DATABASE_URL: postgresql://cets:cets_test_password@localhost:25432/cets_test?sslmode=disable")
+	assert.NotContains(t, workflowContent, "localhost URLs are not valid in CI")
+	assert.NotContains(t, workflowContent, "https://localhost*|https://127.0.0.1*")
+	assert.NotContains(t, workflowContent, "docker run --rm \\\n            -e SONAR_HOST_URL")
+	assert.NotContains(t, workflowContent, "host.docker.internal")
+	assert.NotContains(t, workflowContent, "host-gateway")
+	assert.Contains(t, workflowContent, "VITEST_MAX_WORKERS: ${{ vars.CI_VITEST_MAX_WORKERS || '2' }}")
+	assert.Contains(t, packageContent, "pnpm --filter cets-web test:coverage")
+}
+
 func deploymentContractFiles(t *testing.T) []string {
 	t.Helper()
 	var files []string

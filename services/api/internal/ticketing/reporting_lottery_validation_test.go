@@ -33,6 +33,52 @@ func TestRunLotteryRejectsClosedEventWithoutSideEffects(t *testing.T) {
 	assertLotteryRejectedWithoutAllocation(t, service, ctx, event.EventID, "closed-seed", "lottery can only run for published events")
 }
 
+func TestRunLotteryRejectsBeforeRegistrationCloseWithoutSideEffects(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event := createLotteryValidationEvent(t, service, ctx, admin)
+	setLotteryAllocationMode(t, service, ctx, event.EventID)
+
+	received, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: "lottery-before-close-received",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationReceived, received.Registration.Status)
+
+	assertLotteryRejectedWithoutAllocation(t, service, ctx, event.EventID, "before-close-seed", "lottery can only run after registration window closes")
+}
+
+func TestLotteryBookingCreatesReceivedRegistrationWithoutTicket(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event := createLotteryValidationEvent(t, service, ctx, admin)
+	setLotteryAllocationMode(t, service, ctx, event.EventID)
+
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: "lottery-received-booking",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationReceived, booking.Registration.Status)
+	assert.Nil(t, booking.Ticket)
+	require.NotNil(t, event.Capacity)
+	assert.Equal(t, *event.Capacity, booking.RemainingCapacity)
+	assert.Equal(t, "lottery registration received", booking.Message)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM tickets WHERE registration_id = $1`, booking.Registration.RegistrationID, 0)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'booking.confirmed' AND aggregate_id = $1`, booking.Registration.RegistrationID, 0)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'booking.waitlisted' AND aggregate_id = $1`, booking.Registration.RegistrationID, 0)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'booking.received' AND aggregate_id = $1`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'booking.received' AND entity_id = $1`, booking.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM booking_idempotency_results WHERE idempotency_key = $1 AND registration_status = 'received'`, "lottery-received-booking", 1)
+}
+
 func createLotteryValidationEvent(t *testing.T, service *Service, ctx context.Context, admin Actor) EventSummary {
 	t.Helper()
 	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
@@ -42,11 +88,6 @@ func createLotteryValidationEvent(t *testing.T, service *Service, ctx context.Co
 		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 0, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
-	_, err = service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "lottery-guard-confirmed"})
-	require.NoError(t, err)
-	waitlisted, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "lottery-guard-waitlisted"})
-	require.NoError(t, err)
-	assert.Equal(t, RegistrationWaitlisted, waitlisted.Registration.Status)
 	return event
 }
 
@@ -66,6 +107,7 @@ func lotterySideEffectCounts(t *testing.T, service *Service, ctx context.Context
 	t.Helper()
 	counts := map[string]int{}
 	queries := map[string]string{
+		"received":        `SELECT count(*) FROM registrations WHERE event_id = $1 AND status = 'received'`,
 		"confirmed":       `SELECT count(*) FROM registrations WHERE event_id = $1 AND status = 'confirmed'`,
 		"waitlisted":      `SELECT count(*) FROM registrations WHERE event_id = $1 AND status = 'waitlisted'`,
 		"tickets":         `SELECT count(*) FROM tickets WHERE event_id = $1`,

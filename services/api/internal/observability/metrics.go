@@ -250,6 +250,7 @@ func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 func buildAllowedOutboxMetricEventTypes() map[string]struct{} {
 	allowed := map[string]struct{}{
 		"booking.confirmed":                 {},
+		"booking.received":                  {},
 		"booking.waitlisted":                {},
 		"eligibility.impact_review.created": {},
 		"hr_sync.completed":                 {},

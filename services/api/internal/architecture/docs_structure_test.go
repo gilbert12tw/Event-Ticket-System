@@ -56,6 +56,8 @@ func TestSonarScannerConfigExcludesArchiveAndGeneratedOutputs(t *testing.T) {
 		"**/.turbo/**",
 		"**/coverage/**",
 		"services/api/internal/httpapi/static/assets/**",
+		"sonar.host.url=${env.SONAR_HOST_URL}",
+		"sonar.token=${env.SONAR_TOKEN}",
 		"sonar.go.coverage.reportPaths=services/api/coverage.sonar.out",
 		"sonar.javascript.lcov.reportPaths=apps/web/coverage/lcov.info",
 	} {
@@ -63,19 +65,24 @@ func TestSonarScannerConfigExcludesArchiveAndGeneratedOutputs(t *testing.T) {
 	}
 }
 
-func TestCIWorkflowDoesNotRunSonarScanner(t *testing.T) {
+func TestCIWorkflowKeepsSonarScannerLocalOnly(t *testing.T) {
 	root := repoRoot(t)
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
 	require.NoError(t, err)
+	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
+	require.NoError(t, err)
 
-	content := strings.ToLower(string(workflow))
-	for _, forbidden := range []string{
-		"sonar",
-		"sonarqube",
-		"sonarsource",
-		"sonar_token",
-		"sonar_host_url",
+	content := string(workflow)
+	for _, fragment := range []string{
+		"run_sonar:",
+		"sonar-analysis:",
+		"INPUT_RUN_SONAR",
+		"SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}",
+		"SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}",
+		"sonarsource/sonar-scanner-cli",
 	} {
-		assert.NotContains(t, content, forbidden)
+		assert.NotContains(t, content, fragment)
 	}
+	assert.Contains(t, string(packageJSON), `"test:coverage": "scripts/coverage/sonar-go-coverage.sh && pnpm --filter cets-web test:coverage"`)
+	assert.Contains(t, string(packageJSON), `"sonar:scan": "pnpm test:coverage && sonar-scanner"`)
 }

@@ -45,6 +45,7 @@ func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 		"capacity_type":"unlimited",
 		"capacity":null,
 		"allows_family":true,
+		"allocation_mode":"fcfs",
 		"eligibility_rule":{"department":"Engineering"}
 	}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
@@ -57,11 +58,12 @@ func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 	assert.Equal(t, ticketing.CapacityTypeUnlimited, service.createRequest.CapacityType)
 	assert.Equal(t, 0, service.createRequest.Capacity)
 	assert.True(t, service.createRequest.AllowsFamily)
+	assert.Equal(t, ticketing.AllocationModeFCFS, service.createRequest.AllocationMode)
 	assert.Equal(t, "Taipei", service.createRequest.EventCity)
 	assert.Equal(t, "HQ", service.createRequest.EventSite)
 	assert.Equal(t, "Engineering", service.createRequest.Rule.Department)
 
-	patch := bytes.NewBufferString(`{"registration_opens_at":"2026-05-02T10:00:00Z","registration_closes_at":"2026-05-21T10:00:00Z","capacity_type":"limited","capacity":25,"allows_family":false}`)
+	patch := bytes.NewBufferString(`{"registration_opens_at":"2026-05-02T10:00:00Z","registration_closes_at":"2026-05-21T10:00:00Z","capacity_type":"limited","capacity":25,"allows_family":false,"allocation_mode":"lottery"}`)
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/admin/events/evt_1", patch)
 	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
 	rec = httptest.NewRecorder()
@@ -73,6 +75,8 @@ func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 	assert.Equal(t, ticketing.CapacityTypeLimited, *service.updateRequest.CapacityType)
 	require.NotNil(t, service.updateRequest.Capacity)
 	assert.Equal(t, 25, *service.updateRequest.Capacity)
+	require.NotNil(t, service.updateRequest.AllocationMode)
+	assert.Equal(t, ticketing.AllocationModeLottery, *service.updateRequest.AllocationMode)
 	assert.NotNil(t, service.updateRequest.RegistrationStart)
 	assert.NotNil(t, service.updateRequest.RegistrationClose)
 }

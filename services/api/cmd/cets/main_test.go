@@ -1,14 +1,20 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"event-ticket-system/internal/config"
+	"event-ticket-system/internal/httpapi"
 	"event-ticket-system/internal/ticketing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -175,6 +181,73 @@ func TestNewTicketingServiceBuildsService(t *testing.T) {
 	service := newTicketingService(nil, validCommandConfig(), nil)
 
 	require.NotNil(t, service)
+}
+
+func TestDemoDebugConfigControlsDemoClockRouterWiring(t *testing.T) {
+	cfg := validCommandConfig()
+	cfg.AppEnv = "test"
+	cfg.DemoDebugEnabled = true
+	enabledClock := newDemoClockForConfig(cfg, testLogger())
+	require.NotNil(t, enabledClock)
+	enabledRouter := httpapi.NewRouter(httpapi.Dependencies{
+		DemoClock:      enabledClock,
+		RequestTimeout: time.Second,
+		AppEnv:         cfg.AppEnv,
+		ProviderAuth: httpapi.ProviderAuthConfig{
+			Secret: cfg.ProviderTokenSecret,
+		},
+	})
+	enabledToken := mockProviderBearerToken(t, enabledRouter, "admin-1")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/debug/demo-clock", nil)
+	req.Header.Set("Authorization", "Bearer "+enabledToken)
+	rec := httptest.NewRecorder()
+	enabledRouter.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var enabledEnvelope struct {
+		Data struct {
+			Enabled bool `json:"enabled"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &enabledEnvelope))
+	assert.True(t, enabledEnvelope.Data.Enabled)
+
+	cfg.DemoDebugEnabled = false
+	disabledClock := newDemoClockForConfig(cfg, testLogger())
+	require.Nil(t, disabledClock)
+	disabledRouter := httpapi.NewRouter(httpapi.Dependencies{
+		DemoClock:      disabledClock,
+		RequestTimeout: time.Second,
+		AppEnv:         cfg.AppEnv,
+		ProviderAuth: httpapi.ProviderAuthConfig{
+			Secret: cfg.ProviderTokenSecret,
+		},
+	})
+	disabledToken := mockProviderBearerToken(t, disabledRouter, "admin-1")
+	disabledReq := httptest.NewRequest(http.MethodGet, "/api/v1/debug/demo-clock", nil)
+	disabledReq.Header.Set("Authorization", "Bearer "+disabledToken)
+	disabledRec := httptest.NewRecorder()
+	disabledRouter.ServeHTTP(disabledRec, disabledReq)
+
+	assert.Equal(t, http.StatusNotFound, disabledRec.Code)
+}
+
+func mockProviderBearerToken(t *testing.T, router http.Handler, profileID string) string {
+	t.Helper()
+	body := bytes.NewBufferString(`{"profile_id":"` + profileID + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/mock-provider-token", body)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var envelope struct {
+		Data struct {
+			ProviderToken string `json:"provider_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.NotEmpty(t, envelope.Data.ProviderToken)
+	return envelope.Data.ProviderToken
 }
 
 func testLogger() *slog.Logger {

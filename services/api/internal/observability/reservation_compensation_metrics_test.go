@@ -52,3 +52,16 @@ func TestReservationCompensationMetricsBoundUnsafeLabels(t *testing.T) {
 	assert.NotContains(t, metrics, "e2002@cets.local")
 	assert.NotContains(t, metrics, "eyJhbGci")
 }
+
+func TestReservationCompensationMetricsReportsScrapeErrors(t *testing.T) {
+	db := fakeSQLMetricsDB{
+		reservationCompensationRows: [][]any{
+			{"compensation"},
+		},
+	}
+
+	var body bytes.Buffer
+	NewRegistry().WritePrometheus(context.Background(), &body, db)
+
+	assert.Contains(t, body.String(), reservationCompensationScrapeErrorMetric)
+}

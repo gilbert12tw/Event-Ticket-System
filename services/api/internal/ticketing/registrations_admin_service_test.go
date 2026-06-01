@@ -172,6 +172,42 @@ func TestCancelRegistrationRetryIsSafeByCancelIdempotencyKey(t *testing.T) {
 	assert.Equal(t, 1, cancelledOutboxCount)
 }
 
+func TestCancelRegistrationRejectsCancelledStatusWithDifferentKey(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Cancelled Status Guard",
+		Capacity: 1,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	confirmed, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "status-guard-book"})
+	require.NoError(t, err)
+
+	_, err = service.CancelRegistration(ctx, admin, event.EventID, confirmed.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "status-guard-cancel",
+		Reason:         "first approved cancellation",
+	})
+	require.NoError(t, err)
+
+	_, err = service.CancelRegistration(ctx, admin, event.EventID, confirmed.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "status-guard-cancel-different",
+		Reason:         "second cancellation attempt",
+	})
+	require.Error(t, err)
+	assert.Equal(t, 409, ErrorStatus(err))
+	assert.Equal(t, "registration cannot be cancelled", ErrorMessage(err))
+
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE registration_id = $1 AND status = 'cancelled'`, confirmed.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'registration.cancelled' AND entity_id = $1`, confirmed.Registration.RegistrationID, 1)
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID, 1)
+}
+
 func TestCancelMyRegistrationCancelsOwnRegistrationAndRedactsTicket(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

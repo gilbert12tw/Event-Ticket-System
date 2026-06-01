@@ -167,7 +167,12 @@ func TestRunWorkerLoopWaitsForCancelledBatchToReleaseLease(t *testing.T) {
 			return false
 		}
 	}, time.Second, time.Millisecond)
-	require.NoError(t, <-done)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("worker did not return after cancelled batch released its lease")
+	}
 }
 
 func TestRunWorkerBatchDoesNotStartAfterShutdownRequested(t *testing.T) {

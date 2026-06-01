@@ -13,6 +13,7 @@ const (
 	EventStatusCancelled = "cancelled"
 	EventStatusArchived  = "archived"
 
+	RegistrationReceived   = "received"
 	RegistrationConfirmed  = "confirmed"
 	RegistrationWaitlisted = "waitlisted"
 	RegistrationCancelled  = "cancelled"

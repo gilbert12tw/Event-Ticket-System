@@ -71,11 +71,11 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 
 	_, err = tx.Exec(ctx, `UPDATE events SET title = $1, description = $2, location = $3, starts_at = $4,
 			registration_start = $5, registration_close = $6, capacity_type = $7, capacity = $8, allows_family = $9,
-			event_city = $10, event_site = $11, category = $12, tags = $13, entry_method = $14, visibility = $15,
-			version = $16, updated_at = now()
-		WHERE event_id = $17`,
+			allocation_mode = $10, event_city = $11, event_site = $12, category = $13, tags = $14, entry_method = $15, visibility = $16,
+			version = $17, updated_at = now()
+		WHERE event_id = $18`,
 		event.Title, event.Description, event.Location, event.StartsAt, event.RegistrationStart, event.RegistrationClose, event.CapacityType,
-		event.Capacity, event.AllowsFamily, event.EventCity, event.EventSite, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility,
+		event.Capacity, event.AllowsFamily, event.AllocationMode, event.EventCity, event.EventSite, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility,
 		event.Version, eventID)
 	if err != nil {
 		return EventSummary{}, err
@@ -87,7 +87,7 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	if err != nil {
 		return EventSummary{}, err
 	}
-	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "event.updated", "event", eventID, map[string]interface{}{"version": event.Version, "capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily})); err != nil {
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, "event.updated", "event", eventID, map[string]interface{}{"version": event.Version, "capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily, "allocation_mode": event.AllocationMode})); err != nil {
 		return EventSummary{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -166,6 +166,9 @@ func (s *Service) applyEventCapacityUpdate(ctx context.Context, tx pgx.Tx, event
 	if req.AllowsFamily != nil {
 		event.AllowsFamily = *req.AllowsFamily
 	}
+	if err := s.applyEventAllocationModeUpdate(ctx, tx, event, req.AllocationMode); err != nil {
+		return err
+	}
 	if event.CapacityType == CapacityTypeUnlimited {
 		event.Capacity = nil
 		event.AllowsFamily = true
@@ -173,7 +176,32 @@ func (s *Service) applyEventCapacityUpdate(ctx context.Context, tx pgx.Tx, event
 	if err := validateEventCapacity(*event); err != nil {
 		return err
 	}
+	if err := validateAllocationModeForCapacity(event.AllocationMode, event.CapacityType); err != nil {
+		return err
+	}
 	return s.validateLimitedEventUpdateTx(ctx, tx, *event)
+}
+
+func (s *Service) applyEventAllocationModeUpdate(ctx context.Context, tx pgx.Tx, event *Event, mode *string) error {
+	if mode == nil {
+		return nil
+	}
+	allocationMode, err := normalizeAllocationMode(*mode)
+	if err != nil {
+		return err
+	}
+	if allocationMode == event.AllocationMode {
+		return nil
+	}
+	registrations, err := s.registrationCountTx(ctx, tx, event.EventID)
+	if err != nil {
+		return err
+	}
+	if registrations > 0 {
+		return conflict("allocation_mode cannot change after registrations exist")
+	}
+	event.AllocationMode = allocationMode
+	return nil
 }
 
 func (s *Service) validateLimitedEventUpdateTx(ctx context.Context, tx pgx.Tx, event Event) error {
@@ -286,6 +314,7 @@ func (s *Service) DuplicateEvent(ctx context.Context, actor Actor, eventID strin
 		CapacityType:      source.CapacityType,
 		Capacity:          capacityValue(source.Capacity),
 		AllowsFamily:      source.AllowsFamily,
+		AllocationMode:    source.AllocationMode,
 		Status:            EventStatusDraft,
 		Category:          source.Category,
 		Tags:              source.Tags,

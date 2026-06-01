@@ -6,6 +6,11 @@ import (
 	"reflect"
 )
 
+const (
+	contentTypeHeader = "Content-Type"
+	jsonContentType   = "application/json"
+)
+
 type envelope struct {
 	Success   bool        `json:"success"`
 	Data      interface{} `json:"data"`
@@ -19,7 +24,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 func writeJSONWithMeta(w http.ResponseWriter, status int, data interface{}, meta interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(contentTypeHeader, jsonContentType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(envelope{Success: true, Data: normalizeResponseData(data), Meta: meta, Error: nil})
 }
@@ -29,13 +34,13 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeErrorWithCode(w http.ResponseWriter, status int, message string, code string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(contentTypeHeader, jsonContentType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(envelope{Success: false, Data: nil, Error: &message, ErrorCode: code})
 }
 
 func writeErrorWithData(w http.ResponseWriter, status int, data interface{}, message string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(contentTypeHeader, jsonContentType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(envelope{Success: false, Data: data, Error: &message})
 }

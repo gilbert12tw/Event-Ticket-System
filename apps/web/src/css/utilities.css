@@ -11,6 +11,11 @@
   border-bottom: 1px solid var(--line);
 }
 
+.demo-step-item {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
 .step-item:last-child {
   border-bottom: 0;
 }

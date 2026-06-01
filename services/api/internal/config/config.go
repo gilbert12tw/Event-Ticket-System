@@ -42,6 +42,7 @@ type Config struct {
 	ProviderTokenSecret             string
 	AutoMigrate                     bool
 	OpsAPIEnabled                   bool
+	DemoDebugEnabled                bool
 	RequestTimeout                  time.Duration
 	DatabaseTimeout                 time.Duration
 	ShutdownTimeout                 time.Duration
@@ -100,6 +101,7 @@ func Load() Config {
 		ProviderTokenSecret:             getEnv("PROVIDER_TOKEN_SECRET", localProviderSecret),
 		AutoMigrate:                     parseBoolEnv("AUTO_MIGRATE", "false", &loadErrors),
 		OpsAPIEnabled:                   parseBoolEnv("OPS_API_ENABLED", "false", &loadErrors),
+		DemoDebugEnabled:                parseBoolEnv("DEMO_DEBUG_ENABLED", "false", &loadErrors),
 		RequestTimeout:                  parseDurationMSEnv("REQUEST_TIMEOUT_MS", "5000", &loadErrors),
 		DatabaseTimeout:                 parseDurationMSEnv("DATABASE_TIMEOUT_MS", "5000", &loadErrors),
 		ShutdownTimeout:                 parseDurationMSEnv("SHUTDOWN_TIMEOUT_MS", "10000", &loadErrors),
@@ -149,6 +151,9 @@ func (c Config) ValidateForServe() error {
 	if c.ShutdownTimeout <= 0 {
 		return errors.New("SHUTDOWN_TIMEOUT_MS must be positive")
 	}
+	if err := c.validateDemoDebug(); err != nil {
+		return err
+	}
 	if err := c.validateRuntimeObservability(); err != nil {
 		return err
 	}
@@ -194,6 +199,9 @@ func (c Config) ValidateWorker() error {
 		return err
 	}
 	if err := c.validateWorkerMailer(); err != nil {
+		return err
+	}
+	if err := c.validateDemoDebug(); err != nil {
 		return err
 	}
 	if err := c.validateRuntimeObservability(); err != nil {
@@ -265,6 +273,18 @@ func (c Config) validateProductionWorker() error {
 
 func (c Config) isProduction() bool {
 	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "production")
+}
+
+func (c Config) validateDemoDebug() error {
+	if !c.DemoDebugEnabled {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(c.AppEnv)) {
+	case "local", "demo", "test":
+		return nil
+	default:
+		return errors.New("DEMO_DEBUG_ENABLED is only allowed when APP_ENV is local, demo, or test")
+	}
 }
 
 func (c Config) validateProductionAuth() error {

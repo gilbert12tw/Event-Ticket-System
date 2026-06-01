@@ -149,6 +149,15 @@
     grid-template-columns: 1fr;
   }
 
+  .demo-step-item {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .demo-step-item > [data-slot="button"] {
+    grid-column: 2;
+    justify-self: start;
+  }
+
   .header-actions,
   [data-slot="button"],
   .session-pill,

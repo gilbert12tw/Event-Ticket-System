@@ -318,17 +318,14 @@ test("keeps the demo runbook available for mock provider profiles", async ({
   await expect(
     page.getByRole("heading", { name: "流程檢查", level: 1 }).first(),
   ).toBeVisible();
-  await page
-    .locator(".content-grid")
-    .getByRole("button", { name: "執行流程檢查" })
-    .click();
   await expect(
-    page.getByRole("heading", { name: "流程檢查", level: 1 }).first(),
+    page.locator(".content-grid").getByRole("heading", {
+      name: "Demo 控制台",
+    }),
   ).toBeVisible();
   await expect(
-    page
-      .locator(".content-grid")
-      .getByRole("button", { name: /執行流程檢查|執行中/ }),
+    page.locator(".demo-step-item").filter({ hasText: "載入 demo 員工" }),
   ).toBeVisible();
+  await expect(page.locator(".demo-step-item")).toHaveCount(11);
   await expectNoHorizontalOverflow(page);
 });
