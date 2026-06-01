@@ -21,6 +21,8 @@ require_env TOKEN_SIGNING_SECRET
 require_env PROVIDER_TOKEN_SECRET
 require_env BOOKING_RESERVATION_HASH_SECRET
 require_env OBJECT_STORAGE_SECRET_KEY
+require_hash_tagged_image CETS_API_IMAGE "$CETS_API_IMAGE"
+require_hash_tagged_image CETS_FRONTEND_IMAGE "$CETS_FRONTEND_IMAGE"
 
 image_pull_block() {
   if [ -n "${CETS_IMAGE_PULL_SECRET:-}" ]; then

@@ -16,6 +16,13 @@ die() {
 }
 
 load_env() {
+  if [ -f "$ROOT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$ROOT_DIR/.env"
+    set +a
+  fi
+
   if [ -f "$ROOT_DIR/../.env" ]; then
     set -a
     # shellcheck disable=SC1091
@@ -69,6 +76,40 @@ require_env() {
   [ -n "${!name:-}" ] || die "$name is required; set it in $LOCAL_ENV"
 }
 
+git_image_tag() {
+  require_cmd git
+  if [ "${ALLOW_DIRTY_IMAGE_TAG:-false}" != "true" ]; then
+    git -C "$ROOT_DIR" diff --quiet --exit-code ||
+      die "worktree has uncommitted changes; commit first so the image tag can identify the code"
+    git -C "$ROOT_DIR" diff --cached --quiet --exit-code ||
+      die "index has staged changes; commit first so the image tag can identify the code"
+  fi
+  git -C "$ROOT_DIR" rev-parse --short=12 HEAD
+}
+
+image_repository() {
+  local image=$1
+  image=${image%@*}
+  local last_part=${image##*/}
+  if [[ "$last_part" == *:* ]]; then
+    printf '%s\n' "${image%:*}"
+  else
+    printf '%s\n' "$image"
+  fi
+}
+
+require_hash_tagged_image() {
+  local name=$1
+  local image=$2
+  local without_digest=${image%@*}
+  local last_part=${without_digest##*/}
+  [[ "$last_part" == *:* ]] || die "$name must include an explicit Git hash tag: $image"
+
+  local tag=${last_part##*:}
+  [ "$tag" != "latest" ] || die "$name must not use latest: $image"
+  [[ "$tag" =~ ^[0-9a-f]{7,40}$ ]] || die "$name tag must be a Git hash, got '$tag' in $image"
+}
+
 require_apply() {
   [ "${APPLY:-false}" = "true" ] || die "set APPLY=true to perform this change"
 }
@@ -112,12 +153,17 @@ copy_to_node() {
 sudo_remote() {
   local node=$1
   shift
-  require_env BAREMETAL_BECOME_PASSWORD
   if is_local_node "$node"; then
-    printf '%s\n' "$BAREMETAL_BECOME_PASSWORD" | sudo -S bash -lc "$*"
-  else
+    if [ -n "${BAREMETAL_BECOME_PASSWORD:-}" ]; then
+      printf '%s\n' "$BAREMETAL_BECOME_PASSWORD" | sudo -S bash -lc "$*"
+    else
+      sudo -n bash -lc "$*"
+    fi
+  elif [ -n "${BAREMETAL_BECOME_PASSWORD:-}" ]; then
     printf '%s\n' "$BAREMETAL_BECOME_PASSWORD" |
       ssh_node "$node" "sudo -S bash -lc $(printf '%q' "$*")"
+  else
+    ssh_node "$node" "sudo -n bash -lc $(printf '%q' "$*")"
   fi
 }
 
@@ -128,7 +174,10 @@ kubectl_bm() {
 set_local_env_value() {
   local key=$1
   local value=$2
-  [ -f "$LOCAL_ENV" ] || die "$LOCAL_ENV does not exist; run 05-init-local-env.sh first"
+  if [ ! -f "$LOCAL_ENV" ]; then
+    umask 077
+    : >"$LOCAL_ENV"
+  fi
   if grep -q "^${key}=" "$LOCAL_ENV"; then
     awk -v key="$key" -v value="$value" 'BEGIN{updated=0} $0 ~ "^" key "=" { print key "=" value; updated=1; next } { print } END{ if (!updated) print key "=" value }' "$LOCAL_ENV" >"$LOCAL_ENV.tmp"
     mv "$LOCAL_ENV.tmp" "$LOCAL_ENV"

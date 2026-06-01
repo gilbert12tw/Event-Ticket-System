@@ -61,6 +61,19 @@ infra/k8s/baremetal/scripts/70-failure-drill.sh
 infra/k8s/baremetal/scripts/71-verify-postgres-failover.sh
 ```
 
+For normal application code updates, build images from the current Git commit
+and roll the Kubernetes workloads in one guarded step:
+
+```sh
+APPLY=true infra/k8s/baremetal/scripts/46-update-images-and-rollout.sh
+```
+
+The script refuses dirty worktrees, `latest`, and non-hash image tags. By
+default it imports `cets-api:<git-hash>` and `cets-frontend:<git-hash>` into
+the cluster nodes. To push to a registry instead, set
+`CETS_API_IMAGE_REPOSITORY`, `CETS_FRONTEND_IMAGE_REPOSITORY`, and
+`CETS_PUSH_IMAGES=true` in `.env.baremetal.local`.
+
 For a full automated audit, use:
 
 ```sh
