@@ -89,17 +89,9 @@ func scanRegistrationByEmployee(row pgx.Row, reg *Registration) error {
 	return row.Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 }
 
-func (s *Service) findRegistrationByID(ctx context.Context, registrationID string) (Registration, error) {
-	return findRegistrationByIDWith(ctx, s.db, registrationID)
-}
-
 func (s *Service) findRegistrationByIDTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {
-	return findRegistrationByIDWith(ctx, tx, registrationID)
-}
-
-func findRegistrationByIDWith(ctx context.Context, q ticketQuerier, registrationID string) (Registration, error) {
 	var reg Registration
-	err := q.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
+	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
 			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
 		FROM registrations WHERE registration_id = $1`, registrationID).
 		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
