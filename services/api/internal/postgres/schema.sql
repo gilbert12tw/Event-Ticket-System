@@ -542,6 +542,9 @@ ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS token_hash TEXT NOT N
 
 ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS conflict_reason TEXT NOT NULL DEFAULT '';
 
+CREATE INDEX IF NOT EXISTS idx_offline_checkin_scans_batch_token_time
+		ON offline_checkin_scans(batch_id, token_hash, scanned_at, created_at);
+
 ALTER TABLE tickets ALTER COLUMN signed_token SET DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS checkin_rejections (
