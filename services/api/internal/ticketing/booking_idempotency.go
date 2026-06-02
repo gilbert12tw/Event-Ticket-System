@@ -79,6 +79,26 @@ func (s *Service) completedBookingIdempotencyResultTx(
 	return result, true, nil
 }
 
+func (s *Service) completedBookingIdempotencyResult(
+	ctx context.Context,
+	key string,
+	eventID string,
+	employeeID string,
+	familyCount int,
+) (bookingIdempotencyResult, bool, error) {
+	result, err := s.bookingIdempotencyResult(ctx, key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return bookingIdempotencyResult{}, false, nil
+	}
+	if err != nil {
+		return bookingIdempotencyResult{}, false, err
+	}
+	if err := validateBookingIdempotencyResult(result, eventID, employeeID, familyCount); err != nil {
+		return bookingIdempotencyResult{}, false, err
+	}
+	return result, true, nil
+}
+
 func validateBookingIdempotencyResult(result bookingIdempotencyResult, eventID string, employeeID string, familyCount int) error {
 	if result.EventID != eventID || result.EmployeeID != employeeID || result.FamilyCount != familyCount {
 		return conflict("idempotency key belongs to a different booking request")
@@ -90,18 +110,29 @@ func validateBookingIdempotencyResult(result bookingIdempotencyResult, eventID s
 }
 
 func (s *Service) bookingIdempotencyResultForUpdateTx(ctx context.Context, tx pgx.Tx, key string) (bookingIdempotencyResult, error) {
+	return scanBookingIdempotencyResult(tx.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count, idempotency_hash,
+			registration_id, registration_status, ticket_id, remaining_capacity, message, completed_at
+		FROM booking_idempotency_results
+		WHERE idempotency_key = $1
+		FOR UPDATE`, key))
+}
+
+func (s *Service) bookingIdempotencyResult(ctx context.Context, key string) (bookingIdempotencyResult, error) {
+	return scanBookingIdempotencyResult(s.db.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count, idempotency_hash,
+			registration_id, registration_status, ticket_id, remaining_capacity, message, completed_at
+		FROM booking_idempotency_results
+		WHERE idempotency_key = $1
+		  AND completed_at IS NOT NULL`, key))
+}
+
+func scanBookingIdempotencyResult(row pgx.Row) (bookingIdempotencyResult, error) {
 	var result bookingIdempotencyResult
 	var registrationID sql.NullString
 	var ticketID sql.NullString
 	var idempotencyHash sql.NullString
 	var completedAt sql.NullTime
-	err := tx.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count, idempotency_hash,
-			registration_id, registration_status, ticket_id, remaining_capacity, message, completed_at
-		FROM booking_idempotency_results
-		WHERE idempotency_key = $1
-		FOR UPDATE`, key).
-		Scan(&result.IdempotencyKey, &result.EventID, &result.EmployeeID, &result.FamilyCount, &idempotencyHash,
-			&registrationID, &result.RegistrationStatus, &ticketID, &result.RemainingCapacity, &result.Message, &completedAt)
+	err := row.Scan(&result.IdempotencyKey, &result.EventID, &result.EmployeeID, &result.FamilyCount, &idempotencyHash,
+		&registrationID, &result.RegistrationStatus, &ticketID, &result.RemainingCapacity, &result.Message, &completedAt)
 	if err != nil {
 		return bookingIdempotencyResult{}, err
 	}
@@ -154,6 +185,34 @@ func (s *Service) bookingResponseFromIdempotencyResultTx(ctx context.Context, tx
 	var ticket *Ticket
 	if result.TicketID != "" {
 		ticket, err = s.findTicketByRegistrationTx(ctx, tx, reg.RegistrationID)
+		if err != nil {
+			return BookingResponse{}, err
+		}
+		if ticket == nil || ticket.TicketID != result.TicketID {
+			return BookingResponse{}, errors.New("booking idempotency ticket result is missing")
+		}
+	}
+	return BookingResponse{
+		Registration:      reg,
+		Ticket:            ticket,
+		RemainingCapacity: result.RemainingCapacity,
+		Message:           result.Message,
+		Duplicate:         true,
+	}, nil
+}
+
+func (s *Service) bookingResponseFromIdempotencyResult(ctx context.Context, result bookingIdempotencyResult) (BookingResponse, error) {
+	reg, err := s.findRegistrationByID(ctx, result.RegistrationID)
+	if err != nil {
+		return BookingResponse{}, err
+	}
+	reg.Status = result.RegistrationStatus
+	reg.IdempotencyKey = result.IdempotencyKey
+	reg.FamilyCount = result.FamilyCount
+
+	var ticket *Ticket
+	if result.TicketID != "" {
+		ticket, err = s.findTicketByRegistration(ctx, reg.RegistrationID)
 		if err != nil {
 			return BookingResponse{}, err
 		}

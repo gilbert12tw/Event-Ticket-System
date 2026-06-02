@@ -418,22 +418,15 @@ func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, empl
 	defer func() {
 		s.observeBookingStage("idempotency_replay", outcome, time.Since(started))
 	}()
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return BookingResponse{}, false, err
-	}
-	defer rollback(ctx, tx)
-
-	snapshot, found, err := s.completedBookingIdempotencyResultTx(ctx, tx, key, eventID, employeeID, familyCount)
+	snapshot, found, err := s.completedBookingIdempotencyResult(ctx, key, eventID, employeeID, familyCount)
 	if err != nil || !found {
 		outcome = outcomeForError(err)
 		return BookingResponse{}, found, err
 	}
-	response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+	response, err := s.bookingResponseFromIdempotencyResult(ctx, snapshot)
 	if err != nil {
 		return BookingResponse{}, false, err
 	}
-	err = tx.Commit(ctx)
 	outcome = outcomeForError(err)
 	if err == nil {
 		outcome = response.Registration.Status
