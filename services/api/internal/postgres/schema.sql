@@ -319,6 +319,8 @@ CREATE INDEX IF NOT EXISTS idx_eligibility_impact_reviews_status ON eligibility_
 
 CREATE INDEX IF NOT EXISTS idx_registrations_event_status ON registrations(event_id, status);
 
+CREATE INDEX IF NOT EXISTS idx_registrations_employee_status ON registrations(employee_id, status);
+
 CREATE INDEX IF NOT EXISTS idx_no_show_records_employee ON no_show_records(employee_id, cooldown_until DESC);
 
 CREATE INDEX IF NOT EXISTS idx_tickets_employee ON tickets(employee_id);
