@@ -64,6 +64,29 @@ func TestHTTPMetricsEscapeLabels(t *testing.T) {
 	assert.Contains(t, body.String(), `status_class="5xx"`)
 }
 
+func TestBookingMetricsExposeBoundedStageAndReservationSignals(t *testing.T) {
+	registry := NewRegistry()
+
+	registry.ObserveBookingStage("event_lock", "confirmed", 120*time.Millisecond)
+	registry.ObserveBookingStage("evt_secret", "E1001", 250*time.Millisecond)
+	registry.ObserveReservationAttempt("granted", "limited", "degrade", 15*time.Millisecond)
+	registry.ObserveReservationAttempt("raw-token", "email@example.test", "redis://secret", 20*time.Millisecond)
+
+	var body bytes.Buffer
+	registry.WritePrometheus(context.Background(), &body, nil)
+	metrics := body.String()
+
+	assert.Contains(t, metrics, `cets_booking_stage_seconds_bucket{stage="event_lock",outcome="confirmed",le="0.25"} 1`)
+	assert.Contains(t, metrics, `cets_booking_stage_seconds_bucket{stage="unknown",outcome="unknown",le="0.25"} 1`)
+	assert.Contains(t, metrics, `cets_reservation_attempt_total{outcome="granted",capacity_type="limited",outage_mode="degrade"} 1`)
+	assert.Contains(t, metrics, `cets_booking_preadmission_seconds_bucket{outcome="granted",capacity_type="limited",outage_mode="degrade",le="0.025"} 1`)
+	assert.Contains(t, metrics, `cets_reservation_attempt_total{outcome="unknown",capacity_type="unknown",outage_mode="unknown"} 1`)
+	assert.NotContains(t, metrics, "evt_secret")
+	assert.NotContains(t, metrics, "E1001")
+	assert.NotContains(t, metrics, "email@example.test")
+	assert.NotContains(t, metrics, "redis://secret")
+}
+
 func TestOutboxMetricsExposeWorkerKindRetryAndDeadLetterWithoutPII(t *testing.T) {
 	db := fakeSQLMetricsDB{
 		lockWaitCount: 0,

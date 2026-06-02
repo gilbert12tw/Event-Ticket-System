@@ -198,13 +198,15 @@ check_prometheus_red_metrics() {
     if prom_query_nonzero 'sum(increase(cets_http_requests_total[15m]))' &&
       prom_query_nonzero 'sum(increase(cets_http_requests_total{status_class=~"4xx|5xx"}[15m]))' &&
       prom_query_nonzero 'sum(increase(cets_http_request_seconds_count[15m]))' &&
+      prom_query_nonzero 'sum(increase(cets_booking_stage_seconds_count[15m]))' &&
+      prom_query_nonzero 'sum(increase(cets_reservation_attempt_total[15m]))' &&
       prom_query_at_least 'scalar(count(count by (route, method, status_class) (increase(cets_http_requests_total[15m]) > 0)))' 3 &&
       prom_query_at_least 'scalar(count(count by (instance) (increase(cets_http_requests_total[15m]) > 0)))' 3; then
       return
     fi
     sleep 5
   done
-  die "Prometheus did not return complete RED evidence by route, status class, latency, and backend instance"
+  die "Prometheus did not return complete RED and booking bottleneck evidence by route, status class, latency, backend instance, booking stage, and reservation outcome"
 }
 
 TEMPO_TRACE_ID=""

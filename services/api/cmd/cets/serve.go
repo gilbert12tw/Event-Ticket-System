@@ -14,6 +14,7 @@ import (
 
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/httpapi"
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/reservation"
 	"event-ticket-system/internal/ticketing"
@@ -56,8 +57,11 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	}
 	defer closeRedisClient(logger, redisClient)
 
+	metrics := observability.NewRegistry()
 	ticketingService := newTicketingService(pool, cfg, logger).
-		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret))
+		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret)).
+		WithReservationOutageMode(cfg.ReservationOutageMode).
+		WithMetrics(metrics)
 	demoClock := newDemoClockForConfig(cfg, logger)
 	if demoClock != nil {
 		ticketingService.WithClock(demoClock.Now)
@@ -66,6 +70,7 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		DB:                          pool,
 		Ticketing:                   ticketingService,
 		Logger:                      logger,
+		Metrics:                     metrics,
 		DemoClock:                   demoClock,
 		TracingEnabled:              cfg.OTelTracesEnabled,
 		RequestTimeout:              cfg.RequestTimeout,

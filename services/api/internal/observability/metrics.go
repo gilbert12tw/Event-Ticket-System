@@ -32,8 +32,10 @@ type PoolStater interface {
 }
 
 type Registry struct {
-	mu   sync.Mutex
-	http map[httpKey]*histogram
+	mu          sync.Mutex
+	http        map[httpKey]*histogram
+	booking     map[bookingStageKey]*histogram
+	reservation map[reservationKey]*histogram
 }
 
 type httpKey struct {
@@ -49,7 +51,11 @@ type histogram struct {
 }
 
 func NewRegistry() *Registry {
-	return &Registry{http: map[httpKey]*histogram{}}
+	return &Registry{
+		http:        map[httpKey]*histogram{},
+		booking:     map[bookingStageKey]*histogram{},
+		reservation: map[reservationKey]*histogram{},
+	}
 }
 
 func (r *Registry) ObserveHTTPRequest(route string, method string, status int, duration time.Duration) {
@@ -79,6 +85,64 @@ func (r *Registry) ObserveHTTPRequest(route string, method string, status int, d
 	h.Sum += seconds
 }
 
+type bookingStageKey struct {
+	Stage   string
+	Outcome string
+}
+
+func (r *Registry) ObserveBookingStage(stage string, outcome string, duration time.Duration) {
+	if r == nil {
+		return
+	}
+	key := bookingStageKey{
+		Stage:   boundedBookingStage(stage),
+		Outcome: boundedOutcome(outcome),
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	h := r.booking[key]
+	if h == nil {
+		h = &histogram{Buckets: make([]uint64, len(httpBuckets))}
+		r.booking[key] = h
+	}
+	observeDuration(h, duration.Seconds())
+}
+
+type reservationKey struct {
+	Outcome      string
+	CapacityType string
+	OutageMode   string
+}
+
+func (r *Registry) ObserveReservationAttempt(outcome string, capacityType string, outageMode string, duration time.Duration) {
+	if r == nil {
+		return
+	}
+	key := reservationKey{
+		Outcome:      boundedOutcome(outcome),
+		CapacityType: boundedCapacityType(capacityType),
+		OutageMode:   boundedOutageMode(outageMode),
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	h := r.reservation[key]
+	if h == nil {
+		h = &histogram{Buckets: make([]uint64, len(httpBuckets))}
+		r.reservation[key] = h
+	}
+	observeDuration(h, duration.Seconds())
+}
+
+func observeDuration(h *histogram, seconds float64) {
+	for i, bucket := range httpBuckets {
+		if seconds <= bucket {
+			h.Buckets[i]++
+		}
+	}
+	h.Count++
+	h.Sum += seconds
+}
+
 func (r *Registry) Handler(db any) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -91,6 +155,8 @@ func (r *Registry) WritePrometheus(ctx context.Context, w io.Writer, db any) {
 		r = NewRegistry()
 	}
 	r.writeHTTPMetrics(w)
+	r.writeBookingMetrics(w)
+	r.writeReservationMetrics(w)
 	writePoolMetrics(w, db)
 	writeSQLMetrics(ctx, w, db)
 }
@@ -130,6 +196,79 @@ func (r *Registry) writeHTTPMetrics(w io.Writer) {
 		writeFormat(w, "cets_http_request_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
 		writeFormat(w, "cets_http_request_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
 		writeFormat(w, "cets_http_request_seconds_count{%s} %d\n", labels, h.Count)
+	}
+}
+
+func (r *Registry) writeBookingMetrics(w io.Writer) {
+	writeLine(w, "# HELP cets_booking_stage_seconds Booking hot-path stage duration histogram by bounded stage and outcome.")
+	writeLine(w, "# TYPE cets_booking_stage_seconds histogram")
+
+	r.mu.Lock()
+	keys := make([]bookingStageKey, 0, len(r.booking))
+	for key := range r.booking {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return bookingStageLabelSet(keys[i]) < bookingStageLabelSet(keys[j])
+	})
+	snapshots := make(map[bookingStageKey]histogram, len(keys))
+	for _, key := range keys {
+		current := r.booking[key]
+		snapshots[key] = histogram{
+			Buckets: append([]uint64(nil), current.Buckets...),
+			Count:   current.Count,
+			Sum:     current.Sum,
+		}
+	}
+	r.mu.Unlock()
+
+	for _, key := range keys {
+		labels := bookingStageLabelSet(key)
+		h := snapshots[key]
+		for i, bucket := range httpBuckets {
+			writeFormat(w, "cets_booking_stage_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
+		}
+		writeFormat(w, "cets_booking_stage_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
+		writeFormat(w, "cets_booking_stage_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
+		writeFormat(w, "cets_booking_stage_seconds_count{%s} %d\n", labels, h.Count)
+	}
+}
+
+func (r *Registry) writeReservationMetrics(w io.Writer) {
+	writeLine(w, "# HELP cets_reservation_attempt_total Reservation pre-admission attempts by bounded outcome, capacity type, and outage mode.")
+	writeLine(w, "# TYPE cets_reservation_attempt_total counter")
+	writeLine(w, "# HELP cets_booking_preadmission_seconds Reservation pre-admission latency histogram by bounded outcome, capacity type, and outage mode.")
+	writeLine(w, "# TYPE cets_booking_preadmission_seconds histogram")
+
+	r.mu.Lock()
+	keys := make([]reservationKey, 0, len(r.reservation))
+	for key := range r.reservation {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return reservationLabelSet(keys[i]) < reservationLabelSet(keys[j])
+	})
+	snapshots := make(map[reservationKey]histogram, len(keys))
+	for _, key := range keys {
+		current := r.reservation[key]
+		snapshots[key] = histogram{
+			Buckets: append([]uint64(nil), current.Buckets...),
+			Count:   current.Count,
+			Sum:     current.Sum,
+		}
+	}
+	r.mu.Unlock()
+
+	for _, key := range keys {
+		labels := reservationLabelSet(key)
+		h := snapshots[key]
+		writeFormat(w, "cets_reservation_attempt_total{%s} %d\n", labels, h.Count)
+		for i, bucket := range httpBuckets {
+			writeFormat(w, "cets_booking_preadmission_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
+		}
+		writeFormat(w, "cets_booking_preadmission_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
+		writeFormat(w, "cets_booking_preadmission_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
+		writeFormat(w, "cets_booking_preadmission_seconds_count{%s} %d\n", labels, h.Count)
 	}
 }
 
@@ -293,6 +432,16 @@ func labelSet(key httpKey) string {
 		escapeLabel(key.Route), escapeLabel(key.Method), escapeLabel(key.StatusClass))
 }
 
+func bookingStageLabelSet(key bookingStageKey) string {
+	return fmt.Sprintf(`stage="%s",outcome="%s"`,
+		escapeLabel(key.Stage), escapeLabel(key.Outcome))
+}
+
+func reservationLabelSet(key reservationKey) string {
+	return fmt.Sprintf(`outcome="%s",capacity_type="%s",outage_mode="%s"`,
+		escapeLabel(key.Outcome), escapeLabel(key.CapacityType), escapeLabel(key.OutageMode))
+}
+
 func statusClass(status int) string {
 	if status < 100 || status > 599 {
 		return "unknown"
@@ -334,6 +483,46 @@ func boundedMethod(method string) string {
 		return method
 	}
 	return "UNKNOWN"
+}
+
+func boundedBookingStage(stage string) string {
+	stage = strings.TrimSpace(stage)
+	switch stage {
+	case "total", "tx", "idempotency_replay", "preadmission", "begin_tx", "idempotency_lock", "event_lock", "validate", "duplicate_lookup", "capacity", "create_response", "commit":
+		return stage
+	default:
+		return "unknown"
+	}
+}
+
+func boundedOutcome(outcome string) string {
+	outcome = strings.TrimSpace(outcome)
+	switch outcome {
+	case "success", "error", "confirmed", "waitlisted", "received", "duplicate", "granted", "exhausted", "misconfigured", "unavailable", "skipped":
+		return outcome
+	default:
+		return "unknown"
+	}
+}
+
+func boundedCapacityType(capacityType string) string {
+	capacityType = strings.TrimSpace(capacityType)
+	switch capacityType {
+	case "limited", "unlimited", "unknown":
+		return capacityType
+	default:
+		return "unknown"
+	}
+}
+
+func boundedOutageMode(outageMode string) string {
+	outageMode = strings.TrimSpace(outageMode)
+	switch outageMode {
+	case "degrade", "fail", "none", "unknown":
+		return outageMode
+	default:
+		return "unknown"
+	}
 }
 
 func escapeLabel(value string) string {

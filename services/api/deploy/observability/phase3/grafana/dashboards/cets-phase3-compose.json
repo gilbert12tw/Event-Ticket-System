@@ -88,6 +88,27 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 }
     },
     {
+      "id": 11,
+      "title": "Booking Stage P95",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (stage, outcome, le) (rate(cets_booking_stage_seconds_bucket[5m])))", "legendFormat": "{{stage}} {{outcome}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 }
+    },
+    {
+      "id": 12,
+      "title": "Reservation Outcomes",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum by (outcome, capacity_type, outage_mode) (rate(cets_reservation_attempt_total[5m]))", "legendFormat": "{{outcome}} {{capacity_type}} {{outage_mode}}" },
+        { "expr": "histogram_quantile(0.95, sum by (outcome, capacity_type, outage_mode, le) (rate(cets_booking_preadmission_seconds_bucket[5m])))", "legendFormat": "p95 {{outcome}} {{capacity_type}} {{outage_mode}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 }
+    },
+    {
       "id": 8,
       "title": "Trace-Correlated Logs",
       "type": "logs",
@@ -105,7 +126,7 @@
       "targets": [
         { "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" }
       ],
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 }
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 }
     }
   ]
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"event-ticket-system/internal/reservation"
 	"event-ticket-system/internal/traceid"
@@ -14,6 +15,11 @@ import (
 const maxFamilyCount = 10
 
 func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req BookingRequest) (BookingResponse, error) {
+	totalStarted := time.Now()
+	totalOutcome := "error"
+	defer func() {
+		s.observeBookingStage("total", totalOutcome, time.Since(totalStarted))
+	}()
 	if err := requireRole(actor, RoleEmployee); err != nil {
 		return BookingResponse{}, err
 	}
@@ -23,6 +29,9 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	}
 
 	if response, found, err := s.replayCompletedBooking(ctx, identity.idempotencyKey, eventID, identity.employeeID, identity.familyCount); err != nil || found {
+		if err == nil && found {
+			totalOutcome = response.Registration.Status
+		}
 		return response, err
 	}
 
@@ -40,6 +49,7 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return BookingResponse{}, err
 	}
 	gateConfirmed = result.confirmedNewRegistration
+	totalOutcome = result.status
 
 	if result.action != "" {
 		s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", result.action, "status", result.status, "event_id", eventID, "actor_role", actor.Role)
@@ -71,38 +81,69 @@ type bookingCreation struct {
 }
 
 func (s *Service) bookInTransaction(ctx context.Context, actor Actor, eventID string, identity bookingIdentity, hold reservation.Hold, idempotencyHash string) (bookingTxResult, error) {
+	txStarted := time.Now()
+	txOutcome := "error"
+	defer func() {
+		s.observeBookingStage("tx", txOutcome, time.Since(txStarted))
+	}()
+	beginStarted := time.Now()
 	tx, err := s.db.Begin(ctx)
+	s.observeBookingStage("begin_tx", outcomeForError(err), time.Since(beginStarted))
 	if err != nil {
 		return bookingTxResult{}, err
 	}
 	defer rollback(ctx, tx)
 
+	stageStarted := time.Now()
 	if result, found, err := s.replayLockedBookingTx(ctx, tx, eventID, identity, idempotencyHash); err != nil || found {
+		s.observeBookingStage("idempotency_lock", outcomeForError(err), time.Since(stageStarted))
+		if err == nil && found {
+			txOutcome = result.status
+		}
 		return result, err
 	}
+	s.observeBookingStage("idempotency_lock", "success", time.Since(stageStarted))
+	stageStarted = time.Now()
 	event, rule, err := s.lockBookableEventTx(ctx, tx, eventID, hold)
+	s.observeBookingStage("event_lock", outcomeForError(err), time.Since(stageStarted))
 	if err != nil {
 		return bookingTxResult{}, err
 	}
+	stageStarted = time.Now()
 	employee, err := s.validateBookingTx(ctx, tx, actor, event, rule, identity)
+	s.observeBookingStage("validate", outcomeForError(err), time.Since(stageStarted))
 	if err != nil {
 		return bookingTxResult{}, err
 	}
+	stageStarted = time.Now()
 	if response, found, err := s.duplicateBookingResponseTx(ctx, tx, event, eventID, identity); err != nil || found {
+		s.observeBookingStage("duplicate_lookup", outcomeForError(err), time.Since(stageStarted))
+		if err == nil && found {
+			txOutcome = response.Registration.Status
+		}
 		return bookingTxResult{response: response, status: response.Registration.Status}, err
 	}
+	s.observeBookingStage("duplicate_lookup", "success", time.Since(stageStarted))
+	stageStarted = time.Now()
 	status, capacity, confirmedCount, err := s.resolveBookingStatusTx(ctx, tx, event, eventID, hold)
+	s.observeBookingStage("capacity", outcomeForError(err), time.Since(stageStarted))
 	if err != nil {
 		return bookingTxResult{}, err
 	}
 	creation := bookingCreation{actor: actor, event: event, employee: employee, identity: identity, status: status, capacity: capacity, confirmedCount: confirmedCount}
+	stageStarted = time.Now()
 	response, action, confirmedNewRegistration, err := s.createBookingResponseTx(ctx, tx, creation)
+	s.observeBookingStage("create_response", outcomeForError(err), time.Since(stageStarted))
 	if err != nil {
 		return bookingTxResult{}, err
 	}
+	stageStarted = time.Now()
 	if err := tx.Commit(ctx); err != nil {
+		s.observeBookingStage("commit", "error", time.Since(stageStarted))
 		return bookingTxResult{}, err
 	}
+	s.observeBookingStage("commit", "success", time.Since(stageStarted))
+	txOutcome = status
 	return bookingTxResult{response: response, action: action, status: status, confirmedNewRegistration: confirmedNewRegistration}, nil
 }
 
@@ -372,6 +413,11 @@ func bookingAction(status string) string {
 }
 
 func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, employeeID string, familyCount int) (BookingResponse, bool, error) {
+	started := time.Now()
+	outcome := "error"
+	defer func() {
+		s.observeBookingStage("idempotency_replay", outcome, time.Since(started))
+	}()
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return BookingResponse{}, false, err
@@ -380,13 +426,33 @@ func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, empl
 
 	snapshot, found, err := s.completedBookingIdempotencyResultTx(ctx, tx, key, eventID, employeeID, familyCount)
 	if err != nil || !found {
+		outcome = outcomeForError(err)
 		return BookingResponse{}, found, err
 	}
 	response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
 	if err != nil {
 		return BookingResponse{}, false, err
 	}
-	return response, true, tx.Commit(ctx)
+	err = tx.Commit(ctx)
+	outcome = outcomeForError(err)
+	if err == nil {
+		outcome = response.Registration.Status
+	}
+	return response, true, err
+}
+
+func (s *Service) observeBookingStage(stage string, outcome string, duration time.Duration) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.ObserveBookingStage(stage, outcome, duration)
+}
+
+func outcomeForError(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "success"
 }
 
 func remainingForNewBooking(event Event, status string, capacity int, confirmedCount int) int {

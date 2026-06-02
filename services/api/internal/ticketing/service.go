@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/reservation"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +18,8 @@ type Service struct {
 	noShowPolicy      NoShowPolicy
 	reservationGate   reservation.Gate
 	reservationSecret []byte
+	metrics           *observability.Registry
+	reservationOutage string
 }
 
 func NewService(db *pgxpool.Pool, signer Signer, logger *slog.Logger) *Service {
@@ -48,6 +51,16 @@ func (s *Service) WithReservationGate(gate reservation.Gate, secret []byte) *Ser
 	}
 	s.reservationGate = gate
 	s.reservationSecret = secret
+	return s
+}
+
+func (s *Service) WithMetrics(metrics *observability.Registry) *Service {
+	s.metrics = metrics
+	return s
+}
+
+func (s *Service) WithReservationOutageMode(outageMode string) *Service {
+	s.reservationOutage = outageMode
 	return s
 }
 
