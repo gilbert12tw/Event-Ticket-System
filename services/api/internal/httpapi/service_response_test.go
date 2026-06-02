@@ -40,6 +40,20 @@ func TestWriteServiceResultWritesAppErrorEnvelope(t *testing.T) {
 	assert.Equal(t, "already booked", body["error"])
 }
 
+func TestWriteServiceResultWritesRetryAfterHeader(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	writeServiceResult(rec, http.StatusCreated, nil, ticketing.AppError{
+		Status:            http.StatusTooManyRequests,
+		Code:              "BOOKING_RATE_LIMITED",
+		Message:           "booking rate limit exceeded",
+		RetryAfterSeconds: 2,
+	})
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	assert.Equal(t, "2", rec.Header().Get("Retry-After"))
+}
+
 func TestWriteServiceResultNormalizesNilSlices(t *testing.T) {
 	rec := httptest.NewRecorder()
 	var rows []ticketing.Ticket

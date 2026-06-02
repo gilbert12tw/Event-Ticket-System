@@ -303,7 +303,7 @@ func TestBookingWithGateDuplicateFreshKeyReleasesReservedSlot(t *testing.T) {
 	assert.Equal(t, 1, remaining, "duplicate booking with a fresh key must release its temporary Redis hold")
 }
 
-func TestBookingWithGateReplayReleasesTemporaryHold(t *testing.T) {
+func TestBookingWithGateReplaySkipsTemporaryHold(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	gate := &recordingReservationGate{outcome: reservation.OutcomeGranted}
@@ -329,8 +329,8 @@ func TestBookingWithGateReplayReleasesTemporaryHold(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, replay.Duplicate)
 	assert.Equal(t, first.Registration.RegistrationID, replay.Registration.RegistrationID)
-	assert.Equal(t, 2, gate.reserveCalls)
-	assert.Equal(t, 1, gate.releaseCalls, "completed idempotency replay must return the temporary Redis hold")
+	assert.Equal(t, 1, gate.reserveCalls, "completed idempotency replay must not take a temporary Redis hold")
+	assert.Equal(t, 0, gate.releaseCalls)
 	assert.Equal(t, 1, gate.confirmCalls)
 }
 

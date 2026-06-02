@@ -73,6 +73,7 @@ func writeSQLMetrics(ctx context.Context, w io.Writer, db any) {
 	writeOutboxMetrics(ctx, w, sqlDB)
 	writeWorkerOutcomeMetrics(ctx, w, sqlDB)
 	writeReservationCompensationMetrics(ctx, w, sqlDB)
+	writeRateLimitMetrics(ctx, w, sqlDB)
 }
 
 func boundedPoolName(name string) string {

@@ -63,6 +63,11 @@ type Config struct {
 	NoShowGraceHours                int
 	ReportStaleThresholdSeconds     int
 	ReportUnavailableTimeoutSeconds int
+	RateLimitEnabled                bool
+	BookingRateLimitPerActor        int
+	BookingRateLimitPerEvent        int
+	RateLimitOutageMode             string
+	BookingRateLimitHashSecret      string
 	BookingPreadmission             bool
 	ReservationOutageMode           string
 	ReservationTTL                  time.Duration
@@ -124,6 +129,11 @@ func Load() Config {
 		NoShowGraceHours:                parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
 		ReportStaleThresholdSeconds:     parsePositiveIntEnv("REPORT_STALE_THRESHOLD_SECONDS", "60", &loadErrors),
 		ReportUnavailableTimeoutSeconds: parsePositiveIntEnv("REPORT_UNAVAILABLE_TIMEOUT_SECONDS", "180", &loadErrors),
+		RateLimitEnabled:                parseBoolEnv("RATE_LIMIT_ENABLED", "false", &loadErrors),
+		BookingRateLimitPerActor:        parseNonNegativeIntEnv("BOOKING_RATE_LIMIT_RPS_PER_ACTOR", "0", &loadErrors),
+		BookingRateLimitPerEvent:        parseNonNegativeIntEnv("BOOKING_RATE_LIMIT_RPS_PER_EVENT", "0", &loadErrors),
+		RateLimitOutageMode:             getEnv("RATE_LIMIT_OUTAGE_MODE", "degrade"),
+		BookingRateLimitHashSecret:      os.Getenv("BOOKING_RATE_LIMIT_HASH_SECRET"),
 		BookingPreadmission:             parseOnOffEnv("BOOKING_PREADMISSION", "off", &loadErrors),
 		ReservationOutageMode:           getEnv("REDIS_OUTAGE_MODE", "degrade"),
 		ReservationTTL:                  parseSecondsEnv("RESERVATION_TTL_SECONDS", "20", &loadErrors),
@@ -347,26 +357,6 @@ func (c Config) validateProductionBackingServices() error {
 	}
 	if c.MailerPort <= 0 {
 		return errors.New("MAILER_PORT must be positive")
-	}
-	return nil
-}
-
-func (c Config) validateRuntimeObservability() error {
-	if c.OTelTracesEnabled {
-		if strings.TrimSpace(c.OTelEndpoint) == "" {
-			return errors.New("OTEL_EXPORTER_OTLP_ENDPOINT is required when OTEL_TRACES_ENABLED=true")
-		}
-		if strings.TrimSpace(c.OTelServiceName) == "" {
-			return errors.New("OTEL_SERVICE_NAME is required when OTEL_TRACES_ENABLED=true")
-		}
-	}
-	if c.PyroscopeEnabled {
-		if strings.TrimSpace(c.PyroscopeAddress) == "" {
-			return errors.New("PYROSCOPE_SERVER_ADDRESS is required when PYROSCOPE_ENABLED=true")
-		}
-		if strings.TrimSpace(c.PyroscopeAppName) == "" {
-			return errors.New("PYROSCOPE_APPLICATION_NAME is required when PYROSCOPE_ENABLED=true")
-		}
 	}
 	return nil
 }

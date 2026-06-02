@@ -198,6 +198,39 @@ func TestNewBookingReservationGateValidation(t *testing.T) {
 	require.ErrorContains(t, err, "invalid REDIS_URL")
 }
 
+func TestNewBookingRateLimiterValidation(t *testing.T) {
+	cfg := config.Config{
+		RateLimitEnabled:            false,
+		BookingRateLimitPerActor:    1,
+		RateLimitOutageMode:         "degrade",
+		ReservationOperationTimeout: 150 * time.Millisecond,
+		BookingRateLimitHashSecret:  "rate-limit-hash-secret",
+	}
+	limiter, client, err := newBookingRateLimiter(cfg, testLogger())
+	require.NoError(t, err)
+	require.Nil(t, client)
+	require.NotNil(t, limiter)
+
+	cfg.RateLimitEnabled = true
+	cfg.RateLimitOutageMode = "invalid"
+	_, _, err = newBookingRateLimiter(cfg, testLogger())
+	require.ErrorContains(t, err, "RATE_LIMIT_OUTAGE_MODE")
+
+	cfg.RateLimitOutageMode = "degrade"
+	cfg.BookingRateLimitHashSecret = ""
+	_, _, err = newBookingRateLimiter(cfg, testLogger())
+	require.ErrorContains(t, err, "BOOKING_RATE_LIMIT_HASH_SECRET")
+
+	cfg.BookingRateLimitHashSecret = "rate-limit-hash-secret"
+	cfg.RedisURL = ""
+	_, _, err = newBookingRateLimiter(cfg, testLogger())
+	require.ErrorContains(t, err, "REDIS_URL")
+
+	cfg.RedisURL = "://bad"
+	_, _, err = newBookingRateLimiter(cfg, testLogger())
+	require.ErrorContains(t, err, "invalid REDIS_URL")
+}
+
 func TestRunOpsReplayRejectsInvalidKindBeforeDatabaseConnect(t *testing.T) {
 	t.Setenv("DATABASE_URL", "://invalid")
 

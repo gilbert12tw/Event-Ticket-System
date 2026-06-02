@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"event-ticket-system/internal/observability"
+	"event-ticket-system/internal/ratelimit"
 	"event-ticket-system/internal/reservation"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,8 @@ type Service struct {
 	reservationOutage string
 	capacityPeekMu    sync.Mutex
 	capacityPeekCache map[string]cachedEventCapacityPeek
+	bookingLimiter    ratelimit.Limiter
+	rateLimitSecret   []byte
 }
 
 func NewService(db *pgxpool.Pool, signer Signer, logger *slog.Logger) *Service {
@@ -41,6 +44,7 @@ func NewServiceWithPolicy(db *pgxpool.Pool, signer Signer, logger *slog.Logger, 
 		now:             func() time.Time { return time.Now().UTC() },
 		noShowPolicy:    policy,
 		reservationGate: reservation.NoopGate{},
+		bookingLimiter:  ratelimit.NoopLimiter{},
 	}
 }
 
@@ -64,6 +68,18 @@ func (s *Service) WithMetrics(metrics *observability.Registry) *Service {
 
 func (s *Service) WithReservationOutageMode(outageMode string) *Service {
 	s.reservationOutage = outageMode
+	return s
+}
+
+// WithBookingRateLimiter attaches the PH2-21 booking admission limiter.
+// secret hashes actor identifiers before they enter Redis, logs, or audit
+// metadata. A nil limiter preserves the disabled path.
+func (s *Service) WithBookingRateLimiter(limiter ratelimit.Limiter, secret []byte) *Service {
+	if limiter == nil {
+		limiter = ratelimit.NoopLimiter{}
+	}
+	s.bookingLimiter = limiter
+	s.rateLimitSecret = secret
 	return s
 }
 

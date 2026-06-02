@@ -28,6 +28,14 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return BookingResponse{}, err
 	}
 
+	if response, found, err := s.replayCompletedBooking(ctx, identity.idempotencyKey, eventID, identity.employeeID, identity.familyCount); err != nil || found {
+		return response, err
+	}
+
+	if err := s.rateLimitBooking(ctx, actor, eventID, identity.employeeID); err != nil {
+		return BookingResponse{}, err
+	}
+
 	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, identity.employeeID, identity.idempotencyKey, identity.familyCount)
 	if err != nil {
 		return BookingResponse{}, err
@@ -425,6 +433,24 @@ func bookingAction(status string) string {
 	default:
 		return "booking.confirmed"
 	}
+}
+
+func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, employeeID string, familyCount int) (BookingResponse, bool, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	defer rollback(ctx, tx)
+
+	snapshot, found, err := s.completedBookingIdempotencyResultTx(ctx, tx, key, eventID, employeeID, familyCount)
+	if err != nil || !found {
+		return BookingResponse{}, found, err
+	}
+	response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+	if err != nil {
+		return BookingResponse{}, false, err
+	}
+	return response, true, tx.Commit(ctx)
 }
 
 func (s *Service) observeBookingStage(stage string, outcome string, duration time.Duration) {

@@ -58,6 +58,27 @@ func (s *Service) lockBookingIdempotencyResultTx(
 	return result, true, nil
 }
 
+func (s *Service) completedBookingIdempotencyResultTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	key string,
+	eventID string,
+	employeeID string,
+	familyCount int,
+) (bookingIdempotencyResult, bool, error) {
+	result, err := s.bookingIdempotencyResultForUpdateTx(ctx, tx, key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return bookingIdempotencyResult{}, false, nil
+	}
+	if err != nil {
+		return bookingIdempotencyResult{}, false, err
+	}
+	if err := validateBookingIdempotencyResult(result, eventID, employeeID, familyCount); err != nil {
+		return bookingIdempotencyResult{}, false, err
+	}
+	return result, true, nil
+}
+
 func validateBookingIdempotencyResult(result bookingIdempotencyResult, eventID string, employeeID string, familyCount int) error {
 	if result.EventID != eventID || result.EmployeeID != employeeID || result.FamilyCount != familyCount {
 		return conflict("idempotency key belongs to a different booking request")

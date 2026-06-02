@@ -28,11 +28,13 @@ EXPECTED_OPERATIONS = {
   ADMIN_EVENTS_PATH => %w[get post],
   "/events" => %w[get],
   "/events/{event_id}" => %w[get],
+  "/events/{event_id}/poster" => %w[get],
   "/events/{event_id}/eligibility" => %w[get],
   "/events/{event_id}/bookings" => %w[post],
   "/me/tickets" => %w[get],
   "/me/registrations/{registration_id}/cancel" => %w[post],
   ADMIN_EVENT_PATH => %w[patch delete],
+  "/admin/events/{event_id}/poster" => %w[post],
   "/admin/events/{event_id}/state" => %w[post],
   "/admin/events/{event_id}/duplicate" => %w[post],
   "/admin/events/{event_id}/eligibility/preview" => %w[post],
@@ -55,6 +57,8 @@ EXPECTED_OPERATIONS = {
   "/admin/reports" => %w[get],
   "/admin/reports/exports" => %w[post],
   "/admin/reports/exports/{export_id}" => %w[get],
+  "/admin/reports/exports/{export_id}/download" => %w[get],
+  "/admin/hr/options" => %w[get],
   "/admin/audit-logs" => %w[get],
   "/admin/ops/capacity-pressure" => %w[get],
   "/admin/ops/queues" => %w[get],
@@ -67,6 +71,11 @@ PUBLIC_OPERATIONS = [
   ["get", "/auth/bootstrap"]
 ].freeze
 
+BINARY_OPERATIONS = [
+  ["get", "/events/{event_id}/poster"],
+  ["get", "/admin/reports/exports/{export_id}/download"]
+].freeze
+
 EXPECTED_REQUIRED_ROLES = {
   ["get", "/auth/me"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
   ["get", DEBUG_DEMO_CLOCK_PATH] => %w[activity_admin system_admin],
@@ -75,12 +84,14 @@ EXPECTED_REQUIRED_ROLES = {
   ["post", ADMIN_EVENTS_PATH] => %w[activity_admin],
   ["get", "/events"] => %w[employee],
   ["get", "/events/{event_id}"] => %w[employee],
+  ["get", "/events/{event_id}/poster"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
   ["get", "/events/{event_id}/eligibility"] => %w[employee],
   ["post", "/events/{event_id}/bookings"] => %w[employee],
   ["get", "/me/tickets"] => %w[employee],
   ["post", "/me/registrations/{registration_id}/cancel"] => %w[employee],
   ["patch", ADMIN_EVENT_PATH] => %w[activity_admin],
   ["delete", ADMIN_EVENT_PATH] => %w[activity_admin],
+  ["post", "/admin/events/{event_id}/poster"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/state"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/duplicate"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/eligibility/preview"] => %w[activity_admin],
@@ -104,6 +115,8 @@ EXPECTED_REQUIRED_ROLES = {
   ["get", "/admin/reports"] => %w[hr_admin system_admin],
   ["post", "/admin/reports/exports"] => %w[hr_admin system_admin],
   ["get", "/admin/reports/exports/{export_id}"] => %w[hr_admin system_admin],
+  ["get", "/admin/reports/exports/{export_id}/download"] => %w[hr_admin system_admin],
+  ["get", "/admin/hr/options"] => %w[activity_admin hr_admin system_admin],
   ["get", "/admin/audit-logs"] => %w[hr_admin system_admin],
   ["get", "/admin/ops/capacity-pressure"] => %w[activity_admin hr_admin system_admin],
   ["get", "/admin/ops/queues"] => %w[hr_admin system_admin],
@@ -275,7 +288,9 @@ EXPECTED_OPERATIONS.each do |path, methods|
 
     responses = operation.fetch("responses", {})
     fail_contract("Missing 2xx success response for #{operation_id}") unless operation_success_response?(operation)
-    fail_contract("Missing JSON success envelope for #{operation_id}") unless operation_json_schema?(operation)
+    unless BINARY_OPERATIONS.include?([method, path])
+      fail_contract("Missing JSON success envelope for #{operation_id}") unless operation_json_schema?(operation)
+    end
     unless public_operation
       fail_contract("Missing 401 auth error response for #{operation_id}") unless responses.key?("401")
       fail_contract("Missing 403 authorization error response for #{operation_id}") unless responses.key?("403")
