@@ -20,7 +20,6 @@ import {
 } from "./admin-event-crud-types";
 import { AdminEventsPage } from "./admin-pages";
 
-
 describe("quick-setup apply functions track selection state", () => {
   it("applyEventTemplate sets _selectedTemplate to the chosen key", () => {
     const form = defaultEventForm();
