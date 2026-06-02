@@ -1,4 +1,4 @@
-import { check } from "k6";
+import { check, sleep } from "k6";
 import crypto from "k6/crypto";
 import encoding from "k6/encoding";
 import exec from "k6/execution";
@@ -264,17 +264,24 @@ function book(eventId, actorId, idempotencyKey) {
 }
 
 function createOfflinePackage(eventId, deviceId) {
-  const response = http.get(
-    `${baseUrl}/api/v1/checkins/events/${eventId}/offline-package?device_id=${encodeURIComponent(deviceId)}`,
-    requestParams("setup", "staff-1")
-  );
-  recordBackendReplica(response);
-  check(response, { "offline package status is 200": (res) => res.status === 200 });
-  const pkg = envelopeData(response, "offline package");
-  if (!pkg?.batch_id || !pkg?.package_signature) {
-    exec.test.abort(`offline package setup failed for ${eventId}`);
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const response = http.get(
+      `${baseUrl}/api/v1/checkins/events/${eventId}/offline-package?device_id=${encodeURIComponent(deviceId)}`,
+      requestParams("setup", "staff-1")
+    );
+    recordBackendReplica(response);
+    if (response.status === 200) {
+      const pkg = envelopeData(response, "offline package");
+      if (pkg?.batch_id && pkg?.package_signature) {
+        return pkg;
+      }
+    }
+    if (attempt < 20) {
+      sleep(0.25);
+    }
   }
-  return pkg;
+  check(null, { "offline package status is 200": () => false });
+  exec.test.abort(`offline package setup failed for ${eventId}`);
 }
 
 function createOfflinePackages(eventId, kind, count) {
