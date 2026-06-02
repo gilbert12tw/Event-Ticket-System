@@ -67,6 +67,7 @@ type Config struct {
 	RateLimitOutageMode             string
 	BookingRateLimitHashSecret      string
 	BookingPreadmission             bool
+	BookingContentionStrategy       string
 	ReservationOutageMode           string
 	ReservationTTL                  time.Duration
 	ReservationGraceTTL             time.Duration
@@ -131,6 +132,7 @@ func Load() Config {
 		RateLimitOutageMode:             getEnv("RATE_LIMIT_OUTAGE_MODE", "degrade"),
 		BookingRateLimitHashSecret:      os.Getenv("BOOKING_RATE_LIMIT_HASH_SECRET"),
 		BookingPreadmission:             parseOnOffEnv("BOOKING_PREADMISSION", "off", &loadErrors),
+		BookingContentionStrategy:       parseBookingContentionStrategyEnv(&loadErrors),
 		ReservationOutageMode:           getEnv("REDIS_OUTAGE_MODE", "degrade"),
 		ReservationTTL:                  parseSecondsEnv("RESERVATION_TTL_SECONDS", "20", &loadErrors),
 		ReservationGraceTTL:             parseSecondsEnv("RESERVATION_TTL_GRACE_SECONDS", "10", &loadErrors),
@@ -429,6 +431,17 @@ func parseOnOffEnv(key string, fallback string, loadErrors *[]string) bool {
 	default:
 		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be one of on|off, got %q", key, value))
 		return false
+	}
+}
+
+func parseBookingContentionStrategyEnv(loadErrors *[]string) string {
+	value := strings.ToLower(getEnv("BOOKING_CONTENTION_STRATEGY", "phase1"))
+	switch value {
+	case "phase1", "advisory":
+		return value
+	default:
+		*loadErrors = append(*loadErrors, fmt.Sprintf("BOOKING_CONTENTION_STRATEGY must be one of phase1|advisory, got %q", value))
+		return "phase1"
 	}
 }
 
