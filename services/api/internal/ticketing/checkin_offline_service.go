@@ -225,6 +225,10 @@ func (s *Service) recordVerifiedOfflineScan(ctx context.Context, actor Actor, re
 }
 
 func scanOfflineTicketByHashTx(ctx context.Context, tx pgx.Tx, tokenHash string) (Ticket, bool, error) {
+	return scanLockedTicketByHashTx(ctx, tx, tokenHash)
+}
+
+func scanLockedTicketByHashTx(ctx context.Context, tx pgx.Tx, tokenHash string) (Ticket, bool, error) {
 	var ticket Ticket
 	err := scanCheckinTicketRow(tx.QueryRow(ctx, `SELECT `+checkinTicketSelectColumns+`
 		FROM tickets t

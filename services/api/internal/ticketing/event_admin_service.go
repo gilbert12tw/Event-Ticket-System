@@ -43,19 +43,12 @@ func (s *Service) GetEvent(ctx context.Context, actor Actor, eventID string, emp
 }
 
 func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, req UpdateEventRequest) (EventSummary, error) {
-	if err := requireRole(actor, RoleActivityAdmin); err != nil {
-		return EventSummary{}, err
-	}
-	tx, err := s.db.Begin(ctx)
+	tx, event, err := s.beginActivityAdminEventTx(ctx, actor, eventID)
 	if err != nil {
 		return EventSummary{}, err
 	}
 	defer rollback(ctx, tx)
 
-	event, _, err := s.lockEventWithRule(ctx, tx, eventID)
-	if err != nil {
-		return EventSummary{}, err
-	}
 	var storedEventCity string
 	var storedEventSite string
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(event_city, ''), COALESCE(event_site, '') FROM events WHERE event_id = $1`, eventID).Scan(&storedEventCity, &storedEventSite); err != nil {
@@ -247,23 +240,16 @@ func applyEventMetadataUpdate(event *Event, req UpdateEventRequest) {
 }
 
 func (s *Service) ChangeEventState(ctx context.Context, actor Actor, eventID string, req ChangeEventStateRequest) (EventSummary, error) {
-	if err := requireRole(actor, RoleActivityAdmin); err != nil {
-		return EventSummary{}, err
-	}
 	next := strings.TrimSpace(req.Status)
 	if next == "" {
 		return EventSummary{}, badRequest("status is required")
 	}
-	tx, err := s.db.Begin(ctx)
+	tx, event, err := s.beginActivityAdminEventTx(ctx, actor, eventID)
 	if err != nil {
 		return EventSummary{}, err
 	}
 	defer rollback(ctx, tx)
 
-	event, _, err := s.lockEventWithRule(ctx, tx, eventID)
-	if err != nil {
-		return EventSummary{}, err
-	}
 	previousStatus := event.Status
 	if !validEventTransition(event.Status, next) {
 		return EventSummary{}, conflict(fmt.Sprintf("cannot transition event from %s to %s", event.Status, next))
@@ -331,4 +317,20 @@ func (s *Service) DuplicateEvent(ctx context.Context, actor Actor, eventID strin
 
 func (s *Service) ArchiveEvent(ctx context.Context, actor Actor, eventID string) (EventSummary, error) {
 	return s.ChangeEventState(ctx, actor, eventID, ChangeEventStateRequest{Status: EventStatusArchived, Reason: "archive requested"})
+}
+
+func (s *Service) beginActivityAdminEventTx(ctx context.Context, actor Actor, eventID string) (pgx.Tx, Event, error) {
+	if err := requireRole(actor, RoleActivityAdmin); err != nil {
+		return nil, Event{}, err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, Event{}, err
+	}
+	event, _, err := s.lockEventWithRule(ctx, tx, eventID)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, Event{}, err
+	}
+	return tx, event, nil
 }

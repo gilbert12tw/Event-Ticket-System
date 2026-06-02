@@ -52,11 +52,8 @@ func (s *Service) lockBookingIdempotencyResultTx(
 	if err != nil {
 		return bookingIdempotencyResult{}, false, err
 	}
-	if result.EventID != eventID || result.EmployeeID != employeeID || result.FamilyCount != familyCount {
-		return bookingIdempotencyResult{}, false, conflict("idempotency key belongs to a different booking request")
-	}
-	if result.RegistrationID == "" || result.CompletedAt.IsZero() {
-		return bookingIdempotencyResult{}, false, conflict("booking idempotency result is not ready")
+	if err := validateBookingIdempotencyResult(result, eventID, employeeID, familyCount); err != nil {
+		return bookingIdempotencyResult{}, false, err
 	}
 	return result, true, nil
 }
@@ -76,13 +73,20 @@ func (s *Service) completedBookingIdempotencyResultTx(
 	if err != nil {
 		return bookingIdempotencyResult{}, false, err
 	}
-	if result.EventID != eventID || result.EmployeeID != employeeID || result.FamilyCount != familyCount {
-		return bookingIdempotencyResult{}, false, conflict("idempotency key belongs to a different booking request")
-	}
-	if result.RegistrationID == "" || result.CompletedAt.IsZero() {
-		return bookingIdempotencyResult{}, false, conflict("booking idempotency result is not ready")
+	if err := validateBookingIdempotencyResult(result, eventID, employeeID, familyCount); err != nil {
+		return bookingIdempotencyResult{}, false, err
 	}
 	return result, true, nil
+}
+
+func validateBookingIdempotencyResult(result bookingIdempotencyResult, eventID string, employeeID string, familyCount int) error {
+	if result.EventID != eventID || result.EmployeeID != employeeID || result.FamilyCount != familyCount {
+		return conflict("idempotency key belongs to a different booking request")
+	}
+	if result.RegistrationID == "" || result.CompletedAt.IsZero() {
+		return conflict("booking idempotency result is not ready")
+	}
+	return nil
 }
 
 func (s *Service) bookingIdempotencyResultForUpdateTx(ctx context.Context, tx pgx.Tx, key string) (bookingIdempotencyResult, error) {

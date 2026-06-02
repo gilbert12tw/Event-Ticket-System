@@ -22,40 +22,63 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type runtimeObservabilityServer interface {
+	Shutdown(context.Context) error
+}
+
 func serve(cfg config.Config, logger *slog.Logger) error {
 	runtimeObs, err := startRuntimeObservability(cfg, logger)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
-		if err := runtimeObs.Shutdown(shutdownCtx); err != nil {
-			logger.Error("runtime observability shutdown failed", "error", err)
-		}
-	}()
+	defer shutdownRuntimeObservability(cfg, logger, runtimeObs)
 
 	return withDatabase(cfg, cfg.ValidateForServe, func(ctx context.Context, pool *pgxpool.Pool) error {
-		return serveWithDatabase(ctx, pool, cfg, logger)
+		return serveWithDatabase(ctx, cfg, logger, pool)
 	})
 }
 
-func serveWithDatabase(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger) error {
-	if err := migrateOnStartup(ctx, pool, cfg, logger); err != nil {
+func shutdownRuntimeObservability(cfg config.Config, logger *slog.Logger, runtimeObs runtimeObservabilityServer) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+	if err := runtimeObs.Shutdown(shutdownCtx); err != nil {
+		logger.Error("runtime observability shutdown failed", "error", err)
+	}
+}
+
+func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) error {
+	if err := autoMigrateIfEnabled(ctx, cfg, logger, pool); err != nil {
 		return err
 	}
 	gate, redisClient, err := newBookingReservationGate(cfg, logger)
 	if err != nil {
 		return err
 	}
-	if redisClient != nil {
-		defer closeRedisClient(redisClient, logger)
+	defer closeRedisClient(logger, redisClient)
+
+	ticketingService := newTicketingService(pool, cfg, logger).
+		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret))
+	demoClock := newDemoClockForConfig(cfg, logger)
+	if demoClock != nil {
+		ticketingService.WithClock(demoClock.Now)
 	}
-	router := newHTTPRouter(pool, cfg, logger, gate)
-	return runHTTPServer(router, cfg, logger)
+	router := httpapi.NewRouter(httpapi.Dependencies{
+		DB:                          pool,
+		Ticketing:                   ticketingService,
+		Logger:                      logger,
+		DemoClock:                   demoClock,
+		TracingEnabled:              cfg.OTelTracesEnabled,
+		RequestTimeout:              cfg.RequestTimeout,
+		AppEnv:                      cfg.AppEnv,
+		OpsAPIEnabled:               cfg.OpsAPIEnabled,
+		ProviderAuth:                httpapi.ProviderAuthConfig{Secret: cfg.ProviderTokenSecret},
+		ReportStaleThresholdSeconds: cfg.ReportStaleThresholdSeconds,
+	})
+	server := &http.Server{Addr: cfg.AppAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
+	return runHTTPServer(server, cfg, logger)
 }
 
-func migrateOnStartup(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger) error {
+func autoMigrateIfEnabled(ctx context.Context, cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) error {
 	if !cfg.AutoMigrate {
 		return nil
 	}
@@ -66,41 +89,16 @@ func migrateOnStartup(ctx context.Context, pool *pgxpool.Pool, cfg config.Config
 	return nil
 }
 
-func closeRedisClient(client *redis.Client, logger *slog.Logger) {
-	if err := client.Close(); err != nil {
+func closeRedisClient(logger *slog.Logger, redisClient *redis.Client) {
+	if redisClient == nil {
+		return
+	}
+	if err := redisClient.Close(); err != nil {
 		logger.Warn("redis client close failed", "error", err)
 	}
 }
 
-func newHTTPRouter(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, gate reservation.Gate) http.Handler {
-	demoClock := newDemoClockForConfig(cfg, logger)
-	ticketingService := newTicketingService(pool, cfg, logger).
-		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret))
-	if demoClock != nil {
-		ticketingService.WithClock(demoClock.Now)
-	}
-	return httpapi.NewRouter(httpapi.Dependencies{
-		DB:             pool,
-		Ticketing:      ticketingService,
-		Logger:         logger,
-		DemoClock:      demoClock,
-		TracingEnabled: cfg.OTelTracesEnabled,
-		RequestTimeout: cfg.RequestTimeout,
-		AppEnv:         cfg.AppEnv,
-		OpsAPIEnabled:  cfg.OpsAPIEnabled,
-		ProviderAuth: httpapi.ProviderAuthConfig{
-			Secret: cfg.ProviderTokenSecret,
-		},
-		ReportStaleThresholdSeconds: cfg.ReportStaleThresholdSeconds,
-	})
-}
-
-func runHTTPServer(router http.Handler, cfg config.Config, logger *slog.Logger) error {
-	server := &http.Server{
-		Addr:              cfg.AppAddr,
-		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+func runHTTPServer(server *http.Server, cfg config.Config, logger *slog.Logger) error {
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("http server listening", "addr", cfg.AppAddr)
@@ -110,6 +108,8 @@ func runHTTPServer(router http.Handler, cfg config.Config, logger *slog.Logger) 
 	}()
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(stopCh)
+
 	select {
 	case err := <-errCh:
 		return err

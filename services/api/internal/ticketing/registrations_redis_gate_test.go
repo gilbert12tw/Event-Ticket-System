@@ -267,6 +267,42 @@ func TestBookingWithGateIdempotentReplayDoesNotDoubleDecrement(t *testing.T) {
 	assert.Equal(t, 4, remaining, "replay must not decrement again (5 - 1 confirmed = 4)")
 }
 
+func TestBookingWithGateDuplicateFreshKeyReleasesReservedSlot(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	flushRedis := withRedisGate(t, service)
+	defer flushRedis()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Duplicate Fresh Key",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+
+	first, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "duplicate-fresh-1"})
+	require.NoError(t, err)
+	require.Equal(t, RegistrationConfirmed, first.Registration.Status)
+
+	client := redisClientFromEnv(t)
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	remaining, err := client.Get(ctx, "cets:v1:resv:"+event.EventID+":remaining").Int()
+	require.NoError(t, err)
+	require.Equal(t, 1, remaining)
+
+	duplicate, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "duplicate-fresh-2"})
+	require.NoError(t, err)
+	assert.True(t, duplicate.Duplicate)
+	assert.Equal(t, first.Registration.RegistrationID, duplicate.Registration.RegistrationID)
+
+	remaining, err = client.Get(ctx, "cets:v1:resv:"+event.EventID+":remaining").Int()
+	require.NoError(t, err)
+	assert.Equal(t, 1, remaining, "duplicate booking with a fresh key must release its temporary Redis hold")
+}
+
 func TestBookingWithGateReplayDoesNotReserveAgain(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

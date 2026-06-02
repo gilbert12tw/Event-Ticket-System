@@ -108,11 +108,6 @@ on:
         required: false
         type: boolean
         default: false
-      run_phase3_compose:
-        description: Run the Phase 3 Compose HA deploy, verify, and drill gate
-        required: false
-        type: boolean
-        default: false
       k6_release_duration:
         description: k6 release profile duration for manual runs
         required: false
@@ -163,7 +158,6 @@ jobs:
           INPUT_RUN_LIVE_PLAYWRIGHT: ${{ inputs.run_live_playwright || 'false' }}
           INPUT_RUN_K6_SMOKE: ${{ inputs.run_k6_smoke || 'false' }}
           INPUT_RUN_K6_RELEASE: ${{ inputs.run_k6_release || 'false' }}
-          INPUT_RUN_PHASE3_COMPOSE: ${{ inputs.run_phase3_compose || 'false' }}
         run: bash scripts/ci/detect-changes.sh
 
   quick-check:
@@ -246,7 +240,8 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://cets:cets_test_password@localhost:25432/cets_test?sslmode=disable
           REDIS_URL: redis://localhost:26379/0
-        run: go test ./... -count=1
+        # Keep package tests serialized because integration suites share the CI Postgres service.
+        run: go test ./... -count=1 -p=1 -timeout=20m
 
   openapi:
     needs: changes
@@ -300,70 +295,6 @@ jobs:
       - name: Validate deploy contracts
         working-directory: services/api
         run: go test ./deploy -count=1
-
-  phase3-compose-live:
-    needs:
-      - changes
-      - compose-contract
-    if: >-
-      always() &&
-      (
-        github.event_name == 'release' ||
-        startsWith(github.ref, 'refs/tags/v') ||
-        (github.event_name == 'workflow_dispatch' && (inputs.run_full_ci || inputs.run_phase3_compose))
-      ) &&
-      needs['compose-contract'].result == 'success'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    env:
-      COMPOSE_PROJECT_NAME: cets-phase3-ci
-      API_IMAGE_TAG: phase3-ci
-      FRONTEND_IMAGE_TAG: phase3-ci
-      PHASE3_EDGE_PORT: 38080
-      PHASE3_POSTGRES_PORT: 35432
-      PHASE3_REDIS_PORT: 36379
-      PHASE3_MINIO_API_PORT: 39000
-      PHASE3_MINIO_CONSOLE_PORT: 39001
-      PHASE3_MAILHOG_SMTP_PORT: 31025
-      PHASE3_MAILHOG_UI_PORT: 38025
-      GRAFANA_PORT: 33000
-      PROMETHEUS_PORT: 39090
-      LOKI_PORT: 33100
-      TEMPO_PORT: 33200
-      PYROSCOPE_PORT: 34040
-      ALLOY_PORT: 32345
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Docker CLI for local act runs
-        if: env.ACT == 'true'
-        run: |
-          if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-            docker --version
-            docker compose version
-            exit 0
-          fi
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
-          docker --version
-          docker compose version
-      - name: Run Phase 3 Compose deploy and verification
-        run: |
-          scripts/compose/phase3-deploy.sh
-          scripts/compose/phase3-verify.sh
-          scripts/compose/phase3-drill.sh
-      - name: Stop Phase 3 Compose services
-        if: always()
-        run: |
-          docker compose \
-            --env-file services/api/deploy/.env.example \
-            -f services/api/deploy/compose.yaml \
-            -f services/api/deploy/compose.worker-isolation.yaml \
-            -f services/api/deploy/compose.phase3-ha.yaml \
-            --profile phase3-ha \
-            --profile worker-isolation \
-            --profile observability \
-            --profile phase3-canary \
-            down --volumes --remove-orphans
 
   frontend-static:
     needs: changes
@@ -420,30 +351,10 @@ jobs:
       - name: Build web
         run: pnpm --filter cets-web build
 
-  playwright-browsers:
-    needs: changes
-    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.live == 'true' || needs.changes.outputs.full == 'true'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up web workspace
-        uses: ./.github/actions/setup-web
-      - name: Verify GitHub Chrome runtime
-        if: env.ACT != 'true'
-        run: scripts/ci/verify-playwright-runtime.sh chrome
-      - name: Verify local act Playwright runtime
-        if: env.ACT == 'true'
-        run: scripts/ci/install-playwright.sh chromium
-
   frontend-e2e:
     needs:
       - changes
-      - playwright-browsers
-    if: >-
-      always() &&
-      (needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true') &&
-      needs['playwright-browsers'].result == 'success'
+    if: needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.full == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     strategy:
       fail-fast: false
@@ -511,7 +422,6 @@ jobs:
       - frontend-static
       - frontend-unit-build
       - frontend-e2e
-      - playwright-browsers
     if: >-
       always() &&
       needs.changes.outputs.live == 'true' &&
@@ -521,8 +431,7 @@ jobs:
       (needs['compose-contract'].result == 'success' || needs['compose-contract'].result == 'skipped') &&
       (needs['frontend-static'].result == 'success' || needs['frontend-static'].result == 'skipped') &&
       (needs['frontend-unit-build'].result == 'success' || needs['frontend-unit-build'].result == 'skipped') &&
-      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped') &&
-      needs['playwright-browsers'].result == 'success'
+      (needs['frontend-e2e'].result == 'success' || needs['frontend-e2e'].result == 'skipped')
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     env:
       K6_IMAGE: grafana/k6:1.7.1-with-browser

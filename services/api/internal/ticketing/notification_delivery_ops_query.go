@@ -64,17 +64,9 @@ func ParseNotificationDeliveryCursorStrict(raw string) (time.Time, string, error
 }
 
 func parseNotificationDeliveryCursor(raw string) (time.Time, string) {
-	if strings.Contains(raw, "|") {
-		parts := strings.SplitN(raw, "|", 2)
-		parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(parts[0]))
-		if err != nil {
-			return time.Time{}, ""
-		}
-		return parsed, strings.TrimSpace(parts[1])
+	parsed, id, ok := parseDelimitedCursor(raw)
+	if !ok {
+		return time.Time{}, ""
 	}
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err == nil && strings.Contains(string(decoded), "|") {
-		return parseNotificationDeliveryCursor(string(decoded))
-	}
-	return time.Time{}, ""
+	return parsed, id
 }

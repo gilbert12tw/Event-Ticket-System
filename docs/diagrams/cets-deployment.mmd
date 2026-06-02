@@ -1,0 +1,60 @@
+flowchart LR
+  user["員工 / 福委 / 驗票員"]
+  cf["Cloudflare Access + Tunnel"]
+
+  subgraph cluster["Bare-metal Kubernetes cluster"]
+    ingress["ingress-nginx<br/>Ingress cets"]
+
+    subgraph work1["work1 / 10.121.124.200"]
+      cf1["cloudflared"]
+      fe1["frontend pod"]
+      be1["backend pod"]
+    end
+
+    subgraph work2["work2 / 10.121.124.201"]
+      cf2["cloudflared"]
+      fe2["frontend pod"]
+      be2["backend pod"]
+    end
+
+    subgraph work3["work3 / 10.121.124.202"]
+      cf3["cloudflared"]
+      fe3["frontend pod"]
+      be3["backend pod"]
+    end
+
+    fsvc["frontend Service<br/>ClusterIP :8080"]
+    bsvc["backend Service<br/>ClusterIP :8080"]
+    nginx["frontend nginx<br/>/api -> backend.cets.svc.cluster.local:8080"]
+    note["目前 live app image<br/>cets-api/cets-frontend:9db4a4c2498b"]
+  end
+
+  user -->|"HTTPS"| cf
+  cf -->|"cloudflared replicas"| ingress
+  cf -->|"tunnel"| cf1
+  cf -->|"tunnel"| cf2
+  cf -->|"tunnel"| cf3
+  cf1 --> ingress
+  cf2 --> ingress
+  cf3 --> ingress
+  ingress -->|"/"| fsvc
+  ingress -->|"/api /readyz /metrics"| bsvc
+  fsvc --> fe1
+  fsvc --> fe2
+  fsvc --> fe3
+  fe1 --> nginx
+  fe2 --> nginx
+  fe3 --> nginx
+  nginx --> bsvc
+  bsvc --> be1
+  bsvc --> be2
+  bsvc --> be3
+
+  classDef edge fill:#eff6ff,stroke:#2563eb,color:#0f172a;
+  classDef frontend fill:#f0fdf4,stroke:#16a34a,color:#0f172a;
+  classDef backend fill:#fefce8,stroke:#ca8a04,color:#0f172a;
+  classDef note fill:#f1f5f9,stroke:#64748b,color:#0f172a;
+  class cf,cf1,cf2,cf3,ingress edge;
+  class fsvc,fe1,fe2,fe3,nginx frontend;
+  class bsvc,be1,be2,be3 backend;
+  class note note;

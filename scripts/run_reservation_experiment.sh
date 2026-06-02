@@ -25,13 +25,15 @@ PLOT_REQUIREMENTS="${REPO_ROOT}/scripts/requirements-reservation-experiment.txt"
 
 mkdir -p "${OUT_DIR}" "${DATA_DIR}"
 
-COMPOSE_ARGS=(--env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml)
+COMPOSE_ENV_FILE="services/api/deploy/.env.example"
+COMPOSE_ARGS=(--env-file "${COMPOSE_ENV_FILE}" -f services/api/deploy/compose.yaml)
 
 echo "[1/5] Bringing up Postgres + Redis"
 docker compose "${COMPOSE_ARGS[@]}" up -d postgres redis >/dev/null
 docker compose "${COMPOSE_ARGS[@]}" exec -T postgres bash -lc 'until pg_isready -U cets >/dev/null 2>&1; do sleep 0.3; done'
 
-DATABASE_URL="postgresql://cets:cets_dev_password@localhost:${POSTGRES_PORT:-5432}/cets"
+POSTGRES_PASSWORD="$(awk -F= '$1 == "POSTGRES_PASSWORD" { print $2 }' "${COMPOSE_ENV_FILE}")"
+DATABASE_URL="postgresql://cets:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT:-5432}/cets"
 REDIS_URL="redis://localhost:${REDIS_PORT:-6379}/0"
 export DATABASE_URL REDIS_URL EXPERIMENT_VUS="${VUS}" EXPERIMENT_CAPACITY="${CAPACITY}" EXPERIMENT_ALLOW_DESTRUCTIVE=1
 

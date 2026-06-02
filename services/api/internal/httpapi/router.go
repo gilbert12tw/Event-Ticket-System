@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	if deps.TracingEnabled {
 		handler = observability.TraceHTTP(routePattern, handler)
 	}
-	return withTraceID(handler)
+	return withBackendReplicaHeader(withTraceID(handler))
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -145,11 +146,11 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 			"status_class", statusClass(recorder.status),
 			"duration_ms", time.Since(started).Milliseconds(),
 		}
-		if spanCtx := oteltrace.SpanContextFromContext(r.Context()); spanCtx.IsValid() {
-			attrs = append(attrs,
-				"otel_trace_id", spanCtx.TraceID().String(),
-				"otel_span_id", spanCtx.SpanID().String(),
-			)
+		if otelTraceID := otelTraceIDFromContext(r.Context()); otelTraceID != "" {
+			attrs = append(attrs, "otel_trace_id", otelTraceID)
+			if spanCtx := oteltrace.SpanContextFromContext(r.Context()); spanCtx.IsValid() {
+				attrs = append(attrs, "otel_span_id", spanCtx.SpanID().String())
+			}
 		}
 		logger.Info("request handled", attrs...)
 	})
@@ -169,6 +170,16 @@ func withTraceID(next http.Handler) http.Handler {
 		id := traceid.Ensure(r.Header.Get(traceid.Header))
 		w.Header().Set(traceid.Header, id)
 		next.ServeHTTP(w, r.WithContext(traceid.WithContext(r.Context(), id)))
+	})
+}
+
+func withBackendReplicaHeader(next http.Handler) http.Handler {
+	replica := backendReplicaName()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if replica != "" {
+			w.Header().Set("X-CETS-Backend-Replica", replica)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -201,4 +212,20 @@ func statusClass(status int) string {
 		return "unknown"
 	}
 	return string(rune('0'+status/100)) + "xx"
+}
+
+func otelTraceIDFromContext(ctx context.Context) string {
+	spanContext := oteltrace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() || !spanContext.HasTraceID() {
+		return ""
+	}
+	return spanContext.TraceID().String()
+}
+
+func backendReplicaName() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(hostname)
 }

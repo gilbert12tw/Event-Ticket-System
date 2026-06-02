@@ -1,0 +1,30 @@
+flowchart LR
+  backend["backend pods"]
+  rw["cets-postgres-rw<br/>writer Service"]
+  ro["cets-postgres-ro<br/>reader Service"]
+  r["cets-postgres-r<br/>all instances Service"]
+  pg1[("cets-postgres-1<br/>primary / writer<br/>work3 192.168.33.250")]
+  pg2[("cets-postgres-2<br/>replica / reader<br/>work1 192.168.215.61")]
+  pg3[("cets-postgres-3<br/>replica / reader<br/>work2 192.168.123.5")]
+  cnpg["CloudNativePG operator<br/>failover + labels + EndpointSlice updates"]
+  note["目前 app 沒有 read/write split<br/>所有 app DB 流量 -> DATABASE_URL -> cets-postgres-rw"]
+
+  backend -->|"DATABASE_URL"| rw
+  rw -->|"primary only"| pg1
+  ro -->|"replica"| pg2
+  ro -->|"replica"| pg3
+  r -->|"all"| pg1
+  r -->|"all"| pg2
+  r -->|"all"| pg3
+  cnpg -.->|"updates"| rw
+  cnpg -.->|"updates"| ro
+  cnpg -.->|"updates"| r
+
+  classDef app fill:#fefce8,stroke:#ca8a04,color:#0f172a;
+  classDef writer fill:#fce7f3,stroke:#be185d,color:#0f172a;
+  classDef reader fill:#e0f2fe,stroke:#0284c7,color:#0f172a;
+  classDef note fill:#f1f5f9,stroke:#64748b,color:#0f172a;
+  class backend app;
+  class rw,pg1 writer;
+  class ro,pg2,pg3 reader;
+  class note note;
