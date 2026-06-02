@@ -1,0 +1,110 @@
+erDiagram
+  EMPLOYEES ||--o{ REGISTRATIONS : submits
+  EMPLOYEES ||--o{ TICKETS : owns
+  EMPLOYEES ||--o{ BOOKING_BANS : may_have
+  EMPLOYEES ||--o{ NO_SHOW_RECORDS : may_have
+
+  EVENTS ||--o{ EVENT_VERSIONS : versions
+  EVENTS ||--o{ EVENT_ASSETS : assets
+  EVENTS ||--o{ ELIGIBILITY_RULES : rules
+  EVENTS ||--o{ ELIGIBILITY_RULE_VERSIONS : rule_versions
+  EVENTS ||--o{ REGISTRATIONS : receives
+  EVENTS ||--o{ TICKETS : issues
+  EVENTS ||--o{ BOOKING_BANS : bans
+  EVENTS ||--o{ NO_SHOW_RECORDS : no_shows
+
+  REGISTRATIONS ||--o| TICKETS : creates
+  REGISTRATIONS ||--o{ BOOKING_IDEMPOTENCY_RESULTS : records
+  REGISTRATIONS ||--o{ BOOKING_BANS : caused_by
+  REGISTRATIONS ||--o| NO_SHOW_RECORDS : records
+  TICKETS ||--o{ BOOKING_IDEMPOTENCY_RESULTS : returned_by
+  TICKETS ||--o| CHECKIN_RECORDS : redeemed_by
+  TICKETS ||--o{ CHECKIN_REJECTIONS : rejected_by
+
+  EMPLOYEES {
+    text employee_id PK
+    text full_name
+    text department
+    text site
+    int job_grade
+    text employment_status
+  }
+  EVENTS {
+    text event_id PK
+    text title
+    text status
+    text capacity_type
+    int capacity
+    text allocation_mode
+  }
+  EVENT_VERSIONS {
+    text version_id PK
+    text event_id FK
+    int version UK
+    text changed_by
+  }
+  EVENT_ASSETS {
+    text asset_id PK
+    text event_id FK
+    text object_key
+    text file_name
+  }
+  ELIGIBILITY_RULES {
+    text rule_id PK
+    text event_id FK
+    text department
+    text site
+    int min_grade
+  }
+  ELIGIBILITY_RULE_VERSIONS {
+    text version_id PK
+    text event_id FK
+    jsonb expression_json
+    int match_count
+  }
+  REGISTRATIONS {
+    text registration_id PK
+    text event_id FK
+    text employee_id FK
+    text status
+    text idempotency_key UK
+  }
+  TICKETS {
+    text ticket_id PK
+    text registration_id FK
+    text event_id FK
+    text employee_id FK
+    text signed_token_hash UK
+  }
+  BOOKING_IDEMPOTENCY_RESULTS {
+    text idempotency_key PK
+    text event_id
+    text employee_id
+    text registration_id FK
+    text ticket_id FK
+  }
+  CHECKIN_RECORDS {
+    text checkin_id PK
+    text ticket_id FK
+    text staff_id
+    text device_id
+    text status
+  }
+  CHECKIN_REJECTIONS {
+    text rejection_id PK
+    text ticket_id FK
+    text event_id
+    text reason
+  }
+  BOOKING_BANS {
+    text ban_id PK
+    text event_id FK
+    text employee_id FK
+    text registration_id FK
+  }
+  NO_SHOW_RECORDS {
+    text no_show_id PK
+    text registration_id FK
+    text event_id FK
+    text employee_id FK
+  }

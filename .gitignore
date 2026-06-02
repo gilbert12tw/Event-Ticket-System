@@ -9,6 +9,7 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+infra/k8s/baremetal/generated/
 
 # OS / editor noise
 .DS_Store
@@ -27,6 +28,7 @@ tmp/
 temp/
 .cache/
 .scannerwork/
+artifacts/
 
 # Dependencies / build outputs
 node_modules/

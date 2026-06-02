@@ -148,6 +148,16 @@ func TestRouterEmitsRouteBoundedHTTPSpanWhenTracingEnabled(t *testing.T) {
 	)
 }
 
+func TestRouterSetsBackendReplicaHeader(t *testing.T) {
+	router := testRouter(Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	assert.NotEmpty(t, rec.Header().Get("X-CETS-Backend-Replica"))
+}
+
 func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := testRouter(Dependencies{Ticketing: service})

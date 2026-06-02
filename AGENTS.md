@@ -67,6 +67,8 @@ After each small task, add or update matching tests, inspect `git status` and `g
 
 Before pushing committed work, run `act push` once to verify the GitHub Actions push workflow locally. Do not push if `act push` fails; either fix the workflow/code issue or document the blocker explicitly with the failed job and log excerpt.
 
+Before pushing, run Sonar scanning if local Sonar tooling is available. Treat Sonar as available when `sonar-scanner` is installed, or an equivalent scanner container/script can run with `SONAR_HOST_URL` and `SONAR_TOKEN`. If available, run the full scan path with coverage; if the scan, server-side processing, or Quality Gate reports issues, fix them immediately and rerun until clean before pushing. If Sonar is not installed/configured, document that it was skipped for that reason.
+
 Reviewer subagents must check correctness, tests, 12-Factor compliance, clean-code limits, and unrelated diff churn before a task is accepted.
 
 ## Verification

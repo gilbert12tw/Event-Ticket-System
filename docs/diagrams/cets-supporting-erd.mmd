@@ -1,0 +1,104 @@
+erDiagram
+  EMPLOYEES ||--o| NOTIFICATION_PREFERENCES : configures
+  EMPLOYEES ||--o{ NOTIFICATION_DELIVERIES : receives
+  OUTBOX_EVENTS ||--o{ NOTIFICATION_DELIVERIES : publishes
+
+  EVENTS ||--o{ LOTTERY_RUNS : draws
+  LOTTERY_RUNS ||--o{ LOTTERY_RESULTS : produces
+  EVENTS ||--o{ LOTTERY_RESULTS : includes
+  REGISTRATIONS ||--o{ LOTTERY_RESULTS : ranked
+  EMPLOYEES ||--o{ LOTTERY_RESULTS : ranked
+  TICKETS ||--o{ LOTTERY_RESULTS : may_issue
+
+  EVENTS ||--o{ OFFLINE_CHECKIN_BATCHES : packages
+  OFFLINE_CHECKIN_BATCHES ||--o{ OFFLINE_CHECKIN_SCANS : contains
+  TICKETS ||--o{ OFFLINE_CHECKIN_SCANS : scanned
+
+  EVENTS ||--o| REPORTING_EVENT_SUMMARY : projects_to
+  OUTBOX_EVENTS }o--o{ REPORTING_EVENT_SUMMARY : logical_projection
+  OUTBOX_EVENTS }o--o{ AUDIT_LOGS : logical_reference
+  HR_SYNC_BATCHES }o--o{ EMPLOYEES : sync_source
+
+  OUTBOX_EVENTS {
+    text outbox_id PK
+    text aggregate_id
+    text event_type
+    jsonb payload
+    text publish_status
+    text idempotency_key
+  }
+  NOTIFICATION_PREFERENCES {
+    text employee_id PK
+    boolean email_enabled
+    boolean in_app_enabled
+    text opted_out_categories
+  }
+  NOTIFICATION_DELIVERIES {
+    text delivery_id PK
+    text outbox_id FK
+    text employee_id FK
+    text channel
+    text status
+  }
+  LOTTERY_RUNS {
+    text run_id PK
+    text event_id FK
+    text seed UK
+    text status
+    int winner_count
+  }
+  LOTTERY_RESULTS {
+    text result_id PK
+    text run_id FK
+    text event_id FK
+    text registration_id FK
+    text employee_id FK
+    text ticket_id FK
+  }
+  OFFLINE_CHECKIN_BATCHES {
+    text batch_id PK
+    text event_id FK
+    text device_id
+    text staff_id
+    text status
+  }
+  OFFLINE_CHECKIN_SCANS {
+    text scan_id PK
+    text batch_id FK
+    text ticket_id FK
+    text token_hash
+    text conflict_reason
+  }
+  REPORT_EXPORTS {
+    text export_id PK
+    text requested_by
+    text report_type
+    text status
+    text object_key
+  }
+  REPORTING_EVENT_SUMMARY {
+    text event_id PK
+    int confirmed_count
+    int cancelled_count
+    int waitlist_count
+    jsonb department_breakdown
+  }
+  REPORTING_PROJECTION_OFFSETS {
+    text projection_name PK
+    timestamptz last_processed_at
+    timestamptz updated_at
+  }
+  AUDIT_LOGS {
+    text audit_id PK
+    text actor_id
+    text action
+    text entity_type
+    text entity_id
+    jsonb metadata
+  }
+  HR_SYNC_BATCHES {
+    text batch_id PK
+    text source
+    text status
+    int employee_count
+  }

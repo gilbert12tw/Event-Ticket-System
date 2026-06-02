@@ -51,10 +51,7 @@ func (s *Service) remainingForResponseTx(ctx context.Context, tx pgx.Tx, event E
 
 func (s *Service) findRegistrationByEmployee(ctx context.Context, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
 	var reg Registration
-	err := s.db.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE event_id = $1 AND employee_id = $2 AND status <> 'cancelled'`, eventID, employeeID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
+	err := scanRegistrationByEmployee(s.db.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
 	}
@@ -70,10 +67,7 @@ func (s *Service) findRegistrationByEmployee(ctx context.Context, eventID string
 
 func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
 	var reg Registration
-	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE event_id = $1 AND employee_id = $2 AND status <> 'cancelled'`, eventID, employeeID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
+	err := scanRegistrationByEmployee(tx.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
 	}
@@ -85,6 +79,14 @@ func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, e
 		return Registration{}, nil, false, err
 	}
 	return reg, ticket, true, nil
+}
+
+const registrationByEmployeeSQL = `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
+		COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
+	FROM registrations WHERE event_id = $1 AND employee_id = $2 AND status <> 'cancelled'`
+
+func scanRegistrationByEmployee(row pgx.Row, reg *Registration) error {
+	return row.Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 }
 
 func (s *Service) findRegistrationByIDTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {

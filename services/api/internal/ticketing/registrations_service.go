@@ -17,28 +17,16 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 	if err := requireRole(actor, RoleEmployee); err != nil {
 		return BookingResponse{}, err
 	}
-	if strings.TrimSpace(req.IdempotencyKey) == "" {
-		return BookingResponse{}, badRequest("idempotency_key is required")
-	}
-	if req.FamilyCount < 0 || req.FamilyCount > maxFamilyCount {
-		return BookingResponse{}, badRequest("family_count must be between 0 and 10")
-	}
-	employeeID := strings.TrimSpace(req.EmployeeID)
-	if employeeID == "" {
-		employeeID = actor.ID
-	}
-	if employeeID == "" {
-		return BookingResponse{}, badRequest("employee_id is required")
-	}
-	if actor.ID != "" && actor.ID != employeeID {
-		return BookingResponse{}, forbidden("employees may only book for themselves")
+	identity, err := normalizeBookingRequest(actor, req)
+	if err != nil {
+		return BookingResponse{}, err
 	}
 
-	if response, found, err := s.replayCompletedBooking(ctx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount); err != nil || found {
+	if response, found, err := s.replayCompletedBooking(ctx, identity.idempotencyKey, eventID, identity.employeeID, identity.familyCount); err != nil || found {
 		return response, err
 	}
 
-	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, employeeID, req.IdempotencyKey, req.FamilyCount)
+	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, identity.employeeID, identity.idempotencyKey, identity.familyCount)
 	if err != nil {
 		return BookingResponse{}, err
 	}
@@ -47,184 +35,320 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		s.finalizeReservation(ctx, eventID, idempotencyHash, gateConfirmed)
 	}()
 
-	tx, err := s.db.Begin(ctx)
+	result, err := s.bookInTransaction(ctx, actor, eventID, identity, hold, idempotencyHash)
 	if err != nil {
 		return BookingResponse{}, err
 	}
+	gateConfirmed = result.confirmedNewRegistration
+
+	if result.action != "" {
+		s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", result.action, "status", result.status, "event_id", eventID, "actor_role", actor.Role)
+	}
+	return result.response, nil
+}
+
+type bookingIdentity struct {
+	idempotencyKey string
+	employeeID     string
+	familyCount    int
+}
+
+type bookingTxResult struct {
+	response                 BookingResponse
+	action                   string
+	status                   string
+	confirmedNewRegistration bool
+}
+
+type bookingCreation struct {
+	actor          Actor
+	event          Event
+	employee       Employee
+	identity       bookingIdentity
+	status         string
+	capacity       int
+	confirmedCount int
+}
+
+func (s *Service) bookInTransaction(ctx context.Context, actor Actor, eventID string, identity bookingIdentity, hold reservation.Hold, idempotencyHash string) (bookingTxResult, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return bookingTxResult{}, err
+	}
 	defer rollback(ctx, tx)
 
-	if snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, eventID, employeeID, req.FamilyCount, idempotencyHash); err != nil {
-		return BookingResponse{}, err
-	} else if found {
-		response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		return response, tx.Commit(ctx)
+	if result, found, err := s.replayLockedBookingTx(ctx, tx, eventID, identity, idempotencyHash); err != nil || found {
+		return result, err
 	}
+	event, rule, err := s.lockBookableEventTx(ctx, tx, eventID, hold)
+	if err != nil {
+		return bookingTxResult{}, err
+	}
+	employee, err := s.validateBookingTx(ctx, tx, actor, event, rule, identity)
+	if err != nil {
+		return bookingTxResult{}, err
+	}
+	if response, found, err := s.duplicateBookingResponseTx(ctx, tx, event, eventID, identity); err != nil || found {
+		return bookingTxResult{response: response, status: response.Registration.Status}, err
+	}
+	status, capacity, confirmedCount, err := s.resolveBookingStatusTx(ctx, tx, event, eventID, hold)
+	if err != nil {
+		return bookingTxResult{}, err
+	}
+	creation := bookingCreation{actor: actor, event: event, employee: employee, identity: identity, status: status, capacity: capacity, confirmedCount: confirmedCount}
+	response, action, confirmedNewRegistration, err := s.createBookingResponseTx(ctx, tx, creation)
+	if err != nil {
+		return bookingTxResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return bookingTxResult{}, err
+	}
+	return bookingTxResult{response: response, action: action, status: status, confirmedNewRegistration: confirmedNewRegistration}, nil
+}
 
-	var event Event
-	var rule EligibilityRule
+func (s *Service) replayLockedBookingTx(ctx context.Context, tx pgx.Tx, eventID string, identity bookingIdentity, idempotencyHash string) (bookingTxResult, bool, error) {
+	snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, identity.idempotencyKey, eventID, identity.employeeID, identity.familyCount, idempotencyHash)
+	if err != nil || !found {
+		return bookingTxResult{}, found, err
+	}
+	response, err := s.bookingResponseFromIdempotencyResultTx(ctx, tx, snapshot)
+	if err != nil {
+		return bookingTxResult{}, false, err
+	}
+	return bookingTxResult{response: response, status: response.Registration.Status}, true, tx.Commit(ctx)
+}
+
+func normalizeBookingRequest(actor Actor, req BookingRequest) (bookingIdentity, error) {
+	if strings.TrimSpace(req.IdempotencyKey) == "" {
+		return bookingIdentity{}, badRequest("idempotency_key is required")
+	}
+	if req.FamilyCount < 0 || req.FamilyCount > maxFamilyCount {
+		return bookingIdentity{}, badRequest("family_count must be between 0 and 10")
+	}
+	employeeID := strings.TrimSpace(req.EmployeeID)
+	if employeeID == "" {
+		employeeID = actor.ID
+	}
+	if employeeID == "" {
+		return bookingIdentity{}, badRequest("employee_id is required")
+	}
+	if actor.ID != "" && actor.ID != employeeID {
+		return bookingIdentity{}, forbidden("employees may only book for themselves")
+	}
+	return bookingIdentity{idempotencyKey: strings.TrimSpace(req.IdempotencyKey), employeeID: employeeID, familyCount: req.FamilyCount}, nil
+}
+
+func (s *Service) lockBookableEventTx(ctx context.Context, tx pgx.Tx, eventID string, hold reservation.Hold) (Event, EligibilityRule, error) {
 	if hold.Outcome == reservation.OutcomeExhausted {
 		// PH2-22 fast path: Redis already determined this event is full. The
 		// booking commits a waitlist row, which has no capacity constraint.
 		// A shared lock still protects the event-state recheck from racing
 		// with close, cancel, or archive updates.
-		event, rule, err = s.readEventWithRuleShareLockTx(ctx, tx, eventID)
-	} else {
-		event, rule, err = s.lockEventWithRule(ctx, tx, eventID)
+		return s.readEventWithRuleShareLockTx(ctx, tx, eventID)
+	}
+	return s.lockEventWithRule(ctx, tx, eventID)
+}
+
+func (s *Service) validateBookingTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, rule EligibilityRule, identity bookingIdentity) (Employee, error) {
+	if err := s.validateBookableEventTx(ctx, tx, event, identity); err != nil {
+		return Employee{}, err
+	}
+	employee, err := s.getEmployeeTx(ctx, tx, identity.employeeID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Employee{}, notFound("employee not found")
 	}
 	if err != nil {
-		return BookingResponse{}, err
+		return Employee{}, err
 	}
+	return employee, validateBookingEligibility(actor, employee, rule)
+}
 
+func (s *Service) validateBookableEventTx(ctx context.Context, tx pgx.Tx, event Event, identity bookingIdentity) error {
 	// checkBookingBanTx is called after lockEventWithRule so that the ban row
 	// written by a concurrent cancel transaction is visible under the same lock;
 	// a check before the lock would be a stale-read race.
-	if err := s.checkBookingBanTx(ctx, tx, eventID, employeeID); err != nil {
-		return BookingResponse{}, err
+	if err := s.checkBookingBanTx(ctx, tx, event.EventID, identity.employeeID); err != nil {
+		return err
 	}
 	if event.Status != EventStatusPublished {
-		return BookingResponse{}, conflict("event is not open for booking")
+		return conflict("event is not open for booking")
 	}
 	now := s.now()
 	if now.Before(event.RegistrationStart) || now.After(event.RegistrationClose) {
-		return BookingResponse{}, conflict("registration window is closed")
+		return conflict("registration window is closed")
 	}
-	if event.CapacityType == CapacityTypeLimited && req.FamilyCount > 0 {
-		return BookingResponse{}, badRequest("limited events cannot accept family attendees")
+	if event.CapacityType == CapacityTypeLimited && identity.familyCount > 0 {
+		return badRequest("limited events cannot accept family attendees")
 	}
-	if event.CapacityType == CapacityTypeUnlimited && !event.AllowsFamily && req.FamilyCount > 0 {
-		return BookingResponse{}, badRequest("event does not allow family attendees")
+	if event.CapacityType == CapacityTypeUnlimited && !event.AllowsFamily && identity.familyCount > 0 {
+		return badRequest("event does not allow family attendees")
 	}
-	if event.CapacityType == CapacityTypeLimited {
-		cooldown, found, err := s.activeNoShowCooldownTx(ctx, tx, employeeID, now)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		if found {
-			return BookingResponse{}, forbidden("limited event booking blocked by no-show cooldown until " + cooldown.Format("2006-01-02"))
-		}
+	if event.CapacityType != CapacityTypeLimited {
+		return nil
 	}
+	cooldown, found, err := s.activeNoShowCooldownTx(ctx, tx, identity.employeeID, now)
+	if err != nil || !found {
+		return err
+	}
+	return forbidden("limited event booking blocked by no-show cooldown until " + cooldown.Format("2006-01-02"))
+}
 
-	employee, err := s.getEmployeeTx(ctx, tx, employeeID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return BookingResponse{}, notFound("employee not found")
-	}
-	if err != nil {
-		return BookingResponse{}, err
-	}
+func validateBookingEligibility(actor Actor, employee Employee, rule EligibilityRule) error {
 	eligibilityEmployee := employee
 	if actor.Claims != nil {
-		eligibilityEmployee, err = employeeFromClaims(actor)
+		fromClaims, err := employeeFromClaims(actor)
 		if err != nil {
-			return BookingResponse{}, forbidden(ErrMissingClaims.Error())
+			return forbidden(ErrMissingClaims.Error())
 		}
+		eligibilityEmployee = fromClaims
 	}
 	eligible, reason := EvaluateEligibility(eligibilityEmployee, rule)
 	if !eligible {
-		return BookingResponse{}, forbidden(reason)
+		return forbidden(reason)
 	}
+	return nil
+}
 
-	if reg, ticket, found, err := s.findRegistrationByEmployeeTx(ctx, tx, eventID, employeeID); err != nil {
-		return BookingResponse{}, err
-	} else if found {
-		remaining, err := s.remainingForResponseTx(ctx, tx, event)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}
-		if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, response); err != nil {
-			return BookingResponse{}, err
-		}
-		return response, tx.Commit(ctx)
+func (s *Service) duplicateBookingResponseTx(ctx context.Context, tx pgx.Tx, event Event, eventID string, identity bookingIdentity) (BookingResponse, bool, error) {
+	reg, ticket, found, err := s.findRegistrationByEmployeeTx(ctx, tx, eventID, identity.employeeID)
+	if err != nil || !found {
+		return BookingResponse{}, found, err
 	}
-
-	status := RegistrationConfirmed
-	capacity := 0
-	confirmedCount := 0
-	if event.CapacityType == CapacityTypeLimited {
-		capacity, err = limitedCapacity(event)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		if hold.Outcome == reservation.OutcomeExhausted {
-			status = RegistrationWaitlisted
-			confirmedCount = capacity
-		} else {
-			confirmedCount, err = s.confirmedCountTx(ctx, tx, eventID)
-			if err != nil {
-				return BookingResponse{}, err
-			}
-			if confirmedCount >= capacity {
-				status = RegistrationWaitlisted
-			}
-		}
+	remaining, err := s.remainingForResponseTx(ctx, tx, event)
+	if err != nil {
+		return BookingResponse{}, false, err
 	}
+	response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remaining, Message: bookingMessage(reg.Status), Duplicate: true}
+	if err := s.completeBookingIdempotencyResultTx(ctx, tx, identity.idempotencyKey, response); err != nil {
+		return BookingResponse{}, false, err
+	}
+	return response, true, tx.Commit(ctx)
+}
 
+func (s *Service) resolveBookingStatusTx(ctx context.Context, tx pgx.Tx, event Event, eventID string, hold reservation.Hold) (string, int, int, error) {
+	if event.CapacityType != CapacityTypeLimited {
+		return RegistrationConfirmed, 0, 0, nil
+	}
+	capacity, err := limitedCapacity(event)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	if hold.Outcome == reservation.OutcomeExhausted {
+		return RegistrationWaitlisted, capacity, capacity, nil
+	}
+	confirmedCount, err := s.confirmedCountTx(ctx, tx, eventID)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	if confirmedCount >= capacity {
+		return RegistrationWaitlisted, capacity, confirmedCount, nil
+	}
+	return RegistrationConfirmed, capacity, confirmedCount, nil
+}
+
+func (s *Service) createBookingResponseTx(ctx context.Context, tx pgx.Tx, creation bookingCreation) (BookingResponse, string, bool, error) {
+	result, err := s.insertBookingRegistrationTx(ctx, tx, creation)
+	if err != nil {
+		return BookingResponse{}, "", false, err
+	}
+	if result.replayed != nil {
+		return *result.replayed, "", false, nil
+	}
+	reg := result.registration
+	action := bookingAction(creation.status)
+	if err := s.recordBookingSideEffectsTx(ctx, tx, creation.actor, creation.event, reg, action); err != nil {
+		return BookingResponse{}, "", false, err
+	}
+	response := BookingResponse{
+		Registration:      reg,
+		Ticket:            result.ticket,
+		RemainingCapacity: remainingForNewBooking(creation.event, creation.status, creation.capacity, creation.confirmedCount),
+		Message:           bookingMessage(creation.status),
+	}
+	if err := s.completeBookingIdempotencyResultTx(ctx, tx, creation.identity.idempotencyKey, response); err != nil {
+		return BookingResponse{}, "", false, err
+	}
+	return response, action, creation.status == RegistrationConfirmed, nil
+}
+
+type bookingRegistrationResult struct {
+	registration Registration
+	ticket       *Ticket
+	replayed     *BookingResponse
+}
+
+func (s *Service) insertBookingRegistrationTx(ctx context.Context, tx pgx.Tx, creation bookingCreation) (bookingRegistrationResult, error) {
 	regID, err := newID("reg")
 	if err != nil {
-		return BookingResponse{}, err
+		return bookingRegistrationResult{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key, family_count)
-		VALUES ($1,$2,$3,$4,$5,$6)`, regID, eventID, employeeID, status, req.IdempotencyKey, req.FamilyCount)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		regID, creation.event.EventID, creation.identity.employeeID, creation.status, creation.identity.idempotencyKey, creation.identity.familyCount)
 	if err != nil {
-		if isUniqueViolation(err) {
-			existing, found, findErr := s.findRegistrationByIdempotencyKey(ctx, tx, req.IdempotencyKey, eventID, employeeID)
-			if findErr != nil {
-				return BookingResponse{}, findErr
-			}
-			if found {
-				if existing.Registration.FamilyCount != req.FamilyCount {
-					return BookingResponse{}, conflict("idempotency key belongs to a different booking request")
-				}
-				if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, existing); err != nil {
-					return BookingResponse{}, err
-				}
-				return existing, tx.Commit(ctx)
-			}
-		}
-		return BookingResponse{}, err
+		return s.registrationInsertConflictResponseTx(ctx, tx, creation.event.EventID, creation.identity, err)
 	}
-
-	reg := Registration{RegistrationID: regID, EventID: eventID, EmployeeID: employeeID, Status: status, IdempotencyKey: req.IdempotencyKey, FamilyCount: req.FamilyCount, CreatedAt: now}
-	var ticket *Ticket
-	if status == RegistrationConfirmed {
-		created, err := s.createTicketTx(ctx, tx, reg, employee)
-		if err != nil {
-			return BookingResponse{}, err
-		}
-		if err := insertTicketIssuedAuditTx(ctx, tx, actor, created); err != nil {
-			return BookingResponse{}, err
-		}
-		ticket = &created
+	reg := Registration{
+		RegistrationID: regID,
+		EventID:        creation.event.EventID,
+		EmployeeID:     creation.identity.employeeID,
+		Status:         creation.status,
+		IdempotencyKey: creation.identity.idempotencyKey,
+		FamilyCount:    creation.identity.familyCount,
+		CreatedAt:      s.now(),
 	}
+	ticket, err := s.createBookingTicketTx(ctx, tx, creation.actor, reg, creation.employee, creation.status)
+	return bookingRegistrationResult{registration: reg, ticket: ticket}, err
+}
 
+func (s *Service) registrationInsertConflictResponseTx(ctx context.Context, tx pgx.Tx, eventID string, identity bookingIdentity, insertErr error) (bookingRegistrationResult, error) {
+	if !isUniqueViolation(insertErr) {
+		return bookingRegistrationResult{}, insertErr
+	}
+	existing, found, err := s.findRegistrationByIdempotencyKey(ctx, tx, identity.idempotencyKey, eventID, identity.employeeID)
+	if err != nil || !found {
+		return bookingRegistrationResult{}, err
+	}
+	if existing.Registration.FamilyCount != identity.familyCount {
+		return bookingRegistrationResult{}, conflict("idempotency key belongs to a different booking request")
+	}
+	if err := s.completeBookingIdempotencyResultTx(ctx, tx, identity.idempotencyKey, existing); err != nil {
+		return bookingRegistrationResult{}, err
+	}
+	return bookingRegistrationResult{replayed: &existing}, nil
+}
+
+func (s *Service) createBookingTicketTx(ctx context.Context, tx pgx.Tx, actor Actor, reg Registration, employee Employee, status string) (*Ticket, error) {
+	if status != RegistrationConfirmed {
+		return nil, nil
+	}
+	created, err := s.createTicketTx(ctx, tx, reg, employee)
+	if err != nil {
+		return nil, err
+	}
+	if err := insertTicketIssuedAuditTx(ctx, tx, actor, created); err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+func (s *Service) recordBookingSideEffectsTx(ctx context.Context, tx pgx.Tx, actor Actor, event Event, reg Registration, action string) error {
 	auditID, err := newID("aud")
 	if err != nil {
-		return BookingResponse{}, err
+		return err
 	}
-	action := "booking.confirmed"
-	if status == RegistrationWaitlisted {
-		action = "booking.waitlisted"
+	details := map[string]interface{}{"event_id": event.EventID, "status": reg.Status, "capacity_type": event.CapacityType, "family_count": reg.FamilyCount}
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, action, "registration", reg.RegistrationID, details)); err != nil {
+		return err
 	}
-	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor, action, "registration", regID, map[string]interface{}{"event_id": eventID, "status": status, "capacity_type": event.CapacityType, "family_count": req.FamilyCount})); err != nil {
-		return BookingResponse{}, err
-	}
-	if err := insertOutbox(ctx, tx, action, regID, bookingNotificationPayload(reg, event, actor)); err != nil {
-		return BookingResponse{}, err
-	}
-	response := BookingResponse{Registration: reg, Ticket: ticket, RemainingCapacity: remainingForNewBooking(event, status, capacity, confirmedCount), Message: bookingMessage(status)}
-	if err := s.completeBookingIdempotencyResultTx(ctx, tx, req.IdempotencyKey, response); err != nil {
-		return BookingResponse{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return BookingResponse{}, err
-	}
-	gateConfirmed = status == RegistrationConfirmed
+	return insertOutbox(ctx, tx, action, reg.RegistrationID, bookingNotificationPayload(reg, event, actor))
+}
 
-	s.logger.Info("booking completed", "trace_id", traceid.FromContext(ctx), "action", action, "status", status, "event_id", eventID, "actor_role", actor.Role)
-	return response, nil
+func bookingAction(status string) string {
+	if status == RegistrationWaitlisted {
+		return "booking.waitlisted"
+	}
+	return "booking.confirmed"
 }
 
 func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, employeeID string, familyCount int) (BookingResponse, bool, error) {

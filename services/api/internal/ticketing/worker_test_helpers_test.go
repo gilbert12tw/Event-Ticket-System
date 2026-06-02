@@ -36,12 +36,37 @@ func insertWorkerOutbox(t *testing.T, service *Service, ctx context.Context, out
 	insertWorkerOutboxPayload(t, service, ctx, outboxID, "booking.confirmed", status, attempts, `{"employee_id":"E1001"}`)
 }
 
-func insertWorkerOutboxPayload(t *testing.T, service *Service, ctx context.Context, outboxID string, eventType string, status string, attempts int, payload string) {
+type workerOutboxPayloadFixture struct {
+	outboxID  string
+	eventType string
+	status    string
+	attempts  int
+	payload   string
+}
+
+func insertWorkerOutboxPayload(t *testing.T, service *Service, ctx context.Context, outboxID string, fields ...interface{}) {
 	t.Helper()
+	require.Len(t, fields, 4)
+	eventType, ok := fields[0].(string)
+	require.True(t, ok)
+	status, ok := fields[1].(string)
+	require.True(t, ok)
+	attempts, ok := fields[2].(int)
+	require.True(t, ok)
+	payload, ok := fields[3].(string)
+	require.True(t, ok)
+
+	fixture := workerOutboxPayloadFixture{
+		outboxID:  outboxID,
+		eventType: eventType,
+		status:    status,
+		attempts:  attempts,
+		payload:   payload,
+	}
 	_, err := service.db.Exec(ctx, `INSERT INTO outbox_events
 		(outbox_id, aggregate_id, event_type, payload, publish_status, attempts, available_at)
 		VALUES ($1,$2,$3,$4::jsonb,$5,$6,now() - interval '1 minute')`,
-		outboxID, outboxID+"-aggregate", eventType, payload, status, attempts)
+		fixture.outboxID, fixture.outboxID+"-aggregate", fixture.eventType, fixture.payload, fixture.status, fixture.attempts)
 	require.NoError(t, err)
 }
 

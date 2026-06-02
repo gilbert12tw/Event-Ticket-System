@@ -47,6 +47,16 @@
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 }
     },
     {
+      "id": 10,
+      "title": "Backend RED by Replica",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum by (instance, status_class) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{instance}} {{status_class}}" }
+      ],
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 14 }
+    },
+    {
       "id": 5,
       "title": "Outbox Oldest Lag",
       "type": "timeseries",
@@ -75,7 +85,7 @@
         { "expr": "sum by (client, server) (rate(traces_service_graph_request_total[5m]))", "legendFormat": "{{client}} -> {{server}}" },
         { "expr": "sum by (service_name, span_name) (rate(traces_spanmetrics_calls_total[5m]))", "legendFormat": "{{service_name}} {{span_name}}" }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 }
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 }
     },
     {
       "id": 8,
@@ -85,7 +95,7 @@
       "targets": [
         { "expr": "{service_name=~\"backend-.*|worker-.*\"} |= \"otel_trace_id\"" }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 }
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 }
     },
     {
       "id": 9,
@@ -95,7 +105,7 @@
       "targets": [
         { "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" }
       ],
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 }
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 }
     }
   ]
 }

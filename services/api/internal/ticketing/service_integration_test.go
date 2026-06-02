@@ -364,20 +364,14 @@ func newIntegrationServiceWithLogger(t *testing.T, logger *slog.Logger) (*Servic
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool, cleanup := newTicketingTestPool(t, ctx, databaseURL)
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		cleanup()
 		require.NoError(t, err)
 	}
-	suffix := time.Now().UnixNano()
-	if _, err := pool.Exec(ctx, "TRUNCATE outbox_events, audit_logs, checkin_records, tickets, registrations, eligibility_rules, events, employees RESTART IDENTITY CASCADE"); err != nil {
-		cleanup()
-		require.NoError(t, err)
-	}
-
-	service := NewService(pool, NewSigner(fmt.Sprintf("secret-%d", suffix)), logger)
+	service := NewService(pool, NewSigner(fmt.Sprintf("secret-%d", time.Now().UnixNano())), logger)
 	return service, cleanup
 }
 

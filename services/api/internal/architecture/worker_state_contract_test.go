@@ -55,28 +55,41 @@ func localStateWriteOffenders(t *testing.T, root string, scanRoot string, forbid
 		if err != nil {
 			return err
 		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			ident, ok := selector.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			name := ident.Name + "." + selector.Sel.Name
-			if _, forbiddenCall := forbidden[name]; forbiddenCall {
-				rel, _ := filepath.Rel(root, path)
-				offenders = append(offenders, rel+": "+name)
-			}
-			return true
-		})
+		offenders = append(offenders, forbiddenCallsInFile(root, path, parsed, forbidden)...)
 		return nil
 	})
 	require.NoError(t, err)
 	return offenders
+}
+
+func forbiddenCallsInFile(root string, path string, parsed *ast.File, forbidden map[string]struct{}) []string {
+	var offenders []string
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		name, ok := selectedCallName(node)
+		if !ok {
+			return true
+		}
+		if _, forbiddenCall := forbidden[name]; forbiddenCall {
+			rel, _ := filepath.Rel(root, path)
+			offenders = append(offenders, rel+": "+name)
+		}
+		return true
+	})
+	return offenders
+}
+
+func selectedCallName(node ast.Node) (string, bool) {
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	ident, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return ident.Name + "." + selector.Sel.Name, true
 }

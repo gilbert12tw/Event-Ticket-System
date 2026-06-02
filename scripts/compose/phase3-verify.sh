@@ -69,6 +69,32 @@ http_get() {
   curl -fsS "$1" >/dev/null
 }
 
+prom_query() {
+  curl -fsS --get --data-urlencode "query=$1" "$PROMETHEUS_URL/api/v1/query"
+}
+
+json_scalar_value() {
+  sed -n \
+    -e 's/.*"value":\[[^]]*,"\([0-9.][0-9.]*\)".*/\1/p' \
+    -e 's/.*"result":\[[^]]*,"\([0-9.][0-9.]*\)".*/\1/p' |
+    tail -n 1
+}
+
+prom_query_nonzero() {
+  query=$1
+  response=$(prom_query "$query" 2>/dev/null || true)
+  printf '%s\n' "$response" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]'
+}
+
+prom_query_at_least() {
+  query=$1
+  minimum=$2
+  response=$(prom_query "$query" 2>/dev/null || true)
+  value=$(printf '%s\n' "$response" | json_scalar_value)
+  [ -n "$value" ] || return 1
+  awk -v value="$value" -v minimum="$minimum" 'BEGIN { exit(value >= minimum ? 0 : 1) }'
+}
+
 require_running() {
   service=$1
   container=$(compose ps -q "$service")
@@ -105,6 +131,14 @@ check_smoke() {
   for _ in $(seq 1 10); do
     http_get "$EDGE_URL/readyz"
   done
+}
+
+check_k6_distribution() {
+  log "checking k6 Phase 3 load and replica distribution"
+  K6_PHASE3_PROFILE=${K6_PHASE3_VERIFY_PROFILE:-stress} \
+    CETS_PHASE3_URL="$EDGE_URL" \
+    CETS_PHASE3_ENV_FILE="$ENV_FILE" \
+    "$ROOT_DIR/scripts/compose/phase3-k6.sh"
 }
 
 check_datasource() {
@@ -158,32 +192,57 @@ check_prometheus_targets() {
   printf '%s\n' "$targets" | grep -q '"health":"up"' || die "Prometheus has no healthy active targets"
 }
 
+check_prometheus_red_metrics() {
+  log "checking Prometheus RED metrics from k6 load"
+  for _ in $(seq 1 24); do
+    if prom_query_nonzero 'sum(increase(cets_http_requests_total[15m]))' &&
+      prom_query_nonzero 'sum(increase(cets_http_requests_total{status_class=~"4xx|5xx"}[15m]))' &&
+      prom_query_nonzero 'sum(increase(cets_http_request_seconds_count[15m]))' &&
+      prom_query_at_least 'scalar(count(count by (route, method, status_class) (increase(cets_http_requests_total[15m]) > 0)))' 3 &&
+      prom_query_at_least 'scalar(count(count by (instance) (increase(cets_http_requests_total[15m]) > 0)))' 3; then
+      return
+    fi
+    sleep 5
+  done
+  die "Prometheus did not return complete RED evidence by route, status class, latency, and backend instance"
+}
+
+TEMPO_TRACE_ID=""
+
 check_trace_ingest() {
   log "checking Tempo trace ingest"
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 24); do
     traces=$(curl -fsS "$TEMPO_URL/api/search?tags=service.name%3Dcets-backend&limit=1" 2>/dev/null || true)
+    trace_id=$(printf '%s\n' "$traces" | sed -n 's/.*"traceID":"\([a-fA-F0-9][a-fA-F0-9]*\)".*/\1/p' | head -n 1)
+    if [ -n "$trace_id" ]; then
+      trace_detail=$(curl -fsS "$TEMPO_URL/api/traces/$trace_id" 2>/dev/null || true)
+      if printf '%s\n' "$trace_detail" | grep -q "cets-backend" &&
+        printf '%s\n' "$trace_detail" | grep -Eq "http.route|cets.route|rootTraceName"; then
+        TEMPO_TRACE_ID=$trace_id
+        return
+      fi
+    fi
     if printf '%s\n' "$traces" | grep -q '"traceID"'; then
+      TEMPO_TRACE_ID=$(printf '%s\n' "$traces" | sed -n 's/.*"traceID":"\([a-fA-F0-9][a-fA-F0-9]*\)".*/\1/p' | head -n 1)
       return
     fi
     http_get "$EDGE_URL/readyz"
     sleep 5
   done
-  die "Tempo did not return cets-backend traces"
+  die "Tempo did not return cets-backend traces with route evidence"
 }
 
 check_service_graph() {
   log "checking Tempo service graph metrics"
   for _ in $(seq 1 12); do
-    graph=$(curl -fsS --get \
-      --data-urlencode 'query=sum(increase(traces_service_graph_request_total[15m]))' \
-      "$PROMETHEUS_URL/api/v1/query" 2>/dev/null || true)
-    if printf '%s\n' "$graph" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]'; then
+    if prom_query_nonzero 'sum(increase(traces_service_graph_request_total[15m]))' &&
+      prom_query_nonzero 'sum(increase(traces_service_graph_request_total{server="cets-backend"}[15m]))'; then
       return
     fi
     http_get "$EDGE_URL/readyz"
     sleep 5
   done
-  die "Prometheus did not return non-zero service graph metrics"
+  die "Prometheus did not return service graph metrics involving cets-backend"
 }
 
 check_profile_data() {
@@ -205,21 +264,26 @@ check_profile_data() {
 
 check_loki_logs_and_redaction() {
   log "checking Loki trace logs and redaction"
+  [ -n "$TEMPO_TRACE_ID" ] || die "Tempo trace ID is required before Loki trace-log correlation"
   for _ in $(seq 1 12); do
-    logs=$(curl -fsS "$LOKI_URL/loki/api/v1/query_range?query=%7Bservice_name%3D~%22backend-.*%22%7D%20%7C%3D%20%22otel_trace_id%22&limit=1" 2>/dev/null || true)
-    if printf '%s\n' "$logs" | grep -q "otel_trace_id"; then
+    logs=$(curl -fsS --get \
+      --data-urlencode "query={service_name=~\"backend-.*\"} |= \"$TEMPO_TRACE_ID\" |= \"otel_trace_id\"" \
+      --data-urlencode "limit=1" \
+      "$LOKI_URL/loki/api/v1/query_range" 2>/dev/null || true)
+    if printf '%s\n' "$logs" | grep -q "otel_trace_id" &&
+      printf '%s\n' "$logs" | grep -q "$TEMPO_TRACE_ID"; then
       break
     fi
     http_get "$EDGE_URL/readyz"
     sleep 5
   done
-  printf '%s\n' "${logs:-}" | grep -q "otel_trace_id" ||
-    die "Loki did not return trace-correlated backend logs"
+  printf '%s\n' "${logs:-}" | grep -q "$TEMPO_TRACE_ID" ||
+    die "Loki did not return backend logs for Tempo trace $TEMPO_TRACE_ID"
 
   compose rm -sf redaction-canary >/dev/null 2>&1 || true
   docker rm -f cets-phase3-redaction-canary >/dev/null 2>&1 || true
   compose up -d --force-recreate redaction-canary >/dev/null
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 24); do
     redacted_logs=$(curl -fsS "$LOKI_URL/loki/api/v1/query_range?query=%7Bservice_name%3D%22redaction-canary%22%7D%20%7C%3D%20%22phase3-redaction-canary%22&limit=5" 2>/dev/null || true)
     if printf '%s\n' "$redacted_logs" | grep -q "phase3-redaction-canary"; then
       printf '%s\n' "$redacted_logs" | grep -Eq "phase3-raw-(pii|signed|qr|provider|email-body|recipient-email|idempotency)-canary" &&
@@ -240,8 +304,10 @@ main() {
   have curl || die "curl is required"
   check_replicas
   check_smoke
+  check_k6_distribution
   check_lgtm_health
   check_prometheus_targets
+  check_prometheus_red_metrics
   check_trace_ingest
   check_service_graph
   check_profile_data

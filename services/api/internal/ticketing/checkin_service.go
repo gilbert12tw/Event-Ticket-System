@@ -2,7 +2,6 @@ package ticketing
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"event-ticket-system/internal/traceid"
@@ -64,17 +63,7 @@ func normalizeCheckinRequest(req CheckinRequest) (CheckinRequest, error) {
 }
 
 func scanCheckinTicketByHashTx(ctx context.Context, tx pgx.Tx, tokenHash string) (Ticket, bool, error) {
-	var ticket Ticket
-	err := scanCheckinTicketRow(tx.QueryRow(ctx, `SELECT `+checkinTicketSelectColumns+`
-		FROM tickets t
-		JOIN registrations r ON r.registration_id = t.registration_id
-		JOIN events ev ON ev.event_id = t.event_id
-		JOIN employees e ON e.employee_id = t.employee_id
-		WHERE t.signed_token_hash = $1 FOR UPDATE OF t`, tokenHash), &ticket)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Ticket{}, false, nil
-	}
-	return ticket, err == nil, err
+	return scanLockedTicketByHashTx(ctx, tx, tokenHash)
 }
 
 func rejectMissingCheckinTicketTx(ctx context.Context, tx pgx.Tx, actor Actor, req CheckinRequest) (CheckinResponse, error) {
