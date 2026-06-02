@@ -1,0 +1,276 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cost and TTL guardrails for CETS AWS self-managed Kubernetes.
+
+Parameters:
+  StackPrefix:
+    Type: String
+    Default: cets-aws-k8s
+  BudgetLimitUsd:
+    Type: Number
+    Default: 190
+  BudgetThresholdPercent:
+    Type: Number
+    Default: 95
+  ExpirationUtc:
+    Type: String
+    Description: ISO-8601 UTC timestamp after which tagged stacks are deleted.
+  CostAlertEmail:
+    Type: String
+    Default: ''
+
+Conditions:
+  HasCostAlertEmail: !Not [!Equals [!Ref CostAlertEmail, '']]
+
+Resources:
+  CleanupTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${StackPrefix}-cleanup'
+      Tags:
+        - Key: Project
+          Value: cets
+        - Key: Track
+          Value: aws-self-managed-k8s
+        - Key: CetsCleanupGroup
+          Value: !Ref StackPrefix
+
+  CleanupTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref CleanupTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowBudgetsPublish
+            Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref CleanupTopic
+
+  CleanupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${StackPrefix}-cleanup-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: cleanup-tagged-cets-stacks
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ListStacks
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:SetDesiredCapacity
+                  - autoscaling:UpdateAutoScalingGroup
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchDeleteImage
+                  - ecr:DeleteRepository
+                  - ecr:DescribeRepositories
+                  - ecr:ListImages
+                  - ecr:ListTagsForResource
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: cets
+        - Key: Track
+          Value: aws-self-managed-k8s
+        - Key: CetsCleanupGroup
+          Value: !Ref StackPrefix
+
+  CleanupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackPrefix}-cleanup'
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 120
+      Role: !GetAtt CleanupRole.Arn
+      Environment:
+        Variables:
+          STACK_PREFIX: !Ref StackPrefix
+          EXPIRES_AT: !Ref ExpirationUtc
+      Code:
+        ZipFile: |
+          import boto3
+          import datetime
+          import os
+
+          cfn = boto3.client("cloudformation")
+          asg = boto3.client("autoscaling")
+          ecr = boto3.client("ecr")
+
+          PREFIX = os.environ["STACK_PREFIX"]
+          GROUP_TAG = "CetsCleanupGroup"
+          TRACK_TAG = "Track"
+          TRACK_VALUE = "aws-self-managed-k8s"
+          ACTIVE = {
+              "CREATE_COMPLETE", "UPDATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE",
+              "IMPORT_COMPLETE", "ROLLBACK_COMPLETE"
+          }
+
+          def in_scope(name, tags):
+              return (
+                  name.startswith(PREFIX)
+                  and tags.get(GROUP_TAG) == PREFIX
+                  and tags.get(TRACK_TAG) == TRACK_VALUE
+              )
+
+          def expired(event):
+              if event.get("force") is True:
+                  return True
+              if event.get("Records"):
+                  return True
+              value = os.environ["EXPIRES_AT"].replace("Z", "+00:00")
+              return datetime.datetime.now(datetime.timezone.utc) >= datetime.datetime.fromisoformat(value)
+
+          def tagged_stacks():
+              summaries = cfn.list_stacks(StackStatusFilter=list(ACTIVE))["StackSummaries"]
+              matches = []
+              for summary in summaries:
+                  name = summary["StackName"]
+                  detail = cfn.describe_stacks(StackName=name)["Stacks"][0]
+                  tags = {tag["Key"]: tag["Value"] for tag in detail.get("Tags", [])}
+                  if in_scope(name, tags):
+                      matches.append(name)
+              return sorted(matches, key=lambda name: name.endswith("-guardrails"))
+
+          def scale_groups_to_zero():
+              groups = asg.describe_auto_scaling_groups()["AutoScalingGroups"]
+              for group in groups:
+                  tags = {tag["Key"]: tag["Value"] for tag in group.get("Tags", [])}
+                  name = group["AutoScalingGroupName"]
+                  if not in_scope(name, tags) or not name.startswith(f"{PREFIX}-"):
+                      continue
+                  asg.update_auto_scaling_group(AutoScalingGroupName=name, MinSize=0, DesiredCapacity=0)
+
+          def empty_ecr_repositories():
+              for repo in ecr.describe_repositories().get("repositories", []):
+                  arn = repo["repositoryArn"]
+                  tags = {tag["Key"]: tag["Value"] for tag in ecr.list_tags_for_resource(resourceArn=arn).get("tags", [])}
+                  name = repo["repositoryName"]
+                  if not in_scope(name, tags) or not name.startswith(f"{PREFIX}/"):
+                      continue
+                  image_ids = ecr.list_images(repositoryName=name).get("imageIds", [])
+                  if image_ids:
+                      ecr.batch_delete_image(repositoryName=name, imageIds=image_ids)
+
+          def handler(event, _context):
+              print({"event": event, "prefix": PREFIX})
+              if not expired(event):
+                  print("ttl not reached")
+                  return {"deleted": False}
+              scale_groups_to_zero()
+              empty_ecr_repositories()
+              stacks = tagged_stacks()
+              for stack in stacks:
+                  print(f"deleting stack {stack}")
+                  cfn.delete_stack(StackName=stack)
+              return {"deleted": True, "stacks": stacks}
+      Tags:
+        - Key: Project
+          Value: cets
+        - Key: Track
+          Value: aws-self-managed-k8s
+        - Key: CetsCleanupGroup
+          Value: !Ref StackPrefix
+
+  CleanupLambdaSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref CleanupTopic
+      Protocol: lambda
+      Endpoint: !GetAtt CleanupFunction.Arn
+
+  AllowSnsInvokeCleanup:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CleanupFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref CleanupTopic
+
+  TtlCleanupRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${StackPrefix}-ttl-cleanup'
+      ScheduleExpression: rate(1 hour)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CleanupFunction.Arn
+          Id: cleanup
+          Input: '{"source":"ttl"}'
+
+  AllowEventsInvokeCleanup:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CleanupFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TtlCleanupRule.Arn
+
+  CostBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${StackPrefix}-190usd-guardrail'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+        CostTypes:
+          IncludeCredit: false
+          IncludeDiscount: true
+          IncludeOtherSubscription: true
+          IncludeRecurring: true
+          IncludeRefund: true
+          IncludeSubscription: true
+          IncludeSupport: true
+          IncludeTax: true
+          IncludeUpfront: true
+          UseAmortized: false
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: !Ref BudgetThresholdPercent
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - Address: !Ref CleanupTopic
+              SubscriptionType: SNS
+            - !If
+              - HasCostAlertEmail
+              - Address: !Ref CostAlertEmail
+                SubscriptionType: EMAIL
+              - !Ref AWS::NoValue
+
+Outputs:
+  CleanupTopicArn:
+    Value: !Ref CleanupTopic
+  CleanupFunctionName:
+    Value: !Ref CleanupFunction
+  ExpirationUtc:
+    Value: !Ref ExpirationUtc
