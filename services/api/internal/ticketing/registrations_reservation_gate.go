@@ -19,12 +19,27 @@ type eventCapacityPeek struct {
 	Version        int64
 }
 
+type cachedEventCapacityPeek struct {
+	peek      eventCapacityPeek
+	expiresAt time.Time
+}
+
+const eventCapacityPeekCacheTTL = time.Second
+
 // peekEventCapacity reads the event capacity_type and capacity outside any
 // transaction. It is only consulted to decide whether the Redis reservation
 // gate applies; PostgreSQL still rechecks the event row inside the booking
 // transaction. Granted bookings use `FOR UPDATE`; exhausted bookings use a
 // shared lock because they can only create waitlist rows.
 func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventCapacityPeek, error) {
+	now := time.Now()
+	s.capacityPeekMu.Lock()
+	if cached, ok := s.capacityPeekCache[eventID]; ok && cached.expiresAt.After(now) {
+		s.capacityPeekMu.Unlock()
+		return cached.peek, nil
+	}
+	s.capacityPeekMu.Unlock()
+
 	var peek eventCapacityPeek
 	var capacity *int
 	var version int64
@@ -40,6 +55,15 @@ func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventC
 		peek.Capacity = *capacity
 	}
 	peek.Version = version
+	s.capacityPeekMu.Lock()
+	if s.capacityPeekCache == nil {
+		s.capacityPeekCache = make(map[string]cachedEventCapacityPeek)
+	}
+	s.capacityPeekCache[eventID] = cachedEventCapacityPeek{
+		peek:      peek,
+		expiresAt: now.Add(eventCapacityPeekCacheTTL),
+	}
+	s.capacityPeekMu.Unlock()
 	return peek, nil
 }
 

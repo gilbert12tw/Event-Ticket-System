@@ -2,6 +2,7 @@ package ticketing
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
 	"event-ticket-system/internal/observability"
@@ -20,6 +21,8 @@ type Service struct {
 	reservationSecret []byte
 	metrics           *observability.Registry
 	reservationOutage string
+	capacityPeekMu    sync.Mutex
+	capacityPeekCache map[string]cachedEventCapacityPeek
 }
 
 func NewService(db *pgxpool.Pool, signer Signer, logger *slog.Logger) *Service {
