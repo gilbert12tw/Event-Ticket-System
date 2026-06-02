@@ -66,16 +66,14 @@ seed_benchmark_employees() {
     --env="EMPLOYEE_COUNT=$EMPLOYEE_COUNT" \
     --command -- sh -eu -c '
       psql -h cets-postgres-rw -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-        -v prefix="$EMPLOYEE_PREFIX" \
-        -v employee_count="$EMPLOYEE_COUNT" \
         -c "INSERT INTO employees (employee_id, full_name, department, site, job_grade, employment_status)
-            SELECT :'\''prefix'\'' || lpad(i::text, 6, '\''0'\''),
+            SELECT '\''$EMPLOYEE_PREFIX'\'' || lpad(i::text, 6, '\''0'\''),
                    '\''Benchmark Employee '\'' || i,
                    '\''Engineering'\'',
                    '\''Taipei HQ'\'',
                    5,
                    '\''active'\''
-            FROM generate_series(1, :employee_count::int) AS i
+            FROM generate_series(1, $EMPLOYEE_COUNT::int) AS i
             ON CONFLICT (employee_id) DO UPDATE SET
               department = EXCLUDED.department,
               site = EXCLUDED.site,
@@ -104,20 +102,30 @@ run_k6_candidate() {
   local rps=$1
   local out="$ARTIFACT_DIR/k6-$RUN_ID-rps-$rps.json"
   log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL host=$HOST_HEADER"
-  docker run --rm --network host \
+  docker_cmd run --rm --network host \
     -v "$ROOT_DIR/k6:/k6:ro" \
     -v "$ARTIFACT_DIR:/artifacts" \
     -e BASE_URL="$BASE_URL" \
     -e K6_HOST_HEADER="$HOST_HEADER" \
     -e K6_PROVIDER_TOKEN_SECRET="$PROVIDER_TOKEN_SECRET" \
     -e K6_TARGET_RPS="$rps" \
-    -e K6_DURATION="$DURATION" \
+    -e K6_CAPACITY_DURATION="$DURATION" \
     -e K6_READ_RATIO="$READ_RATIO" \
     -e K6_EMPLOYEE_PREFIX="$EMPLOYEE_PREFIX" \
     -e K6_EMPLOYEE_COUNT="$EMPLOYEE_COUNT" \
     -e K6_HOT_EVENT_CAPACITY="$HOT_EVENT_CAPACITY" \
     -e K6_RUN_ID="$RUN_ID-rps-$rps" \
-    "$K6_IMAGE" run --summary-export "/artifacts/$(basename "$out")" "$SCRIPT"
+    "$K6_IMAGE" run --summary-export "/artifacts/$(basename "$out")" "$SCRIPT" >&2
+}
+
+docker_cmd() {
+  if docker info >/dev/null 2>&1; then
+    docker "$@"
+  elif [ -n "${BAREMETAL_BECOME_PASSWORD:-}" ]; then
+    printf '%s\n' "$BAREMETAL_BECOME_PASSWORD" | sudo -S docker "$@"
+  else
+    sudo -n docker "$@"
+  fi
 }
 
 candidate_passes() {
@@ -184,7 +192,7 @@ prom_query() {
 prom_scalar() {
   local query=$1
   curl -fsS --get --data-urlencode "query=$query" "http://127.0.0.1:$PROM_PORT/api/v1/query" |
-    jq -r '.data.result[0].value[1] // empty'
+    jq -r 'if .data.resultType == "scalar" then .data.result[1] else (.data.result[0].value[1] // empty) end'
 }
 
 require_prometheus_evidence() {
