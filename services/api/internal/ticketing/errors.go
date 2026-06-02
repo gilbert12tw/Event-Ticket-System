@@ -3,9 +3,10 @@ package ticketing
 import "errors"
 
 type AppError struct {
-	Status  int
-	Code    string
-	Message string
+	Status            int
+	Code              string
+	Message           string
+	RetryAfterSeconds int
 }
 
 func (e AppError) Error() string {
@@ -36,6 +37,14 @@ func ErrorCode(err error) string {
 	return ""
 }
 
+func ErrorRetryAfterSeconds(err error) (int, bool) {
+	var appErr AppError
+	if errors.As(err, &appErr) && appErr.RetryAfterSeconds > 0 {
+		return appErr.RetryAfterSeconds, true
+	}
+	return 0, false
+}
+
 func badRequest(message string) AppError {
 	return AppError{Status: 400, Message: message}
 }
@@ -58,6 +67,13 @@ func conflict(message string) AppError {
 
 func serviceUnavailable(code string, message string) AppError {
 	return AppError{Status: 503, Code: code, Message: message}
+}
+
+func rateLimited(code string, message string, retryAfterSeconds int) AppError {
+	if retryAfterSeconds <= 0 {
+		retryAfterSeconds = 1
+	}
+	return AppError{Status: 429, Code: code, Message: message, RetryAfterSeconds: retryAfterSeconds}
 }
 
 func notImplemented(message string) AppError {

@@ -93,6 +93,27 @@ func TestBookHandlerRejectsMalformedJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestBookHandlerReturnsRateLimitRetryAfter(t *testing.T) {
+	service := &fakeTicketingService{
+		bookErr: ticketing.AppError{
+			Status:            http.StatusTooManyRequests,
+			Code:              "BOOKING_RATE_LIMITED",
+			Message:           "booking rate limit exceeded; retry shortly",
+			RetryAfterSeconds: 1,
+		},
+	}
+	router := testTicketingRouter(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events/evt_1/bookings", bytes.NewBufferString(`{"idempotency_key":"rate-1"}`))
+	authorizeRequest(t, req, ticketing.RoleEmployee)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code, rec.Body.String())
+	assert.Equal(t, "1", rec.Header().Get("Retry-After"))
+	assertEnvelope(t, rec.Body.String(), `"success":false`, `"error_code":"BOOKING_RATE_LIMITED"`)
+}
+
 func TestWriteJSONEncodesNilSlicesAsEmptyArrays(t *testing.T) {
 	var rows []string
 	rec := httptest.NewRecorder()

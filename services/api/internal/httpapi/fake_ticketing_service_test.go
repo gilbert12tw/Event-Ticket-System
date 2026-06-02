@@ -17,6 +17,7 @@ type fakeTicketingService struct {
 	eligibilityEmployeeID string
 	bookActor             ticketing.Actor
 	bookCalled            bool
+	bookErr               error
 	bookRequest           ticketing.BookingRequest
 	cancelMyActor         ticketing.Actor
 	cancelMyRegistration  string
@@ -106,6 +107,9 @@ func (s *fakeTicketingService) Book(_ context.Context, actor ticketing.Actor, _ 
 	s.bookActor = actor
 	s.bookCalled = true
 	s.bookRequest = req
+	if s.bookErr != nil {
+		return ticketing.BookingResponse{}, s.bookErr
+	}
 	return ticketing.BookingResponse{Registration: ticketing.Registration{RegistrationID: "reg_1"}}, nil
 }
 
