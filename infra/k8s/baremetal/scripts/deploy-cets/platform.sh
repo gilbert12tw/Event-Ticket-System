@@ -53,6 +53,8 @@ spec:
   instances: 3
   imageName: ghcr.io/cloudnative-pg/postgresql:16.6
   postgresql:
+    parameters:
+      max_connections: "200"
     synchronous:
       method: any
       number: 1
