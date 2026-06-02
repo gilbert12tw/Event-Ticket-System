@@ -91,8 +91,8 @@ prom_query_nonzero() {
 
 generate_backend_trace() {
   for _ in $(seq 1 12); do
+    curl -fsS -H "Host: $CETS_PUBLIC_HOSTNAME" "http://$METALLB_INGRESS_IP/healthz" >/dev/null || true
     curl -fsS -H "Host: $CETS_PUBLIC_HOSTNAME" "http://$METALLB_INGRESS_IP/readyz" >/dev/null || true
-    curl -fsS -H "Host: $CETS_PUBLIC_HOSTNAME" "http://$METALLB_INGRESS_IP/api/v1/events" >/dev/null || true
     sleep 2
   done
 }

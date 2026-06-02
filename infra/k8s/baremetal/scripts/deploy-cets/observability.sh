@@ -62,6 +62,15 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
   -f "$GENERATED_DIR/kube-prometheus-stack-values.yaml"
 cat >"$GENERATED_DIR/alloy-values.yaml" <<EOF
 alloy:
+  extraPorts:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP
   extraEnv:
   - name: NODE_NAME
     valueFrom:

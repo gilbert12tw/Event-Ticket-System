@@ -29,6 +29,7 @@ const bookingConflicts = new Counter("k8s_booking_conflicts");
 const backendReplicaHits = new Counter("k8s_backend_replica_hits");
 
 export const options = {
+  summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
   scenarios: {
     readTraffic: {
       executor: "constant-arrival-rate",

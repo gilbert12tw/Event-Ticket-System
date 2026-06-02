@@ -27,6 +27,7 @@ EMPLOYEE_PREFIX=${K8S_BENCH_EMPLOYEE_PREFIX:-KB}
 EMPLOYEE_COUNT=${K8S_BENCH_EMPLOYEE_COUNT:-10000}
 HOT_EVENT_CAPACITY=${K8S_BENCH_HOT_EVENT_CAPACITY:-$EMPLOYEE_COUNT}
 PROM_PORT=${K8S_BENCH_PROM_PORT:-19090}
+REPORT_ONLY_RPS=${K8S_BENCH_REPORT_ONLY_RPS:-}
 
 PROM_PID=""
 
@@ -132,9 +133,11 @@ candidate_passes() {
   local rps=$1
   if run_k6_candidate "$rps"; then
     printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-pass-rps.txt"
+    printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-pass-rps-$RUN_ID.txt"
     return 0
   fi
   printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-fail-rps.txt"
+  printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt"
   return 1
 }
 
@@ -243,14 +246,21 @@ write_report() {
     printf '| Employee fixture | `%s%s` employees, prefix `%s` |\n' "$EMPLOYEE_COUNT" "" "$EMPLOYEE_PREFIX"
     printf '| k6 summary | `%s` |\n' "$summary"
     printf '| Prometheus CPU sample | `%s` |\n' "$prom_cpu"
-    printf '| Prometheus RED sample | `%s` |\n\n' "$prom_red"
+    printf '| Prometheus RED sample | `%s` |\n' "$prom_red"
+    if [ -f "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt" ]; then
+      printf '| Highest failing RPS tested | `%s` |\n' "$(cat "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt")"
+    fi
+    printf '\n'
     printf '## k6 Metrics\n\n'
     jq -r '
+      def metric_value($name; $field):
+        (.metrics[$name][$field] // .metrics[$name].percentiles[$field] // "n/a");
       [
-        ["http_req_duration p95", (.metrics.http_req_duration.percentiles["p(95)"] // "n/a")],
-        ["http_req_duration p99", (.metrics.http_req_duration.percentiles["p(99)"] // "n/a")],
-        ["booking p95", (.metrics.k8s_booking_duration.percentiles["p(95)"] // "n/a")],
-        ["booking p99", (.metrics.k8s_booking_duration.percentiles["p(99)"] // "n/a")],
+        ["http_req_duration p95", metric_value("http_req_duration"; "p(95)")],
+        ["read flow p95", metric_value("http_req_duration{flow:read}"; "p(95)")],
+        ["read flow p99", metric_value("http_req_duration{flow:read}"; "p(99)")],
+        ["booking p95", metric_value("k8s_booking_duration"; "p(95)")],
+        ["booking p99", metric_value("k8s_booking_duration"; "p(99)")],
         ["booking attempts", (.metrics.k8s_booking_attempts.count // "n/a")],
         ["booking confirmed", (.metrics.k8s_booking_confirmed.count // "n/a")],
         ["booking waitlisted", (.metrics.k8s_booking_waitlisted.count // "n/a")]
@@ -268,6 +278,12 @@ main() {
   chmod 0777 "$ARTIFACT_DIR"
   PROVIDER_TOKEN_SECRET=$(provider_secret)
   export PROVIDER_TOKEN_SECRET
+
+  if [ -n "$REPORT_ONLY_RPS" ]; then
+    write_report "$REPORT_ONLY_RPS"
+    log "rewrote capacity report for rps=$REPORT_ONLY_RPS"
+    return
+  fi
 
   curl -fsS -H "Host: $HOST_HEADER" "$BASE_URL/readyz" >/dev/null ||
     die "benchmark target is not ready: $BASE_URL with Host=$HOST_HEADER"
