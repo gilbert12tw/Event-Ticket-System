@@ -9,6 +9,7 @@ import {
   listAdminEvents,
   seedDemo,
   updateEvent,
+  uploadEventPoster,
 } from "@/lib/api";
 import type {
   CreateEventRequest,
@@ -261,6 +262,21 @@ export function AdminEventsPage() {
     }
   }
 
+  async function uploadSelectedPoster(file: File) {
+    if (!selectedAdminEvent) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await uploadEventPoster(selectedAdminEvent.event_id, file);
+      setMessage("活動海報已更新。");
+      await refreshAdminEvents(selectedAdminEvent.event_id);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="content-grid">
       {message && (
@@ -334,6 +350,7 @@ export function AdminEventsPage() {
             eventSiteOptions={eventSiteOptions(hrSiteOptions)}
             windowReady={editWindowReady}
             onEditFormChange={setEditForm}
+            onPosterUpload={(file) => void uploadSelectedPoster(file)}
             onSave={saveSelected}
           />
         </TabsContent>

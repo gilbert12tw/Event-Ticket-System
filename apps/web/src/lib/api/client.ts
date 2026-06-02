@@ -14,6 +14,7 @@ import type {
   DemoClockUpdateRequest,
   EligibilityDecision,
   EligibilityImpactReview,
+  EventAsset,
   EligibilityPreviewRequest,
   EligibilityPreviewResponse,
   EventSummary,
@@ -171,6 +172,39 @@ function post<T>(path: string, body: unknown = {}) {
   return api<T>(path, { method: "POST", body });
 }
 
+async function postForm<T>(path: string, body: FormData) {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authHeaders(),
+    body,
+  });
+  const contentType = response.headers.get("Content-Type") || "";
+  const envelope = contentType.includes("application/json")
+    ? ((await response.json()) as ApiEnvelope<T>)
+    : ({
+        success: false,
+        data: null as T,
+        error: await response.text(),
+      } satisfies ApiEnvelope<T>);
+  logApi(
+    `POST ${path}`,
+    response.status,
+    response.ok,
+    { form: true },
+    envelope,
+  );
+  if (!response.ok) {
+    throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
+  }
+  return envelope.data;
+}
+
+function authHeaders(): HeadersInit {
+  const providerToken = currentProviderToken();
+  return providerToken ? { Authorization: `Bearer ${providerToken}` } : {};
+}
+
 function nextApiLogID() {
   apiLogSequence = (apiLogSequence + 1) % Number.MAX_SAFE_INTEGER;
   return `${Date.now()}-${apiLogSequence}`;
@@ -246,6 +280,49 @@ export const adminHROptions = () =>
 
 export function createEvent(body: CreateEventRequest) {
   return post<EventSummary>("/api/v1/admin/events", body);
+}
+
+export function uploadEventPoster(eventID: string, file: File) {
+  const body = new FormData();
+  body.append("poster", file);
+  return postForm<EventAsset>(
+    `/api/v1/admin/events/${encoded(eventID)}/poster`,
+    body,
+  );
+}
+
+export function eventPosterUrl(eventID: string) {
+  return `/api/v1/events/${encoded(eventID)}/poster`;
+}
+
+export async function eventPosterBlob(eventID: string) {
+  const path = eventPosterUrl(eventID);
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    headers: authHeaders(),
+  });
+  if (response.status === 404) {
+    logApi(`GET ${path}`, response.status, false, null, { poster: "missing" });
+    return null;
+  }
+  if (!response.ok) {
+    const contentType = response.headers.get("Content-Type") || "";
+    const envelope = contentType.includes("application/json")
+      ? ((await response.json()) as ApiEnvelope<unknown>)
+      : ({
+          success: false,
+          data: null,
+          error: await response.text(),
+        } satisfies ApiEnvelope<unknown>);
+    logApi(`GET ${path}`, response.status, false, null, envelope);
+    throw new ApiError(response.status, envelope);
+  }
+  const blob = await response.blob();
+  logApi(`GET ${path}`, response.status, true, null, {
+    poster: true,
+    content_type: response.headers.get("Content-Type") || "",
+  });
+  return blob;
 }
 
 export const listAdminEvents = () =>

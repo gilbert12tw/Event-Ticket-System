@@ -169,3 +169,43 @@
         "$ref": "../components/responses.yaml#/NotFound"
       "409":
         "$ref": "../components/responses.yaml#/Conflict"
+"/admin/events/{event_id}/poster":
+  post:
+    tags:
+      - Admin
+    operationId: uploadAdminEventPoster
+    x-required-roles:
+      - activity_admin
+    summary: Upload or replace an event poster.
+    description: Stores one poster image per event and replaces the prior poster metadata atomically. Supported media types are JPEG, PNG, and WebP up to 5 MiB.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+              - poster
+            properties:
+              poster:
+                type: string
+                format: binary
+    responses:
+      "201":
+        description: Poster metadata after upload.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/events.yaml#/EventAssetResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "503":
+        "$ref": "../components/responses.yaml#/InternalServerError"

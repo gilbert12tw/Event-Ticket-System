@@ -285,6 +285,7 @@ export function AdminEventEditTab({
   eventSiteOptions,
   windowReady,
   onEditFormChange,
+  onPosterUpload,
   onSave,
 }: Readonly<{
   busy: boolean;
@@ -293,6 +294,7 @@ export function AdminEventEditTab({
   eventSiteOptions: Option[];
   windowReady: boolean;
   onEditFormChange: (next: AdminEditForm) => void;
+  onPosterUpload: (file: File) => void;
   onSave: FormSubmitHandler;
 }>) {
   if (!selectedEvent) return <SelectEventFirst action="編輯" />;
@@ -342,6 +344,23 @@ export function AdminEventEditTab({
           value={editForm.tags}
           onChange={(tags) => onEditFormChange({ ...editForm, tags })}
         />
+      </fieldset>
+      <fieldset className="form-section full">
+        <legend>活動海報</legend>
+        <label className="field">
+          <span>活動海報</span>
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            disabled={busy}
+            type="file"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) onPosterUpload(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        <p className="form-hint">JPG、PNG、WebP，最多 5MB。</p>
       </fieldset>
       <div className="form-actions full">
         <Button type="submit" disabled={busy || !windowReady}>

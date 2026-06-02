@@ -12,6 +12,7 @@ import {
   seedDemo,
   updateEvent,
   updateEligibility,
+  uploadEventPoster,
 } from "@/lib/api";
 import { eventFixture } from "@/test/event-fixtures";
 import { AdminEventsPage } from "./admin-pages";
@@ -30,6 +31,7 @@ vi.mock("@/lib/api", async () => {
     seedDemo: vi.fn(),
     updateEvent: vi.fn(),
     updateEligibility: vi.fn(),
+    uploadEventPoster: vi.fn(),
   };
 });
 
@@ -66,6 +68,15 @@ describe("AdminEventsPage CRUD tabs", () => {
       event_id: "evt-1",
       match_count: 2,
       zero_match: false,
+    });
+    vi.mocked(uploadEventPoster).mockResolvedValue({
+      asset_id: "ast-1",
+      event_id: "evt-1",
+      file_name: "poster.png",
+      content_type: "image/png",
+      size_bytes: 7,
+      created_by: "E1001",
+      created_at: "2026-05-16T10:00:00Z",
     });
   });
 
@@ -219,5 +230,18 @@ describe("AdminEventsPage CRUD tabs", () => {
         expect.objectContaining({ allow_zero_match: true }),
       ),
     );
+  });
+
+  it("uploads a poster from the edit workspace", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "編輯活動" }));
+    const poster = new File(["pngdata"], "poster.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText("活動海報"), poster);
+
+    await waitFor(() =>
+      expect(uploadEventPoster).toHaveBeenCalledWith("evt-1", poster),
+    );
+    expect(await screen.findByText("活動海報已更新。")).toBeInTheDocument();
   });
 });

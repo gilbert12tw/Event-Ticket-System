@@ -74,3 +74,31 @@
         "$ref": "../components/responses.yaml#/Forbidden"
       "404":
         "$ref": "../components/responses.yaml#/NotFound"
+"/admin/reports/exports/{export_id}/download":
+  get:
+    tags:
+      - Reports
+    operationId: downloadAdminReportExport
+    x-required-roles:
+      - hr_admin
+      - system_admin
+    summary: Download a completed aggregate CSV export.
+    description: Streams the ready aggregate CSV export from object storage after rechecking report authorization. Exports that are not ready return conflict.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/ExportId"
+    responses:
+      "200":
+        description: CSV export stream.
+        content:
+          text/csv:
+            schema:
+              type: string
+              format: binary
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+      "409":
+        "$ref": "../components/responses.yaml#/Conflict"

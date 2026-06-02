@@ -13,6 +13,7 @@ type ticketingRouteConfig struct {
 	opsAPIEnabled               bool
 	reportStaleThresholdSeconds int
 	reportStore                 ticketing.ReportObjectReader
+	objectStore                 objectStore
 	logger                      *slog.Logger
 }
 
@@ -22,8 +23,10 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readS
 	}
 	mux.HandleFunc("GET /api/v1/admin/events", protected(readService, handleListAdminEvents(readService)))
 	mux.HandleFunc("POST /api/v1/admin/events", protected(service, handleCreateEvent(service)))
+	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/poster", protected(service, handleUploadEventPoster(service, cfg.objectStore)))
 	mux.HandleFunc("GET /api/v1/events", protected(readService, handleListEvents(readService)))
 	mux.HandleFunc("GET /api/v1/events/{event_id}", protected(readService, handleGetEvent(readService)))
+	mux.HandleFunc("GET /api/v1/events/{event_id}/poster", protected(readService, handleGetEventPoster(readService, cfg.objectStore)))
 	mux.HandleFunc("PATCH /api/v1/admin/events/{event_id}", protected(service, handleUpdateEvent(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/state", protected(service, handleChangeEventState(service)))
 	mux.HandleFunc("POST /api/v1/admin/events/{event_id}/duplicate", protected(service, handleDuplicateEvent(service)))

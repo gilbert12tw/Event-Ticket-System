@@ -8,6 +8,7 @@ import (
 
 type TicketingService interface {
 	EventService
+	EventAssetService
 	EligibilityService
 	RegistrationService
 	TicketService
@@ -29,6 +30,11 @@ type EventService interface {
 	DuplicateEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ArchiveEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ListEvents(ctx context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.EventSummary, error)
+}
+
+type EventAssetService interface {
+	SaveEventPoster(ctx context.Context, actor ticketing.Actor, eventID string, input ticketing.EventAssetInput) (ticketing.EventAsset, error)
+	GetEventPoster(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventAsset, error)
 }
 
 type EligibilityService interface {

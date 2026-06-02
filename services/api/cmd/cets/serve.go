@@ -99,6 +99,7 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		ProviderAuth:                httpapi.ProviderAuthConfig{Secret: cfg.ProviderTokenSecret},
 		ReportStaleThresholdSeconds: cfg.ReportStaleThresholdSeconds,
 		ReportStore:                 reportStore,
+		ObjectStore:                 reportStore,
 	})
 	server := &http.Server{Addr: cfg.AppAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	return runHTTPServer(server, cfg, logger)

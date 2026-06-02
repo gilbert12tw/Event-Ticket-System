@@ -42,6 +42,7 @@ type fakeTicketingService struct {
 	createRequest         ticketing.CreateEventRequest
 	updateRequest         ticketing.UpdateEventRequest
 	reportExport          ticketing.ReportExport
+	posterInput           ticketing.EventAssetInput
 }
 
 func (s *fakeTicketingService) CreateEvent(ctx context.Context, actor ticketing.Actor, req ticketing.CreateEventRequest) (ticketing.EventSummary, error) {
@@ -81,6 +82,15 @@ func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Act
 	s.listEventsActor = actor
 	s.listEventsEmployeeID = employeeID
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
+}
+
+func (s *fakeTicketingService) SaveEventPoster(_ context.Context, _ ticketing.Actor, eventID string, input ticketing.EventAssetInput) (ticketing.EventAsset, error) {
+	s.posterInput = input
+	return ticketing.EventAsset{AssetID: "ast_1", EventID: eventID, ObjectKey: input.ObjectKey, FileName: input.FileName, ContentType: input.ContentType, SizeBytes: input.SizeBytes}, nil
+}
+
+func (s *fakeTicketingService) GetEventPoster(context.Context, ticketing.Actor, string) (ticketing.EventAsset, error) {
+	return ticketing.EventAsset{AssetID: "ast_1", EventID: "evt_1", ObjectKey: "events/evt_1/poster.png", ContentType: "image/png"}, nil
 }
 
 func (s *fakeTicketingService) CheckEligibility(_ context.Context, actor ticketing.Actor, _ string, employeeID string) (ticketing.EligibilityDecision, error) {

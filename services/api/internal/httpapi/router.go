@@ -42,6 +42,7 @@ type Dependencies struct {
 	ProviderAuth                ProviderAuthConfig
 	ReportStaleThresholdSeconds int
 	ReportStore                 ticketing.ReportObjectReader
+	ObjectStore                 objectStore
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -71,12 +72,17 @@ func NewRouter(deps Dependencies) http.Handler {
 	if readTicketing == nil {
 		readTicketing = deps.Ticketing
 	}
+	reportStore := deps.ReportStore
+	if reportStore == nil && deps.ObjectStore != nil {
+		reportStore = deps.ObjectStore
+	}
 	registerTicketingRoutes(mux, deps.Ticketing, readTicketing, ticketingRouteConfig{
 		appEnv:                      deps.AppEnv,
 		provider:                    provider,
 		opsAPIEnabled:               deps.OpsAPIEnabled,
 		reportStaleThresholdSeconds: deps.ReportStaleThresholdSeconds,
-		reportStore:                 deps.ReportStore,
+		reportStore:                 reportStore,
+		objectStore:                 deps.ObjectStore,
 		logger:                      deps.Logger,
 	})
 

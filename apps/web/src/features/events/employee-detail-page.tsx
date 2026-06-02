@@ -3,6 +3,7 @@ import { navigate, ticketDetailPath } from "@/app/routes";
 import {
   bookEvent,
   cancelMyRegistration,
+  eventPosterBlob,
   getEvent,
   listEvents,
 } from "@/lib/api";
@@ -187,6 +188,50 @@ export function EmployeeEventDetailPage({
 
   return (
     <section className="content-grid">
+      {detail && (
+        <Card className="panel span-8 event-intro-panel">
+          <EventIntroPanel event={detail} />
+        </Card>
+      )}
+      <Card className="panel span-4 event-primary-action-panel">
+        <h2>主要操作</h2>
+        {detail && (
+          <p className="form-hint event-action-context">{detail.title}</p>
+        )}
+        {!detail && (
+          <EmptyState
+            title="尚未選擇活動"
+            action="選擇活動後會顯示報名與取消控制。"
+          />
+        )}
+        {detail && (
+          <div className="summary-block event-action-rail">
+            <DetailActionControls
+              claims={claims}
+              detail={detail}
+              familyCount={familyCount}
+              pendingAction={pendingAction}
+              onBook={() => void bookSelected()}
+              onFamilyCountChange={setFamilyCount}
+            />
+            <CancellationControl
+              busy={pendingAction === "cancel"}
+              event={detail}
+              reason={cancelReason}
+              onCancel={() => void cancelSelected()}
+              onReasonChange={setCancelReason}
+            />
+            <BookingResultBlock
+              eventID={detail.event_id}
+              result={bookingResult || undefined}
+            />
+            {detail.current_user_ticket?.status === "active" &&
+              !bookingResult?.ticketID && (
+                <TicketHandoff ticket={detail.current_user_ticket} />
+              )}
+          </div>
+        )}
+      </Card>
       <Card className="panel span-8 event-detail-check-panel">
         <div className="section-heading">
           <div>
@@ -227,46 +272,47 @@ export function EmployeeEventDetailPage({
         )}
         {detail && <EventSummaryBlock event={detail} />}
       </Card>
-      <Card className="panel span-4 event-primary-action-panel">
-        <h2>主要操作</h2>
-        {detail && (
-          <p className="form-hint event-action-context">{detail.title}</p>
-        )}
-        {!detail && (
-          <EmptyState
-            title="尚未選擇活動"
-            action="選擇活動後會顯示報名與取消控制。"
-          />
-        )}
-        {detail && (
-          <div className="summary-block event-action-rail">
-            <DetailActionControls
-              claims={claims}
-              detail={detail}
-              familyCount={familyCount}
-              pendingAction={pendingAction}
-              onBook={() => void bookSelected()}
-              onFamilyCountChange={setFamilyCount}
-            />
-            <CancellationControl
-              busy={pendingAction === "cancel"}
-              event={detail}
-              reason={cancelReason}
-              onCancel={() => void cancelSelected()}
-              onReasonChange={setCancelReason}
-            />
-            <BookingResultBlock
-              eventID={detail.event_id}
-              result={bookingResult || undefined}
-            />
-            {detail.current_user_ticket?.status === "active" &&
-              !bookingResult?.ticketID && (
-                <TicketHandoff ticket={detail.current_user_ticket} />
-              )}
-          </div>
-        )}
-      </Card>
     </section>
+  );
+}
+
+function EventIntroPanel({ event }: Readonly<{ event: EventSummary }>) {
+  const [posterURL, setPosterURL] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    let objectURL = "";
+    void eventPosterBlob(event.event_id)
+      .then((blob) => {
+        if (!active || !blob) return;
+        objectURL = URL.createObjectURL(blob);
+        setPosterURL(objectURL);
+      })
+      .catch(() => {
+        if (active) setPosterURL("");
+      });
+    return () => {
+      active = false;
+      if (objectURL) URL.revokeObjectURL(objectURL);
+    };
+  }, [event.event_id]);
+
+  return (
+    <div className="event-intro">
+      <div>
+        <h2>活動介紹</h2>
+        <p>{event.description || "未提供活動介紹。"}</p>
+      </div>
+      {posterURL && (
+        <div className="event-poster-frame">
+          <img
+            alt={`${event.title} 海報`}
+            className="event-poster-image"
+            src={posterURL}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -177,6 +177,16 @@ export type EventSummary = EventMutableFields & {
   no_show_cooldown?: NoShowCooldown;
 };
 
+export type EventAsset = {
+  asset_id: string;
+  event_id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  created_by: string;
+  created_at: string;
+};
+
 function normalizeEligibilityDecision(
   decision: EligibilityDecision,
 ): EligibilityDecision {
