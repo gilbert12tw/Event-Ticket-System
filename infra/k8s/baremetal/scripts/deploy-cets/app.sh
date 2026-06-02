@@ -87,9 +87,9 @@ metadata:
   namespace: $CETS_NAMESPACE
 type: Opaque
 stringData:
-  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-16}"
-  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-16}"
-  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-16}"
+  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-4}"
+  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-4}"
+  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-4}"
   TOKEN_SIGNING_SECRET: "$TOKEN_SIGNING_SECRET"
   PROVIDER_TOKEN_SECRET: "$PROVIDER_TOKEN_SECRET"
   BOOKING_RESERVATION_HASH_SECRET: "$BOOKING_RESERVATION_HASH_SECRET"
@@ -449,6 +449,16 @@ spec:
 EOF
 
 kubectl_bm apply -f "$GENERATED_DIR/cets-app.yaml"
+log "restarting database client deployments to load runtime env"
+kubectl_bm -n "$CETS_NAMESPACE" rollout restart deployment/backend
+for kind in notification projection compensation export; do
+  kubectl_bm -n "$CETS_NAMESPACE" rollout restart "deployment/worker-$kind"
+done
+kubectl_bm -n "$CETS_NAMESPACE" rollout status deployment/backend --timeout=300s
+for kind in notification projection compensation export; do
+  kubectl_bm -n "$CETS_NAMESPACE" rollout status "deployment/worker-$kind" --timeout=300s
+done
+
 kubectl_bm apply -f "$GENERATED_DIR/cets-jobs.yaml"
 kubectl_bm wait --for=condition=complete job/cets-migrate -n "$CETS_NAMESPACE" --timeout=300s
 kubectl_bm wait --for=condition=complete job/cets-seed -n "$CETS_NAMESPACE" --timeout=300s
