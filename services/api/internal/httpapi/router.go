@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"event-ticket-system/internal/observability"
@@ -73,26 +74,59 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleReady(db Pinger, timeout time.Duration) http.HandlerFunc {
+	var mu sync.Mutex
+	var cached readyCheck
 	return func(w http.ResponseWriter, r *http.Request) {
-		if db == nil {
-			writeError(w, http.StatusServiceUnavailable, "database is not configured")
+		now := time.Now()
+		mu.Lock()
+		if cached.expiresAt.After(now) {
+			result := cached
+			mu.Unlock()
+			writeReadyResult(w, result)
 			return
 		}
+		mu.Unlock()
 
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
-		if err := db.Ping(ctx); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "database is not ready")
-			return
-		}
-		if schemaDB, ok := db.(schemaPinger); ok {
-			if err := checkRequiredSchema(ctx, schemaDB); err != nil {
-				writeError(w, http.StatusServiceUnavailable, "database schema is not ready")
-				return
-			}
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		result := checkReady(ctx, db)
+		result.expiresAt = now.Add(readyCacheTTL)
+		mu.Lock()
+		cached = result
+		mu.Unlock()
+		writeReadyResult(w, result)
 	}
+}
+
+const readyCacheTTL = time.Second
+
+type readyCheck struct {
+	status    int
+	message   string
+	expiresAt time.Time
+}
+
+func checkReady(ctx context.Context, db Pinger) readyCheck {
+	if db == nil {
+		return readyCheck{status: http.StatusServiceUnavailable, message: "database is not configured"}
+	}
+	if err := db.Ping(ctx); err != nil {
+		return readyCheck{status: http.StatusServiceUnavailable, message: "database is not ready"}
+	}
+	if schemaDB, ok := db.(schemaPinger); ok {
+		if err := checkRequiredSchema(ctx, schemaDB); err != nil {
+			return readyCheck{status: http.StatusServiceUnavailable, message: "database schema is not ready"}
+		}
+	}
+	return readyCheck{status: http.StatusOK}
+}
+
+func writeReadyResult(w http.ResponseWriter, result readyCheck) {
+	if result.status != http.StatusOK {
+		writeError(w, result.status, result.message)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 var errRequiredSchemaMissing = errors.New("required database schema is not ready")

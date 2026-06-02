@@ -66,6 +66,22 @@ func (r fakeReadyRow) Scan(dest ...interface{}) error {
 	return nil
 }
 
+type countingSchemaPinger struct {
+	schemaReady bool
+	pings       int
+	queries     int
+}
+
+func (p *countingSchemaPinger) Ping(context.Context) error {
+	p.pings++
+	return nil
+}
+
+func (p *countingSchemaPinger) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+	p.queries++
+	return fakeReadyRow{ready: p.schemaReady}
+}
+
 func TestHealthz(t *testing.T) {
 	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -462,6 +478,21 @@ func TestReadyzOK(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assertEnvelope(t, rec.Body.String(), `"success":true`, `"status":"ready"`)
+}
+
+func TestReadyzCachesDatabaseProbe(t *testing.T) {
+	db := &countingSchemaPinger{schemaReady: true}
+	router := testRouter(Dependencies{DB: db})
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
+
+	require.Equal(t, 1, db.pings)
+	require.Equal(t, 1, db.queries)
 }
 
 func TestReadyzRejectsUnmigratedDatabase(t *testing.T) {
