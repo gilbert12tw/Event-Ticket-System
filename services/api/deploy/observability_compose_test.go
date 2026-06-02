@@ -26,6 +26,13 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/prometheus/prometheus.yml",
 		"${PROMETHEUS_PORT:-9090}:9090",
 		"./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+		"alertmanager:",
+		"image: prom/alertmanager:v0.28.1",
+		"--config.file=/etc/alertmanager/alertmanager.yml",
+		"--storage.path=/alertmanager",
+		"${ALERTMANAGER_PORT:-9093}:9093",
+		"./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
+		"alertmanager_data:",
 		"loki:",
 		"image: grafana/loki:3.5.0",
 		"-config.file=/etc/loki/config.yml",
@@ -48,6 +55,20 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"--config.file=/etc/blackbox_exporter/config.yml",
 		"${BLACKBOX_EXPORTER_PORT:-9115}:9115",
 		"./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro",
+		"node-exporter:",
+		"image: prom/node-exporter:v1.9.1",
+		"--path.rootfs=/host",
+		"${NODE_EXPORTER_PORT:-9100}:9100",
+		"/:/host:ro,rslave",
+		"cadvisor:",
+		"image: gcr.io/cadvisor/cadvisor:v0.52.1",
+		"privileged: true",
+		"${CADVISOR_PORT:-8081}:8080",
+		"/:/rootfs:ro",
+		"/var/run:/var/run:ro",
+		"/sys:/sys:ro",
+		"/var/lib/docker/:/var/lib/docker:ro",
+		"/dev/disk/:/dev/disk:ro",
 		"./observability/rules:/etc/prometheus/rules:ro",
 		"grafana:",
 		"image: grafana/grafana:12.2.0",
@@ -57,11 +78,18 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro",
 		"./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro",
 		"PROMETHEUS_PORT=9090",
+		"ALERTMANAGER_PORT=9093",
 		"BLACKBOX_EXPORTER_PORT=9115",
+		"NODE_EXPORTER_PORT=9100",
+		"CADVISOR_PORT=8081",
 		"LOKI_PORT=3100",
 		"TEMPO_PORT=3200",
 		"TEMPO_OTLP_GRPC_PORT=4317",
 		"TEMPO_OTLP_HTTP_PORT=4318",
+		"OTEL_TRACES_ENABLED=false",
+		"OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318",
+		"OTEL_SERVICE_NAME=cets-api",
+		"OTEL_SERVICE_VERSION=local-compose",
 		"GRAFANA_PORT=3000",
 	}
 	for _, fragment := range required {
@@ -74,6 +102,8 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	blackbox, err := os.ReadFile("observability/blackbox.yml")
 	require.NoError(t, err)
+	alertmanager, err := os.ReadFile("observability/alertmanager.yml")
+	require.NoError(t, err)
 	prometheusDatasource, err := os.ReadFile("observability/grafana/provisioning/datasources/prometheus.yml")
 	require.NoError(t, err)
 	loki, err := os.ReadFile("observability/loki.yml")
@@ -84,21 +114,32 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	require.NoError(t, err)
 	dashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-observability.json")
 	require.NoError(t, err)
+	useDashboardFile, err := os.ReadFile("observability/grafana/dashboards/cets-use-exporters.json")
+	require.NoError(t, err)
 
 	combined := strings.Join([]string{
 		string(prometheus),
 		string(blackbox),
+		string(alertmanager),
 		string(prometheusDatasource),
 		string(loki),
 		string(promtail),
 		string(tempo),
 		string(dashboardFile),
+		string(useDashboardFile),
 	}, "\n")
 	required := []string{
 		"job_name: cets-app",
 		"metrics_path: /metrics",
 		"rule_files:",
 		"/etc/prometheus/rules/*.yml",
+		"alerting:",
+		"alertmanagers:",
+		"alertmanager:9093",
+		"receiver: local-review",
+		"group_by:",
+		"severity",
+		"repeat_interval: 4h",
 		"app:8080",
 		"job_name: cets-blackbox",
 		"metrics_path: /probe",
@@ -107,12 +148,23 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"http://app:8080/readyz",
 		"probe_scope: blackbox",
 		"blackbox-exporter:9115",
+		"job_name: cets-node-exporter",
+		"node-exporter:9100",
+		"job_name: cets-cadvisor",
+		"cadvisor:8080",
+		"signal_scope: use",
 		"prober: http",
 		"probe_success{probe_scope=\\\"blackbox\\\"}",
 		"probe_duration_seconds{probe_scope=\\\"blackbox\\\"}",
 		"url: http://prometheus:9090",
 		"type: loki",
 		"url: http://loki:3100",
+		"derivedFields:",
+		"name: Tempo trace",
+		`matcherRegex: '"otel_trace_id":"([a-f0-9]{32})"'`,
+		"datasourceUid: Tempo",
+		`url: "$${__value.raw}"`,
+		`urlDisplayLabel: "Open trace"`,
 		"type: tempo",
 		"url: http://tempo:3200",
 		"url: http://loki:3100/loki/api/v1/push",
@@ -126,6 +178,18 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"cets_db_pool_conns",
 		"cets_db_lock_waiting_sessions",
 		"cets_outbox_oldest_lag_seconds",
+		"node_cpu_seconds_total{mode=\\\"idle\\\", signal_scope=\\\"use\\\"}",
+		"node_load1{signal_scope=\\\"use\\\"}",
+		"node_memory_MemAvailable_bytes{signal_scope=\\\"use\\\"}",
+		"node_vmstat_pgpgin{signal_scope=\\\"use\\\"}",
+		"container_cpu_usage_seconds_total{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
+		"container_memory_working_set_bytes{name!=\\\"\\\", signal_scope=\\\"use\\\"}",
+		"USE CPU Utilization",
+		"USE CPU Saturation",
+		"USE Memory Utilization",
+		"USE Memory Saturation",
+		"Container CPU Usage",
+		"Container Memory Working Set",
 	}
 	for _, fragment := range required {
 		assert.Contains(t, combined, fragment, "observability provisioning is missing %q", fragment)
@@ -134,6 +198,20 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 	var dashboard map[string]interface{}
 	require.NoError(t, json.Unmarshal(dashboardFile, &dashboard))
 	assert.Equal(t, "CETS Observability", dashboard["title"])
+
+	var useDashboard map[string]interface{}
+	require.NoError(t, json.Unmarshal(useDashboardFile, &useDashboard))
+	assert.Equal(t, "CETS USE Exporters", useDashboard["title"])
+
+	var datasourceProvisioning grafanaDatasourceProvisioning
+	require.NoError(t, yaml.Unmarshal(prometheusDatasource, &datasourceProvisioning))
+	lokiDatasource := datasourceProvisioning.findDatasource("Loki")
+	require.NotNil(t, lokiDatasource)
+	require.Len(t, lokiDatasource.JSONData.DerivedFields, 1)
+	assert.Equal(t, "Tempo trace", lokiDatasource.JSONData.DerivedFields[0].Name)
+	assert.Equal(t, `"otel_trace_id":"([a-f0-9]{32})"`, lokiDatasource.JSONData.DerivedFields[0].MatcherRegex)
+	assert.Equal(t, "Tempo", lokiDatasource.JSONData.DerivedFields[0].DatasourceUID)
+	assert.Equal(t, "$${__value.raw}", lokiDatasource.JSONData.DerivedFields[0].URL)
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
@@ -145,11 +223,17 @@ func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
 		serviceBlock := composeServiceBlock(t, composeText, serviceName)
 		assert.NotContains(t, serviceBlock, "loki:", "%s must not depend on Loki for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "promtail:", "%s must not depend on Promtail for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "tempo:", "%s must not depend on Tempo for runtime behavior", serviceName)
-		assert.NotContains(t, serviceBlock, "OTEL_", "%s must not enable trace export without typed app config", serviceName)
+		assert.NotContains(t, serviceBlock, "\n      tempo:", "%s must not depend on Tempo for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "alertmanager:", "%s must not depend on Alertmanager for runtime behavior", serviceName)
 		assert.NotContains(t, serviceBlock, "LOKI_", "%s must continue to write logs to stdout/stderr", serviceName)
 		assert.NotContains(t, serviceBlock, "TEMPO_", "%s must not require Tempo to serve product traffic", serviceName)
+		assert.NotContains(t, serviceBlock, "ALERTMANAGER_", "%s must not require Alertmanager to serve product traffic", serviceName)
 	}
+	appBlock := composeServiceBlock(t, composeText, "app")
+	assert.Contains(t, appBlock, "OTEL_TRACES_ENABLED: ${OTEL_TRACES_ENABLED:-false}")
+	assert.Contains(t, appBlock, "OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}")
+	workerBlock := composeServiceBlock(t, composeText, "worker")
+	assert.NotContains(t, workerBlock, "OTEL_", "worker must not enable trace export without worker span coverage")
 }
 
 func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
@@ -163,6 +247,20 @@ func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
 	assert.NotContains(t, combined, "Authorization:", "black-box probes must not depend on product credentials")
 	assert.NotContains(t, combined, "app:\n    depends_on:\n      blackbox-exporter:", "app must not depend on probe health")
 	assert.NotContains(t, combined, "worker:\n    depends_on:\n      blackbox-exporter:", "worker must not depend on probe health")
+}
+
+func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
+	compose, err := os.ReadFile("compose.yaml")
+	require.NoError(t, err)
+	composeText := string(compose)
+
+	for _, serviceName := range []string{"app", "worker"} {
+		serviceBlock := composeServiceBlock(t, composeText, serviceName)
+		assert.NotContains(t, serviceBlock, "node-exporter:", "%s must not depend on node exporter for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "cadvisor:", "%s must not depend on cAdvisor for runtime behavior", serviceName)
+		assert.NotContains(t, serviceBlock, "NODE_EXPORTER", "%s must not receive exporter config", serviceName)
+		assert.NotContains(t, serviceBlock, "CADVISOR", "%s must not receive cAdvisor config", serviceName)
+	}
 }
 
 func TestPrometheusAlertRulesCoverStarterSLOSignals(t *testing.T) {
@@ -213,6 +311,34 @@ func TestPrometheusAlertRulesCoverStarterSLOSignals(t *testing.T) {
 
 type prometheusRulesFile struct {
 	Groups []prometheusRuleGroup `yaml:"groups"`
+}
+
+type grafanaDatasourceProvisioning struct {
+	Datasources []grafanaDatasource `yaml:"datasources"`
+}
+
+func (p grafanaDatasourceProvisioning) findDatasource(name string) *grafanaDatasource {
+	for i := range p.Datasources {
+		if p.Datasources[i].Name == name {
+			return &p.Datasources[i]
+		}
+	}
+	return nil
+}
+
+type grafanaDatasource struct {
+	Name     string `yaml:"name"`
+	JSONData struct {
+		DerivedFields []grafanaDerivedField `yaml:"derivedFields"`
+	} `yaml:"jsonData"`
+}
+
+type grafanaDerivedField struct {
+	Name            string `yaml:"name"`
+	MatcherRegex    string `yaml:"matcherRegex"`
+	DatasourceUID   string `yaml:"datasourceUid"`
+	URL             string `yaml:"url"`
+	URLDisplayLabel string `yaml:"urlDisplayLabel"`
 }
 
 type prometheusRuleGroup struct {

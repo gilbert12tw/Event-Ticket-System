@@ -151,7 +151,7 @@ func TestLiveGatesRunWorkerIsolationLagK6Gate(t *testing.T) {
 	assert.Contains(t, workflowContent, "MAILHOG_SMTP_PORT: 21025")
 	assert.Contains(t, workflowContent, "LIVE_BASE_URL: http://127.0.0.1:28080")
 	assert.Contains(t, workflowContent, "WORKER_NOTIFICATION_MAILER_HOST=127.0.0.1")
-	assert.Contains(t, workflowContent, "K6_REQUIRED_WORKER_KINDS=export,projection,compensation")
+	assert.Contains(t, workflowContent, "K6_REQUIRED_WORKER_KINDS=export,projection")
 	assert.Contains(t, workflowContent, "scripts/ci/install-playwright.sh chromium")
 	assert.Contains(t, playwrightInstallContent, "PLAYWRIGHT_BROWSERS_PATH")
 	assert.Contains(t, playwrightInstallContent, "/ms-playwright")

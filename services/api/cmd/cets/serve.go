@@ -84,6 +84,7 @@ func newHTTPRouter(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, g
 		Ticketing:      ticketingService,
 		Logger:         logger,
 		DemoClock:      demoClock,
+		TracingEnabled: cfg.OTelTracesEnabled,
 		RequestTimeout: cfg.RequestTimeout,
 		AppEnv:         cfg.AppEnv,
 		OpsAPIEnabled:  cfg.OpsAPIEnabled,

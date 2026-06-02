@@ -13,6 +13,7 @@ import (
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type Pinger interface {
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Logger                      *slog.Logger
 	Metrics                     *observability.Registry
 	DemoClock                   *ticketing.DemoClock
+	TracingEnabled              bool
 	RequestTimeout              time.Duration
 	AppEnv                      string
 	OpsAPIEnabled               bool
@@ -58,7 +60,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	registerDemoDebugRoutes(mux, provider, deps.DemoClock, deps.Logger)
 	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
-	return withTraceID(withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))
+	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
+	if deps.TracingEnabled {
+		handler = observability.TraceHTTP(routePattern, handler)
+	}
+	return withTraceID(handler)
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -130,7 +136,7 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		started := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		logger.Info("request handled",
+		attrs := []any{
 			"trace_id", traceid.FromContext(r.Context()),
 			"method", r.Method,
 			"route", routePattern(r),
@@ -138,7 +144,14 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 			"status", recorder.status,
 			"status_class", statusClass(recorder.status),
 			"duration_ms", time.Since(started).Milliseconds(),
-		)
+		}
+		if spanCtx := oteltrace.SpanContextFromContext(r.Context()); spanCtx.IsValid() {
+			attrs = append(attrs,
+				"otel_trace_id", spanCtx.TraceID().String(),
+				"otel_span_id", spanCtx.SpanID().String(),
+			)
+		}
+		logger.Info("request handled", attrs...)
 	})
 }
 
