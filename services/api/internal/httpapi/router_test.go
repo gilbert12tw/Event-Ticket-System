@@ -174,6 +174,23 @@ func TestRouterSetsBackendReplicaHeader(t *testing.T) {
 	assert.NotEmpty(t, rec.Header().Get("X-CETS-Backend-Replica"))
 }
 
+func TestRouterLogsBackendReplicaMatchingHeader(t *testing.T) {
+	var logs bytes.Buffer
+	router := testRouter(Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	replica := rec.Header().Get("X-CETS-Backend-Replica")
+	require.NotEmpty(t, replica)
+	assertEnvelope(t, logs.String(),
+		`"msg":"request handled"`,
+		`"route":"/healthz"`,
+		`"replica":"`+replica+`"`,
+	)
+}
+
 func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := testRouter(Dependencies{Ticketing: service})

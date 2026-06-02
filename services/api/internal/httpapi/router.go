@@ -72,11 +72,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	}
 	registerTicketingRoutes(mux, deps.Ticketing, readTicketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
-	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
+	replica := backendReplicaName()
+	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, replica, withTimeout(deps.RequestTimeout, mux)))
 	if deps.TracingEnabled {
 		handler = observability.TraceHTTP(routePattern, handler)
 	}
-	return withBackendReplicaHeader(withTraceID(handler))
+	return withBackendReplicaHeader(replica, withTraceID(handler))
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -176,7 +177,7 @@ func withTimeout(timeout time.Duration, next http.Handler) http.Handler {
 	})
 }
 
-func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
+func withRequestLogging(logger *slog.Logger, replica string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -189,6 +190,9 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 			"status", recorder.status,
 			"status_class", statusClass(recorder.status),
 			"duration_ms", time.Since(started).Milliseconds(),
+		}
+		if replica != "" {
+			attrs = append(attrs, "replica", replica)
 		}
 		if otelTraceID := otelTraceIDFromContext(r.Context()); otelTraceID != "" {
 			attrs = append(attrs, "otel_trace_id", otelTraceID)
@@ -217,8 +221,7 @@ func withTraceID(next http.Handler) http.Handler {
 	})
 }
 
-func withBackendReplicaHeader(next http.Handler) http.Handler {
-	replica := backendReplicaName()
+func withBackendReplicaHeader(replica string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if replica != "" {
 			w.Header().Set("X-CETS-Backend-Replica", replica)
