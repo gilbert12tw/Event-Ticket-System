@@ -180,6 +180,9 @@ func (s *Service) lockBookableEventTx(ctx context.Context, tx pgx.Tx, eventID st
 		// with close, cancel, or archive updates.
 		return s.readEventWithRuleShareLockTx(ctx, tx, eventID)
 	}
+	if redisGrantedHold(hold) {
+		return s.readEventWithRuleShareLockTx(ctx, tx, eventID)
+	}
 	return s.lockEventWithRule(ctx, tx, eventID)
 }
 
@@ -290,10 +293,17 @@ func (s *Service) resolveBookingStatusTx(ctx context.Context, tx pgx.Tx, event E
 	if err != nil {
 		return "", 0, 0, err
 	}
+	if redisGrantedHold(hold) {
+		return RegistrationConfirmed, capacity, confirmedCount, nil
+	}
 	if confirmedCount >= capacity {
 		return RegistrationWaitlisted, capacity, confirmedCount, nil
 	}
 	return RegistrationConfirmed, capacity, confirmedCount, nil
+}
+
+func redisGrantedHold(hold reservation.Hold) bool {
+	return hold.Outcome == reservation.OutcomeGranted && hold.ReservationID != ""
 }
 
 func (s *Service) createBookingResponseTx(ctx context.Context, tx pgx.Tx, creation bookingCreation) (BookingResponse, string, bool, error) {
