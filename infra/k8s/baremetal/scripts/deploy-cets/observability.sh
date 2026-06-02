@@ -158,6 +158,7 @@ helm upgrade --install alloy grafana/alloy \
   --namespace observability \
   --version 1.8.2 \
   -f "$GENERATED_DIR/alloy-values.yaml"
+kubectl_bm -n observability rollout restart daemonset/alloy
 cat >"$GENERATED_DIR/tempo-values.yaml" <<EOF
 tempo:
   metricsGenerator:

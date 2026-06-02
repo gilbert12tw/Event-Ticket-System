@@ -86,7 +86,7 @@ prom_query_nonzero() {
   local query=$1
   local response
   response=$(prom_query "$query" 2>/dev/null || true)
-  printf '%s\n' "$response" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]'
+  printf '%s\n' "$response" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]|"result":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]'
 }
 
 generate_backend_trace() {
