@@ -53,6 +53,15 @@ func TestRouterUsesReadServiceForReadRoutes(t *testing.T) {
 	require.Equal(t, http.StatusCreated, writeRec.Code, writeRec.Body.String())
 	assert.True(t, writeService.bookCalled)
 	assert.False(t, readService.bookCalled)
+
+	packageReq := httptest.NewRequest(http.MethodGet, "/api/v1/checkins/events/evt_1/offline-package?device_id=gate-1", nil)
+	authorizeRequest(t, packageReq, ticketing.RoleCheckinStaff)
+	packageRec := httptest.NewRecorder()
+	router.ServeHTTP(packageRec, packageReq)
+
+	require.Equal(t, http.StatusOK, packageRec.Code, packageRec.Body.String())
+	assert.Equal(t, "staff-1", writeService.offlinePackageActor.ID)
+	assert.Empty(t, readService.offlinePackageActor.ID)
 }
 
 func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {

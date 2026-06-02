@@ -25,6 +25,7 @@ type fakeTicketingService struct {
 	listTicketsEmployeeID string
 	checkinActor          ticketing.Actor
 	checkinErr            error
+	offlinePackageActor   ticketing.Actor
 	offlineSyncActor      ticketing.Actor
 	reportsActor          ticketing.Actor
 	auditActor            ticketing.Actor
@@ -155,7 +156,8 @@ func (s *fakeTicketingService) CheckIn(_ context.Context, actor ticketing.Actor,
 	return ticketing.CheckinResponse{CheckinID: "chk_1", Duplicate: s.checkinErr != nil}, s.checkinErr
 }
 
-func (s *fakeTicketingService) OfflineCheckinPackage(context.Context, ticketing.Actor, string, string) (ticketing.OfflineCheckinPackage, error) {
+func (s *fakeTicketingService) OfflineCheckinPackage(_ context.Context, actor ticketing.Actor, _ string, _ string) (ticketing.OfflineCheckinPackage, error) {
+	s.offlinePackageActor = actor
 	return ticketing.OfflineCheckinPackage{BatchID: "off_1", EventID: "evt_1", PackageSignature: "sig_1", TicketCount: 1}, nil
 }
 

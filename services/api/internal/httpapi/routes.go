@@ -34,7 +34,7 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readS
 	mux.HandleFunc("GET /api/v1/tickets/{ticket_id}", protected(readService, handleGetTicket(readService)))
 	mux.HandleFunc("POST /api/v1/admin/tickets/{ticket_id}/revoke", protected(service, handleRevokeTicket(service)))
 	mux.HandleFunc("POST /api/v1/checkins", protected(service, handleCheckin(service)))
-	mux.HandleFunc("GET /api/v1/checkins/events/{event_id}/offline-package", protected(readService, handleOfflineCheckinPackage(readService)))
+	mux.HandleFunc("GET /api/v1/checkins/events/{event_id}/offline-package", protected(service, handleOfflineCheckinPackage(service)))
 	mux.HandleFunc("POST /api/v1/checkins/offline-sync", protected(service, handleOfflineCheckinSync(service)))
 	mux.HandleFunc("GET /api/v1/notifications/preferences", protected(readService, handleGetNotificationPreferences(readService)))
 	mux.HandleFunc("PUT /api/v1/notifications/preferences", protected(service, handleUpdateNotificationPreferences(service)))
