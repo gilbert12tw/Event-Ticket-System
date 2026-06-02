@@ -453,6 +453,32 @@ export function getReportExport(exportID: string) {
   );
 }
 
+export async function downloadReportExport(exportID: string) {
+  const path = `/api/v1/admin/reports/exports/${encoded(exportID)}/download`;
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    headers: headersFor(),
+  });
+  if (!response.ok) {
+    const contentType = response.headers.get("Content-Type") || "";
+    const envelope = contentType.includes("application/json")
+      ? ((await response.json()) as ApiEnvelope<unknown>)
+      : ({
+          success: false,
+          data: null,
+          error: await response.text(),
+        } satisfies ApiEnvelope<unknown>);
+    logApi(`GET ${path}`, response.status, false, null, envelope);
+    throw new ApiError(response.status, envelope);
+  }
+  const blob = await response.blob();
+  logApi(`GET ${path}`, response.status, true, null, {
+    download: true,
+    content_type: response.headers.get("Content-Type") || "",
+  });
+  return blob;
+}
+
 export const getOpsDashboard = () =>
   api<OpsDashboard>("/api/v1/admin/ops/dashboard");
 

@@ -14,6 +14,7 @@ import (
 
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/httpapi"
+	"event-ticket-system/internal/objectstore"
 	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/reservation"
@@ -71,6 +72,13 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		WithMetrics(metrics)
 	readTicketingService := newTicketingService(readPool, cfg, logger).
 		WithMetrics(metrics)
+	reportStore := objectstore.S3CompatibleStore{
+		Endpoint:  cfg.ObjectEndpoint,
+		Bucket:    cfg.ObjectBucket,
+		Region:    cfg.ObjectRegion,
+		AccessKey: cfg.ObjectAccessKey,
+		SecretKey: cfg.ObjectSecretKey,
+	}
 	demoClock := newDemoClockForConfig(cfg, logger)
 	if demoClock != nil {
 		ticketingService.WithClock(demoClock.Now)
@@ -90,6 +98,7 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		OpsAPIEnabled:               cfg.OpsAPIEnabled,
 		ProviderAuth:                httpapi.ProviderAuthConfig{Secret: cfg.ProviderTokenSecret},
 		ReportStaleThresholdSeconds: cfg.ReportStaleThresholdSeconds,
+		ReportStore:                 reportStore,
 	})
 	server := &http.Server{Addr: cfg.AppAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	return runHTTPServer(server, cfg, logger)

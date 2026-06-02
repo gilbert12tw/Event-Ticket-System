@@ -40,6 +40,7 @@ type fakeTicketingService struct {
 	notificationOpsQuery  []ticketing.NotificationDeliveryOpsQuery
 	createRequest         ticketing.CreateEventRequest
 	updateRequest         ticketing.UpdateEventRequest
+	reportExport          ticketing.ReportExport
 }
 
 func (s *fakeTicketingService) CreateEvent(ctx context.Context, actor ticketing.Actor, req ticketing.CreateEventRequest) (ticketing.EventSummary, error) {
@@ -258,6 +259,9 @@ func (s *fakeTicketingService) CreateReportExport(context.Context, ticketing.Act
 }
 
 func (s *fakeTicketingService) GetReportExport(context.Context, ticketing.Actor, string) (ticketing.ReportExport, error) {
+	if s.reportExport.ExportID != "" {
+		return s.reportExport, nil
+	}
 	return ticketing.ReportExport{ExportID: "exp_1", ReportType: ticketing.ReportExportTypeParticipation, Format: ticketing.ReportExportFormatCSV, Status: "ready", ObjectKey: "exports/exp_1.csv"}, nil
 }
 

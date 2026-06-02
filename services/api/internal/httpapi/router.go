@@ -41,6 +41,7 @@ type Dependencies struct {
 	OpsAPIEnabled               bool
 	ProviderAuth                ProviderAuthConfig
 	ReportStaleThresholdSeconds int
+	ReportStore                 ticketing.ReportObjectReader
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -75,6 +76,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		provider:                    provider,
 		opsAPIEnabled:               deps.OpsAPIEnabled,
 		reportStaleThresholdSeconds: deps.ReportStaleThresholdSeconds,
+		reportStore:                 deps.ReportStore,
 		logger:                      deps.Logger,
 	})
 

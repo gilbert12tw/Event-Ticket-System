@@ -3,6 +3,8 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+
+	"event-ticket-system/internal/ticketing"
 )
 
 type ticketingRouteConfig struct {
@@ -10,6 +12,7 @@ type ticketingRouteConfig struct {
 	provider                    *ProviderVerifier
 	opsAPIEnabled               bool
 	reportStaleThresholdSeconds int
+	reportStore                 ticketing.ReportObjectReader
 	logger                      *slog.Logger
 }
 
@@ -58,6 +61,7 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readS
 	mux.HandleFunc("GET /api/v1/admin/reports", protected(readService, handleReports(readService, cfg.reportStaleThresholdSeconds, cfg.logger)))
 	mux.HandleFunc("POST /api/v1/admin/reports/exports", protected(service, handleCreateReportExport(service)))
 	mux.HandleFunc("GET /api/v1/admin/reports/exports/{export_id}", protected(readService, handleGetReportExport(readService)))
+	mux.HandleFunc("GET /api/v1/admin/reports/exports/{export_id}/download", protected(readService, handleDownloadReportExport(readService, cfg.reportStore)))
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", protected(readService, handleAuditLogs(readService)))
 	seedDemo := requireService(service, handleSeedDemo(service, cfg.appEnv))
 	if mockProfilesEnabled(cfg.appEnv) {
