@@ -30,6 +30,7 @@ type Dependencies struct {
 	Ticketing                   TicketingService
 	Logger                      *slog.Logger
 	Metrics                     *observability.Registry
+	TracingEnabled              bool
 	RequestTimeout              time.Duration
 	AppEnv                      string
 	OpsAPIEnabled               bool
@@ -57,7 +58,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.Logger)
 	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
-	return withBackendReplicaHeader(withTraceID(observability.TraceHTTP(routePattern, withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux))))))
+	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
+	if deps.TracingEnabled {
+		handler = observability.TraceHTTP(routePattern, handler)
+	}
+	return withBackendReplicaHeader(withTraceID(handler))
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -140,6 +145,9 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		}
 		if otelTraceID := otelTraceIDFromContext(r.Context()); otelTraceID != "" {
 			attrs = append(attrs, "otel_trace_id", otelTraceID)
+			if spanCtx := oteltrace.SpanContextFromContext(r.Context()); spanCtx.IsValid() {
+				attrs = append(attrs, "otel_span_id", spanCtx.SpanID().String())
+			}
 		}
 		logger.Info("request handled", attrs...)
 	})

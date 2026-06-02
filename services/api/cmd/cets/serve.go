@@ -61,6 +61,7 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		DB:                          pool,
 		Ticketing:                   ticketingService,
 		Logger:                      logger,
+		TracingEnabled:              cfg.OTelTracesEnabled,
 		RequestTimeout:              cfg.RequestTimeout,
 		AppEnv:                      cfg.AppEnv,
 		OpsAPIEnabled:               cfg.OpsAPIEnabled,

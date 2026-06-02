@@ -562,3 +562,19 @@ ALTER TABLE booking_idempotency_results ADD COLUMN IF NOT EXISTS idempotency_has
 CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_idempotency_results_event_hash
 		ON booking_idempotency_results (event_id, idempotency_hash)
 		WHERE idempotency_hash IS NOT NULL;
+
+-- PH2-23 compensation metrics sink. The compensation sweep runs in the worker
+-- process (never scraped by Prometheus), so each action/result and counter
+-- drift result is accumulated as a monotonic total here. The serve /metrics
+-- endpoint derives cets_reservation_compensation_total{action,result} and
+-- cets_reservation_counter_drift_total{result} from these rows, matching the
+-- existing DB-derived worker-outcome/outbox metric pattern. Labels are
+-- low-cardinality operational outcomes only — no PII, no idempotency keys.
+CREATE TABLE IF NOT EXISTS reservation_compensation_metrics (
+		metric TEXT NOT NULL,
+		action TEXT NOT NULL DEFAULT '',
+		result TEXT NOT NULL,
+		total BIGINT NOT NULL DEFAULT 0,
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (metric, action, result)
+	);

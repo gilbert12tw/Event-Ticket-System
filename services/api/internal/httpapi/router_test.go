@@ -18,8 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
@@ -103,36 +104,48 @@ func TestRouterPreservesTraceIDInResponseContextAndLogs(t *testing.T) {
 	assert.Equal(t, "trace-test-123", rec.Header().Get("X-Trace-ID"))
 	assert.Equal(t, "trace-test-123", service.createTrace)
 	assertEnvelope(t, logs.String(), `"trace_id":"trace-test-123"`, `"path":"/api/v1/admin/events"`, `"status":201`)
+	assert.NotContains(t, logs.String(), "otel_trace_id")
+	assert.NotContains(t, logs.String(), "otel_span_id")
 }
 
-func TestRouterLogsOTelTraceIDFromTraceparent(t *testing.T) {
-	var logs bytes.Buffer
-	provider := sdktrace.NewTracerProvider()
-	otel.SetTracerProvider(provider)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
-	t.Cleanup(func() {
-		require.NoError(t, provider.Shutdown(context.Background()))
-		otel.SetTracerProvider(noop.NewTracerProvider())
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator())
-	})
-	service := &fakeTicketingService{}
-	router := testRouter(Dependencies{Ticketing: service, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
-	body := bytes.NewBufferString(`{"title":"Demo","capacity":10,"status":"published","rule":{"department":"Engineering"}}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events", body)
-	authorizeRequest(t, req, ticketing.RoleActivityAdmin)
-	req.Header.Set("X-Trace-ID", "trace-test-456")
-	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+func TestRouterDoesNotEmitHTTPSpanWhenTracingDisabled(t *testing.T) {
+	exporter, shutdown := installTestTracer(t)
+	defer shutdown()
+
+	router := testRouter(Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, exporter.GetSpans())
+}
+
+func TestRouterEmitsRouteBoundedHTTPSpanWhenTracingEnabled(t *testing.T) {
+	exporter, shutdown := installTestTracer(t)
+	defer shutdown()
+	var logs bytes.Buffer
+
+	router := testRouter(Dependencies{
+		TracingEnabled: true,
+		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "GET /healthz", spans[0].Name)
+	assert.Contains(t, spans[0].Attributes, attribute.String("cets.route", "/healthz"))
 	assertEnvelope(t, logs.String(),
-		`"trace_id":"trace-test-456"`,
-		`"otel_trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`,
-		`"route":"/api/v1/admin/events"`,
+		`"route":"/healthz"`,
+		`"otel_trace_id":"`+spans[0].SpanContext.TraceID().String()+`"`,
+		`"otel_span_id":"`+spans[0].SpanContext.SpanID().String()+`"`,
 	)
-	assert.NotContains(t, logs.String(), "evt_secret")
 }
 
 func TestRouterSetsBackendReplicaHeader(t *testing.T) {
@@ -417,6 +430,18 @@ func readReactSourceTree(root string) (string, error) {
 		return nil
 	})
 	return content.String(), err
+}
+
+func installTestTracer(t *testing.T) (*tracetest.InMemoryExporter, func()) {
+	t.Helper()
+
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(provider)
+	return exporter, func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(noop.NewTracerProvider())
+	}
 }
 
 func useEmptyStaticRoot(t *testing.T) {
