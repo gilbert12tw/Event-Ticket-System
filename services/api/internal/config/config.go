@@ -27,6 +27,8 @@ type Config struct {
 	AppEnv                          string
 	AuthMode                        string
 	DatabaseURL                     string
+	DatabaseReadURL                 string
+	DatabaseWriteURL                string
 	RedisURL                        string
 	QueueURL                        string
 	ObjectEndpoint                  string
@@ -86,6 +88,8 @@ func Load() Config {
 		AppEnv:                          getEnv("APP_ENV", "local"),
 		AuthMode:                        getEnv("AUTH_MODE", authModeExternalSSO),
 		DatabaseURL:                     os.Getenv("DATABASE_URL"),
+		DatabaseReadURL:                 strings.TrimSpace(os.Getenv("DATABASE_READ_URL")),
+		DatabaseWriteURL:                strings.TrimSpace(os.Getenv("DATABASE_WRITE_URL")),
 		RedisURL:                        os.Getenv("REDIS_URL"),
 		QueueURL:                        os.Getenv("QUEUE_URL"),
 		ObjectEndpoint:                  os.Getenv("OBJECT_STORAGE_ENDPOINT"),

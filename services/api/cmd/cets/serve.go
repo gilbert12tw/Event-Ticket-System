@@ -51,6 +51,13 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	if err := autoMigrateIfEnabled(ctx, cfg, logger, pool); err != nil {
 		return err
 	}
+	readPool, err := connectReadPool(ctx, cfg, logger, pool)
+	if err != nil {
+		return err
+	}
+	if readPool != pool {
+		defer readPool.Close()
+	}
 	gate, redisClient, err := newBookingReservationGate(cfg, logger)
 	if err != nil {
 		return err
@@ -62,13 +69,17 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret)).
 		WithReservationOutageMode(cfg.ReservationOutageMode).
 		WithMetrics(metrics)
+	readTicketingService := newTicketingService(readPool, cfg, logger).
+		WithMetrics(metrics)
 	demoClock := newDemoClockForConfig(cfg, logger)
 	if demoClock != nil {
 		ticketingService.WithClock(demoClock.Now)
+		readTicketingService.WithClock(demoClock.Now)
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		DB:                          pool,
 		Ticketing:                   ticketingService,
+		ReadTicketing:               readTicketingService,
 		Logger:                      logger,
 		Metrics:                     metrics,
 		DemoClock:                   demoClock,
@@ -81,6 +92,21 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	})
 	server := &http.Server{Addr: cfg.AppAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	return runHTTPServer(server, cfg, logger)
+}
+
+func connectReadPool(ctx context.Context, cfg config.Config, logger *slog.Logger, fallback *pgxpool.Pool) (*pgxpool.Pool, error) {
+	readURL := strings.TrimSpace(cfg.DatabaseReadURL)
+	if readURL == "" || readURL == strings.TrimSpace(cfg.DatabaseURL) {
+		return fallback, nil
+	}
+	pool, err := postgres.Connect(ctx, readURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect read database: %w", err)
+	}
+	if logger != nil {
+		logger.Info("read database pool connected")
+	}
+	return pool, nil
 }
 
 func autoMigrateIfEnabled(ctx context.Context, cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) error {

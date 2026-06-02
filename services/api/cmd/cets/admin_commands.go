@@ -84,7 +84,11 @@ func withDatabase(cfg config.Config, validate func() error, run func(context.Con
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
 	defer cancel()
-	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
+	databaseURL := strings.TrimSpace(cfg.DatabaseWriteURL)
+	if databaseURL == "" {
+		databaseURL = cfg.DatabaseURL
+	}
+	pool, err := postgres.Connect(ctx, databaseURL)
 	if err != nil {
 		return err
 	}

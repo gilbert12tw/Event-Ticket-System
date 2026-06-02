@@ -31,6 +31,30 @@ func TestCreateEventHandlerPassesActorAndReturnsCreated(t *testing.T) {
 	assert.Equal(t, ticketing.RoleActivityAdmin, service.createActor.Role)
 }
 
+func TestRouterUsesReadServiceForReadRoutes(t *testing.T) {
+	writeService := &fakeTicketingService{}
+	readService := &fakeTicketingService{}
+	router := testRouter(Dependencies{Ticketing: writeService, ReadTicketing: readService})
+
+	readReq := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	authorizeRequest(t, readReq, ticketing.RoleEmployee)
+	readRec := httptest.NewRecorder()
+	router.ServeHTTP(readRec, readReq)
+
+	require.Equal(t, http.StatusOK, readRec.Code, readRec.Body.String())
+	assert.Equal(t, "E1001", readService.listEventsActor.ID)
+	assert.Empty(t, writeService.listEventsActor.ID)
+
+	writeReq := httptest.NewRequest(http.MethodPost, "/api/v1/events/evt_1/bookings", bytes.NewBufferString(`{"idempotency_key":"idem-1"}`))
+	authorizeRequest(t, writeReq, ticketing.RoleEmployee)
+	writeRec := httptest.NewRecorder()
+	router.ServeHTTP(writeRec, writeReq)
+
+	require.Equal(t, http.StatusCreated, writeRec.Code, writeRec.Body.String())
+	assert.True(t, writeService.bookCalled)
+	assert.False(t, readService.bookCalled)
+}
+
 func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := testTicketingRouter(service)

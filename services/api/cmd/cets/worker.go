@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -38,7 +39,11 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
-	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
+	databaseURL := strings.TrimSpace(cfg.DatabaseWriteURL)
+	if databaseURL == "" {
+		databaseURL = cfg.DatabaseURL
+	}
+	pool, err := postgres.Connect(ctx, databaseURL)
 	cancel()
 	if err != nil {
 		return err

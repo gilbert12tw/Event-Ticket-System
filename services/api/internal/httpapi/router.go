@@ -30,6 +30,7 @@ type schemaPinger interface {
 type Dependencies struct {
 	DB                          Pinger
 	Ticketing                   TicketingService
+	ReadTicketing               TicketingService
 	Logger                      *slog.Logger
 	Metrics                     *observability.Registry
 	DemoClock                   *ticketing.DemoClock
@@ -60,7 +61,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	provider := NewProviderVerifier(deps.ProviderAuth)
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.DemoClock != nil, deps.OpsAPIEnabled, deps.Logger)
 	registerDemoDebugRoutes(mux, provider, deps.DemoClock, deps.Logger)
-	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
+	readTicketing := deps.ReadTicketing
+	if readTicketing == nil {
+		readTicketing = deps.Ticketing
+	}
+	registerTicketingRoutes(mux, deps.Ticketing, readTicketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
 
 	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
 	if deps.TracingEnabled {
