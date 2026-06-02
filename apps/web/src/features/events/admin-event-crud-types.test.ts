@@ -68,7 +68,12 @@ describe("admin event CRUD helpers", () => {
   it("applies event templates without dropping unrelated form fields", () => {
     const base = { ...defaultEventForm(), entry_method: "manual" };
 
-    expect(applyEventTemplate(base, "")).toBe(base);
+    expect(applyEventTemplate(base, "")).toEqual(
+      expect.objectContaining({
+        _selectedTemplate: "",
+        entry_method: "manual",
+      }),
+    );
     expect(applyEventTemplate(base, "family")).toEqual(
       expect.objectContaining({
         title: "台北家庭電影夜",
@@ -76,6 +81,7 @@ describe("admin event CRUD helpers", () => {
         capacity: "",
         department: "*",
         entry_method: "manual",
+        _selectedTemplate: "family",
       }),
     );
     expect(applyEventTemplate(base, "company")).toEqual(
@@ -83,22 +89,40 @@ describe("admin event CRUD helpers", () => {
         title: "全公司交流活動",
         status: "draft",
         site: "*",
+        _selectedTemplate: "company",
       }),
     );
   });
 
-  it("applies schedule presets and leaves unknown presets unchanged", () => {
+  it("applies schedule presets and tracks the selected schedule", () => {
     vi.useFakeTimers();
     const systemTime = "2026-05-31T08:00:00Z";
     vi.setSystemTime(new Date(systemTime));
     const base = defaultEventForm();
 
-    expect(applySchedulePreset(base, "custom")).toBe(base);
+    expect(base._selectedSchedule).toBe("custom");
+    expect(applySchedulePreset(base, "custom")).toEqual(
+      expect.objectContaining({
+        registration_start: base.registration_start,
+        registration_close: base.registration_close,
+        starts_at: base.starts_at,
+        _selectedSchedule: "custom",
+      }),
+    );
     expect(applySchedulePreset(base, "open-now")).toEqual(
       expect.objectContaining({
         registration_start: expectedLocalInput(systemTime, 0),
         registration_close: expectedLocalInput(systemTime, 48),
         starts_at: expectedLocalInput(systemTime, 72),
+        _selectedSchedule: "open-now",
+      }),
+    );
+    expect(applySchedulePreset(base, "one-week")).toEqual(
+      expect.objectContaining({
+        registration_start: expectedLocalInput(systemTime, 0),
+        registration_close: expectedLocalInput(systemTime, 24 * 7),
+        starts_at: expectedLocalInput(systemTime, 24 * 10),
+        _selectedSchedule: "one-week",
       }),
     );
     expect(applySchedulePreset(base, "next-week")).toEqual(
@@ -106,6 +130,7 @@ describe("admin event CRUD helpers", () => {
         registration_start: expectedLocalInput(systemTime, 24 * 7),
         registration_close: expectedLocalInput(systemTime, 24 * 11),
         starts_at: expectedLocalInput(systemTime, 24 * 14),
+        _selectedSchedule: "next-week",
       }),
     );
   });

@@ -136,6 +136,47 @@ describe("AdminEventsPage CRUD tabs", () => {
     expect(workspace?.querySelector(".panel")).not.toBeNull();
   });
 
+  it("updates the quick-setup template dropdown label after selection", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+
+    const templateTrigger = screen.getByRole("combobox", {
+      name: "活動模板",
+    });
+    expect(templateTrigger).toHaveTextContent("選擇模板");
+
+    await userEvent.click(templateTrigger);
+    await userEvent.click(
+      await screen.findByRole("option", { name: /學習課程/ }),
+    );
+
+    await waitFor(() => expect(templateTrigger).toHaveTextContent("學習課程"));
+    expect(screen.getByLabelText(/活動名稱/)).toHaveValue("內部學習工作坊");
+  });
+
+  it("updates the quick-setup schedule dropdown label after selection", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+
+    const scheduleTrigger = screen.getByRole("combobox", {
+      name: "排程預設",
+    });
+    expect(scheduleTrigger).toHaveTextContent("自訂時間");
+
+    await userEvent.click(scheduleTrigger);
+    await userEvent.click(
+      await screen.findByRole("option", {
+        name: /立即開放，活動前 24 小時截止/,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(scheduleTrigger).toHaveTextContent("立即開放，活動前 24 小時截止"),
+    );
+  });
+
   it("submits create, duplicate, and archive actions from their workspaces", async () => {
     render(<AdminEventsPage />);
 
@@ -155,6 +196,9 @@ describe("AdminEventsPage CRUD tabs", () => {
         }),
       ),
     );
+    const createPayload = vi.mocked(createEvent).mock.calls[0]?.[0];
+    expect(createPayload).not.toHaveProperty("_selectedTemplate");
+    expect(createPayload).not.toHaveProperty("_selectedSchedule");
     expect(
       await screen.findByText("活動已建立並寫入稽核紀錄。"),
     ).toBeInTheDocument();

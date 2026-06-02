@@ -28,6 +28,8 @@ export function defaultEventForm() {
     tags: "家庭活動, 台北",
     entry_method: "qr",
     visibility: "eligible",
+    _selectedTemplate: "",
+    _selectedSchedule: "custom",
   };
 }
 
