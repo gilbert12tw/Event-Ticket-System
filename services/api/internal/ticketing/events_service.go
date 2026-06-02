@@ -172,7 +172,37 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT event_id FROM events WHERE status = 'published' ORDER BY starts_at ASC, created_at DESC`)
+	summaries, err := s.loadPublishedEventSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range summaries {
+		initializeEventSummaryEligibility(&summaries[i], summaries[i].EventID)
+		if err := s.populateEmployeeEventSummary(ctx, actor, &summaries[i], summaries[i].EventID, employeeID); err != nil {
+			return nil, err
+		}
+	}
+	return summaries, nil
+}
+
+func (s *Service) loadPublishedEventSummaries(ctx context.Context) ([]EventSummary, error) {
+	rows, err := s.db.Query(ctx, `SELECT
+			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
+			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
+			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
+			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
+			COALESCE(counts.confirmed_count, 0), COALESCE(counts.waitlist_count, 0)
+		FROM events e
+		JOIN eligibility_rules r ON r.event_id = e.event_id
+		LEFT JOIN (
+			SELECT event_id,
+				count(*) FILTER (WHERE status = 'confirmed') AS confirmed_count,
+				count(*) FILTER (WHERE status = 'waitlisted') AS waitlist_count
+			FROM registrations
+			GROUP BY event_id
+		) counts ON counts.event_id = e.event_id
+		WHERE e.status = 'published'
+		ORDER BY e.starts_at ASC, e.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -180,11 +210,7 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 
 	var summaries []EventSummary
 	for rows.Next() {
-		var eventID string
-		if err := rows.Scan(&eventID); err != nil {
-			return nil, err
-		}
-		summary, err := s.GetEventSummary(ctx, actor, eventID, employeeID)
+		summary, err := scanEventSummaryRow(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -209,10 +235,7 @@ func (s *Service) GetEventSummary(ctx context.Context, actor Actor, eventID stri
 }
 
 func (s *Service) loadEventSummary(ctx context.Context, eventID string) (EventSummary, error) {
-	var summary EventSummary
-	var tags string
-	var capacity pgtype.Int4
-	err := s.db.QueryRow(ctx, `SELECT
+	row := s.db.QueryRow(ctx, `SELECT
 			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
 			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
 			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
@@ -221,18 +244,32 @@ func (s *Service) loadEventSummary(ctx context.Context, eventID string) (EventSu
 			(SELECT count(*) FROM registrations rg WHERE rg.event_id = e.event_id AND rg.status = 'waitlisted') AS waitlist_count
 		FROM events e
 		JOIN eligibility_rules r ON r.event_id = e.event_id
-		WHERE e.event_id = $1`, eventID).
-		Scan(
-			&summary.EventID, &summary.Title, &summary.Description, &summary.Location, &summary.EventCity, &summary.EventSite, &summary.StartsAt, &summary.RegistrationStart, &summary.RegistrationClose,
-			&summary.CapacityType, &capacity, &summary.AllowsFamily, &summary.Status, &summary.AllocationMode, &summary.Category, &tags, &summary.EntryMethod, &summary.Visibility, &summary.Version,
-			&summary.ArchivedAt, &summary.CreatedBy, &summary.CreatedAt, &summary.UpdatedAt,
-			&summary.Rule.RuleID, &summary.Rule.EventID, &summary.Rule.Department, &summary.Rule.Site, &summary.Rule.MinGrade, &summary.Rule.EmploymentStatus, &summary.Rule.Version,
-			&summary.ConfirmedCount, &summary.WaitlistCount,
-		)
+		WHERE e.event_id = $1`, eventID)
+	summary, err := scanEventSummaryRow(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return EventSummary{}, notFound(errEventNotFoundMessage)
 	}
 	if err != nil {
+		return EventSummary{}, err
+	}
+	return summary, nil
+}
+
+type eventSummaryScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEventSummaryRow(row eventSummaryScanner) (EventSummary, error) {
+	var summary EventSummary
+	var tags string
+	var capacity pgtype.Int4
+	if err := row.Scan(
+		&summary.EventID, &summary.Title, &summary.Description, &summary.Location, &summary.EventCity, &summary.EventSite, &summary.StartsAt, &summary.RegistrationStart, &summary.RegistrationClose,
+		&summary.CapacityType, &capacity, &summary.AllowsFamily, &summary.Status, &summary.AllocationMode, &summary.Category, &tags, &summary.EntryMethod, &summary.Visibility, &summary.Version,
+		&summary.ArchivedAt, &summary.CreatedBy, &summary.CreatedAt, &summary.UpdatedAt,
+		&summary.Rule.RuleID, &summary.Rule.EventID, &summary.Rule.Department, &summary.Rule.Site, &summary.Rule.MinGrade, &summary.Rule.EmploymentStatus, &summary.Rule.Version,
+		&summary.ConfirmedCount, &summary.WaitlistCount,
+	); err != nil {
 		return EventSummary{}, err
 	}
 	if capacity.Valid {

@@ -78,6 +78,7 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		DB:                          pool,
+		MetricsDB:                   observability.DatabaseMetrics{Write: pool, Read: readPool},
 		Ticketing:                   ticketingService,
 		ReadTicketing:               readTicketingService,
 		Logger:                      logger,

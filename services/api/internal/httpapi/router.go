@@ -29,6 +29,7 @@ type schemaPinger interface {
 
 type Dependencies struct {
 	DB                          Pinger
+	MetricsDB                   any
 	Ticketing                   TicketingService
 	ReadTicketing               TicketingService
 	Logger                      *slog.Logger
@@ -57,7 +58,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /", handleIndex(deps.AppEnv))
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /readyz", handleReady(deps.DB, deps.RequestTimeout))
-	mux.Handle("GET /metrics", deps.Metrics.Handler(deps.DB))
+	metricsDB := deps.MetricsDB
+	if metricsDB == nil {
+		metricsDB = deps.DB
+	}
+	mux.Handle("GET /metrics", deps.Metrics.Handler(metricsDB))
 	provider := NewProviderVerifier(deps.ProviderAuth)
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.DemoClock != nil, deps.OpsAPIEnabled, deps.Logger)
 	registerDemoDebugRoutes(mux, provider, deps.DemoClock, deps.Logger)

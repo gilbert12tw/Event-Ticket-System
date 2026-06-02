@@ -31,6 +31,34 @@ type PoolStater interface {
 	Stat() *pgxpool.Stat
 }
 
+type PoolMetricsSource interface {
+	PoolStats() map[string]PoolStater
+}
+
+type DatabaseMetrics struct {
+	Write SQLMetricsDB
+	Read  PoolStater
+}
+
+func (m DatabaseMetrics) PoolStats() map[string]PoolStater {
+	pools := map[string]PoolStater{}
+	if write, ok := m.Write.(PoolStater); ok {
+		pools["write"] = write
+	}
+	if m.Read != nil {
+		pools["read"] = m.Read
+	}
+	return pools
+}
+
+func (m DatabaseMetrics) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	return m.Write.Query(ctx, sql, args...)
+}
+
+func (m DatabaseMetrics) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	return m.Write.QueryRow(ctx, sql, args...)
+}
+
 type Registry struct {
 	mu          sync.Mutex
 	http        map[httpKey]*histogram
@@ -273,6 +301,10 @@ func (r *Registry) writeReservationMetrics(w io.Writer) {
 }
 
 func writePoolMetrics(w io.Writer, db any) {
+	if source, ok := db.(PoolMetricsSource); ok {
+		writeLabeledPoolMetrics(w, source.PoolStats())
+		return
+	}
 	stater, ok := db.(PoolStater)
 	if !ok {
 		return
@@ -291,6 +323,38 @@ func writePoolMetrics(w io.Writer, db any) {
 	writeFormat(w, "cets_db_pool_conns{state=\"total\"} %d\n", stat.TotalConns())
 }
 
+func writeLabeledPoolMetrics(w io.Writer, pools map[string]PoolStater) {
+	writeLine(w, "# HELP cets_db_pool_acquire_wait_seconds_total Total time spent waiting for PostgreSQL pool acquires.")
+	writeLine(w, "# TYPE cets_db_pool_acquire_wait_seconds_total counter")
+	writeLine(w, "# HELP cets_db_pool_acquire_count_total Total PostgreSQL pool acquire calls.")
+	writeLine(w, "# TYPE cets_db_pool_acquire_count_total counter")
+	writeLine(w, "# HELP cets_db_pool_conns Current PostgreSQL pool connections by state.")
+	writeLine(w, "# TYPE cets_db_pool_conns gauge")
+	names := make([]string, 0, len(pools))
+	for name := range pools {
+		names = append(names, boundedPoolName(name))
+	}
+	sort.Strings(names)
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		stater := pools[name]
+		if stater == nil {
+			continue
+		}
+		stat := stater.Stat()
+		label := fmt.Sprintf(`pool="%s"`, escapeLabel(name))
+		writeFormat(w, "cets_db_pool_acquire_wait_seconds_total{%s} %s\n", label, strconv.FormatFloat(stat.AcquireDuration().Seconds(), 'f', -1, 64))
+		writeFormat(w, "cets_db_pool_acquire_count_total{%s} %d\n", label, stat.AcquireCount())
+		writeFormat(w, "cets_db_pool_conns{%s,state=\"acquired\"} %d\n", label, stat.AcquiredConns())
+		writeFormat(w, "cets_db_pool_conns{%s,state=\"idle\"} %d\n", label, stat.IdleConns())
+		writeFormat(w, "cets_db_pool_conns{%s,state=\"total\"} %d\n", label, stat.TotalConns())
+	}
+}
+
 func writeSQLMetrics(ctx context.Context, w io.Writer, db any) {
 	sqlDB, ok := db.(SQLMetricsDB)
 	if !ok {
@@ -300,6 +364,17 @@ func writeSQLMetrics(ctx context.Context, w io.Writer, db any) {
 	writeOutboxMetrics(ctx, w, sqlDB)
 	writeWorkerOutcomeMetrics(ctx, w, sqlDB)
 	writeReservationCompensationMetrics(ctx, w, sqlDB)
+}
+
+func boundedPoolName(name string) string {
+	switch strings.TrimSpace(name) {
+	case "read":
+		return "read"
+	case "write":
+		return "write"
+	default:
+		return "unknown"
+	}
 }
 
 func writeLockWaitMetric(ctx context.Context, w io.Writer, db SQLMetricsDB) {
