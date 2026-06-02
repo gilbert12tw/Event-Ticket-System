@@ -26,6 +26,16 @@ type RedisGate struct {
 	commit  *redis.Script
 }
 
+type reserveCapacityInput struct {
+	eventID         string
+	idempotencyHash string
+	actorHash       string
+	reservationID   string
+	remaining       int
+	version         int64
+	ttlSecs         int64
+}
+
 func NewRedisGate(client redis.UniversalClient, cfg Config, logger *slog.Logger) *RedisGate {
 	if logger == nil {
 		logger = slog.Default()
@@ -60,7 +70,15 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 	if ttlSecs <= 0 {
 		ttlSecs = 20
 	}
-	hold, err := g.reserveWithCapacity(ctx, eventID, idempotencyHash, actorHash, reservationID, -1, -1, ttlSecs)
+	hold, err := g.reserveWithCapacity(ctx, reserveCapacityInput{
+		eventID:         eventID,
+		idempotencyHash: idempotencyHash,
+		actorHash:       actorHash,
+		reservationID:   reservationID,
+		remaining:       -1,
+		version:         -1,
+		ttlSecs:         ttlSecs,
+	})
 	if err != nil {
 		return Hold{}, err
 	}
@@ -74,30 +92,29 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 	if remaining < 0 {
 		remaining = 0
 	}
-	return g.reserveWithCapacity(ctx, eventID, idempotencyHash, actorHash, reservationID, remaining, version, ttlSecs)
+	return g.reserveWithCapacity(ctx, reserveCapacityInput{
+		eventID:         eventID,
+		idempotencyHash: idempotencyHash,
+		actorHash:       actorHash,
+		reservationID:   reservationID,
+		remaining:       remaining,
+		version:         version,
+		ttlSecs:         ttlSecs,
+	})
 }
 
-func (g *RedisGate) reserveWithCapacity(
-	ctx context.Context,
-	eventID string,
-	idempotencyHash string,
-	actorHash string,
-	reservationID string,
-	remaining int,
-	version int64,
-	ttlSecs int64,
-) (Hold, error) {
+func (g *RedisGate) reserveWithCapacity(ctx context.Context, input reserveCapacityInput) (Hold, error) {
 	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
 	defer cancel()
 	now := time.Now().UTC().Unix()
 	raw, err := g.reserve.Run(opCtx, g.client,
 		[]string{
-			remainingKey(eventID),
-			holdKey(eventID, idempotencyHash),
-			pendingKey(eventID),
-			versionKey(eventID),
+			remainingKey(input.eventID),
+			holdKey(input.eventID, input.idempotencyHash),
+			pendingKey(input.eventID),
+			versionKey(input.eventID),
 		},
-		idempotencyHash, remaining, version, ttlSecs, now, actorHash, eventID, reservationID,
+		input.idempotencyHash, input.remaining, input.version, input.ttlSecs, now, input.actorHash, input.eventID, input.reservationID,
 	).Result()
 	if err != nil {
 		return g.handleOutage(err, "reserve")
@@ -117,7 +134,7 @@ func (g *RedisGate) reserveWithCapacity(
 	return Hold{
 		Outcome:         outcome,
 		ReservationID:   id,
-		IdempotencyHash: idempotencyHash,
+		IdempotencyHash: input.idempotencyHash,
 		CapacityVersion: holdVersion,
 		ExpiresAt:       time.Unix(exp, 0).UTC(),
 	}, nil

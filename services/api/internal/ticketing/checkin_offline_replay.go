@@ -190,7 +190,11 @@ func (s *Service) scanReplayOfflineRows(ctx context.Context, req OfflineCheckinS
 }
 
 func offlineReplayKey(tokenHash string, scannedAt time.Time) string {
-	return tokenHash + "|" + scannedAt.UTC().Format(time.RFC3339Nano)
+	return tokenHash + "|" + postgresTimeKey(scannedAt)
+}
+
+func postgresTimeKey(value time.Time) string {
+	return value.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano)
 }
 
 func (row offlineReplayRow) result(req OfflineCheckinSyncRequest, claims TicketClaims) (CheckinResponse, error) {

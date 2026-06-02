@@ -5,9 +5,17 @@ import (
 	"net/http"
 )
 
-func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readService TicketingService, appEnv string, provider *ProviderVerifier, opsAPIEnabled bool, reportStaleThresholdSeconds int, logger *slog.Logger) {
+type ticketingRouteConfig struct {
+	appEnv                      string
+	provider                    *ProviderVerifier
+	opsAPIEnabled               bool
+	reportStaleThresholdSeconds int
+	logger                      *slog.Logger
+}
+
+func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readService TicketingService, cfg ticketingRouteConfig) {
 	protected := func(routeService TicketingService, next http.HandlerFunc) http.HandlerFunc {
-		return requireActor(provider, requireService(routeService, next))
+		return requireActor(cfg.provider, requireService(routeService, next))
 	}
 	mux.HandleFunc("GET /api/v1/admin/events", protected(readService, handleListAdminEvents(readService)))
 	mux.HandleFunc("POST /api/v1/admin/events", protected(service, handleCreateEvent(service)))
@@ -40,20 +48,20 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readS
 	mux.HandleFunc("PUT /api/v1/notifications/preferences", protected(service, handleUpdateNotificationPreferences(service)))
 	mux.HandleFunc("GET /api/v1/admin/notifications/deliveries", protected(readService, handleNotificationDeliveries(readService)))
 	mux.HandleFunc("POST /api/v1/admin/notifications/deliveries/{delivery_id}/retry", protected(service, handleRetryNotificationDelivery(service)))
-	if opsAPIEnabled {
+	if cfg.opsAPIEnabled {
 		mux.HandleFunc("GET /api/v1/admin/ops/capacity-pressure", protected(readService, handleOpsCapacityPressure(readService)))
 		mux.HandleFunc("GET /api/v1/admin/ops/queues", protected(readService, handleOpsQueues(readService)))
 		mux.HandleFunc("GET /api/v1/admin/ops/notification-deliveries", protected(readService, handleOpsNotificationDeliveries(readService)))
-		mux.HandleFunc("GET /api/v1/admin/ops/report-freshness", protected(readService, handleOpsReportFreshness(readService, reportStaleThresholdSeconds)))
-		mux.HandleFunc("GET /api/v1/admin/ops/dashboard", protected(readService, handleOpsDashboard(readService, reportStaleThresholdSeconds)))
+		mux.HandleFunc("GET /api/v1/admin/ops/report-freshness", protected(readService, handleOpsReportFreshness(readService, cfg.reportStaleThresholdSeconds)))
+		mux.HandleFunc("GET /api/v1/admin/ops/dashboard", protected(readService, handleOpsDashboard(readService, cfg.reportStaleThresholdSeconds)))
 	}
-	mux.HandleFunc("GET /api/v1/admin/reports", protected(readService, handleReports(readService, reportStaleThresholdSeconds, logger)))
+	mux.HandleFunc("GET /api/v1/admin/reports", protected(readService, handleReports(readService, cfg.reportStaleThresholdSeconds, cfg.logger)))
 	mux.HandleFunc("POST /api/v1/admin/reports/exports", protected(service, handleCreateReportExport(service)))
 	mux.HandleFunc("GET /api/v1/admin/reports/exports/{export_id}", protected(readService, handleGetReportExport(readService)))
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", protected(readService, handleAuditLogs(readService)))
-	seedDemo := requireService(service, handleSeedDemo(service, appEnv))
-	if mockProfilesEnabled(appEnv) {
-		seedDemo = requireActor(provider, seedDemo)
+	seedDemo := requireService(service, handleSeedDemo(service, cfg.appEnv))
+	if mockProfilesEnabled(cfg.appEnv) {
+		seedDemo = requireActor(cfg.provider, seedDemo)
 	}
 	mux.HandleFunc("POST /api/v1/admin/seed-demo", seedDemo)
 }

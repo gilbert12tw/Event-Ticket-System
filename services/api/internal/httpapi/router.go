@@ -70,7 +70,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	if readTicketing == nil {
 		readTicketing = deps.Ticketing
 	}
-	registerTicketingRoutes(mux, deps.Ticketing, readTicketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
+	registerTicketingRoutes(mux, deps.Ticketing, readTicketing, ticketingRouteConfig{
+		appEnv:                      deps.AppEnv,
+		provider:                    provider,
+		opsAPIEnabled:               deps.OpsAPIEnabled,
+		reportStaleThresholdSeconds: deps.ReportStaleThresholdSeconds,
+		logger:                      deps.Logger,
+	})
 
 	replica := backendReplicaName()
 	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, replica, withTimeout(deps.RequestTimeout, mux)))

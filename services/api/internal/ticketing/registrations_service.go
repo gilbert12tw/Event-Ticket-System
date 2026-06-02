@@ -87,16 +87,11 @@ func (s *Service) bookInTransaction(ctx context.Context, actor Actor, eventID st
 	}
 	defer rollback(ctx, tx)
 
-	stageStarted := time.Now()
-	if result, found, err := s.replayLockedBookingTx(ctx, tx, eventID, identity, idempotencyHash); err != nil || found {
-		s.observeBookingStage("idempotency_lock", outcomeForError(err), time.Since(stageStarted))
-		if err == nil && found {
-			txOutcome = result.status
-		}
+	if result, found, err := s.replayLockedBookingStage(ctx, tx, eventID, identity, idempotencyHash); err != nil || found {
+		txOutcome = bookingOutcomeIfFound(txOutcome, result, found, err)
 		return result, err
 	}
-	s.observeBookingStage("idempotency_lock", "success", time.Since(stageStarted))
-	stageStarted = time.Now()
+	stageStarted := time.Now()
 	event, rule, err := s.lockBookableEventTx(ctx, tx, eventID, hold)
 	s.observeBookingStage("event_lock", outcomeForError(err), time.Since(stageStarted))
 	if err != nil {
@@ -108,15 +103,10 @@ func (s *Service) bookInTransaction(ctx context.Context, actor Actor, eventID st
 	if err != nil {
 		return bookingTxResult{}, err
 	}
-	stageStarted = time.Now()
-	if response, found, err := s.duplicateBookingResponseTx(ctx, tx, event, eventID, identity); err != nil || found {
-		s.observeBookingStage("duplicate_lookup", outcomeForError(err), time.Since(stageStarted))
-		if err == nil && found {
-			txOutcome = response.Registration.Status
-		}
-		return bookingTxResult{response: response, status: response.Registration.Status}, err
+	if result, found, err := s.duplicateBookingStage(ctx, tx, event, eventID, identity); err != nil || found {
+		txOutcome = bookingOutcomeIfFound(txOutcome, result, found, err)
+		return result, err
 	}
-	s.observeBookingStage("duplicate_lookup", "success", time.Since(stageStarted))
 	stageStarted = time.Now()
 	status, capacity, confirmedCount, err := s.resolveBookingStatusTx(ctx, tx, event, eventID, hold)
 	s.observeBookingStage("capacity", outcomeForError(err), time.Since(stageStarted))
@@ -140,6 +130,24 @@ func (s *Service) bookInTransaction(ctx context.Context, actor Actor, eventID st
 	return bookingTxResult{response: response, action: action, status: status, confirmedNewRegistration: confirmedNewRegistration}, nil
 }
 
+func bookingOutcomeIfFound(current string, result bookingTxResult, found bool, err error) string {
+	if err == nil && found {
+		return result.status
+	}
+	return current
+}
+
+func (s *Service) replayLockedBookingStage(ctx context.Context, tx pgx.Tx, eventID string, identity bookingIdentity, idempotencyHash string) (bookingTxResult, bool, error) {
+	stageStarted := time.Now()
+	result, found, err := s.replayLockedBookingTx(ctx, tx, eventID, identity, idempotencyHash)
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	s.observeBookingStage("idempotency_lock", outcome, time.Since(stageStarted))
+	return result, found, err
+}
+
 func (s *Service) replayLockedBookingTx(ctx context.Context, tx pgx.Tx, eventID string, identity bookingIdentity, idempotencyHash string) (bookingTxResult, bool, error) {
 	snapshot, found, err := s.lockBookingIdempotencyResultTx(ctx, tx, identity.idempotencyKey, eventID, identity.employeeID, identity.familyCount, idempotencyHash)
 	if err != nil || !found {
@@ -150,6 +158,20 @@ func (s *Service) replayLockedBookingTx(ctx context.Context, tx pgx.Tx, eventID 
 		return bookingTxResult{}, false, err
 	}
 	return bookingTxResult{response: response, status: response.Registration.Status}, true, tx.Commit(ctx)
+}
+
+func (s *Service) duplicateBookingStage(ctx context.Context, tx pgx.Tx, event Event, eventID string, identity bookingIdentity) (bookingTxResult, bool, error) {
+	stageStarted := time.Now()
+	response, found, err := s.duplicateBookingResponseTx(ctx, tx, event, eventID, identity)
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	s.observeBookingStage("duplicate_lookup", outcome, time.Since(stageStarted))
+	if err != nil || !found {
+		return bookingTxResult{}, found, err
+	}
+	return bookingTxResult{response: response, status: response.Registration.Status}, true, nil
 }
 
 func normalizeBookingRequest(actor Actor, req BookingRequest) (bookingIdentity, error) {
