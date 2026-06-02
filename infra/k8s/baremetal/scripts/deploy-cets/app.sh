@@ -87,9 +87,9 @@ metadata:
   namespace: $CETS_NAMESPACE
 type: Opaque
 stringData:
-  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB"
-  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB"
-  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB"
+  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-16}"
+  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-16}"
+  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-16}"
   TOKEN_SIGNING_SECRET: "$TOKEN_SIGNING_SECRET"
   PROVIDER_TOKEN_SECRET: "$PROVIDER_TOKEN_SECRET"
   BOOKING_RESERVATION_HASH_SECRET: "$BOOKING_RESERVATION_HASH_SECRET"
@@ -102,7 +102,7 @@ metadata:
   name: backend
   namespace: $CETS_NAMESPACE
 spec:
-  replicas: 3
+  replicas: 6
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -120,17 +120,10 @@ $(image_pull_block)
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
+        whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
             app: backend
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: backend
-            topologyKey: kubernetes.io/hostname
       containers:
       - name: backend
         image: $CETS_API_IMAGE
