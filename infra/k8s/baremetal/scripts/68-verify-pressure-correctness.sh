@@ -60,6 +60,7 @@ seed_correctness_employees() {
   kubectl_bm -n "$CETS_NAMESPACE" delete pod cets-correctness-employee-seed --ignore-not-found >/dev/null 2>&1 || true
   kubectl_bm -n "$CETS_NAMESPACE" run cets-correctness-employee-seed \
     --rm -i \
+    --quiet \
     --restart=Never \
     --image=postgres:16 \
     --env="PGPASSWORD=$(postgres_password)" \
@@ -90,6 +91,7 @@ psql_once() {
   kubectl_bm -n "$CETS_NAMESPACE" delete pod cets-correctness-psql --ignore-not-found >/dev/null 2>&1 || true
   kubectl_bm -n "$CETS_NAMESPACE" run cets-correctness-psql \
     --rm -i \
+    --quiet \
     --restart=Never \
     --image=postgres:16 \
     --env="PGPASSWORD=$(postgres_password)" \
@@ -138,7 +140,7 @@ load_event_ids() {
          'k8s correctness $RUN_ID mixed'
        )
        ORDER BY kind"
-  psql_once "$sql" >"$EVENT_IDS_FILE"
+  psql_once "$sql" | awk -F '|' 'NF == 2 { print }' >"$EVENT_IDS_FILE"
   local count
   count=$(wc -l <"$EVENT_IDS_FILE" | tr -d ' ')
   [ "$count" = "4" ] ||
@@ -177,7 +179,7 @@ require_zero() {
   local name=$1
   local sql=$2
   local actual
-  actual=$(psql_once "$sql" | tail -n 1)
+  actual=$(psql_once "$sql" | awk '/^-?[0-9]+([.][0-9]+)?$/ { value = $0 } END { print value }')
   actual=${actual:-0}
   if [ "$actual" = "0" ]; then
     append_result "$name" "0" "$actual" "pass"
@@ -191,7 +193,7 @@ require_positive() {
   local name=$1
   local sql=$2
   local actual
-  actual=$(psql_once "$sql" | tail -n 1)
+  actual=$(psql_once "$sql" | awk '/^-?[0-9]+([.][0-9]+)?$/ { value = $0 } END { print value }')
   actual=${actual:-0}
   if awk -v value="$actual" 'BEGIN { exit(value > 0 ? 0 : 1) }'; then
     append_result "$name" ">0" "$actual" "pass"
