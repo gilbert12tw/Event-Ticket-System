@@ -55,6 +55,7 @@ infra/k8s/baremetal/scripts/60-verify.sh
 infra/k8s/baremetal/scripts/61-verify-k8s-ha.sh
 infra/k8s/baremetal/scripts/62-verify-cloudflare.sh
 infra/k8s/baremetal/scripts/63-verify-app-smoke.sh
+infra/k8s/baremetal/scripts/64-benchmark-capacity.sh
 infra/k8s/baremetal/scripts/66-verify-observability.sh
 infra/k8s/baremetal/scripts/67-verify-telemetry-redaction.sh
 infra/k8s/baremetal/scripts/70-failure-drill.sh
@@ -73,6 +74,25 @@ default it imports `cets-api:<git-hash>` and `cets-frontend:<git-hash>` into
 the cluster nodes. To push to a registry instead, set
 `CETS_API_IMAGE_REPOSITORY`, `CETS_FRONTEND_IMAGE_REPOSITORY`, and
 `CETS_PUSH_IMAGES=true` in `.env.baremetal.local`.
+
+## Capacity Benchmark
+
+Use `64-benchmark-capacity.sh` for the production-like maximum RPS evidence.
+It runs k6 through ingress with an 80/20 read/booking traffic mix, seeds
+idempotent benchmark employees, searches for the highest passing RPS, and
+writes JSON plus a markdown report under `artifacts/k8s-capacity/`.
+
+```sh
+K8S_BENCH_START_RPS=100 \
+K8S_BENCH_STEP_RPS=100 \
+K8S_BENCH_MAX_RPS=2000 \
+infra/k8s/baremetal/scripts/64-benchmark-capacity.sh
+```
+
+Run `66-verify-observability.sh` after a benchmark window to prove the
+Grafana/LGTM investigation path: RED metrics, Tempo trace, Loki logs for the
+same trace ID, Pyroscope CPU profile samples, and service graph data involving
+`cets-backend`.
 
 For a full automated audit, use:
 
