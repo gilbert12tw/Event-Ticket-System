@@ -1,6 +1,7 @@
 import type {
   ApiEnvelope,
   ApiLogEntry,
+  AdminHROptions,
   AuditLog,
   AuditLogFilters,
   AuthBootstrap,
@@ -239,6 +240,9 @@ export const clearProviderToken = () => setProviderToken(null);
 export function seedDemo() {
   return post<{ status: string }>("/api/v1/admin/seed-demo");
 }
+
+export const adminHROptions = () =>
+  api<AdminHROptions>("/api/v1/admin/hr/options");
 
 export function createEvent(body: CreateEventRequest) {
   return post<EventSummary>("/api/v1/admin/events", body);

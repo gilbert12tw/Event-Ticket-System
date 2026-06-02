@@ -15,6 +15,7 @@ type TicketingService interface {
 	NotificationService
 	ReportingService
 	AuditService
+	HRMetadataService
 	OpsService
 	DemoService
 }
@@ -76,6 +77,10 @@ type ReportingService interface {
 
 type AuditService interface {
 	AuditLogs(ctx context.Context, actor ticketing.Actor, query ...ticketing.AuditLogQuery) ([]ticketing.AuditLog, error)
+}
+
+type HRMetadataService interface {
+	AdminHROptions(ctx context.Context, actor ticketing.Actor) (ticketing.AdminHROptions, error)
 }
 
 type OpsService interface {

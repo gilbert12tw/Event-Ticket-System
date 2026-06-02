@@ -61,6 +61,15 @@ export type EmployeeProfile = {
   employment_status: string;
 };
 
+export type AdminOption = {
+  value: string;
+  label: string;
+};
+
+export type AdminHROptions = {
+  sites: AdminOption[];
+};
+
 export type EligibilityRule = {
   rule_id?: string;
   event_id?: string;

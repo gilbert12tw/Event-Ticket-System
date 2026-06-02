@@ -33,6 +33,7 @@ func registerTicketingRoutes(mux *http.ServeMux, service TicketingService, readS
 	mux.HandleFunc("PUT /api/v1/admin/events/{event_id}/eligibility", protected(service, handleUpdateEligibility(service)))
 	mux.HandleFunc("GET /api/v1/admin/eligibility-impact-reviews", protected(readService, handleEligibilityImpactReviews(readService)))
 	mux.HandleFunc("POST /api/v1/admin/eligibility-impact-reviews/{review_id}/resolve", protected(service, handleResolveEligibilityImpactReview(service)))
+	mux.HandleFunc("GET /api/v1/admin/hr/options", protected(readService, handleAdminHROptions(readService)))
 	mux.HandleFunc("POST /api/v1/events/{event_id}/bookings", protected(service, handleBook(service)))
 	mux.HandleFunc("GET /api/v1/admin/events/{event_id}/registrations", protected(readService, handleListRegistrations(readService)))
 	mux.HandleFunc("POST /api/v1/me/registrations/{registration_id}/cancel", protected(service, handleCancelMyRegistration(service)))

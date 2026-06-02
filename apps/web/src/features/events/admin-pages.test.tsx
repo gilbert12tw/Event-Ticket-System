@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  adminHROptions,
   archiveEvent,
   changeEventState,
   createEvent,
@@ -19,6 +20,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
+    adminHROptions: vi.fn(),
     archiveEvent: vi.fn(),
     changeEventState: vi.fn(),
     createEvent: vi.fn(),
@@ -36,6 +38,13 @@ describe("AdminEventsPage CRUD tabs", () => {
     vi.clearAllMocks();
     window.history.pushState({}, "", "/admin/events");
     vi.mocked(listAdminEvents).mockResolvedValue([eventFixture()]);
+    vi.mocked(adminHROptions).mockResolvedValue({
+      sites: [
+        { value: "*", label: "所有廠區" },
+        { value: "Taipei HQ", label: "Taipei HQ" },
+        { value: "Tainan HQ", label: "Tainan HQ" },
+      ],
+    });
     vi.mocked(seedDemo).mockResolvedValue({ status: "seeded" });
     vi.mocked(createEvent).mockResolvedValue(
       eventFixture({ event_id: "evt-2" }),
@@ -150,8 +159,9 @@ describe("AdminEventsPage CRUD tabs", () => {
           tags: ["家庭活動", "台北"],
           rule: expect.objectContaining({
             department: "Engineering",
-            site: "Taipei",
+            site: "Taipei HQ",
           }),
+          event_site: "Taipei HQ",
         }),
       ),
     );

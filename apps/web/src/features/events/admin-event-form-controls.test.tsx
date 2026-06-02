@@ -24,6 +24,10 @@ function FormHarness({
         form={form}
         onChange={setForm}
         capacityReady={false}
+        siteOptions={[
+          { value: "", label: "未設定" },
+          { value: "Taipei HQ", label: "台北總部" },
+        ]}
         windowReady={false}
       />
       <output data-testid="capacity-type">{form.capacity_type}</output>

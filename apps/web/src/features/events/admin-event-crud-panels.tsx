@@ -14,6 +14,7 @@ import {
   eventStatusView,
   eventTemplateOptions,
   schedulePresetOptions,
+  type Option,
   visibilityOptions,
 } from "@/lib/ui/options";
 import {
@@ -158,6 +159,8 @@ export function AdminEventCreateTab({
   onReset,
   onSeed,
   onSubmit,
+  eventSiteOptions,
+  eligibilitySiteOptions,
 }: Readonly<{
   busy: boolean;
   canSubmit: boolean;
@@ -172,6 +175,8 @@ export function AdminEventCreateTab({
   onReset: () => void;
   onSeed: () => void;
   onSubmit: FormSubmitHandler;
+  eventSiteOptions: Option[];
+  eligibilitySiteOptions: Option[];
 }>) {
   return (
     <form className="form-grid" onSubmit={onSubmit}>
@@ -206,11 +211,16 @@ export function AdminEventCreateTab({
       </fieldset>
       <EventCoreFields
         form={form}
+        siteOptions={eventSiteOptions}
         onChange={onFormChange}
         windowReady={windowReady}
         capacityReady={capacityReady}
       />
-      <EligibilityFields form={form} onChange={onFormChange} />
+      <EligibilityFields
+        form={form}
+        siteOptions={eligibilitySiteOptions}
+        onChange={onFormChange}
+      />
       <fieldset className="form-section full">
         <legend>投遞與標籤</legend>
         <SelectField
@@ -272,6 +282,7 @@ export function AdminEventEditTab({
   busy,
   editForm,
   selectedEvent,
+  eventSiteOptions,
   windowReady,
   onEditFormChange,
   onSave,
@@ -279,6 +290,7 @@ export function AdminEventEditTab({
   busy: boolean;
   editForm: AdminEditForm;
   selectedEvent?: EventSummary;
+  eventSiteOptions: Option[];
   windowReady: boolean;
   onEditFormChange: (next: AdminEditForm) => void;
   onSave: FormSubmitHandler;
@@ -297,6 +309,7 @@ export function AdminEventEditTab({
       </div>
       <EventCoreFields
         form={editForm}
+        siteOptions={eventSiteOptions}
         onChange={onEditFormChange}
         windowReady={windowReady}
         capacityReady

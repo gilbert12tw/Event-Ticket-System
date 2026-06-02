@@ -12,11 +12,11 @@ import { splitTags } from "@/lib/formatting";
 import {
   capacityTypeOptions,
   eligibilityDepartmentOptions,
-  eligibilitySiteOptions,
   employmentStatusOptions,
   gradeOptions,
   tagSuggestionOptions,
   venueOptions,
+  type Option,
 } from "@/lib/ui/options";
 import type { AdminCreateForm, AdminEditForm } from "./admin-event-crud-types";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,13 @@ import { Button } from "@/components/ui/button";
 export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
   capacityReady,
   form,
+  siteOptions,
   onChange,
   windowReady,
 }: Readonly<{
   capacityReady: boolean;
   form: T;
+  siteOptions: Option[];
   onChange: (next: T) => void;
   windowReady: boolean;
 }>) {
@@ -64,6 +66,14 @@ export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
           ]}
           onChange={(event_city) => onChange({ ...form, event_city })}
           hint="用於跨城市提醒，不會單獨阻擋報名。"
+        />
+        <SelectField
+          label="活動廠區"
+          name="event-site"
+          value={form.event_site}
+          options={siteOptions}
+          onChange={(event_site) => onChange({ ...form, event_site })}
+          hint="用於活動地點脈絡；資格限制請在資格規則設定。"
         />
         <TextareaField
           className="full"
@@ -148,9 +158,11 @@ export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
 
 export function EligibilityFields({
   form,
+  siteOptions,
   onChange,
 }: Readonly<{
   form: AdminCreateForm;
+  siteOptions: Option[];
   onChange: (next: AdminCreateForm) => void;
 }>) {
   return (
@@ -165,7 +177,7 @@ export function EligibilityFields({
       <SelectField
         label="廠區"
         value={form.site || "*"}
-        options={eligibilitySiteOptions}
+        options={siteOptions}
         onChange={(site) => onChange({ ...form, site })}
       />
       <SelectField

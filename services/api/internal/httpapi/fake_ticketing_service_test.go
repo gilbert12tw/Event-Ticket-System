@@ -28,6 +28,7 @@ type fakeTicketingService struct {
 	offlinePackageActor   ticketing.Actor
 	offlineSyncActor      ticketing.Actor
 	reportsActor          ticketing.Actor
+	hrOptionsActor        ticketing.Actor
 	auditActor            ticketing.Actor
 	auditQuery            []ticketing.AuditLogQuery
 	queueStatusActor      ticketing.Actor
@@ -269,6 +270,15 @@ func (s *fakeTicketingService) AuditLogs(_ context.Context, actor ticketing.Acto
 	s.auditActor = actor
 	s.auditQuery = query
 	return []ticketing.AuditLog{{AuditID: "aud_1"}}, nil
+}
+
+func (s *fakeTicketingService) AdminHROptions(_ context.Context, actor ticketing.Actor) (ticketing.AdminHROptions, error) {
+	s.hrOptionsActor = actor
+	return ticketing.AdminHROptions{Sites: []ticketing.AdminOption{
+		{Value: "*", Label: "所有廠區"},
+		{Value: "Taipei HQ", Label: "Taipei HQ"},
+		{Value: "Tainan HQ", Label: "Tainan HQ"},
+	}}, nil
 }
 
 func (s *fakeTicketingService) SeedDemoData(context.Context) error {
