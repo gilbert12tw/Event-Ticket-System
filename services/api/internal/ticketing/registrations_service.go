@@ -26,6 +26,10 @@ func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req Boo
 		return response, err
 	}
 
+	if err := s.rateLimitBooking(ctx, actor, eventID, identity.employeeID); err != nil {
+		return BookingResponse{}, err
+	}
+
 	hold, idempotencyHash, err := s.preadmitBooking(ctx, eventID, identity.employeeID, identity.idempotencyKey, identity.familyCount)
 	if err != nil {
 		return BookingResponse{}, err

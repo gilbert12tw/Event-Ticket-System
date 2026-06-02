@@ -15,6 +15,7 @@ import (
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/httpapi"
 	"event-ticket-system/internal/postgres"
+	"event-ticket-system/internal/ratelimit"
 	"event-ticket-system/internal/reservation"
 	"event-ticket-system/internal/ticketing"
 
@@ -55,9 +56,15 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		return err
 	}
 	defer closeRedisClient(logger, redisClient)
+	limiter, rateLimitClient, err := newBookingRateLimiter(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer closeRedisClient(logger, rateLimitClient)
 
 	ticketingService := newTicketingService(pool, cfg, logger).
-		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret))
+		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret)).
+		WithBookingRateLimiter(limiter, []byte(cfg.BookingRateLimitHashSecret))
 	demoClock := newDemoClockForConfig(cfg, logger)
 	if demoClock != nil {
 		ticketingService.WithClock(demoClock.Now)
@@ -162,4 +169,37 @@ func newBookingReservationGate(cfg config.Config, logger *slog.Logger) (reservat
 	}
 	client := redis.NewClient(opts)
 	return reservation.NewRedisGate(client, gateCfg, logger), client, nil
+}
+
+func newBookingRateLimiter(cfg config.Config, logger *slog.Logger) (ratelimit.Limiter, *redis.Client, error) {
+	if !cfg.RateLimitEnabled || (cfg.BookingRateLimitPerActor == 0 && cfg.BookingRateLimitPerEvent == 0) {
+		return ratelimit.NoopLimiter{}, nil, nil
+	}
+	outageMode, err := ratelimit.ParseOutageMode(cfg.RateLimitOutageMode)
+	if err != nil {
+		return nil, nil, err
+	}
+	limiterCfg := ratelimit.Config{
+		Enabled:             true,
+		ActorLimitPerSecond: cfg.BookingRateLimitPerActor,
+		EventLimitPerSecond: cfg.BookingRateLimitPerEvent,
+		OutageMode:          outageMode,
+		OperationTimeout:    cfg.ReservationOperationTimeout,
+	}
+	if err := limiterCfg.Validate(); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(cfg.BookingRateLimitHashSecret) == "" {
+		return nil, nil, errors.New("BOOKING_RATE_LIMIT_HASH_SECRET is required when RATE_LIMIT_ENABLED=true")
+	}
+	if strings.TrimSpace(cfg.RedisURL) == "" {
+		return nil, nil, errors.New("REDIS_URL is required when RATE_LIMIT_ENABLED=true")
+	}
+	opts, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid REDIS_URL: %w", err)
+	}
+	client := redis.NewClient(opts)
+	store := ratelimit.NewRedisStore(client)
+	return ratelimit.NewRedisLimiter(store, limiterCfg, logger), client, nil
 }

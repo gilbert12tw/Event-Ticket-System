@@ -190,6 +190,27 @@ func TestWorkerOutcomeMetricsExposeAuditBackedRetryAndDeadLetterCounters(t *test
 	assert.NotContains(t, metrics, unsafeReason)
 }
 
+func TestRateLimitMetricsExposeAuditBackedDrops(t *testing.T) {
+	db := fakeSQLMetricsDB{
+		lockWaitCount: 0,
+		rateLimitRows: [][]any{
+			{"actor", int64(4)},
+			{"event", int64(2)},
+			{"E1001", int64(1)},
+		},
+	}
+
+	var body bytes.Buffer
+	NewRegistry().WritePrometheus(context.Background(), &body, db)
+	metrics := body.String()
+
+	assert.Contains(t, metrics, `# TYPE cets_rate_limit_drop_total counter`)
+	assert.Contains(t, metrics, `cets_rate_limit_drop_total{scope="actor"} 4`)
+	assert.Contains(t, metrics, `cets_rate_limit_drop_total{scope="event"} 2`)
+	assert.Contains(t, metrics, `cets_rate_limit_drop_total{scope="unknown"} 1`)
+	assert.NotContains(t, metrics, "E1001")
+}
+
 type fakeSQLMetricsDB struct {
 	lockWaitCount               int64
 	queries                     *[]string
@@ -197,6 +218,7 @@ type fakeSQLMetricsDB struct {
 	outboxLagHistogramRows      [][]any
 	workerOutcomeRows           [][]any
 	reservationCompensationRows [][]any
+	rateLimitRows               [][]any
 }
 
 func (db fakeSQLMetricsDB) QueryRow(context.Context, string, ...interface{}) pgx.Row {
@@ -215,6 +237,9 @@ func (db fakeSQLMetricsDB) Query(_ context.Context, query string, _ ...interface
 	}
 	if strings.Contains(query, "reservation_compensation_metric_totals") {
 		return &fakeMetricRows{rows: db.reservationCompensationRows}, nil
+	}
+	if strings.Contains(query, "booking_rate_limit_audit_totals") {
+		return &fakeMetricRows{rows: db.rateLimitRows}, nil
 	}
 	return &fakeMetricRows{rows: db.outboxRows}, nil
 }
