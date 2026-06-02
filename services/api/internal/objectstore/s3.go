@@ -14,6 +14,11 @@ import (
 	"time"
 )
 
+const (
+	amzContentSHA256Header = "X-Amz-Content-Sha256"
+	amzDateHeader          = "X-Amz-Date"
+)
+
 type S3CompatibleStore struct {
 	Endpoint  string
 	Bucket    string
@@ -41,8 +46,8 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	payloadHash := sha256Hex(body)
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	request.Header.Set("X-Amz-Date", amzDate)
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
 	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
 	response, err := s.httpClient().Do(request)
@@ -69,8 +74,8 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 	payloadHash := sha256Hex(nil)
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	request.Header.Set("X-Amz-Date", amzDate)
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
 	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
 	response, err := s.httpClient().Do(request)
@@ -100,8 +105,8 @@ func (s S3CompatibleStore) Get(ctx context.Context, key string) ([]byte, string,
 	payloadHash := sha256Hex(nil)
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	request.Header.Set("X-Amz-Date", amzDate)
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
 	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
 	response, err := s.httpClient().Do(request)
