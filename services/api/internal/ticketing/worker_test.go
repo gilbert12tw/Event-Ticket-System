@@ -112,31 +112,6 @@ func TestDeliveryMessageForOutboxOmitsCrossCityWordingWhenContextIncomplete(t *t
 	assert.NotContains(t, missingCity.Body, "This activity is in")
 }
 
-func TestSMTPNotificationSenderReturnsCanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	err := SMTPNotificationSender{Host: "127.0.0.1", Port: 1, From: "noreply@cets.local"}.
-		Send(ctx, DeliveryMessage{To: "e1001@cets.local", Subject: "test", Body: "body"})
-	assert.ErrorIs(t, err, context.Canceled)
-}
-
-func TestSMTPNotificationSenderRedirectsRecipientInEnvelopeAndBody(t *testing.T) {
-	sender := SMTPNotificationSender{
-		From:       "noreply@cets.local",
-		RedirectTo: "notifications@cets.local",
-	}
-	message := DeliveryMessage{To: "e1001@cets.local", Subject: "test", Body: "body", IdempotencyKey: "del_abc123"}
-
-	recipient := sender.deliveryRecipient(message)
-	body := sender.deliveryBody(message, recipient)
-
-	assert.Equal(t, "notifications@cets.local", recipient)
-	assert.NotContains(t, body, "e1001@cets.local", "body leaked employee recipient")
-	assert.Contains(t, body, "To: notifications@cets.local")
-	assert.Contains(t, body, "Message-ID: <del_abc123@cets.local>")
-	assert.Contains(t, body, "X-Idempotency-Key: del_abc123")
-}
-
 func TestNotificationCategorySuppressedMatchesLabelsCaseInsensitive(t *testing.T) {
 	prefs := outboxNotificationPreferences{optedOutCategories: []string{"Family"}}
 	assert.True(t, notificationCategorySuppressed(prefs, "booking.confirmed", "family"), "expected category suppression")

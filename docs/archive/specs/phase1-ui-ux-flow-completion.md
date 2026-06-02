@@ -6,8 +6,10 @@ Complete the Phase 1 production UI journeys for local/demo static builds while p
 
 ## Acceptance Criteria
 
-- `/api/v1/auth/bootstrap` returns `debug_chrome_enabled`, enabled only for local, demo, and test environments and disabled in production.
+- `/api/v1/auth/bootstrap` returns `debug_chrome_enabled`, enabled only for local, demo, and test environments and disabled in production. It also returns `demo_debug_enabled` when the local/demo/test debug clock routes are registered.
 - The web app uses the bootstrap flag to decide whether Debug chrome is available. `?debug=1` only enables the chrome when the server allows it.
+- `/admin/flow-check` is a manual demo control panel, not an automatic success run. Each step triggers one visible API action and shows the resulting data artifact.
+- `DEMO_DEBUG_ENABLED=true` enables `/api/v1/debug/demo-clock` only in local/demo/test. The debug clock drives application business time for cutoff and lottery checks while database write timestamps remain wall-clock time.
 - Debug controls remain discoverable on login, auth-required, desktop header, desktop sidebar context, and mobile utility surfaces.
 - Check-in results present holder name, department, city, and family count before ticket identifiers. Duplicate scans show first scan time and device. Rejected scans show reason code and recovery copy without relying on color.
 - Frontend API contracts match current backend fields for check-in, offline check-in packages, reports, lottery runs, and related UI models.

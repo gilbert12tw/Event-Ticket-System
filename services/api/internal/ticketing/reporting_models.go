@@ -31,13 +31,19 @@ type LotteryRunRequest struct {
 }
 
 type LotteryRun struct {
-	RunID       string    `json:"run_id"`
-	EventID     string    `json:"event_id"`
-	Seed        string    `json:"seed"`
-	Status      string    `json:"status"`
-	WinnerCount int       `json:"winner_count"`
-	CreatedBy   string    `json:"created_by"`
-	CreatedAt   time.Time `json:"created_at"`
+	RunID                  string    `json:"run_id"`
+	EventID                string    `json:"event_id"`
+	Seed                   string    `json:"seed"`
+	Status                 string    `json:"status"`
+	InputSnapshotAt        time.Time `json:"input_snapshot_at"`
+	AlgorithmVersion       string    `json:"algorithm_version"`
+	CandidateCount         int       `json:"candidate_count"`
+	EligibilityRuleID      string    `json:"eligibility_rule_id"`
+	EligibilityRuleVersion int       `json:"eligibility_rule_version"`
+	EligibilitySnapshot    RuleInput `json:"eligibility_snapshot"`
+	WinnerCount            int       `json:"winner_count"`
+	CreatedBy              string    `json:"created_by"`
+	CreatedAt              time.Time `json:"created_at"`
 }
 
 type ReportRow struct {

@@ -31,43 +31,43 @@ Out of scope:
 
 ## 3. Acceptance Criteria
 
-| AC | Given | When | Then |
-| --- | --- | --- | --- |
-| WS4-AC-1 | Outbox v1 rows exist before deployment | v2 migration runs | Existing rows remain readable; new writes use v2 envelope; worker processes both versions during the migration window. |
-| WS4-AC-2 | A single same-binary deployment | `WORKER_KINDS=notification,projection,compensation` env is set across multiple processes | Each process consumes only its assigned kinds; no kind is starved when another is slow. |
-| WS4-AC-3 | SMTP is slow / failing | Notification worker backpressures | Projection and compensation workers continue to drain on time; outbox lag for non-notification kinds stays within acceptance matrix §1.4 (p95 < 60s, max < 180s). |
-| WS4-AC-4 | An event fails delivery | Retry policy applies | Bounded retries with exponential backoff + jitter; on exhaustion, row moves to dead-letter state with `dead_letter_at`, `last_error`, retry_count; no silent drop. |
-| WS4-AC-5 | An admin runs queue replay (`cets ops replay --kind=notification --from=… --to=…`) | Selected rows replay | Consumers are idempotent — duplicate delivery does not occur; audit row records the replay action and operator. |
-| WS4-AC-6 | A worker receives SIGTERM mid-lease | Shutdown drain runs | Currently-leased rows are released safely (lease cleared or committed); no half-applied side effect; new leases are not acquired after SIGTERM. |
-| WS4-AC-7 | A worker is killed (SIGKILL, OOM, container kill) mid-lease | Lease times out | Lease expiry returns the row to the pool; consumer idempotency prevents double side effect on the retry; integration test proves this. |
-| WS4-AC-8 | An ops admin calls notification delivery feed | Recent deliveries / retries / dead-letters are queried | Read-only response with status, retry_count, last_error, redacted recipient; no full email body, no PII beyond Phase 1 redaction allowances. |
-| WS4-AC-9 | Regression suite runs | Duplicate-delivery, dead-letter, replay, graceful-shutdown, crash-recovery scenarios are exercised | All assertions pass; new test added before any worker behavior change merges. |
+| AC       | Given                                                                              | When                                                                                               | Then                                                                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WS4-AC-1 | Outbox v1 rows exist before deployment                                             | v2 migration runs                                                                                  | Existing rows remain readable; new writes use v2 envelope; worker processes both versions during the migration window.                                             |
+| WS4-AC-2 | A single same-binary deployment                                                    | `WORKER_KINDS=notification,projection,compensation` env is set across multiple processes           | Each process consumes only its assigned kinds; no kind is starved when another is slow.                                                                            |
+| WS4-AC-3 | SMTP is slow / failing                                                             | Notification worker backpressures                                                                  | Projection and compensation workers continue to drain on time; outbox lag for non-notification kinds stays within acceptance matrix §1.4 (p95 < 60s, max < 180s).  |
+| WS4-AC-4 | An event fails delivery                                                            | Retry policy applies                                                                               | Bounded retries with exponential backoff + jitter; on exhaustion, row moves to dead-letter state with `dead_letter_at`, `last_error`, retry_count; no silent drop. |
+| WS4-AC-5 | An admin runs queue replay (`cets ops replay --kind=notification --from=… --to=…`) | Selected rows replay                                                                               | Consumers are idempotent — duplicate delivery does not occur; audit row records the replay action and operator.                                                    |
+| WS4-AC-6 | A worker receives SIGTERM mid-lease                                                | Shutdown drain runs                                                                                | Currently-leased rows are released safely (lease cleared or committed); no half-applied side effect; new leases are not acquired after SIGTERM.                    |
+| WS4-AC-7 | A worker is killed (SIGKILL, OOM, container kill) mid-lease                        | Lease times out                                                                                    | Lease expiry returns the row to the pool; consumer idempotency prevents double side effect on the retry; integration test proves this.                             |
+| WS4-AC-8 | An ops admin calls notification delivery feed                                      | Recent deliveries / retries / dead-letters are queried                                             | Read-only response with status, retry_count, last_error, redacted recipient; no full email body, no PII beyond Phase 1 redaction allowances.                       |
+| WS4-AC-9 | Regression suite runs                                                              | Duplicate-delivery, dead-letter, replay, graceful-shutdown, crash-recovery scenarios are exercised | All assertions pass; new test added before any worker behavior change merges.                                                                                      |
 
 ## 4. Edge Cases
 
-| # | Scenario | Expected behavior |
-| --- | --- | --- |
-| WS4-E-1 | Producer commits DB tx but worker has not yet picked up the row | Outbox guarantees at-least-once delivery; consumer idempotency (key on `idempotency_key` + consumer-side dedup table or upsert) prevents duplicate side effect. |
-| WS4-E-2 | Worker picks up a row, side-effect succeeds, worker crashes before marking processed | Lease expires → row reprocessed → consumer detects already-applied via idempotency → marks processed without re-sending. |
-| WS4-E-3 | SMTP returns 5xx transiently | Retry with backoff; after N retries → dead-letter; admin visibility shows the row. |
-| WS4-E-4 | SMTP returns 5xx for hours (Mailhog down / prod relay down) | Backoff caps; queue grows; outbox-lag metric alerts; non-notification kinds unaffected by AC-3 isolation. |
-| WS4-E-5 | A bad payload trips a consumer (panic / schema mismatch) | Consumer recovers, marks attempt failed with error reason, retries up to limit, then dead-letters. Worker process does not crash on a single bad row. |
-| WS4-E-6 | Replay window overlaps with current live delivery | Idempotency dedup prevents duplicate; audit row distinguishes replay from primary delivery. |
-| WS4-E-7 | Envelope v2 schema_version is unknown to the consumer | Consumer logs structured warning and dead-letters with `reason=unknown_schema_version`; never silently drops. |
-| WS4-E-8 | Lease TTL is too long, slow worker holds rows under load | Lease TTL is config-bound (`OUTBOX_LEASE_TTL_SECONDS`); reviewer test asserts sane default; metric `cets_outbox_lease_held_seconds` exposes held time. |
-| WS4-E-9 | Replay admin is invoked against the wrong window | Dry-run mode (`--dry-run`) prints affected count without enqueuing; default is dry-run; `--apply` is required for actual replay. |
+| #       | Scenario                                                                             | Expected behavior                                                                                                                                               |
+| ------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WS4-E-1 | Producer commits DB tx but worker has not yet picked up the row                      | Outbox guarantees at-least-once delivery; consumer idempotency (key on `idempotency_key` + consumer-side dedup table or upsert) prevents duplicate side effect. |
+| WS4-E-2 | Worker picks up a row, side-effect succeeds, worker crashes before marking processed | Lease expires → row reprocessed → consumer detects already-applied via idempotency → marks processed without re-sending.                                        |
+| WS4-E-3 | SMTP returns 5xx transiently                                                         | Retry with backoff; after N retries → dead-letter; admin visibility shows the row.                                                                              |
+| WS4-E-4 | SMTP returns 5xx for hours (Mailhog down / prod relay down)                          | Backoff caps; queue grows; outbox-lag metric alerts; non-notification kinds unaffected by AC-3 isolation.                                                       |
+| WS4-E-5 | A bad payload trips a consumer (panic / schema mismatch)                             | Consumer recovers, marks attempt failed with error reason, retries up to limit, then dead-letters. Worker process does not crash on a single bad row.           |
+| WS4-E-6 | Replay window overlaps with current live delivery                                    | Idempotency dedup prevents duplicate; audit row distinguishes replay from primary delivery.                                                                     |
+| WS4-E-7 | Envelope v2 schema_version is unknown to the consumer                                | Consumer logs structured warning and dead-letters with `reason=unknown_schema_version`; never silently drops.                                                   |
+| WS4-E-8 | Lease TTL is too long, slow worker holds rows under load                             | Lease TTL is config-bound (`OUTBOX_LEASE_TTL_SECONDS`); reviewer test asserts sane default; metric `cets_outbox_lease_held_seconds` exposes held time.          |
+| WS4-E-9 | Replay admin is invoked against the wrong window                                     | Dry-run mode (`--dry-run`) prints affected count without enqueuing; default is dry-run; `--apply` is required for actual replay.                                |
 
 ## 5. Non-Functional Requirements
 
-| Category | Requirement | Metric |
-| --- | --- | --- |
-| Reliability | At-least-once delivery; consumer idempotency makes it effectively once. | `PH2-37` duplicate-delivery test. |
-| Isolation | Notification slowness does not raise non-notification kind lag or backlog. | Per-kind `cets_outbox_lag_seconds` and `cets_outbox_oldest_lag_seconds` (WS2). |
-| Latency | Outbox lag p95 < 60s, max < 180s (acceptance matrix §1.4). | k6 + lag metric. |
-| Recovery | Crash / SIGKILL never duplicates side effect. | `PH2-37` crash test. |
-| Observability | Every retry, dead-letter, replay action is logged + auditable. | Structured log + audit row; ops API feed. |
-| Disposability | SIGTERM drain completes within configured grace (default 30s) or escalates. | `PH2-35` test. |
-| Backward compatibility | v1 + v2 envelopes coexist during migration. | Integration test consumes both. |
+| Category               | Requirement                                                                 | Metric                                                                         |
+| ---------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Reliability            | At-least-once delivery; consumer idempotency makes it effectively once.     | `PH2-37` duplicate-delivery test.                                              |
+| Isolation              | Notification slowness does not raise non-notification kind lag or backlog.  | Per-kind `cets_outbox_lag_seconds` and `cets_outbox_oldest_lag_seconds` (WS2). |
+| Latency                | Outbox lag p95 < 60s, max < 180s (acceptance matrix §1.4).                  | k6 + lag metric.                                                               |
+| Recovery               | Crash / SIGKILL never duplicates side effect.                               | `PH2-37` crash test.                                                           |
+| Observability          | Every retry, dead-letter, replay action is logged + auditable.              | Structured log + audit row; ops API feed.                                      |
+| Disposability          | SIGTERM drain completes within configured grace (default 30s) or escalates. | `PH2-35` test.                                                                 |
+| Backward compatibility | v1 + v2 envelopes coexist during migration.                                 | Integration test consumes both.                                                |
 
 ## 6. Minimal API / Data Contract
 
@@ -104,6 +104,7 @@ Event type registry (normative; `PH2-05` adds an architecture test that fails on
 registration.confirmed.v2
 registration.cancelled.v2
 registration.waitlisted.v2
+registration.received.v2
 registration.promoted.v2
 ticket.issued.v2
 ticket.revoked.v2
@@ -198,10 +199,10 @@ Every WS4 runtime change ships disable-capable:
 
 ## 11. Cross-Stream Dependencies
 
-| Direction | Stream | Contract consumed / produced |
-| --- | --- | --- |
-| Consumes | WS1 | Event contract v2 (`PH2-03`), OpenAPI delta (`PH2-02`), reviewer checklist (`PH2-07`). |
-| Consumes | WS2 | Outbox lag + per-kind metrics names; trace schema for worker hops. |
-| Consumes | WS3 | Reservation compensation kind name; idempotency-key shape for booking-side emitters. |
-| Produces | WS3 | Worker kind config (`PH2-31`) so reservation compensation can run as a kind. |
-| Produces | WS5 | Outbox envelope v2 + worker kind contract — required by read model worker (`PH2-42`). Queue admin feed payload — consumed by ops UI (`PH2-46`). |
+| Direction | Stream | Contract consumed / produced                                                                                                                    |
+| --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Consumes  | WS1    | Event contract v2 (`PH2-03`), OpenAPI delta (`PH2-02`), reviewer checklist (`PH2-07`).                                                          |
+| Consumes  | WS2    | Outbox lag + per-kind metrics names; trace schema for worker hops.                                                                              |
+| Consumes  | WS3    | Reservation compensation kind name; idempotency-key shape for booking-side emitters.                                                            |
+| Produces  | WS3    | Worker kind config (`PH2-31`) so reservation compensation can run as a kind.                                                                    |
+| Produces  | WS5    | Outbox envelope v2 + worker kind contract — required by read model worker (`PH2-42`). Queue admin feed payload — consumed by ops UI (`PH2-46`). |

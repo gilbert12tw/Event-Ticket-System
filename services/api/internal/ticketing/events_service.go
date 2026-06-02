@@ -51,6 +51,10 @@ func (s *Service) prepareCreateEventInput(req CreateEventRequest) (createEventIn
 	if err != nil {
 		return createEventInput{}, err
 	}
+	allocationMode, err := normalizeAllocationMode(req.AllocationMode)
+	if err != nil {
+		return createEventInput{}, err
+	}
 	now := s.now()
 	req = defaultCreateEventRequest(req, now)
 	if req.Status != EventStatusDraft && req.Status != EventStatusPublished {
@@ -58,6 +62,9 @@ func (s *Service) prepareCreateEventInput(req CreateEventRequest) (createEventIn
 	}
 	if !req.RegistrationStart.Before(req.RegistrationClose) {
 		return createEventInput{}, badRequest("registration_start must be before registration_close")
+	}
+	if err := validateAllocationModeForCapacity(allocationMode, capacityType); err != nil {
+		return createEventInput{}, err
 	}
 	eventID, ruleID, auditID, err := newCreateEventIDs()
 	if err != nil {
@@ -78,7 +85,7 @@ func (s *Service) prepareCreateEventInput(req CreateEventRequest) (createEventIn
 			Capacity:          capacity,
 			AllowsFamily:      allowsFamily,
 			Status:            req.Status,
-			AllocationMode:    AllocationModeFCFS,
+			AllocationMode:    allocationMode,
 			Category:          strings.TrimSpace(req.Category),
 			Tags:              normalizeTags(req.Tags),
 			EntryMethod:       strings.TrimSpace(req.EntryMethod),
@@ -134,9 +141,9 @@ func (s *Service) insertCreatedEventTx(ctx context.Context, tx pgx.Tx, actor Act
 	_, err := tx.Exec(ctx, `INSERT INTO events
 		(event_id, title, description, location, event_city, event_site, starts_at, registration_start, registration_close,
 		 capacity_type, capacity, allows_family, status, allocation_mode, category, tags, entry_method, visibility, version, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'fcfs',$14,$15,$16,$17,1,$18)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,1,$19)`,
 		event.EventID, event.Title, event.Description, event.Location, event.EventCity, event.EventSite, event.StartsAt, event.RegistrationStart, event.RegistrationClose,
-		event.CapacityType, event.Capacity, event.AllowsFamily, event.Status, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility, actor.ID)
+		event.CapacityType, event.Capacity, event.AllowsFamily, event.Status, event.AllocationMode, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility, actor.ID)
 	if err != nil {
 		return err
 	}
@@ -157,7 +164,7 @@ func (s *Service) insertCreatedEventTx(ctx context.Context, tx pgx.Tx, actor Act
 	if err := insertEligibilityRuleVersionTx(ctx, tx, event.EventID, 1, input.rule, matchCount, actor.ID); err != nil {
 		return err
 	}
-	return insertAudit(ctx, tx, newAuditRecord(input.auditID, actor, "event.created", "event", event.EventID, map[string]interface{}{"capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily, "status": event.Status}))
+	return insertAudit(ctx, tx, newAuditRecord(input.auditID, actor, "event.created", "event", event.EventID, map[string]interface{}{"capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily, "allocation_mode": event.AllocationMode, "status": event.Status}))
 }
 
 func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string) ([]EventSummary, error) {

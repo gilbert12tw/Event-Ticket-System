@@ -8,6 +8,7 @@ import {
   checkEligibility,
   createReportExport,
   getEvent,
+  getOpsDashboard,
   getReportExport,
   getNotificationPreferences,
   getTicket,
@@ -381,6 +382,7 @@ describe("api client", () => {
     await mockCall({ export_id: "exp/1", status: "ready" }, () =>
       getReportExport("exp/1"),
     );
+    await mockCall({ capacity_pressure: { events: [] } }, getOpsDashboard);
     await mockCall([], () =>
       auditLogs({
         action: "event.updated",
@@ -419,11 +421,12 @@ describe("api client", () => {
         ["/api/v1/admin/tickets/tkt%2F1/revoke", { reason: "security review" }],
         ["/api/v1/admin/reports/exports", { report_type: "participation" }],
         ["/api/v1/admin/reports/exports/exp%2F1"],
+        ["/api/v1/admin/ops/dashboard"],
       ],
       5,
     );
-    expect(fetchCall(11).path).toContain("/api/v1/admin/audit-logs?");
-    expect(fetchCall(11).path).toContain("cursor=2026-05-06T10%3A00%3A00Z");
+    expect(fetchCall(12).path).toContain("/api/v1/admin/audit-logs?");
+    expect(fetchCall(12).path).toContain("cursor=2026-05-06T10%3A00%3A00Z");
   });
 
   it("calls production offline check-in and notification endpoints", async () => {

@@ -50,3 +50,11 @@ func (s *Service) WithReservationGate(gate reservation.Gate, secret []byte) *Ser
 	s.reservationSecret = secret
 	return s
 }
+
+func (s *Service) WithClock(now func() time.Time) *Service {
+	if now == nil {
+		return s
+	}
+	s.now = func() time.Time { return now().UTC() }
+	return s
+}

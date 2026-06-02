@@ -16,6 +16,7 @@ import (
 	"event-ticket-system/internal/httpapi"
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/reservation"
+	"event-ticket-system/internal/ticketing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -57,10 +58,15 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 
 	ticketingService := newTicketingService(pool, cfg, logger).
 		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret))
+	demoClock := newDemoClockForConfig(cfg, logger)
+	if demoClock != nil {
+		ticketingService.WithClock(demoClock.Now)
+	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		DB:                          pool,
 		Ticketing:                   ticketingService,
 		Logger:                      logger,
+		DemoClock:                   demoClock,
 		TracingEnabled:              cfg.OTelTracesEnabled,
 		RequestTimeout:              cfg.RequestTimeout,
 		AppEnv:                      cfg.AppEnv,
@@ -113,6 +119,16 @@ func runHTTPServer(server *http.Server, cfg config.Config, logger *slog.Logger) 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer shutdownCancel()
 	return server.Shutdown(shutdownCtx)
+}
+
+func newDemoClockForConfig(cfg config.Config, logger *slog.Logger) *ticketing.DemoClock {
+	if !cfg.DemoDebugEnabled {
+		return nil
+	}
+	if logger != nil {
+		logger.Info("demo debug clock enabled")
+	}
+	return ticketing.NewDemoClock()
 }
 
 // newBookingReservationGate constructs the PH2-22 Redis pre-admission gate.

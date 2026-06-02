@@ -207,6 +207,33 @@ func TestBookingWithGateUnlimitedEventBypassesRedis(t *testing.T) {
 	assert.Empty(t, keys, "unlimited events must not touch Redis")
 }
 
+func TestBookingWithGateLotteryEventBypassesRedis(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	gate := &recordingReservationGate{outcome: reservation.OutcomeGranted}
+	service.WithReservationGate(gate, []byte("reservation-test-secret"))
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Lottery Bypass",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	setLotteryAllocationMode(t, service, ctx, event.EventID)
+
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: "lottery-bypass-redis",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationReceived, booking.Registration.Status)
+	assert.Nil(t, booking.Ticket)
+	assert.Equal(t, 0, gate.reserveCalls, "lottery registration must not create a Redis hold")
+}
+
 func TestBookingWithGateIdempotentReplayDoesNotDoubleDecrement(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

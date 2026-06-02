@@ -93,7 +93,7 @@
     x-required-roles:
       - activity_admin
     summary: Run deterministic lottery allocation.
-    description: Runs or returns an existing replay-safe lottery allocation for the supplied event and seed, with winners, waitlist assignments, tickets, audit, and outbox effects.
+    description: Runs after registration cutoff or returns an existing replay-safe lottery allocation for the supplied event and seed. The run snapshots received registrations, records deterministic winners and waitlist assignments, issues winner tickets, and records audit and outbox effects. A different seed is rejected once an event has a completed run.
     parameters:
       - "$ref": "../components/parameters.yaml#/EventId"
     requestBody:
@@ -104,7 +104,7 @@
             "$ref": "../components/schemas/bookings.yaml#/LotteryRunRequest"
     responses:
       "201":
-        description: Lottery run created or replayed.
+        description: Lottery run created or replayed for the same seed.
         content:
           application/json:
             schema:

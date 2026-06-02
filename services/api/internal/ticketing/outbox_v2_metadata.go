@@ -14,6 +14,8 @@ func outboxV2Metadata(eventType string, aggregateID string, outboxID string, pay
 		return metadataWithTwoIDs(eventType, payload, "registration.cancelled", "registration_id", "cancelled_at", "event_id")
 	case "registration.waitlisted.v2":
 		return metadataWithOneID(eventType, payload, "registration.waitlisted", "registration_id", "event_id")
+	case "registration.received.v2":
+		return metadataWithOneID(eventType, payload, "registration.received", "registration_id", "event_id")
 	case "registration.promoted.v2":
 		return metadataWithTwoIDs(eventType, payload, "registration.promoted", "registration_id", "promoted_at", "event_id")
 	case "ticket.issued.v2":

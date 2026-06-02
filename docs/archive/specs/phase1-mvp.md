@@ -23,38 +23,38 @@ Build a Go modular monolith that can run locally against PostgreSQL and demonstr
 - [ ] AC-6: Given a confirmed ticket, When check-in staff redeem the signed token online, Then exactly one successful check-in record is created, duplicate scans return the first redemption details, and the response shows holder name/department/city and family count for on-site verification.
 - [ ] AC-7: Given an HR/system admin, When they inspect reports and audit logs, Then participation counts, family totals, city distribution, ticket counts, check-in counts, no-show/cancellation events, and sensitive actions are visible without exposing unnecessary PII.
 - [ ] AC-8: Given the app starts locally, When `/healthz` and `/readyz` are called, Then health returns app status and readiness verifies PostgreSQL connectivity.
-- [ ] AC-9: Given the React browser UI is opened, When the Demo Runbook is used, Then the UI completes event creation, eligibility display, booking, ticket display, check-in, reporting, and audit inspection without manual database edits.
+- [ ] AC-9: Given the React browser UI is opened, When the demo control panel is used, Then an operator can step through event creation, eligibility display, booking, ticket display, check-in, reporting, and audit inspection without manual database edits.
 
 ## Edge Cases
 
-| # | Scenario | Expected Behavior |
-|---|----------|-------------------|
-| E-1 | Empty or malformed JSON request | Return `400` with a JSON error response and do not mutate state. |
-| E-2 | Missing, expired, unmapped, or incomplete external provider claims | Return `401` or `403`, degrade only where explicitly allowed, and record no sensitive data. |
-| E-3 | Duplicate booking request with same idempotency key | Return the original registration/ticket result without duplicate records. |
-| E-4 | Same employee retries with a different idempotency key | Return the existing registration result without duplicate confirmed bookings. |
-| E-5 | Limited capacity is exhausted | Create a waitlist registration and no ticket. |
-| E-6 | Concurrent bookings compete for the last seat | PostgreSQL transaction/locking and constraints prevent oversell. |
-| E-7 | Tampered ticket token | Reject check-in with `400` and record no successful check-in. |
-| E-8 | Duplicate ticket scan | Return `409` with first redemption details. |
-| E-9 | PostgreSQL unavailable | `/readyz` fails and mutating endpoints return `503` or `500` without local fallback state. |
-| E-10 | Unlimited event booking includes family members | Persist `family_count`, do not decrement inventory, do not create waitlist, and do not issue companion tickets. |
-| E-11 | Employee city differs from event city | Return a non-blocking warning on detail/eligibility/booking confirmation while allowing eligible booking. |
-| E-12 | Employee cancels after the registration window | Reject employee self-cancellation with `409`; admin exception requires reason and audit log. |
-| E-13 | Employee reaches no-show cooldown threshold | Block limited-event booking during cooldown and allow unlimited-event booking unless a later policy says otherwise. |
-| E-14 | Ticket holder mismatch or transfer attempt | Reject or flag check-in, show holder information, and record staff/device/reason audit data. |
+| #    | Scenario                                                           | Expected Behavior                                                                                                   |
+| ---- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| E-1  | Empty or malformed JSON request                                    | Return `400` with a JSON error response and do not mutate state.                                                    |
+| E-2  | Missing, expired, unmapped, or incomplete external provider claims | Return `401` or `403`, degrade only where explicitly allowed, and record no sensitive data.                         |
+| E-3  | Duplicate booking request with same idempotency key                | Return the original registration/ticket result without duplicate records.                                           |
+| E-4  | Same employee retries with a different idempotency key             | Return the existing registration result without duplicate confirmed bookings.                                       |
+| E-5  | Limited capacity is exhausted                                      | Create a waitlist registration and no ticket.                                                                       |
+| E-6  | Concurrent bookings compete for the last seat                      | PostgreSQL transaction/locking and constraints prevent oversell.                                                    |
+| E-7  | Tampered ticket token                                              | Reject check-in with `400` and record no successful check-in.                                                       |
+| E-8  | Duplicate ticket scan                                              | Return `409` with first redemption details.                                                                         |
+| E-9  | PostgreSQL unavailable                                             | `/readyz` fails and mutating endpoints return `503` or `500` without local fallback state.                          |
+| E-10 | Unlimited event booking includes family members                    | Persist `family_count`, do not decrement inventory, do not create waitlist, and do not issue companion tickets.     |
+| E-11 | Employee city differs from event city                              | Return a non-blocking warning on detail/eligibility/booking confirmation while allowing eligible booking.           |
+| E-12 | Employee cancels after the registration window                     | Reject employee self-cancellation with `409`; admin exception requires reason and audit log.                        |
+| E-13 | Employee reaches no-show cooldown threshold                        | Block limited-event booking during cooldown and allow unlimited-event booking unless a later policy says otherwise. |
+| E-14 | Ticket holder mismatch or transfer attempt                         | Reject or flag check-in, show holder information, and record staff/device/reason audit data.                        |
 
 ## Non-Functional Requirements
 
-| Category | Requirement | Metric |
-|----------|-------------|--------|
-| Timeout | HTTP server and DB operations use context deadlines. | Default request timeout <= 5s. |
-| Observability | State-changing operations emit structured logs to stdout. | JSON log includes action, status, and trace id. |
-| Failure Handling | Database failure does not fall back to in-memory state. | Readiness and API errors expose failure safely. |
-| Idempotency | Booking is retry-safe. | Unique keys for booking idempotency and event/employee booking. |
-| Consistency | PostgreSQL is the source of truth. | Capacity checked in a transaction with row locks/constraints. |
-| Security | Product APIs validate external provider tokens and required claims; local/demo auth is non-production compatibility only. | Unauthorized sensitive actions rejected; product OpenAPI excludes login/logout. |
-| Disposability | App starts quickly and handles SIGTERM. | Graceful shutdown path implemented. |
+| Category         | Requirement                                                                                                               | Metric                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Timeout          | HTTP server and DB operations use context deadlines.                                                                      | Default request timeout <= 5s.                                                  |
+| Observability    | State-changing operations emit structured logs to stdout.                                                                 | JSON log includes action, status, and trace id.                                 |
+| Failure Handling | Database failure does not fall back to in-memory state.                                                                   | Readiness and API errors expose failure safely.                                 |
+| Idempotency      | Booking is retry-safe.                                                                                                    | Unique keys for booking idempotency and event/employee booking.                 |
+| Consistency      | PostgreSQL is the source of truth.                                                                                        | Capacity checked in a transaction with row locks/constraints.                   |
+| Security         | Product APIs validate external provider tokens and required claims; local/demo auth is non-production compatibility only. | Unauthorized sensitive actions rejected; product OpenAPI excludes login/logout. |
+| Disposability    | App starts quickly and handles SIGTERM.                                                                                   | Graceful shutdown path implemented.                                             |
 
 ## Minimal API Contract
 
@@ -139,17 +139,17 @@ with `go test ./services/api/...`; PostgreSQL-backed correctness tests require a
 database and `TEST_DATABASE_URL`; browser demo verification requires the local
 Compose app to be running.
 
-| Requirement | Verification | Command / Evidence |
-|---|---|---|
-| AC-1 | Event creation persists the event, eligibility rule, and audit log. | `TEST_DATABASE_URL=postgresql://cets:cets_dev_password@localhost:15432/cets go test ./services/api/internal/ticketing -count=1` |
-| AC-2 | Eligible employees see published events with eligibility and remaining capacity. | `go test ./services/api/internal/ticketing`; PostgreSQL integration test above |
-| AC-3 | Confirmed booking creates one registration, one signed ticket response, outbox event, and no oversell. | PostgreSQL integration test above |
-| AC-4 / E-5 | Full capacity creates a waitlist registration and does not issue a ticket. | PostgreSQL integration test above |
-| AC-5 | Ineligible booking is rejected and does not create registration or ticket rows. | PostgreSQL integration test above |
-| AC-6 / E-7 / E-8 | Signed ticket check-in succeeds once; tampered and duplicate tokens fail safely. | `go test ./services/api/internal/ticketing`; PostgreSQL integration test above |
-| AC-7 | Reports and audit logs expose participation and sensitive actions to HR admins. | PostgreSQL integration test above |
-| AC-8 / E-9 | Health returns app status; readiness verifies PostgreSQL connectivity and fails closed. | `go test ./services/api/internal/httpapi ./services/api/cmd/cets`; Compose readiness check |
-| AC-9 | React browser UI completes seed, event creation, eligibility, booking, ticket display, check-in, reports, and audit inspection without DB edits. | Run the Compose app and verify `http://localhost:8080/admin/demo` with Browser Use |
+| Requirement      | Verification                                                                                                                                     | Command / Evidence                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| AC-1             | Event creation persists the event, eligibility rule, and audit log.                                                                              | `TEST_DATABASE_URL=postgresql://cets:cets_dev_password@localhost:15432/cets go test ./services/api/internal/ticketing -count=1` |
+| AC-2             | Eligible employees see published events with eligibility and remaining capacity.                                                                 | `go test ./services/api/internal/ticketing`; PostgreSQL integration test above                                                  |
+| AC-3             | Confirmed booking creates one registration, one signed ticket response, outbox event, and no oversell.                                           | PostgreSQL integration test above                                                                                               |
+| AC-4 / E-5       | Full capacity creates a waitlist registration and does not issue a ticket.                                                                       | PostgreSQL integration test above                                                                                               |
+| AC-5             | Ineligible booking is rejected and does not create registration or ticket rows.                                                                  | PostgreSQL integration test above                                                                                               |
+| AC-6 / E-7 / E-8 | Signed ticket check-in succeeds once; tampered and duplicate tokens fail safely.                                                                 | `go test ./services/api/internal/ticketing`; PostgreSQL integration test above                                                  |
+| AC-7             | Reports and audit logs expose participation and sensitive actions to HR admins.                                                                  | PostgreSQL integration test above                                                                                               |
+| AC-8 / E-9       | Health returns app status; readiness verifies PostgreSQL connectivity and fails closed.                                                          | `go test ./services/api/internal/httpapi ./services/api/cmd/cets`; Compose readiness check                                      |
+| AC-9             | React browser UI completes seed, event creation, eligibility, booking, ticket display, check-in, reports, and audit inspection without DB edits. | Run the Compose app and verify `http://localhost:8080/admin/demo` with Browser Use                                              |
 
 ## Phase 1 Non-Goals
 
@@ -164,10 +164,10 @@ This MVP spec is a demo baseline, not the Phase 1 production completion contract
 ## Browser Demo Verification Record
 
 Verified on 2026-05-05 with the Compose app running at `http://localhost:8080`.
-The browser completed the `/admin/demo` `Run full demo` flow without manual
-database edits: seed employees, create event, browse eligibility, confirmed
-booking, waitlist booking, ineligible rejection, ticket display, first check-in,
-duplicate scan rejection, reporting, and audit inspection. The same pass checked
+The browser completed the `/admin/demo` flow without manual database edits:
+seed employees, create event, browse eligibility, confirmed booking, waitlist
+booking, ineligible rejection, ticket display, first check-in, duplicate scan
+rejection, reporting, and audit inspection. The same pass checked
 `/user/events`, `/admin/audit`, legacy aliases, and 375px / 768px / 1024px /
 1440px layouts with no horizontal page overflow. Only expected negative-flow
 403 / 409 browser records were observed.

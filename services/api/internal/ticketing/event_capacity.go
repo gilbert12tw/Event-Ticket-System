@@ -65,6 +65,26 @@ func validateEventCapacity(event Event) error {
 	return nil
 }
 
+func normalizeAllocationMode(mode string) (string, error) {
+	normalized := strings.TrimSpace(mode)
+	if normalized == "" {
+		return AllocationModeFCFS, nil
+	}
+	switch normalized {
+	case AllocationModeFCFS, AllocationModeLottery:
+		return normalized, nil
+	default:
+		return "", badRequest("allocation_mode must be fcfs or lottery")
+	}
+}
+
+func validateAllocationModeForCapacity(mode string, capacityType string) error {
+	if mode == AllocationModeLottery && capacityType != CapacityTypeLimited {
+		return badRequest("lottery allocation requires limited capacity")
+	}
+	return nil
+}
+
 func limitedCapacity(event Event) (int, error) {
 	if event.CapacityType != CapacityTypeLimited || event.Capacity == nil {
 		return 0, notImplemented("unlimited event booking allocation is not implemented")

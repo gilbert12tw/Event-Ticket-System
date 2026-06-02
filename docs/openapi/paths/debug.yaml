@@ -1,0 +1,53 @@
+"/debug/demo-clock":
+  get:
+    tags:
+      - Debug
+    summary: Read the demo business clock
+    description: Local/demo/test-only endpoint. It is registered only when `DEMO_DEBUG_ENABLED=true` and is hidden in production. Activity admins and system admins use it to show time-gated flows without waiting for wall-clock time.
+    operationId: getDemoClock
+    x-required-roles:
+      - activity_admin
+      - system_admin
+    responses:
+      "200":
+        description: Demo clock state.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/debug.yaml#/DemoClockResponse"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
+  put:
+    tags:
+      - Debug
+    summary: Set the demo business clock
+    description: Sets the in-memory business clock for the current API process. Database write timestamps still use real time, so demos can show both business time and real write time.
+    operationId: updateDemoClock
+    x-required-roles:
+      - activity_admin
+      - system_admin
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            "$ref": "../components/schemas/debug.yaml#/DemoClockUpdateRequest"
+    responses:
+      "200":
+        description: Updated demo clock state.
+        content:
+          application/json:
+            schema:
+              "$ref": "../components/schemas/debug.yaml#/DemoClockResponse"
+      "400":
+        "$ref": "../components/responses.yaml#/BadRequest"
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"

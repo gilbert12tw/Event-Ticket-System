@@ -8,6 +8,7 @@ var Registry = []string{
 	"registration.confirmed.v2",
 	"registration.cancelled.v2",
 	"registration.waitlisted.v2",
+	"registration.received.v2",
 	"registration.promoted.v2",
 	"ticket.issued.v2",
 	"ticket.revoked.v2",

@@ -30,6 +30,11 @@ type fakeTicketingService struct {
 	auditActor            ticketing.Actor
 	auditQuery            []ticketing.AuditLogQuery
 	queueStatusActor      ticketing.Actor
+	capacityPressureActor ticketing.Actor
+	reportFreshnessActor  ticketing.Actor
+	reportFreshnessLimit  int
+	opsDashboardActor     ticketing.Actor
+	opsDashboardLimit     int
 	notificationOpsActor  ticketing.Actor
 	notificationOpsQuery  []ticketing.NotificationDeliveryOpsQuery
 	createRequest         ticketing.CreateEventRequest
@@ -203,6 +208,41 @@ func (s *fakeTicketingService) OutboxQueueStatus(_ context.Context, actor ticket
 			DeadLetter:    2,
 			P95AgeSeconds: 42,
 		}},
+	}, nil
+}
+
+func (s *fakeTicketingService) CapacityPressure(_ context.Context, actor ticketing.Actor) (ticketing.CapacityPressure, error) {
+	s.capacityPressureActor = actor
+	remaining := 9
+	rateLimitDrop := 0
+	idempotencyReplay := 0
+	return ticketing.CapacityPressure{Events: []ticketing.CapacityPressureRow{{
+		EventID:                 "evt_1",
+		CapacityType:            ticketing.CapacityTypeLimited,
+		RemainingCapacity:       &remaining,
+		ReservationCount:        4,
+		RateLimitDropPerMin:     &rateLimitDrop,
+		IdempotencyReplayPerMin: &idempotencyReplay,
+	}}}, nil
+}
+
+func (s *fakeTicketingService) ReportFreshness(_ context.Context, actor ticketing.Actor, thresholdSeconds int) (ticketing.ReportFreshness, error) {
+	s.reportFreshnessActor = actor
+	s.reportFreshnessLimit = thresholdSeconds
+	return ticketing.ReportFreshness{Projections: []ticketing.ReportFreshnessProjection{{
+		Name:       "event_summary",
+		LagSeconds: 12,
+		Degraded:   false,
+	}}}, nil
+}
+
+func (s *fakeTicketingService) OpsDashboard(_ context.Context, actor ticketing.Actor, thresholdSeconds int) (ticketing.OpsDashboard, error) {
+	s.opsDashboardActor = actor
+	s.opsDashboardLimit = thresholdSeconds
+	return ticketing.OpsDashboard{
+		CapacityPressure: ticketing.CapacityPressure{Events: []ticketing.CapacityPressureRow{{EventID: "evt_1", CapacityType: ticketing.CapacityTypeLimited}}},
+		Queues:           ticketing.OutboxQueueStatus{Queues: []ticketing.OutboxQueueStatusRow{{Name: "notification"}}},
+		ReportsFreshness: ticketing.ReportFreshness{Projections: []ticketing.ReportFreshnessProjection{{Name: "event_summary"}}},
 	}, nil
 }
 

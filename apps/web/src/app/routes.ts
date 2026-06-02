@@ -13,6 +13,7 @@ export type RouteKey =
   | "admin-notifications"
   | "admin-checkin"
   | "admin-offline-checkin"
+  | "admin-ops"
   | "admin-reports"
   | "admin-hr-settings"
   | "admin-audit"

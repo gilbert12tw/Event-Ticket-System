@@ -28,6 +28,8 @@ tmp/
 temp/
 .cache/
 .scannerwork/
+goal.md
+note.md
 artifacts/
 
 # Dependencies / build outputs

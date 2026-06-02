@@ -35,6 +35,8 @@ type authBootstrapResponse struct {
 	MockProfilesEnabled bool                 `json:"mock_profiles_enabled"`
 	MockProfiles        []mockProfilePayload `json:"mock_profiles"`
 	DebugChromeEnabled  bool                 `json:"debug_chrome_enabled"`
+	DemoDebugEnabled    bool                 `json:"demo_debug_enabled"`
+	OpsAPIEnabled       bool                 `json:"ops_api_enabled"`
 }
 
 type mockProfilePayload struct {
@@ -151,9 +153,9 @@ var mockProviderProfiles = []providerClaims{
 	},
 }
 
-func registerAuthRoutes(mux *http.ServeMux, provider *ProviderVerifier, appEnv string, logger *slog.Logger) {
+func registerAuthRoutes(mux *http.ServeMux, provider *ProviderVerifier, appEnv string, demoDebugEnabled bool, opsAPIEnabled bool, logger *slog.Logger) {
 	mux.HandleFunc("GET /api/v1/auth/me", handleMe(provider))
-	mux.HandleFunc("GET /api/v1/auth/bootstrap", handleAuthBootstrap(appEnv))
+	mux.HandleFunc("GET /api/v1/auth/bootstrap", handleAuthBootstrap(appEnv, demoDebugEnabled, opsAPIEnabled))
 	mux.HandleFunc("POST /api/v1/auth/mock-provider-token", handleMockProviderToken(provider, appEnv, logger))
 }
 
@@ -173,11 +175,13 @@ func handleMe(provider *ProviderVerifier) http.HandlerFunc {
 	}
 }
 
-func handleAuthBootstrap(appEnv string) http.HandlerFunc {
+func handleAuthBootstrap(appEnv string, demoDebugEnabled bool, opsAPIEnabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		response := authBootstrapResponse{
 			MockProfiles:       []mockProfilePayload{},
 			DebugChromeEnabled: debugChromeEnabled(appEnv),
+			DemoDebugEnabled:   demoDebugEnabled,
+			OpsAPIEnabled:      opsAPIEnabled,
 		}
 		if mockProfilesEnabled(appEnv) {
 			response.MockProfilesEnabled = true

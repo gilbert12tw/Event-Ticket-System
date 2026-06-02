@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/ci.yml"
+      - ".github/actions/setup-docker-act/**"
+      - ".github/actions/setup-web/**"
       - ".actrc"
       - ".dockerignore"
       - ".npmrc"
@@ -21,19 +23,23 @@ on:
       - "docs/openapi/**"
       - "docs/principles/**"
       - "docs/PRODUCT.md"
+      - "docs/reports/**"
       - "docs/specs/**"
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
       - "goal.md"
       - "k6/**"
+      - "note.md"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "scripts/compose/**"
       - "scripts/ci/**"
+      - "scripts/coverage/**"
       - "scripts/*openapi*"
       - "services/api/**"
+      - "sonar-project.properties"
       - "turbo.json"
   push:
     branches:
@@ -42,6 +48,8 @@ on:
       - "v*"
     paths:
       - ".github/workflows/ci.yml"
+      - ".github/actions/setup-docker-act/**"
+      - ".github/actions/setup-web/**"
       - ".actrc"
       - ".dockerignore"
       - ".npmrc"
@@ -57,19 +65,23 @@ on:
       - "docs/openapi/**"
       - "docs/principles/**"
       - "docs/PRODUCT.md"
+      - "docs/reports/**"
       - "docs/specs/**"
       - "eslint.config.mjs"
       - "go.work"
       - "go.work.sum"
       - "goal.md"
       - "k6/**"
+      - "note.md"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "scripts/compose/**"
       - "scripts/ci/**"
+      - "scripts/coverage/**"
       - "scripts/*openapi*"
       - "services/api/**"
+      - "sonar-project.properties"
       - "turbo.json"
   release:
     types:
@@ -193,20 +205,27 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     services:
       postgres:
-        image: postgres:16.13-alpine
+        image: postgres:16.13-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
         env:
           POSTGRES_DB: cets_test
           POSTGRES_USER: cets
           POSTGRES_PASSWORD: cets_test_password
         ports:
-          - 5432:5432
+          - 25432:5432
         options: >-
           --health-cmd "pg_isready -U cets -d cets_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
-    env:
-      TEST_DATABASE_URL: postgresql://cets:cets_test_password@localhost:5432/cets_test?sslmode=disable
+          --health-retries 10
+      redis:
+        image: redis:7.4.8-alpine@sha256:7aec734b2bb298a1d769fd8729f13b8514a41bf90fcdd1f38ec52267fbaa8ee6
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -218,6 +237,9 @@ jobs:
           cache-dependency-path: services/api/go.sum
       - name: Run Go tests
         working-directory: services/api
+        env:
+          TEST_DATABASE_URL: postgresql://cets:cets_test_password@localhost:25432/cets_test?sslmode=disable
+          REDIS_URL: redis://localhost:26379/0
         # Keep package tests serialized because integration suites share the CI Postgres service.
         run: go test ./... -count=1 -p=1 -timeout=20m
 

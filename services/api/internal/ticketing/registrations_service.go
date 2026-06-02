@@ -226,6 +226,22 @@ func (s *Service) duplicateBookingResponseTx(ctx context.Context, tx pgx.Tx, eve
 }
 
 func (s *Service) resolveBookingStatusTx(ctx context.Context, tx pgx.Tx, event Event, eventID string, hold reservation.Hold) (string, int, int, error) {
+	if event.AllocationMode == AllocationModeLottery {
+		capacity := 0
+		confirmedCount := 0
+		if event.CapacityType == CapacityTypeLimited {
+			var err error
+			capacity, err = limitedCapacity(event)
+			if err != nil {
+				return "", 0, 0, err
+			}
+			confirmedCount, err = s.confirmedCountTx(ctx, tx, eventID)
+			if err != nil {
+				return "", 0, 0, err
+			}
+		}
+		return RegistrationReceived, capacity, confirmedCount, nil
+	}
 	if event.CapacityType != CapacityTypeLimited {
 		return RegistrationConfirmed, 0, 0, nil
 	}
@@ -345,10 +361,14 @@ func (s *Service) recordBookingSideEffectsTx(ctx context.Context, tx pgx.Tx, act
 }
 
 func bookingAction(status string) string {
-	if status == RegistrationWaitlisted {
+	switch status {
+	case RegistrationWaitlisted:
 		return "booking.waitlisted"
+	case RegistrationReceived:
+		return "booking.received"
+	default:
+		return "booking.confirmed"
 	}
-	return "booking.confirmed"
 }
 
 func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, employeeID string, familyCount int) (BookingResponse, bool, error) {
@@ -372,6 +392,9 @@ func (s *Service) replayCompletedBooking(ctx context.Context, key, eventID, empl
 func remainingForNewBooking(event Event, status string, capacity int, confirmedCount int) int {
 	if event.CapacityType == CapacityTypeLimited && status == RegistrationConfirmed {
 		return max(capacity-confirmedCount-1, 0)
+	}
+	if event.CapacityType == CapacityTypeLimited && status == RegistrationReceived {
+		return max(capacity-confirmedCount, 0)
 	}
 	return 0
 }

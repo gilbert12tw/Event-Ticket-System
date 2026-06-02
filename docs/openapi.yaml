@@ -34,11 +34,15 @@ tags:
     description: Activity administration endpoints.
   - name: Ops
     description: Phase 2 ops control plane — capacity pressure, queue health, replay, report freshness, dashboard.
+  - name: Debug
+    description: Local/demo/test-only controls for transparent demonstrations.
 paths:
   "/auth/me":
     "$ref": "./openapi/paths/auth.yaml#/~1auth~1me"
   "/auth/bootstrap":
     "$ref": "./openapi/paths/auth.yaml#/~1auth~1bootstrap"
+  "/debug/demo-clock":
+    "$ref": "./openapi/paths/debug.yaml#/~1debug~1demo-clock"
   "/events":
     "$ref": "./openapi/paths/employee-events.yaml#/~1events"
   "/events/{event_id}":
@@ -301,6 +305,12 @@ components:
       "$ref": "./openapi/components/schemas/notifications.yaml#/NotificationDelivery"
     AuditLogEntry:
       "$ref": "./openapi/components/schemas/audit.yaml#/AuditLogEntry"
+    DemoClockSnapshot:
+      "$ref": "./openapi/components/schemas/debug.yaml#/DemoClockSnapshot"
+    DemoClockUpdateRequest:
+      "$ref": "./openapi/components/schemas/debug.yaml#/DemoClockUpdateRequest"
+    DemoClockResponse:
+      "$ref": "./openapi/components/schemas/debug.yaml#/DemoClockResponse"
     WorkerKind:
       "$ref": "./openapi/components/schemas/ops.yaml#/WorkerKind"
     CapacityPressureRow:

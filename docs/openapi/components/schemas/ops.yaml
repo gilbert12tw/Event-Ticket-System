@@ -39,10 +39,14 @@ CapacityPressureRow:
       type: integer
       minimum: 0
     rate_limit_drop_per_min:
-      type: integer
+      type:
+        - integer
+        - "null"
       minimum: 0
     idempotency_replay_per_min:
-      type: integer
+      type:
+        - integer
+        - "null"
       minimum: 0
 CapacityPressure:
   type: object
@@ -187,7 +191,9 @@ ReportFreshnessProjection:
     name:
       type: string
     last_applied:
-      type: string
+      type:
+        - string
+        - "null"
       format: date-time
     lag_seconds:
       type: integer
@@ -218,6 +224,36 @@ ReportFreshnessResponse:
       properties:
         data:
           "$ref": "#/ReportFreshness"
+OutboxReplayRecentRow:
+  type: object
+  required:
+    - audit_id
+    - actor_role
+    - kind
+    - dry_run
+    - affected_count
+    - created_at
+  properties:
+    audit_id:
+      type: string
+    actor_role:
+      type: string
+      description: Role only; actor_id and replayed row identifiers are intentionally omitted from the dashboard summary.
+    kind:
+      "$ref": "#/ObservedWorkerKind"
+    dry_run:
+      type: boolean
+    affected_count:
+      type: integer
+      minimum: 0
+    enqueued_count:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    created_at:
+      type: string
+      format: date-time
 OpsDashboard:
   type: object
   required:
@@ -235,6 +271,10 @@ OpsDashboard:
       type: array
       items:
         "$ref": "#/NotificationDeliveryAdminRow"
+    replay_recent:
+      type: array
+      items:
+        "$ref": "#/OutboxReplayRecentRow"
 OpsDashboardResponse:
   description: "Aggregated ops control-plane view. activity_admin sees a read subset (payload-level redaction enforced server-side); hr_admin sees the full payload."
   allOf:

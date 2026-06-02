@@ -61,26 +61,27 @@ The envelope is the document stored in `outbox_events.payload`. The columns `out
 
 ## 4. Event Type Registry
 
-| Event type | Producing surface |
-| --- | --- |
-| `registration.confirmed.v2` | Booking commit (FCFS confirm + lottery winner promotion). |
-| `registration.cancelled.v2` | Self-cancel, admin cancel, system cancel from no-show cooldown. |
-| `registration.waitlisted.v2` | Booking commit when capacity full and policy = waitlist. |
-| `registration.promoted.v2` | Waitlist → confirmed (cancellation backfill or lottery promotion). |
-| `ticket.issued.v2` | Ticket row created after confirmed registration. |
-| `ticket.revoked.v2` | Admin revoke, event cancellation cascade. |
-| `ticket.expired.v2` | Event closed past redemption window without check-in. |
-| `checkin.recorded.v2` | Online scan commit or offline batch sync commit. |
-| `notification.requested.v2` | Application service requests a delivery (email or in-app); consumed by notification worker. |
+| Event type                                     | Producing surface                                                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `registration.confirmed.v2`                    | Booking commit (FCFS confirm + lottery winner promotion).                                             |
+| `registration.cancelled.v2`                    | Self-cancel, admin cancel, system cancel from no-show cooldown.                                       |
+| `registration.waitlisted.v2`                   | Booking commit when capacity full and policy = waitlist.                                              |
+| `registration.received.v2`                     | Lottery registration received before cutoff; no ticket is issued yet.                                 |
+| `registration.promoted.v2`                     | Waitlist → confirmed (cancellation backfill or lottery promotion).                                    |
+| `ticket.issued.v2`                             | Ticket row created after confirmed registration.                                                      |
+| `ticket.revoked.v2`                            | Admin revoke, event cancellation cascade.                                                             |
+| `ticket.expired.v2`                            | Event closed past redemption window without check-in.                                                 |
+| `checkin.recorded.v2`                          | Online scan commit or offline batch sync commit.                                                      |
+| `notification.requested.v2`                    | Application service requests a delivery (email or in-app); consumed by notification worker.           |
 | `reservation.compensation.release_required.v2` | Redis reservation hold must be released after DB rollback, timeout, or non-confirmed booking outcome. |
-| `report.export.requested.v2` | Admin enqueues a CSV export. |
-| `report.export.completed.v2` | Export worker writes the CSV to object store. |
-| `report.export.failed.v2` | Export worker exhausts retries. |
-| `hr_sync.batch.completed.v2` | HR sync admin process commits a batch (`cets hr-sync`). |
-| `eligibility.impact_review.created.v2` | Rule change creates a review row impacting existing registrations. |
-| `reporting.projection.update_required.v2` | Any domain event that requires a downstream projection re-derivation (WS5 read model). |
+| `report.export.requested.v2`                   | Admin enqueues a CSV export.                                                                          |
+| `report.export.completed.v2`                   | Export worker writes the CSV to object store.                                                         |
+| `report.export.failed.v2`                      | Export worker exhausts retries.                                                                       |
+| `hr_sync.batch.completed.v2`                   | HR sync admin process commits a batch (`cets hr-sync`).                                               |
+| `eligibility.impact_review.created.v2`         | Rule change creates a review row impacting existing registrations.                                    |
+| `reporting.projection.update_required.v2`      | Any domain event that requires a downstream projection re-derivation (WS5 read model).                |
 
-Total: 16 types. `PH2-05` adds an architecture test that fails if `outbox_events.event_type` contains a value outside this registry once Phase 2 is live; until then the test asserts only that every registry entry has a fixture.
+Total: 17 types. `PH2-05` adds an architecture test that fails if `outbox_events.event_type` contains a value outside this registry once Phase 2 is live; until then the test asserts only that every registry entry has a fixture.
 
 ## 5. Per-Event Payload Schemas
 
@@ -89,176 +90,252 @@ All payloads are JSON objects. Field types: `id` = string; `uuid` = RFC 4122 str
 ### 5.1 `registration.confirmed.v2`
 
 ```json
-{ "registration_id": "reg_…", "event_id": "evt_…", "employee_id": "EMP-…",
-  "attendee_count": 1, "policy": "first_come_first_served|lottery",
-  "city": "Taipei", "confirmed_at": "2026-05-19T12:34:56Z" }
+{
+  "registration_id": "reg_…",
+  "event_id": "evt_…",
+  "employee_id": "EMP-…",
+  "attendee_count": 1,
+  "policy": "first_come_first_served|lottery",
+  "city": "Taipei",
+  "confirmed_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 ### 5.2 `registration.cancelled.v2`
 
 ```json
-{ "registration_id": "reg_…", "event_id": "evt_…", "employee_id": "EMP-…",
+{
+  "registration_id": "reg_…",
+  "event_id": "evt_…",
+  "employee_id": "EMP-…",
   "reason": "employee_initiated|admin|no_show_cooldown|event_cancelled",
-  "cancelled_at": "2026-05-19T12:34:56Z" }
+  "cancelled_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 ### 5.3 `registration.waitlisted.v2`
 
 ```json
-{ "registration_id": "reg_…", "event_id": "evt_…", "employee_id": "EMP-…",
-  "waitlist_position": 3, "waitlisted_at": "2026-05-19T12:34:56Z" }
+{
+  "registration_id": "reg_…",
+  "event_id": "evt_…",
+  "employee_id": "EMP-…",
+  "waitlist_position": 3,
+  "waitlisted_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.4 `registration.promoted.v2`
+### 5.4 `registration.received.v2`
 
 ```json
-{ "registration_id": "reg_…", "event_id": "evt_…", "employee_id": "EMP-…",
-  "from_status": "waitlisted", "to_status": "confirmed",
+{
+  "registration_id": "reg_…",
+  "event_id": "evt_…",
+  "employee_id": "EMP-…",
+  "policy": "lottery",
+  "received_at": "2026-05-19T12:34:56Z"
+}
+```
+
+This event represents a lottery entry collected before cutoff. It does not imply capacity consumption or ticket issuance. Existing Phase 1 notification emitters may still use the legacy `booking.received` event type until the registration emitter migration is completed.
+
+### 5.5 `registration.promoted.v2`
+
+```json
+{
+  "registration_id": "reg_…",
+  "event_id": "evt_…",
+  "employee_id": "EMP-…",
+  "from_status": "waitlisted",
+  "to_status": "confirmed",
   "reason": "capacity_freed|lottery_winner",
-  "promoted_at": "2026-05-19T12:34:56Z" }
+  "promoted_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.5 `ticket.issued.v2`
+### 5.6 `ticket.issued.v2`
 
 ```json
-{ "ticket_id": "tkt_…", "registration_id": "reg_…", "event_id": "evt_…",
-  "employee_id": "EMP-…", "issued_at": "2026-05-19T12:34:56Z" }
+{
+  "ticket_id": "tkt_…",
+  "registration_id": "reg_…",
+  "event_id": "evt_…",
+  "employee_id": "EMP-…",
+  "issued_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 Forbidden: `qr_token`, `signed_token`, `qr_payload`, any base64 ticket body. Consumers fetch the signed QR on demand from the ticket service.
 
-### 5.6 `ticket.revoked.v2`
+### 5.7 `ticket.revoked.v2`
 
 ```json
-{ "ticket_id": "tkt_…", "event_id": "evt_…",
+{
+  "ticket_id": "tkt_…",
+  "event_id": "evt_…",
   "reason": "admin_action|event_cancelled",
-  "revoked_at": "2026-05-19T12:34:56Z" }
+  "revoked_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.7 `ticket.expired.v2`
+### 5.8 `ticket.expired.v2`
 
 ```json
-{ "ticket_id": "tkt_…", "event_id": "evt_…",
-  "expired_at": "2026-05-19T12:34:56Z" }
+{
+  "ticket_id": "tkt_…",
+  "event_id": "evt_…",
+  "expired_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.8 `checkin.recorded.v2`
+### 5.9 `checkin.recorded.v2`
 
 ```json
-{ "checkin_id": "chk_…", "ticket_id": "tkt_…", "event_id": "evt_…",
-  "device_id": "dev_…", "staff_id": "EMP-…",
+{
+  "checkin_id": "chk_…",
+  "ticket_id": "tkt_…",
+  "event_id": "evt_…",
+  "device_id": "dev_…",
+  "staff_id": "EMP-…",
   "source": "online|offline_batch",
   "scanned_at": "2026-05-19T12:34:56Z",
-  "synced_at": "2026-05-19T12:35:01Z" }
+  "synced_at": "2026-05-19T12:35:01Z"
+}
 ```
 
 `employee_id` (ticket owner) is intentionally omitted — consumers join via `ticket_id`. No PII surfaces here.
 
-### 5.9 `notification.requested.v2`
+### 5.10 `notification.requested.v2`
 
 ```json
-{ "notification_id": "ntf_…",
+{
+  "notification_id": "ntf_…",
   "category": "registration_confirmed|registration_cancelled|waitlist_promoted|reminder|export_ready",
   "channel": "email|in_app",
   "recipient_employee_id": "EMP-…",
   "template_key": "registration.confirmed.v1",
   "data_refs": { "registration_id": "reg_…", "event_id": "evt_…" },
-  "requested_at": "2026-05-19T12:34:56Z" }
+  "requested_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 Forbidden: `recipient_email`, `subject`, `body`, `html_body`, rendered text of any kind. The notification worker re-resolves recipient address and template body at delivery time from authoritative tables.
 
-### 5.10 `reservation.compensation.release_required.v2`
+### 5.11 `reservation.compensation.release_required.v2`
 
 ```json
-{ "reservation_id": "resv_…",
+{
+  "reservation_id": "resv_…",
   "event_id": "evt_…",
   "reason": "db_rollback|expired_hold|non_confirmed_booking",
-  "requested_at": "2026-05-19T12:34:56Z" }
+  "requested_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 Forbidden: employee identifiers, recipient details, Redis keys, or raw Redis values. The compensation worker derives authoritative capacity from PostgreSQL before releasing an advisory hold.
 
-### 5.11 `report.export.requested.v2`
+### 5.12 `report.export.requested.v2`
 
 ```json
-{ "export_id": "exp_…", "report_type": "participation",
+{
+  "export_id": "exp_…",
+  "report_type": "participation",
   "requested_by_employee_id": "EMP-…",
   "filters": { "from": "2026-05-01T00:00:00Z", "to": "2026-05-31T23:59:59Z" },
-  "requested_at": "2026-05-19T12:34:56Z" }
+  "requested_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.12 `report.export.completed.v2`
+### 5.13 `report.export.completed.v2`
 
 ```json
-{ "export_id": "exp_…", "report_type": "participation",
+{
+  "export_id": "exp_…",
+  "report_type": "participation",
   "object_key": "exports/participation/2026/05/19/exp_01HXXX.csv",
-  "row_count": 1234, "byte_size": 482910,
-  "completed_at": "2026-05-19T12:34:56Z" }
+  "row_count": 1234,
+  "byte_size": 482910,
+  "completed_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 Forbidden: signed download URL, presigned S3 URL, bearer token of any kind. Consumers (e.g. notification worker shipping "export ready" email) resolve a fresh signed URL from object store at send time.
 
-### 5.13 `report.export.failed.v2`
+### 5.14 `report.export.failed.v2`
 
 ```json
-{ "export_id": "exp_…", "report_type": "participation",
+{
+  "export_id": "exp_…",
+  "report_type": "participation",
   "reason_code": "query_timeout|object_store_unavailable|unexpected",
-  "failed_at": "2026-05-19T12:34:56Z" }
+  "failed_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 Forbidden: stack trace, raw SQL, raw provider error body. `reason_code` is a closed enum maintained by WS5; messages live in logs.
 
-### 5.14 `hr_sync.batch.completed.v2`
+### 5.15 `hr_sync.batch.completed.v2`
 
 ```json
-{ "batch_id": "hrb_…", "source": "hr_csv|hr_api",
-  "employee_count": 4231, "created_count": 12,
-  "updated_count": 87, "deactivated_count": 3,
-  "completed_at": "2026-05-19T12:34:56Z" }
+{
+  "batch_id": "hrb_…",
+  "source": "hr_csv|hr_api",
+  "employee_count": 4231,
+  "created_count": 12,
+  "updated_count": 87,
+  "deactivated_count": 3,
+  "completed_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.15 `eligibility.impact_review.created.v2`
+### 5.16 `eligibility.impact_review.created.v2`
 
 ```json
-{ "review_id": "rev_…", "event_id": "evt_…",
-  "rule_version": 7, "impacted_registration_count": 14,
-  "created_at": "2026-05-19T12:34:56Z" }
+{
+  "review_id": "rev_…",
+  "event_id": "evt_…",
+  "rule_version": 7,
+  "impacted_registration_count": 14,
+  "created_at": "2026-05-19T12:34:56Z"
+}
 ```
 
-### 5.16 `reporting.projection.update_required.v2`
+### 5.17 `reporting.projection.update_required.v2`
 
 ```json
-{ "projection_name": "event_participation_summary",
+{
+  "projection_name": "event_participation_summary",
   "aggregate_type": "event|registration|ticket|checkin",
   "aggregate_id": "evt_…",
   "trigger_event_id": "out_…",
   "trigger_event_type": "checkin.recorded.v2",
-  "requested_at": "2026-05-19T12:34:56Z" }
+  "requested_at": "2026-05-19T12:34:56Z"
+}
 ```
 
 ## 6. Idempotency Key Recipes (normative)
 
 The recipe is deterministic: given the same logical event, an emitter — including a retry, a replay, or a parallel attempt — MUST produce the same key. Workers MUST treat duplicates as a no-op via consumer-side upsert or dedup table.
 
-| Event type | Recipe |
-| --- | --- |
-| `registration.confirmed.v2` | `registration.confirmed:{registration_id}` |
-| `registration.cancelled.v2` | `registration.cancelled:{registration_id}:{cancelled_at}` |
-| `registration.waitlisted.v2` | `registration.waitlisted:{registration_id}` |
-| `registration.promoted.v2` | `registration.promoted:{registration_id}:{promoted_at}` |
-| `ticket.issued.v2` | `ticket.issued:{ticket_id}` |
-| `ticket.revoked.v2` | `ticket.revoked:{ticket_id}` |
-| `ticket.expired.v2` | `ticket.expired:{ticket_id}` |
-| `checkin.recorded.v2` | `checkin.recorded:{ticket_id}` |
-| `notification.requested.v2` | `notification.requested:{notification_id}` |
-| `reservation.compensation.release_required.v2` | `reservation.compensation.release_required:{reservation_id}` |
-| `report.export.requested.v2` | `report.export.requested:{export_id}` |
-| `report.export.completed.v2` | `report.export.completed:{export_id}` |
-| `report.export.failed.v2` | `report.export.failed:{export_id}` |
-| `hr_sync.batch.completed.v2` | `hr_sync.batch.completed:{batch_id}` |
-| `eligibility.impact_review.created.v2` | `eligibility.impact_review.created:{review_id}` |
-| `reporting.projection.update_required.v2` | `reporting.projection.update_required:{projection_name}:{aggregate_id}:{trigger_event_id}` |
+| Event type                                     | Recipe                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `registration.confirmed.v2`                    | `registration.confirmed:{registration_id}`                                                 |
+| `registration.cancelled.v2`                    | `registration.cancelled:{registration_id}:{cancelled_at}`                                  |
+| `registration.waitlisted.v2`                   | `registration.waitlisted:{registration_id}`                                                |
+| `registration.received.v2`                     | `registration.received:{registration_id}`                                                  |
+| `registration.promoted.v2`                     | `registration.promoted:{registration_id}:{promoted_at}`                                    |
+| `ticket.issued.v2`                             | `ticket.issued:{ticket_id}`                                                                |
+| `ticket.revoked.v2`                            | `ticket.revoked:{ticket_id}`                                                               |
+| `ticket.expired.v2`                            | `ticket.expired:{ticket_id}`                                                               |
+| `checkin.recorded.v2`                          | `checkin.recorded:{ticket_id}`                                                             |
+| `notification.requested.v2`                    | `notification.requested:{notification_id}`                                                 |
+| `reservation.compensation.release_required.v2` | `reservation.compensation.release_required:{reservation_id}`                               |
+| `report.export.requested.v2`                   | `report.export.requested:{export_id}`                                                      |
+| `report.export.completed.v2`                   | `report.export.completed:{export_id}`                                                      |
+| `report.export.failed.v2`                      | `report.export.failed:{export_id}`                                                         |
+| `hr_sync.batch.completed.v2`                   | `hr_sync.batch.completed:{batch_id}`                                                       |
+| `eligibility.impact_review.created.v2`         | `eligibility.impact_review.created:{review_id}`                                            |
+| `reporting.projection.update_required.v2`      | `reporting.projection.update_required:{projection_name}:{aggregate_id}:{trigger_event_id}` |
 
 Events that legitimately recur for the same aggregate (`cancelled`, `promoted`) include a discriminating timestamp so a future re-cancel after a re-confirm is not silently dropped. `ticket.expired.v2` keys on `ticket_id` because expiry happens at most once per ticket. `reporting.projection.update_required.v2` keys on the triggering outbox row so a single domain event fans out to projections at most once.
 
@@ -273,17 +350,17 @@ Emitters MAY catch unique-violation and treat it as success (idempotent emit).
 
 ## 7. Partition Key Recipes (normative)
 
-| Family | Partition key | Rationale |
-| --- | --- | --- |
-| `registration.*` | `event_id` | Capacity / waitlist / promotion ordering within an event. |
-| `ticket.*` | `event_id` | Ticket lifecycle ordering within an event. |
-| `checkin.recorded.v2` | `event_id` | Per-event projection consistency. |
-| `notification.requested.v2` | `recipient_employee_id` | Per-recipient ordering avoids out-of-order "cancelled then confirmed" emails. |
-| `reservation.compensation.release_required.v2` | `event_id` | Reservation compensation must preserve capacity ordering within an event. |
-| `report.export.*` | `export_id` | One export's request/complete/fail must observe order. |
-| `hr_sync.batch.completed.v2` | `batch_id` | One batch is its own partition. |
-| `eligibility.impact_review.created.v2` | `event_id` | Reviews scoped to one event. |
-| `reporting.projection.update_required.v2` | `projection_name` | Projection-worker fan-out groups by projection. |
+| Family                                         | Partition key           | Rationale                                                                     |
+| ---------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------- |
+| `registration.*`                               | `event_id`              | Capacity / waitlist / promotion ordering within an event.                     |
+| `ticket.*`                                     | `event_id`              | Ticket lifecycle ordering within an event.                                    |
+| `checkin.recorded.v2`                          | `event_id`              | Per-event projection consistency.                                             |
+| `notification.requested.v2`                    | `recipient_employee_id` | Per-recipient ordering avoids out-of-order "cancelled then confirmed" emails. |
+| `reservation.compensation.release_required.v2` | `event_id`              | Reservation compensation must preserve capacity ordering within an event.     |
+| `report.export.*`                              | `export_id`             | One export's request/complete/fail must observe order.                        |
+| `hr_sync.batch.completed.v2`                   | `batch_id`              | One batch is its own partition.                                               |
+| `eligibility.impact_review.created.v2`         | `event_id`              | Reviews scoped to one event.                                                  |
+| `reporting.projection.update_required.v2`      | `projection_name`       | Projection-worker fan-out groups by projection.                               |
 
 Partition key is advisory for sharding; correctness still relies on `idempotency_key` + consumer-side dedup. Single-worker deployments (Phase 1 baseline) ignore partition key.
 

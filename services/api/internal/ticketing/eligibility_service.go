@@ -371,7 +371,7 @@ func (s *Service) createEligibilityImpactReviewsTx(ctx context.Context, tx pgx.T
 		JOIN employees e ON e.employee_id = r.employee_id
 		LEFT JOIN tickets t ON t.registration_id = r.registration_id AND t.status = 'active'
 		WHERE r.event_id = $1
-			AND r.status IN ('confirmed', 'waitlisted')
+			AND r.status IN ('received', 'confirmed', 'waitlisted')
 			AND NOT EXISTS (
 				SELECT 1 FROM eligibility_impact_reviews pending
 				WHERE pending.event_id = r.event_id

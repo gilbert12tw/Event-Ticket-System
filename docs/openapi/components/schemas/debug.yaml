@@ -1,0 +1,55 @@
+DemoClockResponse:
+  allOf:
+    - "$ref": "./common.yaml#/ApiSuccessEnvelope"
+    - type: object
+      properties:
+        data:
+          "$ref": "#/DemoClockSnapshot"
+DemoClockSnapshot:
+  type: object
+  required:
+    - enabled
+    - mode
+    - now
+    - real_now
+  properties:
+    enabled:
+      type: boolean
+    mode:
+      type: string
+      enum:
+        - real
+        - fixed
+    now:
+      type: string
+      format: date-time
+      description: Business time used by application cutoff and lottery checks.
+    real_now:
+      type: string
+      format: date-time
+      description: Wall-clock time from the API process.
+    updated_at:
+      type: string
+      format: date-time
+    reason:
+      type: string
+DemoClockUpdateRequest:
+  type: object
+  required:
+    - mode
+    - reason
+  additionalProperties: false
+  properties:
+    mode:
+      type: string
+      enum:
+        - real
+        - fixed
+    now:
+      type: string
+      format: date-time
+      description: Required when mode is fixed; ignored when mode is real.
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 300

@@ -102,6 +102,33 @@ func TestTicketingDoesNotImportHTTPAPI(t *testing.T) {
 	assert.Empty(t, offenders, "ticketing must not import httpapi: %s", strings.Join(offenders, ", "))
 }
 
+func TestTicketingNotificationPortDoesNotImportSMTPAdapter(t *testing.T) {
+	root := repoRoot(t)
+	ticketingRoot := filepath.Join(root, "services", "api", "internal", "ticketing")
+	var offenders []string
+	err := filepath.WalkDir(ticketingRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imported := range parsed.Imports {
+			if strings.Trim(imported.Path.Value, `"`) == "net/smtp" {
+				rel, _ := filepath.Rel(root, path)
+				offenders = append(offenders, rel)
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Empty(t, offenders, "ticketing must depend on NotificationSender, not the SMTP adapter: %s", strings.Join(offenders, ", "))
+}
+
 func TestPostgresMigrationDDLStaysInVersionedSQL(t *testing.T) {
 	root := repoRoot(t)
 	migratePath := filepath.Join(root, "services", "api", "internal", "postgres", "migrate.go")

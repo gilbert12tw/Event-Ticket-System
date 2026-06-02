@@ -310,14 +310,14 @@ sequenceDiagram
 
 ### 7.2 抽籤流程
 
-抽籤活動不在報名瞬間爭搶 DB lock。Registration module 收集報名意願；admin allocation 以固定 seed、`event_id`、`registration_id` 排序產生可重現結果，並在同一 transaction 寫入 winners、waitlist、ticket、audit 與 outbox。
+抽籤活動不在報名瞬間爭搶 DB lock。`allocation_mode = lottery` 的 booking 只建立 `received` registration，不立即佔用 confirmed capacity、不發 ticket，也不把員工放入候補。報名截止後，admin allocation 以固定 seed、`event_id`、`registration_id` 排序產生可重現結果，並在同一 transaction 寫入 winners、waitlist、ticket、audit 與 outbox。
 
 | Step | 一致性設計 |
 | --- | --- |
-| 收集報名 | 對 `(event_id, employee_id)` 建 unique constraint，避免同員工重複報名。 |
-| 抽籤輸入 | 只讀取截止時間前、狀態為 `received` 的 registration。 |
+| 收集報名 | 對 `(event_id, employee_id)` 建 active-registration unique constraint，避免同員工重複報名；狀態為 `received`。 |
+| 抽籤輸入 | 只讀取截止時間前、狀態為 `received` 的 registration；`lottery_runs` 記錄 input snapshot time、algorithm version 與 candidate count。 |
 | 隨機性 | seed 由 `event_id`、公開批次 ID 與系統密鑰產生，寫入 audit log。 |
-| 結果寫入 | winners、losers、waitlist 在同一批次交易中更新，並寫入 outbox。 |
+| 結果寫入 | winners 轉 `confirmed` 並發 ticket；未中者轉 `waitlisted`；同一 event 預設只允許一個 completed lottery run，除非另有 void/rerun spec。 |
 | 通知 | outbox worker 支援重試、dead-letter 與 delivery 去重；通知 provider 可由 Mailhog 換成正式 SMTP。 |
 
 ### 7.3 線上與離線驗票流程

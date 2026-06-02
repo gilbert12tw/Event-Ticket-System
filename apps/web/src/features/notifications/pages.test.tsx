@@ -1,9 +1,11 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NotificationDeliveryPage } from "./pages";
+import { NotificationDeliveryPage, UserNotificationsPage } from "./pages";
 import {
+  listEvents,
   listNotificationDeliveries,
+  listTickets,
   retryNotificationDelivery,
 } from "@/lib/api";
 
@@ -11,9 +13,102 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
+    listEvents: vi.fn(),
     listNotificationDeliveries: vi.fn(),
+    listTickets: vi.fn(),
     retryNotificationDelivery: vi.fn(),
   };
+});
+
+describe("UserNotificationsPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listEvents).mockResolvedValue([]);
+    vi.mocked(listTickets).mockResolvedValue([]);
+  });
+
+  it("combines registration and ticket notifications without exposing raw internals", async () => {
+    vi.mocked(listEvents).mockResolvedValue([
+      {
+        event_id: "evt-waitlist",
+        title: "家庭電影夜",
+        description: "Demo",
+        location: "Taipei HQ",
+        event_city: "Taipei",
+        event_site: "Taipei",
+        starts_at: "2026-06-10T10:00:00Z",
+        registration_start: "2026-06-01T10:00:00Z",
+        registration_close: "2026-06-05T10:00:00Z",
+        capacity_type: "limited",
+        capacity: 10,
+        allows_family: false,
+        allocation_mode: "fcfs",
+        status: "published",
+        created_by: "admin-1",
+        created_at: "2026-05-31T08:00:00Z",
+        updated_at: "2026-05-31T08:00:00Z",
+        rule: {
+          department: "Engineering",
+          site: "Taipei",
+          min_grade: 5,
+          employment_status: "active",
+        },
+        confirmed_count: 10,
+        waitlist_count: 1,
+        remaining_capacity: 0,
+        current_user_status: "waitlisted",
+        no_show_cooldown: { active: false },
+      },
+    ]);
+    vi.mocked(listTickets).mockResolvedValue([
+      {
+        ticket_id: "ticket-1",
+        registration_id: "reg-1",
+        event_id: "evt-waitlist",
+        employee_id: "E1001",
+        status: "active",
+        issued_at: "2026-06-05T10:00:00Z",
+        event_title: "家庭電影夜",
+        non_transferable: true,
+      },
+    ]);
+
+    render(<UserNotificationsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByText("家庭電影夜").length).toBeGreaterThan(0),
+    );
+    expect(screen.getByLabelText("通知摘要")).toHaveTextContent("通知2");
+    expect(screen.getByLabelText("通知摘要")).toHaveTextContent("候補更新1");
+    expect(screen.getByLabelText("通知摘要")).toHaveTextContent("票券更新1");
+    expect(screen.getAllByText(/候補/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("可使用").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("票券已核發，可於現場驗票使用。").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("waitlisted")).not.toBeInTheDocument();
+    expect(screen.queryByText("active")).not.toBeInTheDocument();
+    expect(screen.queryByText("evt-waitlist")).not.toBeInTheDocument();
+    expect(screen.queryByText("ticket-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("E1001")).not.toBeInTheDocument();
+  });
+
+  it("surfaces loading failures and lets the user retry the API boundary", async () => {
+    vi.mocked(listEvents)
+      .mockRejectedValueOnce(new Error("notification API unavailable"))
+      .mockResolvedValueOnce([]);
+    vi.mocked(listTickets).mockResolvedValue([]);
+
+    render(<UserNotificationsPage />);
+
+    expect(
+      await screen.findByText("notification API unavailable"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "重新整理" }));
+
+    await waitFor(() => expect(listEvents).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("尚無通知")).toBeInTheDocument();
+  });
 });
 
 describe("NotificationDeliveryPage", () => {
