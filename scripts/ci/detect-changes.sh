@@ -30,9 +30,8 @@ else
   fi
 
   if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
-    if [[ "${ACT:-}" == "true" ]]; then
-      base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
-    elif [[ -n "${head:-}" ]]; then
+    base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+    if [[ -z "$base" && -n "${head:-}" ]]; then
       base="$(git rev-list --max-parents=0 "$head")"
     fi
   fi
