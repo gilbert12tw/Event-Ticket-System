@@ -12,8 +12,55 @@ import {
   updateEvent,
   updateEligibility,
 } from "@/lib/api";
+import { defaultEventForm } from "@/lib/formatting";
 import { eventFixture } from "@/test/event-fixtures";
+import {
+  applyEventTemplate,
+  applySchedulePreset,
+} from "./admin-event-crud-types";
 import { AdminEventsPage } from "./admin-pages";
+
+
+describe("quick-setup apply functions track selection state", () => {
+  it("applyEventTemplate sets _selectedTemplate to the chosen key", () => {
+    const form = defaultEventForm();
+    expect(form._selectedTemplate).toBe(""); // default is unset
+
+    const next = applyEventTemplate(form, "learning");
+    expect(next._selectedTemplate).toBe("learning");
+    expect(next.title).toBe("內部學習工作坊"); // form fields also updated
+  });
+
+  it("applyEventTemplate with empty string resets _selectedTemplate", () => {
+    const form = { ...defaultEventForm(), _selectedTemplate: "sports" };
+    const next = applyEventTemplate(form, "");
+    expect(next._selectedTemplate).toBe("");
+  });
+
+  it("applySchedulePreset defaults _selectedSchedule to 'custom'", () => {
+    const form = defaultEventForm();
+    expect(form._selectedSchedule).toBe("custom");
+  });
+
+  it("applySchedulePreset sets _selectedSchedule to the chosen preset", () => {
+    const form = defaultEventForm();
+
+    const openNow = applySchedulePreset(form, "open-now");
+    expect(openNow._selectedSchedule).toBe("open-now");
+
+    const oneWeek = applySchedulePreset(form, "one-week");
+    expect(oneWeek._selectedSchedule).toBe("one-week");
+
+    const nextWeek = applySchedulePreset(form, "next-week");
+    expect(nextWeek._selectedSchedule).toBe("next-week");
+  });
+
+  it("applySchedulePreset with 'custom' preserves form values and sets _selectedSchedule", () => {
+    const form = { ...defaultEventForm(), _selectedSchedule: "open-now" };
+    const next = applySchedulePreset(form, "custom");
+    expect(next._selectedSchedule).toBe("custom");
+  });
+});
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -209,5 +256,24 @@ describe("AdminEventsPage CRUD tabs", () => {
         expect.objectContaining({ allow_zero_match: true }),
       ),
     );
+  });
+  it("quick-setup template dropdown reflects selection after change", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+
+    const templateTrigger = screen.getByRole("combobox", { name: "活動模板" });
+    // Starts with placeholder text (no template selected yet)
+    expect(templateTrigger).toHaveTextContent("選擇模板");
+  });
+
+  it("quick-setup schedule dropdown reflects selection after change", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+
+    const scheduleTrigger = screen.getByRole("combobox", { name: "排程預設" });
+    // Starts on "自訂時間" because _selectedSchedule defaults to "custom"
+    expect(scheduleTrigger).toHaveTextContent("自訂時間");
   });
 });
