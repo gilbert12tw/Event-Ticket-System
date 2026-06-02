@@ -49,7 +49,7 @@ func TestRedisGateReserveGrantsThenExhausts(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	eventID := uniqueEventID(t)
-	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID))
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), versionKey(eventID))
 
 	probe := func(ctx context.Context) (int, int64, error) { return 2, 1, nil }
 	for i := 0; i < 2; i++ {
@@ -66,13 +66,36 @@ func TestRedisGateReserveGrantsThenExhausts(t *testing.T) {
 	require.Equal(t, OutcomeExhausted, hold.Outcome)
 }
 
+func TestRedisGateReserveProbesOnlyWhenCounterMissing(t *testing.T) {
+	gate, client, cleanup := newTestGate(t)
+	defer cleanup()
+	ctx := context.Background()
+	eventID := uniqueEventID(t)
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), versionKey(eventID))
+
+	probeCalls := 0
+	probe := func(ctx context.Context) (int, int64, error) {
+		probeCalls++
+		return 3, 7, nil
+	}
+	for i := 0; i < 3; i++ {
+		hash := Hash([]byte("k"), "registration.book", eventID, "E100"+string(rune('1'+i)), "key-"+string(rune('A'+i)))
+		defer client.Del(ctx, holdKey(eventID, hash))
+		hold, err := gate.Reserve(ctx, eventID, hash, "actor-1", probe)
+		require.NoError(t, err)
+		require.Equal(t, OutcomeGranted, hold.Outcome)
+		require.Equal(t, int64(7), hold.CapacityVersion)
+	}
+	require.Equal(t, 1, probeCalls, "probe should only seed a missing Redis counter")
+}
+
 func TestRedisGateDuplicateReserveReturnsExistingHold(t *testing.T) {
 	gate, client, cleanup := newTestGate(t)
 	defer cleanup()
 	ctx := context.Background()
 	eventID := uniqueEventID(t)
 	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "same-key")
-	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), holdKey(eventID, hash))
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), versionKey(eventID), holdKey(eventID, hash))
 
 	probe := func(ctx context.Context) (int, int64, error) { return 5, 1, nil }
 	first, err := gate.Reserve(ctx, eventID, hash, "actor-1", probe)
@@ -96,7 +119,7 @@ func TestRedisGateReleaseReturnsSlot(t *testing.T) {
 	ctx := context.Background()
 	eventID := uniqueEventID(t)
 	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "release-key")
-	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), holdKey(eventID, hash))
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), versionKey(eventID), holdKey(eventID, hash))
 
 	probe := func(ctx context.Context) (int, int64, error) { return 1, 1, nil }
 	_, err := gate.Reserve(ctx, eventID, hash, "actor", probe)
@@ -121,7 +144,7 @@ func TestRedisGateConfirmDoesNotIncrementCounter(t *testing.T) {
 	ctx := context.Background()
 	eventID := uniqueEventID(t)
 	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "confirm-key")
-	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), holdKey(eventID, hash))
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), versionKey(eventID), holdKey(eventID, hash))
 
 	probe := func(ctx context.Context) (int, int64, error) { return 3, 1, nil }
 	_, err := gate.Reserve(ctx, eventID, hash, "actor", probe)
@@ -141,7 +164,7 @@ func TestRedisGateExhaustedDoesNotDecrementBelowZero(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	eventID := uniqueEventID(t)
-	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID))
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), versionKey(eventID))
 
 	probe := func(ctx context.Context) (int, int64, error) { return 0, 1, nil }
 	for i := 0; i < 5; i++ {

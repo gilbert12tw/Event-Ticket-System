@@ -52,13 +52,6 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 	if !g.cfg.Enabled {
 		return Hold{Outcome: OutcomeGranted}, nil
 	}
-	remaining, version, err := probe(ctx)
-	if err != nil {
-		return Hold{}, fmt.Errorf("reservation probe: %w", err)
-	}
-	if remaining < 0 {
-		remaining = 0
-	}
 	reservationID, err := newReservationID()
 	if err != nil {
 		return Hold{}, err
@@ -67,6 +60,33 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 	if ttlSecs <= 0 {
 		ttlSecs = 20
 	}
+	hold, err := g.reserveWithCapacity(ctx, eventID, idempotencyHash, actorHash, reservationID, -1, -1, ttlSecs)
+	if err != nil {
+		return Hold{}, err
+	}
+	if hold.Outcome != outcomeNeedsProbe {
+		return hold, nil
+	}
+	remaining, version, err := probe(ctx)
+	if err != nil {
+		return Hold{}, fmt.Errorf("reservation probe: %w", err)
+	}
+	if remaining < 0 {
+		remaining = 0
+	}
+	return g.reserveWithCapacity(ctx, eventID, idempotencyHash, actorHash, reservationID, remaining, version, ttlSecs)
+}
+
+func (g *RedisGate) reserveWithCapacity(
+	ctx context.Context,
+	eventID string,
+	idempotencyHash string,
+	actorHash string,
+	reservationID string,
+	remaining int,
+	version int64,
+	ttlSecs int64,
+) (Hold, error) {
 	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
 	defer cancel()
 	now := time.Now().UTC().Unix()
@@ -75,18 +95,19 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 			remainingKey(eventID),
 			holdKey(eventID, idempotencyHash),
 			pendingKey(eventID),
+			versionKey(eventID),
 		},
 		idempotencyHash, remaining, version, ttlSecs, now, actorHash, eventID, reservationID,
 	).Result()
 	if err != nil {
 		return g.handleOutage(err, "reserve")
 	}
-	outcome, id, exp, parseErr := parseReserveResult(raw)
+	outcome, id, exp, holdVersion, parseErr := parseReserveResult(raw)
 	if parseErr != nil {
 		return Hold{}, parseErr
 	}
 	switch outcome {
-	case OutcomeGranted, OutcomeDuplicate, OutcomeExhausted:
+	case OutcomeGranted, OutcomeDuplicate, OutcomeExhausted, outcomeNeedsProbe:
 	case OutcomeMisconfigured:
 		g.logger.Warn("reservation lua misconfigured", "op", "reserve", "error_class", "misconfigured")
 		return Hold{}, ErrUnavailable
@@ -97,7 +118,7 @@ func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actor
 		Outcome:         outcome,
 		ReservationID:   id,
 		IdempotencyHash: idempotencyHash,
-		CapacityVersion: version,
+		CapacityVersion: holdVersion,
 		ExpiresAt:       time.Unix(exp, 0).UTC(),
 	}, nil
 }
@@ -148,16 +169,23 @@ func (g *RedisGate) handleOutage(err error, op string) (Hold, error) {
 	return Hold{Outcome: OutcomeGranted}, nil
 }
 
-func parseReserveResult(raw interface{}) (Outcome, string, int64, error) {
+func parseReserveResult(raw interface{}) (Outcome, string, int64, int64, error) {
 	arr, ok := raw.([]interface{})
 	if !ok || len(arr) != 3 {
-		return "", "", 0, fmt.Errorf("unexpected reserve result type: %T", raw)
+		if !ok || len(arr) != 4 {
+			return "", "", 0, 0, fmt.Errorf("unexpected reserve result type: %T", raw)
+		}
 	}
 	outcome, _ := arr[0].(string)
 	id, _ := arr[1].(string)
 	expStr, _ := arr[2].(string)
 	exp, _ := strconv.ParseInt(expStr, 10, 64)
-	return Outcome(outcome), id, exp, nil
+	version := int64(0)
+	if len(arr) > 3 {
+		versionStr, _ := arr[3].(string)
+		version, _ = strconv.ParseInt(versionStr, 10, 64)
+	}
+	return Outcome(outcome), id, exp, version, nil
 }
 
 func remainingKey(eventID string) string { return keyPrefix + eventID + ":remaining" }
@@ -167,6 +195,8 @@ func holdKey(eventID, idempotencyHash string) string {
 }
 
 func pendingKey(eventID string) string { return keyPrefix + eventID + ":pending" }
+
+func versionKey(eventID string) string { return keyPrefix + eventID + ":version" }
 
 func newReservationID() (string, error) {
 	var b [16]byte
