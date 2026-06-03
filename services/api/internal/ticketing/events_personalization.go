@@ -13,6 +13,7 @@ func (s *Service) loadEventListPersonalization(ctx context.Context, actor Actor,
 	personalization := eventListPersonalization{
 		RegistrationsByEvent:  map[string]Registration{},
 		TicketsByRegistration: map[string]*Ticket{},
+		BannedEvents:          map[string]bool{},
 	}
 	if actor.ID == employeeID && actor.Claims != nil {
 		employee, err := employeeFromClaims(actor)
@@ -47,6 +48,12 @@ func (s *Service) loadEventListPersonalization(ctx context.Context, actor Actor,
 	}
 	personalization.RegistrationsByEvent = registrations
 	personalization.TicketsByRegistration = tickets
+
+	banned, err := s.loadEmployeeBookingBans(ctx, employeeID)
+	if err != nil {
+		return personalization, err
+	}
+	personalization.BannedEvents = banned
 	return personalization, nil
 }
 
@@ -102,6 +109,12 @@ func applyEventListCooldown(summary *EventSummary, personalization eventListPers
 func applyEventListRegistration(summary *EventSummary, personalization eventListPersonalization) {
 	reg, found := personalization.RegistrationsByEvent[summary.EventID]
 	if !found {
+		// Mirror the detail page: an active booking ban (from cancelling a
+		// confirmed booking) blocks re-booking/waitlisting, so surface it as a
+		// cancelled status instead of a misleading enabled "加入候補" action.
+		if personalization.BannedEvents[summary.EventID] {
+			summary.CurrentUserStatus = RegistrationCancelled
+		}
 		return
 	}
 	summary.CurrentUserStatus = reg.Status
@@ -131,6 +144,23 @@ func (s *Service) loadActiveNoShowCooldown(ctx context.Context, employeeID strin
 		Until:     &cooldownUntil,
 		Reason:    "no_show_cooldown",
 	}, nil
+}
+
+func (s *Service) loadEmployeeBookingBans(ctx context.Context, employeeID string) (map[string]bool, error) {
+	banned := map[string]bool{}
+	rows, err := s.db.Query(ctx, `SELECT event_id FROM booking_bans WHERE employee_id = $1 AND lifted_at IS NULL`, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var eventID string
+		if err := rows.Scan(&eventID); err != nil {
+			return nil, err
+		}
+		banned[eventID] = true
+	}
+	return banned, rows.Err()
 }
 
 func (s *Service) loadEmployeeEventRegistrations(ctx context.Context, employeeID string) (map[string]Registration, map[string]*Ticket, error) {
