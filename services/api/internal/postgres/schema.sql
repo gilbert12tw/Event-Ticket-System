@@ -629,3 +629,11 @@ CREATE TABLE IF NOT EXISTS reservation_compensation_metrics (
 		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		PRIMARY KEY (metric, action, result)
 	);
+
+-- PH2-42 last_event_offset: stores the outbox_id of the last applied event
+-- per row in reporting_event_summary for idempotent upsert (older replays skipped)
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS last_event_offset TEXT NOT NULL DEFAULT '';
+
+-- PH2-42 last_processed_outbox_id: crash-recovery watermark in
+-- reporting_projection_offsets to resume processing after a worker restart
+ALTER TABLE reporting_projection_offsets ADD COLUMN IF NOT EXISTS last_processed_outbox_id TEXT NOT NULL DEFAULT '';
