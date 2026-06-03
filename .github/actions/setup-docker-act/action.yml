@@ -8,12 +8,14 @@ runs:
       if: env.ACT == 'true'
       shell: bash
       run: |
-        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
           docker --version
           docker compose version
+          jq --version
           exit 0
         fi
         apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2
+        DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2 jq
         docker --version
         docker compose version
+        jq --version

@@ -186,6 +186,7 @@ data:
       location = /healthz {
         access_log off;
         add_header Content-Type text/plain;
+        add_header X-CETS-Frontend-Replica \$hostname always;
         return 200 "ok\n";
       }
 
@@ -237,6 +238,7 @@ data:
       }
 
       location / {
+        add_header X-CETS-Frontend-Replica \$hostname always;
         try_files \$uri \$uri/ /index.html;
       }
     }

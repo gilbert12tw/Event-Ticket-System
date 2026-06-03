@@ -7,6 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 load_env
 require_cmd kubectl
 require_cmd curl
+require_cmd jq
 
 log "checking Kubernetes nodes"
 kubectl_bm get nodes -o wide
@@ -29,11 +30,18 @@ fi
 
 check_three_way_spread() {
   app=$1
-  nodes=$(kubectl_bm -n "$CETS_NAMESPACE" get pods -l "app=$app" -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort)
+  nodes=$(
+    kubectl_bm -n "$CETS_NAMESPACE" get pods -l "app=$app" -o json |
+      jq -r '.items[]
+        | select(.status.phase == "Running")
+        | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
+        | .spec.nodeName' |
+      sort
+  )
   pod_count=$(printf '%s\n' "$nodes" | sed '/^$/d' | wc -l | tr -d ' ')
   node_count=$(printf '%s\n' "$nodes" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')
-  [ "$pod_count" = "3" ] || die "expected app=$app to have 3 pods, got $pod_count"
-  [ "$node_count" = "3" ] || die "expected app=$app to be spread across 3 nodes, got $node_count: $(printf '%s' "$nodes" | paste -sd ',' -)"
+  [ "$pod_count" -ge 3 ] || die "expected app=$app to have at least 3 pods, got $pod_count"
+  [ "$node_count" -ge 3 ] || die "expected app=$app to be spread across at least 3 nodes, got $node_count: $(printf '%s' "$nodes" | paste -sd ',' -)"
 }
 
 log "checking HA replica spread across work1/work2/work3"

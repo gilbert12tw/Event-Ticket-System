@@ -106,6 +106,25 @@ describe("api http helpers", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/events/evt%2F1/poster");
   });
 
+  it("throws ApiError for non-JSON poster download errors", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response("poster backend down", {
+        status: 500,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    const caught = await eventPosterBlob("evt/1").catch(
+      (error: unknown) => error,
+    );
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect(caught).toMatchObject({
+      status: 500,
+      response: { error: "poster backend down" },
+    });
+  });
+
   it("downloads report exports as blobs", async () => {
     fetchMock.mockResolvedValueOnce(
       response("csv-body", {

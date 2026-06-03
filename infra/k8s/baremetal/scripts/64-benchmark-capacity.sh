@@ -30,12 +30,16 @@ PROM_PORT=${K8S_BENCH_PROM_PORT:-19090}
 REPORT_ONLY_RPS=${K8S_BENCH_REPORT_ONLY_RPS:-}
 
 PROM_PID=""
+K6_ENV_FILES=()
 
 cleanup() {
   if [ -n "$PROM_PID" ]; then
     kill "$PROM_PID" >/dev/null 2>&1 || true
     wait "$PROM_PID" >/dev/null 2>&1 || true
   fi
+  for env_file in "${K6_ENV_FILES[@]}"; do
+    rm -f "$env_file"
+  done
 }
 trap cleanup EXIT
 
@@ -102,21 +106,35 @@ psql_once() {
 run_k6_candidate() {
   local rps=$1
   local out="$ARTIFACT_DIR/k6-$RUN_ID-rps-$rps.json"
+  local env_file
+  local status
   log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL host=$HOST_HEADER"
+  env_file=$(mktemp "$ARTIFACT_DIR/k6-env-$RUN_ID-rps-$rps.XXXXXX")
+  K6_ENV_FILES+=("$env_file")
+  chmod 0600 "$env_file"
+  {
+    printf 'BASE_URL=%s\n' "$BASE_URL"
+    printf 'K6_HOST_HEADER=%s\n' "$HOST_HEADER"
+    printf 'K6_PROVIDER_TOKEN_SECRET=%s\n' "$PROVIDER_TOKEN_SECRET"
+    printf 'K6_TARGET_RPS=%s\n' "$rps"
+    printf 'K6_CAPACITY_DURATION=%s\n' "$DURATION"
+    printf 'K6_READ_RATIO=%s\n' "$READ_RATIO"
+    printf 'K6_EMPLOYEE_PREFIX=%s\n' "$EMPLOYEE_PREFIX"
+    printf 'K6_EMPLOYEE_COUNT=%s\n' "$EMPLOYEE_COUNT"
+    printf 'K6_HOT_EVENT_CAPACITY=%s\n' "$HOT_EVENT_CAPACITY"
+    printf 'K6_RUN_ID=%s\n' "$RUN_ID-rps-$rps"
+  } >"$env_file"
+
+  set +e
   docker_cmd run --rm --network host \
     -v "$ROOT_DIR/k6:/k6:ro" \
     -v "$ARTIFACT_DIR:/artifacts" \
-    -e BASE_URL="$BASE_URL" \
-    -e K6_HOST_HEADER="$HOST_HEADER" \
-    -e K6_PROVIDER_TOKEN_SECRET="$PROVIDER_TOKEN_SECRET" \
-    -e K6_TARGET_RPS="$rps" \
-    -e K6_CAPACITY_DURATION="$DURATION" \
-    -e K6_READ_RATIO="$READ_RATIO" \
-    -e K6_EMPLOYEE_PREFIX="$EMPLOYEE_PREFIX" \
-    -e K6_EMPLOYEE_COUNT="$EMPLOYEE_COUNT" \
-    -e K6_HOT_EVENT_CAPACITY="$HOT_EVENT_CAPACITY" \
-    -e K6_RUN_ID="$RUN_ID-rps-$rps" \
+    --env-file "$env_file" \
     "$K6_IMAGE" run --summary-export "/artifacts/$(basename "$out")" "$SCRIPT" >&2
+  status=$?
+  set -e
+  rm -f "$env_file"
+  return "$status"
 }
 
 docker_cmd() {
@@ -192,6 +210,13 @@ prom_query() {
   curl -fsS --get --data-urlencode "query=$query" "http://127.0.0.1:$PROM_PORT/api/v1/query" >"$output"
 }
 
+require_prometheus_vector_sample() {
+  local output=$1
+  local label=$2
+  jq -e '(.data.result // []) | length > 0' "$output" >/dev/null ||
+    die "benchmark did not produce $label samples in Prometheus"
+}
+
 prom_scalar() {
   local query=$1
   curl -fsS --get --data-urlencode "query=$query" "http://127.0.0.1:$PROM_PORT/api/v1/query" |
@@ -202,7 +227,7 @@ require_prometheus_evidence() {
   local replicas
   local cpu_samples
   replicas=$(prom_scalar 'scalar(count(count by (instance) (increase(cets_http_requests_total[15m]) > 0)))')
-  cpu_samples=$(prom_scalar 'sum(rate(container_cpu_usage_seconds_total{namespace="cets",pod=~"backend-.*",container!="POD"}[5m]))')
+  cpu_samples=$(prom_scalar 'sum(rate(container_cpu_usage_seconds_total{namespace="cets",pod=~"backend-.*",container!="POD",container!=""}[5m]))')
   awk -v value="${replicas:-0}" 'BEGIN { exit(value >= 3 ? 0 : 1) }' ||
     die "benchmark did not produce traffic on all 3 backend instances; observed $replicas"
   awk -v value="${cpu_samples:-0}" 'BEGIN { exit(value > 0 ? 0 : 1) }' ||
@@ -226,13 +251,22 @@ write_report() {
   local summary="$ARTIFACT_DIR/k6-$RUN_ID-rps-$best_rps.json"
   local report="$ARTIFACT_DIR/capacity-report-$RUN_ID.md"
   local prom_cpu="$ARTIFACT_DIR/prometheus-cpu-$RUN_ID.json"
+  local prom_memory="$ARTIFACT_DIR/prometheus-memory-$RUN_ID.json"
+  local prom_restarts="$ARTIFACT_DIR/prometheus-restarts-$RUN_ID.json"
   local prom_red="$ARTIFACT_DIR/prometheus-red-$RUN_ID.json"
+  local prom_throttling="$ARTIFACT_DIR/prometheus-throttling-$RUN_ID.json"
 
   require_capacity_invariant "$best_rps"
   start_prometheus_port_forward
   require_prometheus_evidence
-  prom_query 'sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="cets",pod=~"backend-.*",container!="POD"}[5m]))' "$prom_cpu" || true
+  prom_query 'sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="cets",pod=~"backend-.*",container!="POD",container!=""}[5m]))' "$prom_cpu" || true
+  require_prometheus_vector_sample "$prom_cpu" "backend CPU"
+  prom_query 'sum by (pod) (container_memory_working_set_bytes{namespace="cets",pod=~"backend-.*",container!="POD",container!=""})' "$prom_memory"
+  require_prometheus_vector_sample "$prom_memory" "backend memory"
+  prom_query 'sum by (pod) (kube_pod_container_status_restarts_total{namespace="cets",pod=~"backend-.*"})' "$prom_restarts"
+  require_prometheus_vector_sample "$prom_restarts" "backend restart"
   prom_query 'sum by (route,method,status_class) (rate(cets_http_requests_total[5m]))' "$prom_red" || true
+  prom_query 'sum by (pod) (rate(container_cpu_cfs_throttled_seconds_total{namespace="cets",pod=~"backend-.*",container!="POD",container!=""}[5m]))' "$prom_throttling" || true
 
   {
     printf '# K8s Capacity Report\n\n'
@@ -246,7 +280,10 @@ write_report() {
     printf '| Employee fixture | `%s%s` employees, prefix `%s` |\n' "$EMPLOYEE_COUNT" "" "$EMPLOYEE_PREFIX"
     printf '| k6 summary | `%s` |\n' "$summary"
     printf '| Prometheus CPU sample | `%s` |\n' "$prom_cpu"
+    printf '| Prometheus memory sample | `%s` |\n' "$prom_memory"
+    printf '| Prometheus restart sample | `%s` |\n' "$prom_restarts"
     printf '| Prometheus RED sample | `%s` |\n' "$prom_red"
+    printf '| Prometheus throttling sample | `%s` |\n' "$prom_throttling"
     if [ -f "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt" ]; then
       printf '| Highest failing RPS tested | `%s` |\n' "$(cat "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt")"
     fi
@@ -266,6 +303,20 @@ write_report() {
         ["booking waitlisted", (.metrics.k8s_booking_waitlisted.count // "n/a")]
       ] | .[] | "- \(.[0]): `\(.[1])`"
     ' "$summary"
+    printf '\n## Backend CPU Samples\n\n'
+    jq -r '(.data.result // [])[] | "- \(.metric.pod // .metric.instance // "unknown"): `\(.value[1])`"' "$prom_cpu"
+    printf '\n## Backend Memory Samples\n\n'
+    jq -r '(.data.result // [])[] | "- \(.metric.pod // .metric.instance // "unknown"): `\(.value[1])` bytes"' "$prom_memory"
+    printf '\n## Backend Restart Samples\n\n'
+    jq -r '(.data.result // [])[] | "- \(.metric.pod // .metric.instance // "unknown"): `\(.value[1])` restarts"' "$prom_restarts"
+    printf '\n## Backend CPU Throttling Samples\n\n'
+    if jq -e '.status == "success" and ((.data.result // []) | length > 0)' "$prom_throttling" >/dev/null; then
+      jq -r '(.data.result // [])[] | "- \(.metric.pod // .metric.instance // "unknown"): `\(.value[1])` throttled CPU seconds/sec"' "$prom_throttling"
+    elif jq -e '.status == "success" and ((.data.result // []) | length == 0)' "$prom_throttling" >/dev/null; then
+      printf 'No backend throttling samples were returned by Prometheus for this query.\n'
+    else
+      printf 'Prometheus throttling query did not return a successful response; inspect `%s`.\n' "$prom_throttling"
+    fi
     printf '\n\n'
     printf '## Follow-Up Evidence\n\n'
     printf 'Run `infra/k8s/baremetal/scripts/66-verify-observability.sh` after this benchmark to validate trace-to-log, trace-to-profile, and service graph data for the load window.\n'
@@ -277,7 +328,6 @@ main() {
   mkdir -p "$ARTIFACT_DIR"
   chmod 0777 "$ARTIFACT_DIR"
   PROVIDER_TOKEN_SECRET=$(provider_secret)
-  export PROVIDER_TOKEN_SECRET
 
   if [ -n "$REPORT_ONLY_RPS" ]; then
     write_report "$REPORT_ONLY_RPS"

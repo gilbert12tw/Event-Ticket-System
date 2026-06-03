@@ -26,6 +26,8 @@ const bookingAttempts = new Counter("k8s_booking_attempts");
 const bookingConfirmed = new Counter("k8s_booking_confirmed");
 const bookingWaitlisted = new Counter("k8s_booking_waitlisted");
 const bookingConflicts = new Counter("k8s_booking_conflicts");
+const gatewayReplicaHits = new Counter("k8s_gateway_replica_hits");
+const frontendReplicaHits = new Counter("k8s_frontend_replica_hits");
 const backendReplicaHits = new Counter("k8s_backend_replica_hits");
 
 export const options = {
@@ -59,6 +61,8 @@ export const options = {
     k8s_booking_duration: ["p(95)<750", "p(99)<1500"],
     k8s_booking_attempts: ["count>=1"],
     k8s_booking_confirmed: ["count>=1"],
+    k8s_gateway_replica_hits: ["count>=3"],
+    k8s_frontend_replica_hits: ["count>=3"],
     k8s_backend_replica_hits: ["count>=3"]
   }
 };
@@ -69,8 +73,8 @@ export function setup() {
   }
   const health = http.get(`${baseUrl}/healthz`, requestParams("setup"));
   const ready = http.get(`${baseUrl}/readyz`, requestParams("setup"));
-  recordBackendReplica(health);
-  recordBackendReplica(ready);
+  recordReplicas(health);
+  recordReplicas(ready);
 
   const event = createHotEvent();
   const ok = check(null, {
@@ -99,7 +103,7 @@ export function readTraffic(data) {
   } else {
     response = http.get(`${baseUrl}/api/v1/me/tickets`, requestParams("read", actorId));
   }
-  recordBackendReplica(response);
+  recordReplicas(response);
   readDuration.add(response.timings.duration);
   check(response, { "read traffic status is 200": (res) => res.status === 200 });
   sleep(0.01);
@@ -116,7 +120,7 @@ export function bookingTraffic(data) {
     JSON.stringify({ idempotency_key: `${runId}-book-${iteration}`, family_count: 0 }),
     requestParams("booking", actorId)
   );
-  recordBackendReplica(response);
+  recordReplicas(response);
   bookingAttempts.add(1);
   bookingDuration.add(response.timings.duration);
   check(response, { "booking traffic status is 2xx": (res) => res.status >= 200 && res.status < 300 });
@@ -168,7 +172,7 @@ function createHotEvent() {
     }),
     requestParams("setup", "admin-1")
   );
-  recordBackendReplica(response);
+  recordReplicas(response);
   check(response, { "hot event create status is 2xx": (res) => res.status >= 200 && res.status < 300 });
   return envelopeData(response, "hot event create");
 }
@@ -229,9 +233,13 @@ function envelopeData(response, label) {
   }
 }
 
-function recordBackendReplica(response) {
-  const replica = response.headers["X-CETS-Backend-Replica"] || response.headers["X-Cets-Backend-Replica"];
-  if (replica) {
-    backendReplicaHits.add(1, { replica: String(replica).slice(0, 80) });
-  }
+function recordReplicas(response) {
+  addReplicaHit(gatewayReplicaHits, response.headers["X-CETS-Gateway-Replica"] || response.headers["X-Cets-Gateway-Replica"]);
+  addReplicaHit(frontendReplicaHits, response.headers["X-CETS-Frontend-Replica"] || response.headers["X-Cets-Frontend-Replica"]);
+  addReplicaHit(backendReplicaHits, response.headers["X-CETS-Backend-Replica"] || response.headers["X-Cets-Backend-Replica"]);
+}
+
+function addReplicaHit(counter, replica) {
+  if (!replica) return;
+  counter.add(1, { replica: String(replica).slice(0, 80) });
 }

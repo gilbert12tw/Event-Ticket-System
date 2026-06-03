@@ -24,6 +24,10 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
+require_docker_daemon() {
+  docker info >/dev/null 2>&1 || die "docker daemon access is required"
+}
+
 compose() {
   docker compose \
     --env-file "$ENV_FILE" \
@@ -79,6 +83,7 @@ wait_container_exit_success() {
 main() {
   have docker || die "docker is required"
   docker compose version >/dev/null || die "docker compose v2 is required"
+  require_docker_daemon
 
   log "building backend and frontend images"
   compose build backend-1 frontend-1

@@ -7,6 +7,14 @@ PHASE3_EDGE_PORT=${PHASE3_EDGE_PORT:-}
 BASE_URL=${CETS_PHASE3_URL:-}
 K6_IMAGE=${K6_IMAGE:-grafana/k6:1.7.1-with-browser}
 SCRIPT=/k6/k8s-capacity-rps.js
+K6_REPORT_FILTER="$ROOT_DIR/scripts/compose/phase3-capacity-k6-report.jq"
+PROM_VECTOR_REPORT_FILTER="$ROOT_DIR/scripts/compose/phase3-prometheus-vector-report.jq"
+PROM_VECTOR_TARGET_FILTER="$ROOT_DIR/scripts/compose/phase3-prometheus-backend-targets-required.jq"
+CORRECTNESS_CHECK="$ROOT_DIR/scripts/compose/phase3-correctness-check.awk"
+CORRECTNESS_SUMMARY_SQL="$ROOT_DIR/scripts/compose/phase3-correctness-summary.sql"
+HEADER_REPLICAS_AWK="$ROOT_DIR/scripts/compose/phase3-header-replicas.awk"
+REPLICA_SPREAD_CHECK="$ROOT_DIR/scripts/compose/phase3-replica-spread-check.awk"
+PHASE3_BACKEND_PROMETHEUS_TARGETS="backend-1:8080 backend-2:8080 backend-3:8080"
 ARTIFACT_DIR=${CETS_PHASE3_CAPACITY_ARTIFACT_DIR:-$ROOT_DIR/artifacts/phase3-capacity}
 RUN_ID=${CETS_PHASE3_CAPACITY_RUN_ID:-$(date -u +%Y%m%d%H%M%S)}
 DURATION=${CETS_PHASE3_CAPACITY_DURATION:-82s}
@@ -21,6 +29,23 @@ HOT_EVENT_CAPACITY=${CETS_PHASE3_CAPACITY_HOT_EVENT_CAPACITY:-$EMPLOYEE_COUNT}
 PROMETHEUS_PORT=${PROMETHEUS_PORT:-}
 PROMETHEUS_URL=${CETS_PROMETHEUS_URL:-}
 REPORT_ONLY_RPS=${CETS_PHASE3_CAPACITY_REPORT_ONLY_RPS:-}
+CAPACITY_VERIFY_REPORT=${CETS_PHASE3_CAPACITY_VERIFY_REPORT:-}
+BOTTLENECK_NOTE=${CETS_PHASE3_CAPACITY_BOTTLENECK_NOTE:-not identified in this run}
+OPTIMIZATION_RESULT=${CETS_PHASE3_CAPACITY_OPTIMIZATION_RESULT:-not yet optimized}
+REPLICA_SAMPLES=${CETS_PHASE3_CAPACITY_REPLICA_SAMPLES:-90}
+
+# shellcheck source=scripts/compose/phase3-capacity-report.sh
+. "$ROOT_DIR/scripts/compose/phase3-capacity-report.sh"
+# shellcheck source=scripts/compose/phase3-capacity-preflight.sh
+. "$ROOT_DIR/scripts/compose/phase3-capacity-preflight.sh"
+# shellcheck source=scripts/compose/phase3-capacity-prometheus-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-capacity-prometheus-evidence.sh"
+# shellcheck source=scripts/compose/phase3-capacity-correctness-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-capacity-correctness-evidence.sh"
+# shellcheck source=scripts/compose/phase3-capacity-replica-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-capacity-replica-evidence.sh"
+# shellcheck source=scripts/compose/phase3-capacity-k6-search.sh
+. "$ROOT_DIR/scripts/compose/phase3-capacity-k6-search.sh"
 
 log() {
   printf '[phase3-capacity] %s\n' "$*"
@@ -44,11 +69,8 @@ Important environment variables:
   CETS_PHASE3_CAPACITY_MAX_RPS         Search ceiling, default 1000.
   CETS_PHASE3_CAPACITY_RESOLUTION_RPS  Binary search resolution, default 25.
   CETS_PHASE3_CAPACITY_REPORT_ONLY_RPS Rebuild report for an existing candidate.
+  CETS_PHASE3_CAPACITY_VERIFY_REPORT   Optional Phase 3 verify report path to link in reports.
 EOF
-}
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "$1 is required"
 }
 
 env_value() {
@@ -108,155 +130,12 @@ seed_benchmark_employees() {
     '
 }
 
-psql_once() {
-  sql=$1
+psql_with_event_title() {
+  event_title=$1
+  sql_file=$2
   compose exec -T \
-    -e SQL="$sql" \
-    postgres sh -eu -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "$SQL"'
-}
-
-run_k6_candidate() {
-  rps=$1
-  out="$ARTIFACT_DIR/k6-$RUN_ID-rps-$rps.json"
-  log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL"
-  docker run --rm --network host \
-    -v "$ROOT_DIR/k6:/k6:ro" \
-    -v "$ARTIFACT_DIR:/artifacts" \
-    -e BASE_URL="$BASE_URL" \
-    -e K6_PROVIDER_TOKEN_SECRET="$PROVIDER_TOKEN_SECRET" \
-    -e K6_TARGET_RPS="$rps" \
-    -e K6_CAPACITY_DURATION="$DURATION" \
-    -e K6_READ_RATIO="$READ_RATIO" \
-    -e K6_EMPLOYEE_PREFIX="$EMPLOYEE_PREFIX" \
-    -e K6_EMPLOYEE_COUNT="$EMPLOYEE_COUNT" \
-    -e K6_HOT_EVENT_CAPACITY="$HOT_EVENT_CAPACITY" \
-    -e K6_RUN_ID="$RUN_ID-rps-$rps" \
-    "$K6_IMAGE" run --summary-export "/artifacts/$(basename "$out")" "$SCRIPT" >&2
-}
-
-candidate_passes() {
-  rps=$1
-  if run_k6_candidate "$rps"; then
-    printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-pass-rps.txt"
-    printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-pass-rps-$RUN_ID.txt"
-    return 0
-  fi
-  printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-fail-rps.txt"
-  printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt"
-  return 1
-}
-
-find_max_rps() {
-  low=0
-  high=0
-  current=$START_RPS
-
-  while [ "$current" -le "$MAX_RPS" ]; do
-    if candidate_passes "$current"; then
-      low=$current
-      current=$((current + STEP_RPS))
-    else
-      high=$current
-      break
-    fi
-  done
-
-  if [ "$high" -eq 0 ]; then
-    printf '%s\n' "$low"
-    return
-  fi
-
-  while [ $((high - low)) -gt "$RESOLUTION_RPS" ]; do
-    mid=$(((low + high) / 2))
-    if candidate_passes "$mid"; then
-      low=$mid
-    else
-      high=$mid
-    fi
-  done
-  printf '%s\n' "$low"
-}
-
-prom_query() {
-  query=$1
-  output=$2
-  curl -fsS --get --data-urlencode "query=$query" "$PROMETHEUS_URL/api/v1/query" >"$output"
-}
-
-prom_scalar() {
-  query=$1
-  curl -fsS --get --data-urlencode "query=$query" "$PROMETHEUS_URL/api/v1/query" |
-    jq -r 'if .data.resultType == "scalar" then .data.result[1] else (.data.result[0].value[1] // empty) end'
-}
-
-require_prometheus_evidence() {
-  replicas=$(prom_scalar 'scalar(count(count by (instance) (increase(cets_http_requests_total[15m]) > 0)))')
-  booking_samples=$(prom_scalar 'sum(increase(cets_booking_stage_seconds_count[15m]))')
-  awk -v value="${replicas:-0}" 'BEGIN { exit(value >= 3 ? 0 : 1) }' ||
-    die "benchmark did not produce traffic on all 3 backend instances; observed $replicas"
-  awk -v value="${booking_samples:-0}" 'BEGIN { exit(value > 0 ? 0 : 1) }' ||
-    die "benchmark did not produce booking stage metrics in Prometheus"
-}
-
-require_capacity_invariant() {
-  best_rps=$1
-  event_title="k8s capacity $RUN_ID-rps-$best_rps"
-  result=$(psql_once "SELECT COALESCE(e.capacity, 0) || ',' || count(r.registration_id) FROM events e LEFT JOIN registrations r ON r.event_id = e.event_id AND r.status = 'confirmed' WHERE e.title = '$event_title' GROUP BY e.capacity" | tail -n 1)
-  [ -n "$result" ] || die "could not find benchmark event '$event_title' for capacity check"
-  capacity=${result%,*}
-  confirmed=${result#*,}
-  awk -v confirmed="$confirmed" -v capacity="$capacity" 'BEGIN { exit(confirmed <= capacity ? 0 : 1) }' ||
-    die "confirmed bookings exceeded event capacity for '$event_title': confirmed=$confirmed capacity=$capacity"
-}
-
-write_report() {
-  best_rps=$1
-  summary="$ARTIFACT_DIR/k6-$RUN_ID-rps-$best_rps.json"
-  report="$ARTIFACT_DIR/capacity-report-$RUN_ID.md"
-  prom_red="$ARTIFACT_DIR/prometheus-red-$RUN_ID.json"
-  prom_booking="$ARTIFACT_DIR/prometheus-booking-stages-$RUN_ID.json"
-  prom_reservation="$ARTIFACT_DIR/prometheus-reservation-$RUN_ID.json"
-
-  require_capacity_invariant "$best_rps"
-  require_prometheus_evidence
-  prom_query 'sum by (route,method,status_class,instance) (rate(cets_http_requests_total[5m]))' "$prom_red" || true
-  prom_query 'histogram_quantile(0.95, sum by (stage,outcome,le) (rate(cets_booking_stage_seconds_bucket[5m])))' "$prom_booking" || true
-  prom_query 'sum by (outcome,capacity_type,outage_mode) (increase(cets_reservation_attempt_total[15m]))' "$prom_reservation" || true
-
-  {
-    printf '# Phase3 Capacity Report\n\n'
-    printf '| Field | Value |\n| --- | --- |\n'
-    printf '| Run ID | `%s` |\n' "$RUN_ID"
-    printf '| Base URL | `%s` |\n' "$BASE_URL"
-    printf '| Highest passing RPS | `%s` |\n' "$best_rps"
-    printf '| Duration | `%s` |\n' "$DURATION"
-    printf '| Traffic mix | `%s read / %s booking` |\n' "$READ_RATIO" "$(awk -v r="$READ_RATIO" 'BEGIN { printf "%.2f", 1-r }')"
-    printf '| Employee fixture | `%s` employees, prefix `%s` |\n' "$EMPLOYEE_COUNT" "$EMPLOYEE_PREFIX"
-    printf '| Hot event capacity | `%s` |\n' "$HOT_EVENT_CAPACITY"
-    printf '| k6 summary | `%s` |\n' "$summary"
-    printf '| Prometheus RED sample | `%s` |\n' "$prom_red"
-    printf '| Prometheus booking stage sample | `%s` |\n' "$prom_booking"
-    printf '| Prometheus reservation sample | `%s` |\n' "$prom_reservation"
-    if [ -f "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt" ]; then
-      printf '| Highest failing RPS tested | `%s` |\n' "$(cat "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt")"
-    fi
-    printf '\n## k6 Metrics\n\n'
-    jq -r '
-      def metric_value($name; $field):
-        (.metrics[$name][$field] // .metrics[$name].percentiles[$field] // "n/a");
-      [
-        ["http_req_duration p95", metric_value("http_req_duration"; "p(95)")],
-        ["read flow p95", metric_value("http_req_duration{flow:read}"; "p(95)")],
-        ["read flow p99", metric_value("http_req_duration{flow:read}"; "p(99)")],
-        ["booking p95", metric_value("k8s_booking_duration"; "p(95)")],
-        ["booking p99", metric_value("k8s_booking_duration"; "p(99)")],
-        ["booking attempts", (.metrics.k8s_booking_attempts.count // "n/a")],
-        ["booking confirmed", (.metrics.k8s_booking_confirmed.count // "n/a")],
-        ["booking waitlisted", (.metrics.k8s_booking_waitlisted.count // "n/a")]
-      ] | .[] | "- \(.[0]): `\(.[1])`"
-    ' "$summary"
-  } >"$report"
-  log "wrote capacity report: $report"
+    -e EVENT_TITLE="$event_title" \
+    postgres sh -eu -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v event_title="$EVENT_TITLE"' <"$sql_file"
 }
 
 main() {
@@ -274,6 +153,9 @@ main() {
   require_cmd curl
   require_cmd docker
   require_cmd jq
+  validate_capacity_verify_report
+  validate_capacity_inputs
+  require_docker_daemon
   mkdir -p "$ARTIFACT_DIR"
   chmod 0777 "$ARTIFACT_DIR"
 

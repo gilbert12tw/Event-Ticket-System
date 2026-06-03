@@ -8,8 +8,11 @@ PHASE3_EDGE_PORT=${PHASE3_EDGE_PORT:-}
 EDGE_URL=${CETS_PHASE3_URL:-}
 ARTIFACT_DIR=${CETS_PHASE3_K6_ARTIFACT_DIR:-$ROOT_DIR/artifacts/phase3-k6}
 SUMMARY_FILE=${CETS_PHASE3_K6_SUMMARY:-$ARTIFACT_DIR/phase3-${PROFILE}-summary.json}
+REPLICA_SPREAD_FILE=${CETS_PHASE3_K6_REPLICA_SPREAD:-$ARTIFACT_DIR/phase3-${PROFILE}-replica-spread.txt}
 K6_IMAGE=${K6_IMAGE:-grafana/k6:1.7.1-with-browser}
 SCRIPT=/k6/phase3-ha-lgtm.js
+HEADER_REPLICAS_AWK="$ROOT_DIR/scripts/compose/phase3-header-replicas.awk"
+REPLICA_SPREAD_CHECK="$ROOT_DIR/scripts/compose/phase3-replica-spread-check.awk"
 
 log() {
   printf '[phase3-k6] %s\n' "$*"
@@ -18,6 +21,10 @@ log() {
 die() {
   printf '[phase3-k6] error: %s\n' "$*" >&2
   exit 1
+}
+
+require_docker_daemon() {
+  docker info >/dev/null 2>&1 || die "docker daemon access is required"
 }
 
 env_value() {
@@ -58,6 +65,7 @@ run_k6() {
   mkdir -p "$ARTIFACT_DIR"
   chmod 0777 "$ARTIFACT_DIR"
   rm -f "$SUMMARY_FILE"
+  rm -f "$REPLICA_SPREAD_FILE"
   case "$PROFILE" in
     smoke | stress)
       log "running $PROFILE profile through $EDGE_URL"
@@ -93,19 +101,12 @@ run_k6() {
 header_replicas() {
   header=$1
   sample_file=$2
-  awk -F': *' -v header="$header" '
-    BEGIN { want = tolower(header) }
-    tolower($1) == want {
-      value = $2
-      sub(/\r$/, "", value)
-      if (value != "") seen[value] = 1
-    }
-    END {
-      count = 0
-      for (value in seen) count++
-      print count
-    }
-  ' "$sample_file"
+  awk -v header="$header" -f "$HEADER_REPLICAS_AWK" "$sample_file"
+}
+
+require_replica_spread_summary() {
+  summary=$1
+  awk -f "$REPLICA_SPREAD_CHECK" "$summary" || die "Phase 3 k6 replica spread invariants failed"
 }
 
 require_replica_spread() {
@@ -119,14 +120,21 @@ require_replica_spread() {
   gateway=$(header_replicas X-CETS-Gateway-Replica "$sample_file")
   frontend=$(header_replicas X-CETS-Frontend-Replica "$sample_file")
   backend=$(header_replicas X-CETS-Backend-Replica "$sample_file")
+  spread_tmp="$REPLICA_SPREAD_FILE.tmp.$$"
+  {
+    printf 'gateway|%s\n' "$gateway"
+    printf 'frontend|%s\n' "$frontend"
+    printf 'backend|%s\n' "$backend"
+    printf 'headers|%s\n' "$sample_file"
+  } >"$spread_tmp"
   log "observed replicas: gateway=$gateway frontend=$frontend backend=$backend"
-  [ "$gateway" -ge 3 ] || die "expected at least 3 gateway replicas, got $gateway"
-  [ "$frontend" -ge 3 ] || die "expected at least 3 frontend replicas, got $frontend"
-  [ "$backend" -ge 3 ] || die "expected at least 3 backend replicas, got $backend"
+  require_replica_spread_summary "$spread_tmp"
+  mv "$spread_tmp" "$REPLICA_SPREAD_FILE"
 }
 
 main() {
   command -v docker >/dev/null 2>&1 || die "docker is required"
+  require_docker_daemon
   PHASE3_EDGE_PORT=${PHASE3_EDGE_PORT:-$(env_value PHASE3_EDGE_PORT 18080)}
   EDGE_URL=${EDGE_URL:-http://127.0.0.1:${PHASE3_EDGE_PORT}}
   run_k6

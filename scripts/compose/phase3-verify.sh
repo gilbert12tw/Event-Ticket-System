@@ -18,6 +18,10 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
+require_docker_daemon() {
+  docker info >/dev/null 2>&1 || die "docker daemon access is required"
+}
+
 env_value() {
   key=$1
   default=$2
@@ -51,6 +55,52 @@ PROMETHEUS_URL=${CETS_PROMETHEUS_URL:-http://127.0.0.1:${PROMETHEUS_PORT}}
 LOKI_URL=${CETS_LOKI_URL:-http://127.0.0.1:${LOKI_PORT}}
 TEMPO_URL=${CETS_TEMPO_URL:-http://127.0.0.1:${TEMPO_PORT}}
 PYROSCOPE_URL=${CETS_PYROSCOPE_URL:-http://127.0.0.1:${PYROSCOPE_PORT}}
+ARTIFACT_DIR=${CETS_PHASE3_VERIFY_ARTIFACT_DIR:-$ROOT_DIR/artifacts/phase3-verify}
+RUN_ID=${CETS_PHASE3_VERIFY_RUN_ID:-$(date -u +%Y%m%d%H%M%S)}
+VERIFY_K6_PROFILE=${K6_PHASE3_VERIFY_PROFILE:-stress}
+VERIFY_REPORT="$ARTIFACT_DIR/phase3-verify-report-$RUN_ID.md"
+K6_ARTIFACT_DIR="$ARTIFACT_DIR/k6"
+K6_SUMMARY_EVIDENCE="$K6_ARTIFACT_DIR/phase3-$VERIFY_K6_PROFILE-summary-$RUN_ID.json"
+K6_REPLICA_SPREAD_EVIDENCE="$K6_ARTIFACT_DIR/phase3-$VERIFY_K6_PROFILE-replica-spread-$RUN_ID.txt"
+PROM_TARGETS_EVIDENCE="$ARTIFACT_DIR/prometheus-targets-$RUN_ID.txt"
+PROM_RED_EVIDENCE="$ARTIFACT_DIR/prometheus-red-$RUN_ID.txt"
+PROM_CONTROLLED_ERROR_EVIDENCE="$ARTIFACT_DIR/prometheus-controlled-error-$RUN_ID.txt"
+PROM_CONTROLLED_ERROR_QUERY='sum by (route,method,status_class) (cets_http_requests_total{route="/api/v1/auth/mock-provider-token",method="POST",status_class="4xx"})'
+PROM_CONTROLLED_ERROR_BASELINE=0
+TEMPO_SEARCH_EVIDENCE="$ARTIFACT_DIR/tempo-search-$RUN_ID.json"
+TEMPO_TRACE_EVIDENCE="$ARTIFACT_DIR/tempo-trace-$RUN_ID.json"
+TEMPO_ERROR_TRACE_EVIDENCE="$ARTIFACT_DIR/tempo-error-trace-$RUN_ID.json"
+SERVICE_GRAPH_EVIDENCE="$ARTIFACT_DIR/prometheus-service-graph-$RUN_ID.json"
+SERVICE_GRAPH_BACKEND_DEPENDENCY_EVIDENCE="$ARTIFACT_DIR/prometheus-service-graph-backend-dependency-$RUN_ID.json"
+SERVICE_GRAPH_INBOUND_QUERY='sum(traces_service_graph_request_total{server="cets-backend"})'
+SERVICE_GRAPH_BACKEND_DEPENDENCY_QUERY='sum(traces_service_graph_request_total{client="cets-backend"})'
+SERVICE_GRAPH_INBOUND_BASELINE=0
+SERVICE_GRAPH_BACKEND_DEPENDENCY_BASELINE=0
+PYROSCOPE_PROFILE_EVIDENCE="$ARTIFACT_DIR/pyroscope-profile-$RUN_ID.json"
+LOKI_TRACE_LOG_EVIDENCE="$ARTIFACT_DIR/loki-trace-logs-$RUN_ID.json"
+LOKI_ERROR_TRACE_LOG_EVIDENCE="$ARTIFACT_DIR/loki-error-trace-logs-$RUN_ID.json"
+LOKI_REDACTION_EVIDENCE="$ARTIFACT_DIR/loki-redaction-$RUN_ID.json"
+TEMPO_TRACE_IDS_FILTER="$ROOT_DIR/scripts/compose/phase3-tempo-trace-ids.jq"
+CONTROLLED_ERROR_TRACE_ID=$(printf '%032s' "$(printf '%s' "$RUN_ID" | tr -cd '0-9a-fA-F' | tail -c 32)" | tr ' ' '0')
+CONTROLLED_ERROR_SPAN_ID=0000000000000001
+if printf '%s\n' "$CONTROLLED_ERROR_TRACE_ID" | grep -Eq '^0+$'; then
+  CONTROLLED_ERROR_TRACE_ID=00000000000000000000000000000001
+fi
+
+# shellcheck source=scripts/compose/phase3-verify-report.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-report.sh"
+# shellcheck source=scripts/compose/phase3-verify-trace-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-trace-evidence.sh"
+# shellcheck source=scripts/compose/phase3-verify-loki-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-loki-evidence.sh"
+# shellcheck source=scripts/compose/phase3-verify-prometheus-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-prometheus-evidence.sh"
+# shellcheck source=scripts/compose/phase3-verify-service-graph-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-service-graph-evidence.sh"
+# shellcheck source=scripts/compose/phase3-verify-profile-evidence.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-profile-evidence.sh"
+# shellcheck source=scripts/compose/phase3-verify-lgtm-health.sh
+. "$ROOT_DIR/scripts/compose/phase3-verify-lgtm-health.sh"
 
 compose() {
   docker compose \
@@ -67,40 +117,6 @@ compose() {
 
 http_get() {
   curl -fsS "$1" >/dev/null
-}
-
-prom_query() {
-  curl -fsS --get --data-urlencode "query=$1" "$PROMETHEUS_URL/api/v1/query"
-}
-
-json_scalar_value() {
-  sed -n \
-    -e 's/.*"value":\[[^]]*,"\([0-9.][0-9.]*\)".*/\1/p' \
-    -e 's/.*"result":\[[^]]*,"\([0-9.][0-9.]*\)".*/\1/p' |
-    tail -n 1
-}
-
-prom_query_nonzero() {
-  query=$1
-  response=$(prom_query "$query" 2>/dev/null || true)
-  printf '%s\n' "$response" | grep -Eq '"value":\[[^]]+,"[0-9.]*[1-9][0-9.]*"\]'
-}
-
-prom_query_at_least() {
-  query=$1
-  minimum=$2
-  response=$(prom_query "$query" 2>/dev/null || true)
-  value=$(printf '%s\n' "$response" | json_scalar_value)
-  [ -n "$value" ] || return 1
-  awk -v value="$value" -v minimum="$minimum" 'BEGIN { exit(value >= minimum ? 0 : 1) }'
-}
-
-require_running() {
-  service=$1
-  container=$(compose ps -q "$service")
-  [ -n "$container" ] || die "$service has no container"
-  state=$(docker inspect --format '{{.State.Status}}' "$container")
-  [ "$state" = "running" ] || die "$service is $state"
 }
 
 require_healthy_or_running() {
@@ -135,185 +151,40 @@ check_smoke() {
 
 check_k6_distribution() {
   log "checking k6 Phase 3 load and replica distribution"
-  K6_PHASE3_PROFILE=${K6_PHASE3_VERIFY_PROFILE:-stress} \
+  K6_PHASE3_PROFILE="$VERIFY_K6_PROFILE" \
     CETS_PHASE3_URL="$EDGE_URL" \
     CETS_PHASE3_ENV_FILE="$ENV_FILE" \
+    CETS_PHASE3_K6_ARTIFACT_DIR="$K6_ARTIFACT_DIR" \
+    CETS_PHASE3_K6_SUMMARY="$K6_SUMMARY_EVIDENCE" \
+    CETS_PHASE3_K6_REPLICA_SPREAD="$K6_REPLICA_SPREAD_EVIDENCE" \
     "$ROOT_DIR/scripts/compose/phase3-k6.sh"
 }
 
-check_datasource() {
-  uid=$1
-  curl -fsS -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA_URL/api/datasources/uid/$uid" |
-    grep -Eq "\"uid\"[[:space:]]*:[[:space:]]*\"$uid\"" ||
-    die "Grafana datasource $uid is not provisioned"
-}
-
-wait_http_grep() {
-  label=$1
-  url=$2
-  pattern=$3
-  for _ in $(seq 1 24); do
-    if curl -fsS "$url" 2>/dev/null | grep -Eqi "$pattern"; then
-      return
-    fi
-    sleep 5
-  done
-  die "$label did not become ready"
-}
-
-check_lgtm_health() {
-  log "checking LGTM services and datasource provisioning"
-  for service in grafana prometheus loki tempo pyroscope alloy; do
-    require_running "$service"
-  done
-  wait_http_grep "Grafana" "$GRAFANA_URL/api/health" '"database"[[:space:]]*:[[:space:]]*"ok"'
-  wait_http_grep "Prometheus" "$PROMETHEUS_URL/-/ready" "Prometheus Server is Ready"
-  wait_http_grep "Loki" "$LOKI_URL/ready" "^ready$"
-  wait_http_grep "Tempo" "$TEMPO_URL/ready" "ready"
-  for _ in $(seq 1 24); do
-    if curl -fsS "$PYROSCOPE_URL/ready" >/dev/null 2>&1 ||
-      curl -fsS "$PYROSCOPE_URL/-/ready" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 5
-  done
-  curl -fsS "$PYROSCOPE_URL/ready" >/dev/null 2>&1 ||
-    curl -fsS "$PYROSCOPE_URL/-/ready" >/dev/null 2>&1 ||
-    die "Pyroscope did not report ready"
-  for uid in Prometheus Loki Tempo Pyroscope; do
-    check_datasource "$uid"
-  done
-}
-
-check_prometheus_targets() {
-  log "checking Prometheus backend targets"
-  targets=$(curl -fsS "$PROMETHEUS_URL/api/v1/targets?state=active")
-  printf '%s\n' "$targets" | grep -q '"job":"cets-backend"' || die "Prometheus cets-backend target missing"
-  printf '%s\n' "$targets" | grep -q '"health":"up"' || die "Prometheus has no healthy active targets"
-}
-
-check_prometheus_red_metrics() {
-  log "checking Prometheus RED metrics from k6 load"
-  for _ in $(seq 1 24); do
-    if prom_query_nonzero 'sum(increase(cets_http_requests_total[15m]))' &&
-      prom_query_nonzero 'sum(increase(cets_http_requests_total{status_class=~"4xx|5xx"}[15m]))' &&
-      prom_query_nonzero 'sum(increase(cets_http_request_seconds_count[15m]))' &&
-      prom_query_nonzero 'sum(increase(cets_booking_stage_seconds_count[15m]))' &&
-      prom_query_nonzero 'sum(increase(cets_reservation_attempt_total[15m]))' &&
-      prom_query_at_least 'scalar(count(count by (route, method, status_class) (increase(cets_http_requests_total[15m]) > 0)))' 3 &&
-      prom_query_at_least 'scalar(count(count by (instance) (increase(cets_http_requests_total[15m]) > 0)))' 3; then
-      return
-    fi
-    sleep 5
-  done
-  die "Prometheus did not return complete RED and booking bottleneck evidence by route, status class, latency, backend instance, booking stage, and reservation outcome"
-}
-
 TEMPO_TRACE_ID=""
-
-check_trace_ingest() {
-  log "checking Tempo trace ingest"
-  for _ in $(seq 1 24); do
-    traces=$(curl -fsS "$TEMPO_URL/api/search?tags=service.name%3Dcets-backend&limit=1" 2>/dev/null || true)
-    trace_id=$(printf '%s\n' "$traces" | sed -n 's/.*"traceID":"\([a-fA-F0-9][a-fA-F0-9]*\)".*/\1/p' | head -n 1)
-    if [ -n "$trace_id" ]; then
-      trace_detail=$(curl -fsS "$TEMPO_URL/api/traces/$trace_id" 2>/dev/null || true)
-      if printf '%s\n' "$trace_detail" | grep -q "cets-backend" &&
-        printf '%s\n' "$trace_detail" | grep -Eq "http.route|cets.route|rootTraceName"; then
-        TEMPO_TRACE_ID=$trace_id
-        return
-      fi
-    fi
-    if printf '%s\n' "$traces" | grep -q '"traceID"'; then
-      TEMPO_TRACE_ID=$(printf '%s\n' "$traces" | sed -n 's/.*"traceID":"\([a-fA-F0-9][a-fA-F0-9]*\)".*/\1/p' | head -n 1)
-      return
-    fi
-    http_get "$EDGE_URL/readyz"
-    sleep 5
-  done
-  die "Tempo did not return cets-backend traces with route evidence"
-}
-
-check_service_graph() {
-  log "checking Tempo service graph metrics"
-  for _ in $(seq 1 12); do
-    if prom_query_nonzero 'sum(increase(traces_service_graph_request_total[15m]))' &&
-      prom_query_nonzero 'sum(increase(traces_service_graph_request_total{server="cets-backend"}[15m]))'; then
-      return
-    fi
-    http_get "$EDGE_URL/readyz"
-    sleep 5
-  done
-  die "Prometheus did not return service graph metrics involving cets-backend"
-}
-
-check_profile_data() {
-  log "checking Pyroscope profile data"
-  for _ in $(seq 1 12); do
-    profile=$(curl -fsS --get \
-      --data-urlencode 'query=process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="cets-backend"}' \
-      --data-urlencode 'from=now-1h' \
-      --data-urlencode 'until=now' \
-      --data-urlencode 'maxNodes=64' \
-      "$PYROSCOPE_URL/pyroscope/render" 2>/dev/null || true)
-    if printf '%s\n' "$profile" | grep -Eq '"numTicks":[0-9]*[1-9][0-9]*'; then
-      return
-    fi
-    sleep 5
-  done
-  die "Pyroscope did not return cets-backend profile samples"
-}
-
-check_loki_logs_and_redaction() {
-  log "checking Loki trace logs and redaction"
-  [ -n "$TEMPO_TRACE_ID" ] || die "Tempo trace ID is required before Loki trace-log correlation"
-  for _ in $(seq 1 12); do
-    logs=$(curl -fsS --get \
-      --data-urlencode "query={service_name=~\"backend-.*\"} |= \"$TEMPO_TRACE_ID\" |= \"otel_trace_id\"" \
-      --data-urlencode "limit=1" \
-      "$LOKI_URL/loki/api/v1/query_range" 2>/dev/null || true)
-    if printf '%s\n' "$logs" | grep -q "otel_trace_id" &&
-      printf '%s\n' "$logs" | grep -q "$TEMPO_TRACE_ID"; then
-      break
-    fi
-    http_get "$EDGE_URL/readyz"
-    sleep 5
-  done
-  printf '%s\n' "${logs:-}" | grep -q "$TEMPO_TRACE_ID" ||
-    die "Loki did not return backend logs for Tempo trace $TEMPO_TRACE_ID"
-
-  compose rm -sf redaction-canary >/dev/null 2>&1 || true
-  docker rm -f cets-phase3-redaction-canary >/dev/null 2>&1 || true
-  compose up -d --force-recreate redaction-canary >/dev/null
-  for _ in $(seq 1 24); do
-    redacted_logs=$(curl -fsS "$LOKI_URL/loki/api/v1/query_range?query=%7Bservice_name%3D%22redaction-canary%22%7D%20%7C%3D%20%22phase3-redaction-canary%22&limit=5" 2>/dev/null || true)
-    if printf '%s\n' "$redacted_logs" | grep -q "phase3-redaction-canary"; then
-      printf '%s\n' "$redacted_logs" | grep -Eq "phase3-raw-(pii|signed|qr|provider|email-body|recipient-email|idempotency)-canary" &&
-        die "Loki contains a raw redaction canary secret"
-      printf '%s\n' "$redacted_logs" | grep -q "\[REDACTED\]" ||
-        die "Loki canary log was found but sensitive fields were not redacted"
-      compose rm -sf redaction-canary >/dev/null 2>&1 || true
-      return
-    fi
-    sleep 5
-  done
-  compose rm -sf redaction-canary >/dev/null 2>&1 || true
-  die "Loki did not return the redaction canary log"
-}
+TEMPO_ERROR_TRACE_ID=""
 
 main() {
   have docker || die "docker is required"
   have curl || die "curl is required"
+  have jq || die "jq is required"
+  require_docker_daemon
+  mkdir -p "$ARTIFACT_DIR"
+  chmod 0700 "$ARTIFACT_DIR"
   check_replicas
   check_smoke
-  check_k6_distribution
   check_lgtm_health
   check_prometheus_targets
+  capture_service_graph_baseline
+  check_k6_distribution
   check_prometheus_red_metrics
   check_trace_ingest
+  capture_prometheus_controlled_error_baseline
+  check_error_trace_ingest
+  check_prometheus_controlled_error_metrics
   check_service_graph
   check_profile_data
   check_loki_logs_and_redaction
+  write_verify_report
   log "Phase 3 Compose HA simulation verified"
 }
 

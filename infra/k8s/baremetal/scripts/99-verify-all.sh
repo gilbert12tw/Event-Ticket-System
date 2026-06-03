@@ -9,6 +9,7 @@ load_env
 REQUIRE_BGP=${REQUIRE_BGP:-false}
 REQUIRE_APPROVED_BROWSER=${REQUIRE_APPROVED_BROWSER:-true}
 RUN_FAILURE_DRILLS=${RUN_FAILURE_DRILLS:-false}
+RUN_POSTGRES_FAILOVER=${RUN_POSTGRES_FAILOVER:-false}
 APPROVED_BROWSER_VERIFIED=${APPROVED_BROWSER_VERIFIED:-false}
 
 run_check() {
@@ -26,8 +27,13 @@ run_check "observability" "$SCRIPT_DIR/66-verify-observability.sh"
 run_check "telemetry redaction" "$SCRIPT_DIR/67-verify-telemetry-redaction.sh"
 
 if [ "$RUN_FAILURE_DRILLS" = "true" ]; then
-  run_check "stateless workload and node failure drill" "$SCRIPT_DIR/70-failure-drill.sh"
-  run_check "PostgreSQL primary failover drill" "$SCRIPT_DIR/71-verify-postgres-failover.sh"
+  run_check "stateless workload failure drill" env BAREMETAL_DRILL_NODE_DRAIN=false "$SCRIPT_DIR/70-failure-drill.sh"
+  if [ "$RUN_POSTGRES_FAILOVER" = "true" ]; then
+    run_check "PostgreSQL primary failover drill" "$SCRIPT_DIR/71-verify-postgres-failover.sh"
+  else
+    run_check "PostgreSQL failover preflight" env BAREMETAL_PG_FAILOVER_PREFLIGHT_ONLY=true "$SCRIPT_DIR/71-verify-postgres-failover.sh"
+    log "verify-all: skipping PostgreSQL primary deletion; set RUN_POSTGRES_FAILOVER=true to execute it after an approved disruption window"
+  fi
 else
   log "verify-all: skipping failure drills; set RUN_FAILURE_DRILLS=true to execute disruptive drills"
 fi
