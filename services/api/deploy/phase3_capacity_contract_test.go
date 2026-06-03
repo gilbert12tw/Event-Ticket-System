@@ -107,6 +107,28 @@ func TestPhase3K6LoadScriptDeclaresDistributionAndErrorContracts(t *testing.T) {
 	}
 }
 
+func TestK8sErrorRateDemoScriptDeclaresExpectedErrorContract(t *testing.T) {
+	scriptPath := filepath.Join("..", "..", "..", "k6", "k8s-error-rate-demo.js")
+	require.FileExists(t, scriptPath)
+	script := readText(t, scriptPath)
+
+	for _, fragment := range []string{
+		`K6_ERROR_DEMO_RPS || "350"`,
+		`K6_ERROR_DEMO_DURATION || "120s"`,
+		`K6_ERROR_DEMO_ERROR_RATIO || "0.4"`,
+		`invalidBookingTraffic`,
+		`unauthorizedReadTraffic`,
+		`missingEventTraffic`,
+		`error_demo_expected`,
+		`http_req_failed{error_demo_expected:false}`,
+		`k8s_error_demo_expected_errors`,
+		`k8s_error_demo_unexpected_responses`,
+		`X-CETS-Benchmark": "k8s-error-demo"`,
+	} {
+		assert.Contains(t, script, fragment)
+	}
+}
+
 func TestPhase3CapacityScriptRequiresDistinctReplicaSpread(t *testing.T) {
 	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
 	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-replica-evidence.sh"))

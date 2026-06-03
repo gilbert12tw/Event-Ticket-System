@@ -40,6 +40,28 @@ func TestBaremetalCapacityDoesNotExposeProviderTokenOnDockerCommandLine(t *testi
 	assert.NotContains(t, script, `export PROVIDER_TOKEN_SECRET`)
 }
 
+func TestBaremetalErrorDemoUsesExpectedDefaultsAndEnvFileSecret(t *testing.T) {
+	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "69-demo-error-rate.sh"))
+
+	for _, fragment := range []string{
+		`SCRIPT=/k6/k8s-error-rate-demo.js`,
+		`ARTIFACT_DIR=${K8S_ERROR_DEMO_ARTIFACT_DIR:-$ROOT_DIR/artifacts/k8s-error-demo}`,
+		`DURATION=${K8S_ERROR_DEMO_DURATION:-120s}`,
+		`TARGET_RPS=${K8S_ERROR_DEMO_TARGET_RPS:-350}`,
+		`ERROR_RATIO=${K8S_ERROR_DEMO_ERROR_RATIO:-0.4}`,
+		`K6_ENV_FILE=$(mktemp "$ARTIFACT_DIR/k6-env-$RUN_ID.XXXXXX")`,
+		`chmod 0600 "$K6_ENV_FILE"`,
+		`printf 'K6_PROVIDER_TOKEN_SECRET=%s\n' "$(provider_secret)"`,
+		`--env-file "$K6_ENV_FILE"`,
+		`rm -f "$K6_ENV_FILE"`,
+		`k8s_error_demo_expected_errors`,
+		`http_req_failed`,
+	} {
+		assert.Contains(t, script, fragment)
+	}
+	assert.NotContains(t, script, `-e K6_PROVIDER_TOKEN_SECRET=`)
+}
+
 func TestBaremetalCapacityReportCapturesResourceEvidence(t *testing.T) {
 	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "64-benchmark-capacity.sh"))
 
