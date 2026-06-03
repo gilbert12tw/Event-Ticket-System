@@ -64,11 +64,13 @@ CapacityPressureRow:
         - integer
         - "null"
       minimum: 0
+      description: Null until a distinct booking rejection metric source is attached; this must not mirror rate-limit drops.
     rate_limit_drop_per_min:
       type:
         - integer
         - "null"
       minimum: 0
+      description: Recent booking.rate_limited audit count for the event.
     idempotency_replay_per_min:
       type:
         - integer

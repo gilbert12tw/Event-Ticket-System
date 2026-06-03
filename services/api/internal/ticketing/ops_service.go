@@ -61,32 +61,52 @@ func (s *Service) CapacityPressure(ctx context.Context, actor Actor) (CapacityPr
 		if err != nil {
 			return CapacityPressure{}, err
 		}
-		s.applyReservationPressure(ctx, &row)
 		pressure.Events = append(pressure.Events, row)
 	}
 	if err := rows.Err(); err != nil {
 		return CapacityPressure{}, err
 	}
+	s.applyReservationPressure(ctx, pressure.Events)
 	return pressure, nil
 }
 
-func (s *Service) applyReservationPressure(ctx context.Context, row *CapacityPressureRow) {
+func (s *Service) applyReservationPressure(ctx context.Context, rows []CapacityPressureRow) {
+	if len(rows) == 0 {
+		return
+	}
 	reader, ok := s.reservationGate.(reservation.PressureReader)
 	if !ok {
+		state := reservation.PressureStateDisabled
 		if s.reservationGate.Enabled() {
-			row.ReservationState = reservation.PressureStateUnavailable
-			return
+			state = reservation.PressureStateUnavailable
 		}
-		row.ReservationState = reservation.PressureStateDisabled
+		applyReservationState(rows, state)
 		return
 	}
-	snapshot, err := reader.PressureSnapshot(ctx, row.EventID)
+	eventIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		eventIDs = append(eventIDs, row.EventID)
+	}
+	snapshots, err := reader.PressureSnapshots(ctx, eventIDs)
 	if err != nil {
-		row.ReservationState = reservation.PressureStateUnavailable
+		applyReservationState(rows, reservation.PressureStateUnavailable)
 		return
 	}
-	row.ReservationState = snapshot.State
-	row.ReservationCount = snapshot.ActiveCount
+	for i := range rows {
+		snapshot, ok := snapshots[rows[i].EventID]
+		if !ok {
+			rows[i].ReservationState = reservation.PressureStateUnavailable
+			continue
+		}
+		rows[i].ReservationState = snapshot.State
+		rows[i].ReservationCount = snapshot.ActiveCount
+	}
+}
+
+func applyReservationState(rows []CapacityPressureRow, state string) {
+	for i := range rows {
+		rows[i].ReservationState = state
+	}
 }
 
 func (s *Service) ReportFreshness(ctx context.Context, actor Actor, thresholdSeconds int) (ReportFreshness, error) {
@@ -201,7 +221,6 @@ func scanCapacityPressureRow(row capacityPressureScanner) (CapacityPressureRow, 
 		pressure.RemainingCapacity = &value
 	}
 	pressure.RateLimitDropPerMin = &rateLimitDrops
-	pressure.RejectedPerMin = &rateLimitDrops
 	return pressure, nil
 }
 

@@ -155,6 +155,34 @@ func TestRedisGatePressureSnapshotCountsActiveHolds(t *testing.T) {
 	require.Equal(t, 1, snapshot.ActiveCount)
 }
 
+func TestRedisGatePressureSnapshotsCountActiveHoldsInOneBatch(t *testing.T) {
+	gate, client, cleanup := newTestGate(t)
+	defer cleanup()
+	ctx := context.Background()
+	firstEventID := uniqueEventID(t)
+	secondEventID := uniqueEventID(t)
+	hash := Hash([]byte("k"), "registration.book", firstEventID, "E1001", "pressure-batch-key")
+	defer client.Del(ctx,
+		remainingKey(firstEventID),
+		pendingKey(firstEventID),
+		holdKey(firstEventID, hash),
+		remainingKey(secondEventID),
+		pendingKey(secondEventID),
+	)
+
+	probe := func(ctx context.Context) (int, int64, error) { return 2, 1, nil }
+	_, err := gate.Reserve(ctx, firstEventID, hash, "actor", probe)
+	require.NoError(t, err)
+
+	snapshots, err := gate.PressureSnapshots(ctx, []string{firstEventID, secondEventID})
+
+	require.NoError(t, err)
+	require.Equal(t, PressureStateAvailable, snapshots[firstEventID].State)
+	require.Equal(t, 1, snapshots[firstEventID].ActiveCount)
+	require.Equal(t, PressureStateAvailable, snapshots[secondEventID].State)
+	require.Equal(t, 0, snapshots[secondEventID].ActiveCount)
+}
+
 func TestRedisGateExhaustedDoesNotDecrementBelowZero(t *testing.T) {
 	gate, client, cleanup := newTestGate(t)
 	defer cleanup()
@@ -185,6 +213,10 @@ func TestNoopGateAlwaysGrants(t *testing.T) {
 	snapshot, err := g.PressureSnapshot(context.Background(), "evt")
 	require.NoError(t, err)
 	require.Equal(t, PressureStateDisabled, snapshot.State)
+	snapshots, err := g.PressureSnapshots(context.Background(), []string{"evt_a", "evt_b"})
+	require.NoError(t, err)
+	require.Equal(t, PressureStateDisabled, snapshots["evt_a"].State)
+	require.Equal(t, PressureStateDisabled, snapshots["evt_b"].State)
 }
 
 func TestHashIsDeterministicAndDomainSeparated(t *testing.T) {

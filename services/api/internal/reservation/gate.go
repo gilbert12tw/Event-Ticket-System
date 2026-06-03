@@ -61,6 +61,7 @@ type PressureSnapshot struct {
 
 type PressureReader interface {
 	PressureSnapshot(ctx context.Context, eventID string) (PressureSnapshot, error)
+	PressureSnapshots(ctx context.Context, eventIDs []string) (map[string]PressureSnapshot, error)
 }
 
 // NoopGate is the disabled gate. Reserve always returns OutcomeGranted so the
@@ -78,6 +79,18 @@ func (NoopGate) Release(_ context.Context, _, _ string) error { return nil }
 
 func (NoopGate) PressureSnapshot(context.Context, string) (PressureSnapshot, error) {
 	return PressureSnapshot{State: PressureStateDisabled}, nil
+}
+
+func (NoopGate) PressureSnapshots(_ context.Context, eventIDs []string) (map[string]PressureSnapshot, error) {
+	return disabledPressureSnapshots(eventIDs), nil
+}
+
+func disabledPressureSnapshots(eventIDs []string) map[string]PressureSnapshot {
+	snapshots := make(map[string]PressureSnapshot, len(eventIDs))
+	for _, eventID := range eventIDs {
+		snapshots[eventID] = PressureSnapshot{State: PressureStateDisabled}
+	}
+	return snapshots
 }
 
 // ErrUnavailable is returned when the gate is configured to fail closed and

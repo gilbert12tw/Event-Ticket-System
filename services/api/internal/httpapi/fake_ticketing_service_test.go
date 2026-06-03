@@ -228,7 +228,6 @@ func (s *fakeTicketingService) CapacityPressure(_ context.Context, actor ticketi
 		RemainingCapacity:       &remaining,
 		ReservationCount:        4,
 		ReservationState:        "available",
-		RejectedPerMin:          &rateLimitDrop,
 		RateLimitDropPerMin:     &rateLimitDrop,
 		IdempotencyReplayPerMin: &idempotencyReplay,
 	}}}, nil

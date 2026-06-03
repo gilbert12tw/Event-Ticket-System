@@ -49,16 +49,38 @@ func NewRedisGate(client redis.UniversalClient, cfg Config, logger *slog.Logger)
 func (g *RedisGate) Enabled() bool { return g.cfg.Enabled }
 
 func (g *RedisGate) PressureSnapshot(ctx context.Context, eventID string) (PressureSnapshot, error) {
-	if !g.cfg.Enabled {
-		return PressureSnapshot{State: PressureStateDisabled}, nil
-	}
-	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
-	defer cancel()
-	count, err := g.client.ZCount(opCtx, pendingKey(eventID), strconv.FormatInt(time.Now().UTC().Unix(), 10), "+inf").Result()
+	snapshots, err := g.PressureSnapshots(ctx, []string{eventID})
 	if err != nil {
 		return PressureSnapshot{}, err
 	}
-	return PressureSnapshot{State: PressureStateAvailable, ActiveCount: int(count)}, nil
+	return snapshots[eventID], nil
+}
+
+func (g *RedisGate) PressureSnapshots(ctx context.Context, eventIDs []string) (map[string]PressureSnapshot, error) {
+	if !g.cfg.Enabled {
+		return disabledPressureSnapshots(eventIDs), nil
+	}
+	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
+	defer cancel()
+	pipe := g.client.Pipeline()
+	now := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	commands := make(map[string]*redis.IntCmd, len(eventIDs))
+	for _, eventID := range eventIDs {
+		commands[eventID] = pipe.ZCount(opCtx, pendingKey(eventID), now, "+inf")
+	}
+	_, err := pipe.Exec(opCtx)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make(map[string]PressureSnapshot, len(eventIDs))
+	for eventID, command := range commands {
+		count, err := command.Result()
+		if err != nil {
+			return nil, err
+		}
+		snapshots[eventID] = PressureSnapshot{State: PressureStateAvailable, ActiveCount: int(count)}
+	}
+	return snapshots, nil
 }
 
 func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actorHash string, probe CapacityProbe) (Hold, error) {

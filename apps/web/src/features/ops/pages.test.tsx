@@ -31,7 +31,7 @@ describe("OpsControlPlanePage", () => {
             remaining_capacity: 3,
             reservation_count: 9,
             reservation_state: "available",
-            rejected_per_min: 0,
+            rejected_per_min: null,
             rate_limit_drop_per_min: 0,
             idempotency_replay_per_min: 2,
           },

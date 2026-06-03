@@ -47,8 +47,7 @@ func TestCapacityPressureAggregatesPublishedEvents(t *testing.T) {
 	assert.Equal(t, 0, rows[fcfs.EventID].ReservationCount)
 	require.NotNil(t, rows[fcfs.EventID].RateLimitDropPerMin)
 	assert.Equal(t, 1, *rows[fcfs.EventID].RateLimitDropPerMin)
-	require.NotNil(t, rows[fcfs.EventID].RejectedPerMin)
-	assert.Equal(t, 1, *rows[fcfs.EventID].RejectedPerMin)
+	assert.Nil(t, rows[fcfs.EventID].RejectedPerMin)
 	assert.Equal(t, 0, rows[lottery.EventID].ConfirmedCount)
 	assert.Equal(t, 0, rows[lottery.EventID].WaitlistCount)
 	assert.Equal(t, 1, rows[lottery.EventID].ReceivedCount)
@@ -79,7 +78,7 @@ func TestCapacityPressureMarksReservationTelemetryUnavailable(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	service.WithReservationGate(pressureGate{state: reservation.PressureStateAvailable, err: errors.New("redis unavailable")}, []byte("secret"))
+	service.WithReservationGate(&pressureGate{state: reservation.PressureStateAvailable, err: errors.New("redis unavailable")}, []byte("secret"))
 	event := createPublishedEvent(t, service, ctx, engineeringEventRequest("Unavailable pressure", 1, 1))
 
 	pressure, err := service.CapacityPressure(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin})
@@ -95,16 +94,23 @@ func TestCapacityPressureReadsActiveReservationTelemetry(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
-	service.WithReservationGate(pressureGate{state: reservation.PressureStateAvailable, activeCount: 3}, []byte("secret"))
+	gate := &pressureGate{state: reservation.PressureStateAvailable, activeCount: 3}
+	service.WithReservationGate(gate, []byte("secret"))
 	event := createPublishedEvent(t, service, ctx, engineeringEventRequest("Available pressure", 5, 1))
+	otherEvent := createPublishedEvent(t, service, ctx, engineeringEventRequest("Available pressure 2", 5, 1))
 
 	pressure, err := service.CapacityPressure(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin})
 
 	require.NoError(t, err)
 	rows := capacityPressureByEvent(pressure)
 	require.Contains(t, rows, event.EventID)
+	require.Contains(t, rows, otherEvent.EventID)
 	assert.Equal(t, reservation.PressureStateAvailable, rows[event.EventID].ReservationState)
 	assert.Equal(t, 3, rows[event.EventID].ReservationCount)
+	assert.Equal(t, reservation.PressureStateAvailable, rows[otherEvent.EventID].ReservationState)
+	assert.Equal(t, 3, rows[otherEvent.EventID].ReservationCount)
+	assert.Equal(t, 1, gate.bulkCalls)
+	assert.Equal(t, 0, gate.singleCalls)
 }
 
 func TestCapacityPressureRequiresOpsRole(t *testing.T) {
@@ -291,22 +297,37 @@ type pressureGate struct {
 	state       string
 	activeCount int
 	err         error
+	singleCalls int
+	bulkCalls   int
 }
 
-func (g pressureGate) Enabled() bool { return true }
+func (g *pressureGate) Enabled() bool { return true }
 
-func (g pressureGate) Reserve(context.Context, string, string, string, reservation.CapacityProbe) (reservation.Hold, error) {
+func (g *pressureGate) Reserve(context.Context, string, string, string, reservation.CapacityProbe) (reservation.Hold, error) {
 	return reservation.Hold{Outcome: reservation.OutcomeGranted}, nil
 }
 
-func (g pressureGate) Confirm(context.Context, string, string) error { return nil }
-func (g pressureGate) Release(context.Context, string, string) error { return nil }
+func (g *pressureGate) Confirm(context.Context, string, string) error { return nil }
+func (g *pressureGate) Release(context.Context, string, string) error { return nil }
 
-func (g pressureGate) PressureSnapshot(context.Context, string) (reservation.PressureSnapshot, error) {
+func (g *pressureGate) PressureSnapshot(context.Context, string) (reservation.PressureSnapshot, error) {
+	g.singleCalls++
 	if g.err != nil {
 		return reservation.PressureSnapshot{}, g.err
 	}
 	return reservation.PressureSnapshot{State: g.state, ActiveCount: g.activeCount}, nil
+}
+
+func (g *pressureGate) PressureSnapshots(_ context.Context, eventIDs []string) (map[string]reservation.PressureSnapshot, error) {
+	g.bulkCalls++
+	if g.err != nil {
+		return nil, g.err
+	}
+	snapshots := make(map[string]reservation.PressureSnapshot, len(eventIDs))
+	for _, eventID := range eventIDs {
+		snapshots[eventID] = reservation.PressureSnapshot{State: g.state, ActiveCount: g.activeCount}
+	}
+	return snapshots, nil
 }
 
 func capacityPressureByEvent(pressure CapacityPressure) map[string]CapacityPressureRow {
