@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-
 const projectionProjectionName = "event_summary"
 
 // processClaimedProjectionOutbox is the top-level handler for a claimed
@@ -175,8 +174,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 
 // normalizeProjectionTriggerType strips .v<N> version suffixes from trigger
 // event types so they match the canonical inner-type constants.
-// "booking.confirmed.v2" → "booking.confirmed"
-// "booking.confirmed"    → "booking.confirmed" (no-op)
+// For example, it converts a string ending in ".v2" to omit the suffix.
 func normalizeProjectionTriggerType(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if idx := strings.LastIndex(raw, ".v"); idx > 0 {

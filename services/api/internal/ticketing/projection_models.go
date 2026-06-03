@@ -2,11 +2,11 @@ package ticketing
 
 // Inner event types carried inside a reporting.projection.update_required.v2 envelope.
 const (
-	projectionInnerTypeBookingConfirmed       = "booking.confirmed"
-	projectionInnerTypeBookingCancelled       = "booking.cancelled"
-	projectionInnerTypeBookingWaitlisted      = "booking.waitlisted"
-	projectionInnerTypeBookingWaitlistCancel  = "booking.waitlist_cancelled"
-	projectionInnerTypeCheckinCompleted       = "checkin.completed"
+	projectionInnerTypeBookingConfirmed      = "booking.confirmed"
+	projectionInnerTypeBookingCancelled      = "booking.cancelled"
+	projectionInnerTypeBookingWaitlisted     = "booking.waitlisted"
+	projectionInnerTypeBookingWaitlistCancel = "booking.waitlist_cancelled"
+	projectionInnerTypeCheckinCompleted      = "checkin.completed"
 )
 
 // ProjectionEvent is the decoded inner payload extracted from a
