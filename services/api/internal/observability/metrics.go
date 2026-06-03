@@ -59,12 +59,6 @@ func (m DatabaseMetrics) QueryRow(ctx context.Context, sql string, args ...inter
 	return m.Write.QueryRow(ctx, sql, args...)
 }
 
-type Registry struct {
-	mu          sync.Mutex
-	http        map[httpKey]*histogram
-	booking     map[bookingStageKey]*histogram
-	reservation map[reservationKey]*histogram
-}
 
 type httpKey struct {
 	Route       string
@@ -78,11 +72,20 @@ type histogram struct {
 	Sum     float64
 }
 
+type Registry struct {
+	mu          sync.Mutex
+	http        map[httpKey]*histogram
+	booking     map[bookingStageKey]*histogram
+	reservation map[reservationKey]*histogram
+	projection  *histogram // single histogram for projection lag
+}
+
 func NewRegistry() *Registry {
 	return &Registry{
 		http:        map[httpKey]*histogram{},
 		booking:     map[bookingStageKey]*histogram{},
 		reservation: map[reservationKey]*histogram{},
+		projection:  &histogram{Buckets: make([]uint64, len(httpBuckets))},
 	}
 }
 
@@ -161,6 +164,36 @@ func (r *Registry) ObserveReservationAttempt(outcome string, capacityType string
 	observeDuration(h, duration.Seconds())
 }
 
+func (r *Registry) ObserveProjectionLag(duration time.Duration) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	observeDuration(r.projection, duration.Seconds())
+}
+
+type ProjectionMetricsSnapshot struct {
+	LagBuckets []uint64
+	LagCount   uint64
+	LagSum     float64
+	Processed  uint64
+}
+
+func (r *Registry) ProjectionSnapshot() ProjectionMetricsSnapshot {
+	if r == nil {
+		return ProjectionMetricsSnapshot{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return ProjectionMetricsSnapshot{
+		LagBuckets: append([]uint64(nil), r.projection.Buckets...),
+		LagCount:   r.projection.Count,
+		LagSum:     r.projection.Sum,
+		Processed:  r.projection.Count, // events processed is same as lag count
+	}
+}
+
 func observeDuration(h *histogram, seconds float64) {
 	for i, bucket := range httpBuckets {
 		if seconds <= bucket {
@@ -185,6 +218,7 @@ func (r *Registry) WritePrometheus(ctx context.Context, w io.Writer, db any) {
 	r.writeHTTPMetrics(w)
 	r.writeBookingMetrics(w)
 	r.writeReservationMetrics(w)
+	r.writeProjectionMetrics(w)
 	writePoolMetrics(w, db)
 	writeSQLMetrics(ctx, w, db)
 }
@@ -321,6 +355,29 @@ func buildAllowedOutboxMetricEventTypes() map[string]struct{} {
 		allowed[eventType] = struct{}{}
 	}
 	return allowed
+}
+
+func (r *Registry) writeProjectionMetrics(w io.Writer) {
+	writeLine(w, "# HELP cets_projection_worker_lag_seconds Projection worker lag in seconds.")
+	writeLine(w, "# TYPE cets_projection_worker_lag_seconds histogram")
+	writeLine(w, "# HELP cets_projection_worker_events_processed_total Projection worker processed events.")
+	writeLine(w, "# TYPE cets_projection_worker_events_processed_total counter")
+
+	r.mu.Lock()
+	h := histogram{
+		Buckets: append([]uint64(nil), r.projection.Buckets...),
+		Count:   r.projection.Count,
+		Sum:     r.projection.Sum,
+	}
+	r.mu.Unlock()
+
+	writeFormat(w, "cets_projection_worker_events_processed_total %d\n", h.Count)
+	for i, bucket := range httpBuckets {
+		writeFormat(w, "cets_projection_worker_lag_seconds_bucket{le=%q} %d\n", formatBucket(bucket), h.Buckets[i])
+	}
+	writeFormat(w, "cets_projection_worker_lag_seconds_bucket{le=\"+Inf\"} %d\n", h.Count)
+	writeFormat(w, "cets_projection_worker_lag_seconds_sum %s\n", strconv.FormatFloat(h.Sum, 'f', -1, 64))
+	writeFormat(w, "cets_projection_worker_lag_seconds_count %d\n", h.Count)
 }
 
 func writeLine(w io.Writer, line string) {

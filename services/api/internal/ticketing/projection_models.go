@@ -18,6 +18,8 @@ type ProjectionEvent struct {
 	EventID string
 	// OutboxID is the outbox row ID used as the idempotency offset.
 	OutboxID string
+	// TriggerEventID is the outbox_id of the original event that triggered this projection.
+	TriggerEventID string
 	// InnerType is the original domain event type (e.g. "booking.confirmed").
 	InnerType string
 	// Department label — only the label is stored, never employee identifiers.

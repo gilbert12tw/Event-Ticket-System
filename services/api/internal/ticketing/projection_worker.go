@@ -3,7 +3,9 @@ package ticketing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	"event-ticket-system/internal/traceid"
 
@@ -35,6 +37,20 @@ func (s *Service) processClaimedProjectionOutbox(
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	}
 
+	if proj.InnerType == "" && proj.TriggerEventID != "" {
+		var rawEventType string
+		err := tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1`, proj.TriggerEventID).Scan(&rawEventType)
+		if err != nil {
+			logAttempt(outboxAttemptOutcomeError)
+			return 0, err
+		}
+		proj.InnerType = normalizeProjectionTriggerType(rawEventType)
+		if proj.InnerType == "" {
+			s.logProjectionSkip(ctx, claim, "decode_failed")
+			return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+		}
+	}
+
 	switch proj.InnerType {
 	case projectionInnerTypeCheckinCompleted:
 		// checkin has no aggregate effect — advance offset and mark published.
@@ -42,7 +58,9 @@ func (s *Service) processClaimedProjectionOutbox(
 			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
-		recordProjectionLag(claim.leaseStartedAt)
+		if s != nil && s.metrics != nil {
+			s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
+		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	case projectionInnerTypeBookingConfirmed,
 		projectionInnerTypeBookingCancelled,
@@ -79,7 +97,9 @@ func (s *Service) processClaimedProjectionOutbox(
 		return 0, err
 	}
 
-	recordProjectionLag(claim.leaseStartedAt)
+	if s != nil && s.metrics != nil {
+		s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
+	}
 	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 }
 
@@ -132,20 +152,20 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	if claim.schemaVersion == 2 {
 		var v2 struct {
 			Payload struct {
-				AggregateID      string `json:"aggregate_id"`
-				TriggerEventType string `json:"trigger_event_type"`
-				Department       string `json:"department"`
+				AggregateID    string `json:"aggregate_id"`
+				TriggerEventID string `json:"trigger_event_id"`
+				Department     string `json:"department"`
 			} `json:"payload"`
 		}
 		if err := json.Unmarshal([]byte(claim.payloadText), &v2); err == nil {
 			eventID := strings.TrimSpace(v2.Payload.AggregateID)
-			innerType := normalizeProjectionTriggerType(v2.Payload.TriggerEventType)
-			if eventID != "" && innerType != "" {
+			triggerEventID := strings.TrimSpace(v2.Payload.TriggerEventID)
+			if eventID != "" && triggerEventID != "" {
 				return ProjectionEvent{
-					EventID:    eventID,
-					OutboxID:   claim.outboxID,
-					InnerType:  innerType,
-					Department: strings.TrimSpace(v2.Payload.Department),
+					EventID:        eventID,
+					OutboxID:       fmt.Sprintf("%s|%s", claim.createdAt.Format(time.RFC3339Nano), claim.outboxID),
+					TriggerEventID: triggerEventID,
+					Department:     strings.TrimSpace(v2.Payload.Department),
 				}, true
 			}
 		}
@@ -166,7 +186,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	}
 	return ProjectionEvent{
 		EventID:    eventID,
-		OutboxID:   claim.outboxID,
+		OutboxID:   fmt.Sprintf("%s|%s", claim.createdAt.Format(time.RFC3339Nano), claim.outboxID),
 		InnerType:  innerType,
 		Department: strings.TrimSpace(v1.Department),
 	}, true

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"event-ticket-system/internal/observability"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -161,7 +163,8 @@ func TestProjectionWorker_CountNeverGoesBelowZero(t *testing.T) {
 func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 	service, ctx := newWorkerTest(t)
 	// Seed the primary event with a higher outbox ID.
-	insertProjectionOutbox(t, service, ctx, "ob-500", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	now := time.Now().UTC()
+	insertProjectionOutboxAt(t, service, ctx, "ob-500", "evt_1", projectionInnerTypeBookingConfirmed, now)
 
 	// Process first time.
 	processed, err := runProjectionWorkerOnce(service, ctx)
@@ -169,9 +172,8 @@ func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 	assert.Equal(t, 1, processed)
 
 	// Seed a second outbox row with a LOWER outboxID to simulate stale replay.
-	// The idempotency guard should prevent it from overwriting the row written
-	// by ob-500 (lexicographically ob-300 < ob-500).
-	insertProjectionOutbox(t, service, ctx, "ob-300", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	// We give it an older timestamp to ensure it's treated as older.
+	insertProjectionOutboxAt(t, service, ctx, "ob-300", "evt_1", projectionInnerTypeBookingConfirmed, now.Add(-1*time.Minute))
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
@@ -180,24 +182,27 @@ func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 }
 
 // Test 5: an older offset must not overwrite a newer projection state.
-// Uses padded IDs so lexicographic GREATEST comparison works correctly.
 func TestProjectionWorker_OlderEventDoesNotOverwriteNewer(t *testing.T) {
 	service, ctx := newWorkerTest(t)
 
-	// Process ob-010 first — sets confirmed_count to 1 and last_event_offset = ob-010.
-	insertProjectionOutbox(t, service, ctx, "ob-010", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	now := time.Now().UTC()
+
+	// Process ob-010 first — sets confirmed_count to 1.
+	insertProjectionOutboxAt(t, service, ctx, "ob-010", "evt_1", projectionInnerTypeBookingConfirmed, now)
 	_, err := runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
-	// Then replay ob-003 (lexicographically older than ob-010).
+	// Then replay ob-003 with an OLDER created_at.
 	// The ON CONFLICT guard prevents it from overwriting the state written by ob-010.
-	insertProjectionOutbox(t, service, ctx, "ob-003", "evt_1", projectionInnerTypeBookingCancelled, "Engineering")
+	insertProjectionOutboxAt(t, service, ctx, "ob-003", "evt_1", projectionInnerTypeBookingCancelled, now.Add(-1*time.Minute))
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
 	row := readEventSummary(t, service, ctx, "evt_1")
 	assert.Equal(t, 1, row.ConfirmedCount, "older event must not overwrite confirmed_count set by newer event")
-	assert.Equal(t, "ob-010", row.LastEventOffset, "last_event_offset must remain at newer offset")
+	
+	expectedOffset := fmt.Sprintf("%s|%s", now.Format(time.RFC3339Nano), "ob-010")
+	assert.Equal(t, expectedOffset, row.LastEventOffset, "last_event_offset must remain at newer offset")
 }
 
 // AC-4 / Test 6: last_processed_outbox_id advances after every successful event.
@@ -213,7 +218,7 @@ func TestProjectionWorker_OffsetAdvancesAfterProcessing(t *testing.T) {
 	}
 
 	offset := readProjectionOffset(t, service, ctx, projectionProjectionName)
-	assert.Equal(t, "ob-3", offset)
+	assert.Contains(t, offset, "ob-3")
 }
 
 // AC-7 / Test 7: unknown inner event types are skipped without error or
@@ -268,17 +273,12 @@ func TestProjectionWorker_LagMetricRecorded(t *testing.T) {
 	insertProjectionOutboxAt(t, service, ctx, "ob-lag", "evt_lag", projectionInnerTypeBookingConfirmed, past)
 
 	// Reset global metrics so the snapshot is clean.
-	globalProjectionMetrics.mu.Lock()
-	globalProjectionMetrics.lagBuckets = make([]uint64, len(projectionLagBuckets))
-	globalProjectionMetrics.lagCount = 0
-	globalProjectionMetrics.lagSum = 0
-	globalProjectionMetrics.processed = 0
-	globalProjectionMetrics.mu.Unlock()
+	service.metrics = observability.NewRegistry()
 
 	_, err := runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
-	snap := globalProjectionMetrics.Snapshot()
+	snap := service.metrics.ProjectionSnapshot()
 	assert.GreaterOrEqual(t, snap.LagCount, uint64(1), "at least one lag observation expected")
 	// The lag should be positive (the lease is acquired after created_at).
 	assert.Greater(t, snap.LagSum, 0.0, "lag sum must be positive")
