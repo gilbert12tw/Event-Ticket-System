@@ -30,6 +30,9 @@ func (s *Service) processClaimedOutbox(ctx context.Context, tx pgx.Tx, options O
 	if isReportExportRequestedEventType(claim.eventType) {
 		return s.processClaimedReportExportOutbox(ctx, tx, claim, options.ReportStore, retryPolicy, logAttempt)
 	}
+	if claim.eventType == outboxEventReportingProjectionUpdateRequiredV2 {
+		return s.processClaimedProjectionOutbox(ctx, tx, claim, logAttempt)
+	}
 	employeeID := recipientEmployeeIDForOutbox(claim.eventType, payload)
 	if employeeID == "" {
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)

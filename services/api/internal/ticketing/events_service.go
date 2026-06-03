@@ -363,12 +363,23 @@ func applyEligibilityCompatibilityFields(summary *EventSummary) {
 
 func (s *Service) populateCurrentUserRegistration(ctx context.Context, summary *EventSummary, eventID string, employeeID string) error {
 	reg, ticket, found, err := s.findRegistrationByEmployee(ctx, eventID, employeeID)
-	if err != nil || !found {
+	if err != nil {
 		return err
 	}
-	summary.CurrentUserStatus = reg.Status
-	summary.CurrentUserRegistrationID = reg.RegistrationID
-	summary.CurrentUserTicket = sanitizeTicket(ticket)
+	if found {
+		summary.CurrentUserStatus = reg.Status
+		summary.CurrentUserRegistrationID = reg.RegistrationID
+		summary.CurrentUserTicket = sanitizeTicket(ticket)
+		return nil
+	}
+
+	banned, err := s.hasActiveBookingBan(ctx, eventID, employeeID)
+	if err != nil {
+		return err
+	}
+	if banned {
+		summary.CurrentUserStatus = RegistrationCancelled
+	}
 	return nil
 }
 

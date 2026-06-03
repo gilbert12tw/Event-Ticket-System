@@ -1,0 +1,311 @@
+package ticketing
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// projectionWorkerOptions returns OutboxProcessorOptions for the projection
+// worker kind. No sender or report store is required.
+func projectionWorkerOptions() OutboxProcessorOptions {
+	return OutboxProcessorOptions{
+		WorkerKinds: []string{outboxWorkerKindProjection},
+		MaxAttempts: 3,
+	}
+}
+
+// insertProjectionOutbox seeds a reporting.projection.update_required.v2
+// outbox event in the schema_version=1 flat payload format.
+// outboxID is the PK; eventID is the aggregate (domain event); innerType is
+// the trigger (e.g. "booking.confirmed"); department may be empty.
+func insertProjectionOutbox(
+	t *testing.T,
+	service *Service,
+	ctx context.Context,
+	outboxID string,
+	eventID string,
+	innerType string,
+	department string,
+) {
+	t.Helper()
+	payload := map[string]interface{}{
+		"aggregate_id":     eventID,
+		"inner_event_type": innerType,
+		"department":       department,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO outbox_events
+			(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts, available_at)
+		VALUES ($1, $2, $3, $4::jsonb, 'pending', 1, 0, now() - interval '1 second')`,
+		outboxID,
+		outboxID+"-agg",
+		outboxEventReportingProjectionUpdateRequiredV2,
+		string(payloadJSON),
+	)
+	require.NoError(t, err)
+}
+
+// insertProjectionOutboxAt seeds a projection outbox event with a specific
+// created_at timestamp (for lag-metric tests).
+func insertProjectionOutboxAt(
+	t *testing.T,
+	service *Service,
+	ctx context.Context,
+	outboxID string,
+	eventID string,
+	innerType string,
+	createdAt time.Time,
+) {
+	t.Helper()
+	payload := map[string]interface{}{
+		"aggregate_id":     eventID,
+		"inner_event_type": innerType,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO outbox_events
+			(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts, available_at, created_at)
+		VALUES ($1, $2, $3, $4::jsonb, 'pending', 1, 0, $5, $5)`,
+		outboxID,
+		outboxID+"-agg",
+		outboxEventReportingProjectionUpdateRequiredV2,
+		string(payloadJSON),
+		createdAt,
+	)
+	require.NoError(t, err)
+}
+
+// readEventSummary reads the current reporting_event_summary row.
+func readEventSummary(t *testing.T, service *Service, ctx context.Context, eventID string) eventSummaryRow {
+	t.Helper()
+	row, err := getEventSummaryRow(ctx, service.db, eventID)
+	require.NoError(t, err)
+	return row
+}
+
+// readProjectionOffset reads the last_processed_outbox_id for the named
+// projection, or "" when no row exists.
+func readProjectionOffset(t *testing.T, service *Service, ctx context.Context, name string) string {
+	t.Helper()
+	offset, err := getProjectionOffset(ctx, service.db, name)
+	if err != nil {
+		return ""
+	}
+	return offset
+}
+
+// runProjectionWorkerOnce runs exactly one projection outbox event through the
+// worker and returns (processed, err).
+func runProjectionWorkerOnce(service *Service, ctx context.Context) (int, error) {
+	return service.ProcessOutboxOnceWithOptions(ctx, projectionWorkerOptions())
+}
+
+// ---- Test cases (10 total) ---- //
+
+// AC-1 / Test 1: a booking.confirmed event increments confirmed_count and
+// updates department_breakdown.
+func TestProjectionWorker_ConfirmedBookingUpdatesCount(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 1, row.ConfirmedCount)
+	assert.Equal(t, 1, row.DepartmentBreakdown["Engineering"])
+}
+
+// AC-3 / Test 2: two confirmed then one cancelled leaves confirmed_count=1 and
+// cancelled_count=1.
+func TestProjectionWorker_CancelledBookingDecrementsCount(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	insertProjectionOutbox(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	insertProjectionOutbox(t, service, ctx, "ob-3", "evt_1", projectionInnerTypeBookingCancelled, "Engineering")
+
+	for i := 0; i < 3; i++ {
+		_, err := runProjectionWorkerOnce(service, ctx)
+		require.NoError(t, err)
+	}
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 1, row.ConfirmedCount)
+	assert.Equal(t, 1, row.CancelledCount)
+}
+
+// Test 3: counts never go below zero even if a cancel arrives with no prior
+// confirmed.
+func TestProjectionWorker_CountNeverGoesBelowZero(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingCancelled, "Engineering")
+
+	_, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 0, row.ConfirmedCount, "confirmed_count must not go below 0")
+}
+
+// AC-2 / Test 4: replaying the same outbox event twice must NOT double-count.
+func TestProjectionWorker_IdempotentReplay(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	// Seed the primary event with a higher outbox ID.
+	insertProjectionOutbox(t, service, ctx, "ob-500", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+
+	// Process first time.
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	// Seed a second outbox row with a LOWER outboxID to simulate stale replay.
+	// The idempotency guard should prevent it from overwriting the row written
+	// by ob-500 (lexicographically ob-300 < ob-500).
+	insertProjectionOutbox(t, service, ctx, "ob-300", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	_, err = runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 1, row.ConfirmedCount, "replayed stale event must not increment count again")
+}
+
+// Test 5: an older offset must not overwrite a newer projection state.
+// Uses padded IDs so lexicographic GREATEST comparison works correctly.
+func TestProjectionWorker_OlderEventDoesNotOverwriteNewer(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+
+	// Process ob-010 first — sets confirmed_count to 1 and last_event_offset = ob-010.
+	insertProjectionOutbox(t, service, ctx, "ob-010", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	_, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	// Then replay ob-003 (lexicographically older than ob-010).
+	// The ON CONFLICT guard prevents it from overwriting the state written by ob-010.
+	insertProjectionOutbox(t, service, ctx, "ob-003", "evt_1", projectionInnerTypeBookingCancelled, "Engineering")
+	_, err = runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 1, row.ConfirmedCount, "older event must not overwrite confirmed_count set by newer event")
+	assert.Equal(t, "ob-010", row.LastEventOffset, "last_event_offset must remain at newer offset")
+}
+
+// AC-4 / Test 6: last_processed_outbox_id advances after every successful event.
+func TestProjectionWorker_OffsetAdvancesAfterProcessing(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	insertProjectionOutbox(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	insertProjectionOutbox(t, service, ctx, "ob-3", "evt_1", projectionInnerTypeBookingConfirmed, "")
+
+	for i := 0; i < 3; i++ {
+		_, err := runProjectionWorkerOnce(service, ctx)
+		require.NoError(t, err)
+	}
+
+	offset := readProjectionOffset(t, service, ctx, projectionProjectionName)
+	assert.Equal(t, "ob-3", offset)
+}
+
+// AC-7 / Test 7: unknown inner event types are skipped without error or
+// dead-letter; confirmed_count remains unchanged.
+func TestProjectionWorker_UnknownInnerEventTypeIsSkipped(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", "booking.unknown_v99", "")
+
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	var deadLetterCount int
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT count(*) FROM outbox_events WHERE outbox_id = 'ob-1' AND publish_status = 'dead_letter'`,
+	).Scan(&deadLetterCount))
+	assert.Equal(t, 0, deadLetterCount, "unknown inner types must not be dead-lettered")
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 0, row.ConfirmedCount, "confirmed_count must be unchanged for unknown inner type")
+}
+
+// AC-8 / Test 8: crash recovery — worker processes from last committed offset
+// with no double-counts.
+func TestProjectionWorker_CrashRecovery(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	insertProjectionOutbox(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, "")
+
+	// Process ob-1 and ob-2 normally.
+	_, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	_, err = runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	// Simulate a "restart": ob-2 is re-queued as ob-2b with the same inner
+	// event but a lower offset than the current watermark — idempotency guard
+	// must prevent double-count.
+	insertProjectionOutbox(t, service, ctx, "ob-1b", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	_, err = runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 2, row.ConfirmedCount, "no double-count after crash recovery replay")
+}
+
+// AC-5 / Test 9: lag metric is recorded after processing.
+func TestProjectionWorker_LagMetricRecorded(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	// Seed an event with created_at = now() - 45s.
+	past := time.Now().Add(-45 * time.Second)
+	insertProjectionOutboxAt(t, service, ctx, "ob-lag", "evt_lag", projectionInnerTypeBookingConfirmed, past)
+
+	// Reset global metrics so the snapshot is clean.
+	globalProjectionMetrics.mu.Lock()
+	globalProjectionMetrics.lagBuckets = make([]uint64, len(projectionLagBuckets))
+	globalProjectionMetrics.lagCount = 0
+	globalProjectionMetrics.lagSum = 0
+	globalProjectionMetrics.processed = 0
+	globalProjectionMetrics.mu.Unlock()
+
+	_, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+
+	snap := globalProjectionMetrics.Snapshot()
+	assert.GreaterOrEqual(t, snap.LagCount, uint64(1), "at least one lag observation expected")
+	// The lag should be positive (the lease is acquired after created_at).
+	assert.Greater(t, snap.LagSum, 0.0, "lag sum must be positive")
+}
+
+// AC-7 (AC-10) / Test 10: projection worker does not process notification
+// events — an event_type of 'booking.confirmed' (notification kind) must not
+// be claimed by the projection worker.
+func TestProjectionWorker_DoesNotProcessNotificationEvents(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	// Insert a notification-kind outbox event (not a projection event).
+	_, err := service.db.Exec(ctx, `
+		INSERT INTO outbox_events
+			(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts, available_at)
+		VALUES ($1, $2, 'booking.confirmed', '{"employee_id":"E1001"}'::jsonb, 'pending', 1, 0, now() - interval '1 second')`,
+		fmt.Sprintf("ob-notif-%d", time.Now().UnixNano()),
+		"notif-agg",
+	)
+	require.NoError(t, err)
+
+	// The projection worker should not pick up this event.
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, processed, "projection worker must not claim notification-kind events")
+
+	// reporting_event_summary must remain empty.
+	var count int
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT count(*) FROM reporting_event_summary`).Scan(&count))
+	assert.Equal(t, 0, count)
+}
