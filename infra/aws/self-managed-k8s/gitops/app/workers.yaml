@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-notification
+  labels:
+    app.kubernetes.io/part-of: cets
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-notification
+  template:
+    metadata:
+      labels:
+        app: worker-notification
+    spec:
+      containers:
+        - name: worker
+          image: cets-api
+          imagePullPolicy: IfNotPresent
+          args: ["worker"]
+          env:
+            - name: WORKER_KINDS
+              value: "notification"
+          envFrom:
+            - configMapRef:
+                name: cets-config
+            - secretRef:
+                name: cets-runtime-env
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-projection
+  labels:
+    app.kubernetes.io/part-of: cets
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-projection
+  template:
+    metadata:
+      labels:
+        app: worker-projection
+    spec:
+      containers:
+        - name: worker
+          image: cets-api
+          imagePullPolicy: IfNotPresent
+          args: ["worker"]
+          env:
+            - name: WORKER_KINDS
+              value: "projection"
+          envFrom:
+            - configMapRef:
+                name: cets-config
+            - secretRef:
+                name: cets-runtime-env
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-compensation
+  labels:
+    app.kubernetes.io/part-of: cets
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-compensation
+  template:
+    metadata:
+      labels:
+        app: worker-compensation
+    spec:
+      containers:
+        - name: worker
+          image: cets-api
+          imagePullPolicy: IfNotPresent
+          args: ["worker"]
+          env:
+            - name: WORKER_KINDS
+              value: "compensation"
+          envFrom:
+            - configMapRef:
+                name: cets-config
+            - secretRef:
+                name: cets-runtime-env
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-export
+  labels:
+    app.kubernetes.io/part-of: cets
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-export
+  template:
+    metadata:
+      labels:
+        app: worker-export
+    spec:
+      containers:
+        - name: worker
+          image: cets-api
+          imagePullPolicy: IfNotPresent
+          args: ["worker"]
+          env:
+            - name: WORKER_KINDS
+              value: "export"
+          envFrom:
+            - configMapRef:
+                name: cets-config
+            - secretRef:
+                name: cets-runtime-env

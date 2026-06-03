@@ -31,7 +31,7 @@ export type EventStateForm = {
 };
 
 export function applyEventTemplate(form: AdminCreateForm, template: string) {
-  if (!template) return form;
+  if (!template) return { ...form, _selectedTemplate: "" };
   const presets: Record<string, Partial<AdminCreateForm>> = {
     family: {
       title: "台北家庭電影夜",
@@ -95,7 +95,7 @@ export function applyEventTemplate(form: AdminCreateForm, template: string) {
       status: "draft",
     },
   };
-  return { ...form, ...presets[template] };
+  return { ...form, ...presets[template], _selectedTemplate: template };
 }
 
 export function applySchedulePreset(form: AdminCreateForm, preset: string) {
@@ -105,6 +105,7 @@ export function applySchedulePreset(form: AdminCreateForm, preset: string) {
       registration_start: localInputDate(0),
       registration_close: localInputDate(48),
       starts_at: localInputDate(72),
+      _selectedSchedule: preset,
     };
   }
   if (preset === "one-week") {
@@ -113,6 +114,7 @@ export function applySchedulePreset(form: AdminCreateForm, preset: string) {
       registration_start: localInputDate(0),
       registration_close: localInputDate(24 * 7),
       starts_at: localInputDate(24 * 10),
+      _selectedSchedule: preset,
     };
   }
   if (preset === "next-week") {
@@ -121,9 +123,11 @@ export function applySchedulePreset(form: AdminCreateForm, preset: string) {
       registration_start: localInputDate(24 * 7),
       registration_close: localInputDate(24 * 11),
       starts_at: localInputDate(24 * 14),
+      _selectedSchedule: preset,
     };
   }
-  return form;
+  // "custom" or unknown — preserve form values, reset selection
+  return { ...form, _selectedSchedule: preset };
 }
 
 export function matchingEmployeesForEvent(

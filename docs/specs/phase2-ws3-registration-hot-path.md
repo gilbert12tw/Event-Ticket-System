@@ -123,7 +123,7 @@ This endpoint is read-only, derived, never the booking commit authority. Rate-de
 
 ## 7. 12-Factor Notes
 
-- **Config**: New env vars include `RATE_LIMIT_ENABLED`, `BOOKING_RATE_LIMIT_RPS_PER_ACTOR`, `BOOKING_RATE_LIMIT_RPS_PER_EVENT`, `RATE_LIMIT_OUTAGE_MODE=degrade|fail`, `BOOKING_RATE_LIMIT_HASH_SECRET`, `BOOKING_PREADMISSION`, `RESERVATION_TTL_SECONDS`, `RESERVATION_TTL_GRACE_SECONDS`, `RESERVATION_COMPENSATION_INTERVAL_SECONDS`, `REDIS_OPERATION_TIMEOUT_MS`, `BOOKING_RESERVATION_HASH_SECRET`, and `REDIS_OUTAGE_MODE=degrade|fail`. Defaults and rollout rules are defined by `PH2-20` / `PH2-21`; runtime PRs must add them to `services/api/deploy/.env.example`.
+- **Config**: New env vars include `RATE_LIMIT_ENABLED`, `BOOKING_RATE_LIMIT_RPS_PER_ACTOR`, `BOOKING_RATE_LIMIT_RPS_PER_EVENT`, `RATE_LIMIT_OUTAGE_MODE=degrade|fail`, `BOOKING_RATE_LIMIT_HASH_SECRET`, `BOOKING_PREADMISSION`, `BOOKING_CONTENTION_STRATEGY=phase1|advisory`, `RESERVATION_TTL_SECONDS`, `RESERVATION_TTL_GRACE_SECONDS`, `RESERVATION_COMPENSATION_INTERVAL_SECONDS`, `REDIS_OPERATION_TIMEOUT_MS`, `BOOKING_RESERVATION_HASH_SECRET`, and `REDIS_OUTAGE_MODE=degrade|fail`. Defaults and rollout rules are defined by `PH2-20` / `PH2-21` / `PH2-25`; runtime PRs must add them to `services/api/deploy/.env.example`.
 - **Backing services**: Redis is already an attached resource; this WS upgrades its role from optional cache to required pre-admission gate when `REDIS_OUTAGE_MODE=fail`. Connection injected via `REDIS_URL` (unchanged).
 - **Build / release / run**: Same Go binary; no new process types. Compensation runs inside the existing same-binary worker as a new kind (`worker_kind=compensation`) — WS4 owns kind config (`PH2-31`).
 - **Processes**: Stateless; reservation state lives in Redis + DB. No in-memory authoritative state.
@@ -148,7 +148,7 @@ Every WS3 runtime change ships behind a disable path; reviewer rejects a PR that
 
 - Redis pre-admission gate: `BOOKING_PREADMISSION=off` short-circuits to Phase 1 DB-only path. Code path stays compiled (no removal) until baseline shows the gate is stable.
 - Rate limit middleware: `BOOKING_RATE_LIMIT_RPS_PER_ACTOR=0` and `..._PER_EVENT=0` disable enforcement; middleware logs would-be drops at debug level for observation.
-- Hot-row contention change (`PH2-25`): chosen approach (advisory lock / sharded counter / queue) is selected via `BOOKING_CONTENTION_STRATEGY=phase1|advisory|sharded|queue`; default during rollout is `phase1`; flip after evidence.
+- Hot-row contention change (`PH2-25`): the implemented rollout choice is selected via `BOOKING_CONTENTION_STRATEGY=phase1|advisory`; default during rollout is `phase1`; flip after evidence. Sharded counters and queueing remain deferred alternatives if advisory-lock evidence fails AC-7.
 - Capacity pressure admin API: disabled by removing the route registration behind `OPS_API_ENABLED=true`; default off until WS5 ops UI consumes it.
 - Compensation worker kind: WS4-managed kind flag (`WORKER_KINDS=...`); omit the kind to disable.
 - Migrations: any new index (e.g. on `idempotency_key`) is additive; rollback is `DROP INDEX CONCURRENTLY` via a follow-up migration, never a destructive change of existing tables.

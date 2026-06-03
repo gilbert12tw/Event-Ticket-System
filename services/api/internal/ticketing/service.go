@@ -13,19 +13,20 @@ import (
 )
 
 type Service struct {
-	db                *pgxpool.Pool
-	signer            Signer
-	logger            *slog.Logger
-	now               func() time.Time
-	noShowPolicy      NoShowPolicy
-	reservationGate   reservation.Gate
-	reservationSecret []byte
-	metrics           *observability.Registry
-	reservationOutage string
-	capacityPeekMu    sync.Mutex
-	capacityPeekCache map[string]cachedEventCapacityPeek
-	bookingLimiter    ratelimit.Limiter
-	rateLimitSecret   []byte
+	db                        *pgxpool.Pool
+	signer                    Signer
+	logger                    *slog.Logger
+	now                       func() time.Time
+	noShowPolicy              NoShowPolicy
+	reservationGate           reservation.Gate
+	reservationSecret         []byte
+	metrics                   *observability.Registry
+	reservationOutage         string
+	capacityPeekMu            sync.Mutex
+	capacityPeekCache         map[string]cachedEventCapacityPeek
+	bookingLimiter            ratelimit.Limiter
+	rateLimitSecret           []byte
+	bookingContentionStrategy string
 }
 
 func NewService(db *pgxpool.Pool, signer Signer, logger *slog.Logger) *Service {
@@ -38,13 +39,14 @@ func NewServiceWithPolicy(db *pgxpool.Pool, signer Signer, logger *slog.Logger, 
 	}
 	policy = policy.Normalize()
 	return &Service{
-		db:              db,
-		signer:          signer,
-		logger:          logger,
-		now:             func() time.Time { return time.Now().UTC() },
-		noShowPolicy:    policy,
-		reservationGate: reservation.NoopGate{},
-		bookingLimiter:  ratelimit.NoopLimiter{},
+		db:                        db,
+		signer:                    signer,
+		logger:                    logger,
+		now:                       func() time.Time { return time.Now().UTC() },
+		noShowPolicy:              policy,
+		reservationGate:           reservation.NoopGate{},
+		bookingLimiter:            ratelimit.NoopLimiter{},
+		bookingContentionStrategy: BookingContentionStrategyPhase1,
 	}
 }
 
@@ -80,6 +82,17 @@ func (s *Service) WithBookingRateLimiter(limiter ratelimit.Limiter, secret []byt
 	}
 	s.bookingLimiter = limiter
 	s.rateLimitSecret = secret
+	return s
+}
+
+// WithBookingContentionStrategy selects how limited FCFS bookings queue before
+// the final PostgreSQL capacity check. Invalid values preserve phase1 behavior.
+func (s *Service) WithBookingContentionStrategy(strategy string) *Service {
+	parsed, err := ParseBookingContentionStrategy(strategy)
+	if err != nil {
+		parsed = BookingContentionStrategyPhase1
+	}
+	s.bookingContentionStrategy = parsed
 	return s
 }
 

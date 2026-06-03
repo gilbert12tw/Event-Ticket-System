@@ -194,13 +194,13 @@ export function AdminEventCreateTab({
         <legend>快速設定</legend>
         <SelectField
           label="活動模板"
-          value=""
+          value={form._selectedTemplate}
           options={[{ value: "", label: "選擇模板" }, ...eventTemplateOptions]}
           onChange={(value) => onFormChange(applyEventTemplate(form, value))}
         />
         <SelectField
           label="排程預設"
-          value="custom"
+          value={form._selectedSchedule}
           options={schedulePresetOptions}
           onChange={(value) => onFormChange(applySchedulePreset(form, value))}
         />

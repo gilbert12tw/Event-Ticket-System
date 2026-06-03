@@ -63,7 +63,7 @@ func newTicketingService(pool *pgxpool.Pool, cfg config.Config, logger *slog.Log
 		Threshold:        cfg.NoShowThreshold,
 		CooldownDuration: time.Duration(cfg.NoShowCooldownDays) * 24 * time.Hour,
 		GracePeriod:      time.Duration(cfg.NoShowGraceHours) * time.Hour,
-	})
+	}).WithBookingContentionStrategy(cfg.BookingContentionStrategy)
 }
 
 func processNoShows(cfg config.Config, logger *slog.Logger) error {

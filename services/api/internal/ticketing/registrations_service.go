@@ -229,6 +229,12 @@ func (s *Service) lockBookableEventTx(ctx context.Context, tx pgx.Tx, eventID st
 		// with close, cancel, or archive updates.
 		return s.readEventWithRuleShareLockTx(ctx, tx, eventID)
 	}
+	if s.advisoryBookingContentionEnabled() {
+		if err := s.acquireBookingAdvisoryLockTx(ctx, tx, eventID); err != nil {
+			return Event{}, EligibilityRule{}, err
+		}
+		return s.readEventWithRuleShareLockTx(ctx, tx, eventID)
+	}
 	return s.lockEventWithRule(ctx, tx, eventID)
 }
 
