@@ -8,25 +8,104 @@ load_env
 require_cmd kubectl
 require_cmd jq
 require_cmd curl
+require_cmd base64
+require_cmd openssl
 
 PROMETHEUS_LOCAL_PORT=${PROMETHEUS_LOCAL_PORT:-19090}
 LOKI_LOCAL_PORT=${LOKI_LOCAL_PORT:-19100}
 TEMPO_LOCAL_PORT=${TEMPO_LOCAL_PORT:-19200}
 PYROSCOPE_LOCAL_PORT=${PYROSCOPE_LOCAL_PORT:-19404}
+GRAFANA_LOCAL_PORT=${GRAFANA_LOCAL_PORT:-19300}
+BASE_URL=${CETS_OBSERVABILITY_BASE_URL:-http://$METALLB_INGRESS_IP}
+HOST_HEADER=${CETS_OBSERVABILITY_HOST_HEADER:-$CETS_PUBLIC_HOSTNAME}
 
 PROM_PID=""
 LOKI_PID=""
 TEMPO_PID=""
 PYROSCOPE_PID=""
+GRAFANA_PID=""
 TEMPO_TRACE_ID=""
 
 cleanup() {
-  for pid in "$PROM_PID" "$LOKI_PID" "$TEMPO_PID" "$PYROSCOPE_PID"; do
+  for pid in "$PROM_PID" "$LOKI_PID" "$TEMPO_PID" "$PYROSCOPE_PID" "$GRAFANA_PID"; do
     if [ -n "$pid" ]; then
       kill "$pid" >/dev/null 2>&1 || true
       wait "$pid" >/dev/null 2>&1 || true
     fi
   done
+}
+
+b64url() {
+  base64 | tr '+/' '-_' | tr -d '=\n'
+}
+
+provider_secret() {
+  kubectl_bm -n "$CETS_NAMESPACE" get secret cets-runtime-env -o jsonpath='{.data.PROVIDER_TOKEN_SECRET}' | base64 -d
+}
+
+sign_token() {
+  local employee_id=$1
+  local display_name=$2
+  local role=$3
+  local department=$4
+  local site=$5
+  local city=$6
+  local grade=$7
+  local secret
+  local exp
+  local payload
+  local signature
+
+  secret=$(provider_secret)
+  exp=$(date -u -d '+1 hour' +%s)
+  payload=$(jq -nc \
+    --arg employee_id "$employee_id" \
+    --arg display_name "$display_name" \
+    --arg role "$role" \
+    --arg department "$department" \
+    --arg site "$site" \
+    --arg city "$city" \
+    --arg employment_status "active" \
+    --argjson grade "$grade" \
+    --argjson exp "$exp" \
+    '{employee_id:$employee_id,display_name:$display_name,role_claims:[$role],department:$department,site:$site,city:$city,grade:$grade,employment_status:$employment_status,exp:$exp}' | b64url)
+  signature=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$secret" -binary | b64url)
+  printf '%s.%s' "$payload" "$signature"
+}
+
+api_json() {
+  local method=$1
+  local path=$2
+  local token=$3
+  local body=${4:-}
+  local output=$5
+  local status
+
+  if [ -n "$body" ]; then
+    status=$(curl -sS --max-time 20 \
+      -H "Host: $HOST_HEADER" \
+      -H "Authorization: Bearer $token" \
+      -H "Content-Type: application/json" \
+      -X "$method" \
+      -d "$body" \
+      -o "$output" \
+      -w '%{http_code}' \
+      "$BASE_URL$path" || true)
+  else
+    status=$(curl -sS --max-time 20 \
+      -H "Host: $HOST_HEADER" \
+      -H "Authorization: Bearer $token" \
+      -X "$method" \
+      -o "$output" \
+      -w '%{http_code}' \
+      "$BASE_URL$path" || true)
+  fi
+
+  case "$status" in
+    2*) ;;
+    *) die "$method $path returned HTTP $status" ;;
+  esac
+  jq -e '.success == true' "$output" >/dev/null || die "$method $path did not return success=true"
 }
 trap cleanup EXIT
 
@@ -97,6 +176,54 @@ generate_backend_trace() {
   done
 }
 
+generate_dependency_trace() {
+  local run_id
+  local admin_token
+  local employee_token
+  local starts_at
+  local registration_start
+  local registration_close
+  local event_body
+  local event_id
+  local poster_file
+  local status
+  local booking_body
+
+  run_id=$(date -u +%Y%m%d%H%M%S)
+  admin_token=$(sign_token "admin-1" "Admin One" "activity_admin" "Welfare Committee" "Taipei HQ" "Taipei" 7)
+  employee_token=$(sign_token "E1001" "Ariel Chen" "employee" "Engineering" "Taipei HQ" "Taipei" 6)
+  starts_at=$(date -u -d '+7 days' +%Y-%m-%dT%H:%M:%SZ)
+  registration_start=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
+  registration_close=$(date -u -d '+6 days' +%Y-%m-%dT%H:%M:%SZ)
+  event_body=$(jq -nc \
+    --arg title "observability-canary-$run_id" \
+    --arg starts_at "$starts_at" \
+    --arg registration_start "$registration_start" \
+    --arg registration_close "$registration_close" \
+    '{title:$title,description:"Observability canary",location:"Taipei HQ",event_city:"Taipei",event_site:"Taipei HQ",starts_at:$starts_at,registration_start:$registration_start,registration_close:$registration_close,capacity_type:"limited",capacity:5,allows_family:false,status:"published",category:"ops-smoke",tags:["baremetal","observability"],entry_method:"qr",visibility:"eligible",rule:{department:"Engineering",site:"Taipei HQ",min_grade:1,employment_status:"active"}}')
+  api_json POST /api/v1/admin/events "$admin_token" "$event_body" "$GENERATED_DIR/observability-event.json"
+  event_id=$(jq -er '.data.event_id' "$GENERATED_DIR/observability-event.json")
+
+  poster_file="$GENERATED_DIR/observability-poster.png"
+  printf '\211PNG\r\n\032\n\000\000\000\rIHDR\000\000\000\001\000\000\000\001\010\006\000\000\000\037\025\304\211\000\000\000\nIDATx\234c\000\001\000\000\005\000\001\r\n-\264\000\000\000\000IEND\256B\140\202' >"$poster_file"
+  status=$(curl -sS --max-time 20 \
+    -H "Host: $HOST_HEADER" \
+    -H "Authorization: Bearer $admin_token" \
+    -F "poster=@$poster_file;type=image/png" \
+    -o "$GENERATED_DIR/observability-poster-upload.json" \
+    -w '%{http_code}' \
+    "$BASE_URL/api/v1/admin/events/$event_id/poster" || true)
+  case "$status" in
+    2*) ;;
+    *) die "POST /api/v1/admin/events/$event_id/poster returned HTTP $status" ;;
+  esac
+
+  booking_body=$(jq -nc --arg key "observability-canary-$run_id" '{idempotency_key:$key,family_count:0}')
+  api_json POST "/api/v1/events/$event_id/bookings" "$employee_token" "$booking_body" "$GENERATED_DIR/observability-booking.json"
+  curl -fsS -H "Host: $HOST_HEADER" -H "Authorization: Bearer $employee_token" \
+    "$BASE_URL/api/v1/events/$event_id/poster" >/dev/null || true
+}
+
 check_backend_red_metrics() {
   log "checking backend RED metrics by route/status/instance"
   for _ in $(seq 1 24); do
@@ -161,6 +288,22 @@ check_service_graph_metrics() {
   die "Prometheus did not return service graph metrics for cets-backend"
 }
 
+check_required_service_graph_edges() {
+  log "checking required service graph edges"
+  for _ in $(seq 1 24); do
+    if prom_query_nonzero 'sum(increase(traces_service_graph_request_total{client="user",server="ingress-nginx"}[15m]))' &&
+      prom_query_nonzero 'sum(increase(traces_service_graph_request_total{client="user",server="cets-backend"}[15m]))' &&
+      prom_query_nonzero 'sum(increase(traces_service_graph_request_total{client="cets-backend",server="postgres"}[15m]))' &&
+      prom_query_nonzero 'sum(increase(traces_service_graph_request_total{client="cets-backend",server="redis"}[15m]))' &&
+      prom_query_nonzero 'sum(increase(traces_service_graph_request_total{client="cets-backend",server="minio"}[15m]))'; then
+      return
+    fi
+    generate_dependency_trace
+    sleep 5
+  done
+  die "Prometheus did not return all required service graph edges"
+}
+
 check_pyroscope_profile_data() {
   log "checking Pyroscope backend CPU profile data"
   for _ in $(seq 1 24); do
@@ -178,6 +321,19 @@ check_pyroscope_profile_data() {
     sleep 5
   done
   die "Pyroscope did not return cets-backend CPU samples"
+}
+
+check_grafana_cets_folder_dashboards() {
+  log "checking Grafana Cets folder dashboards"
+  GRAFANA_PID=$(start_port_forward observability kube-prometheus-stack-grafana "$GRAFANA_LOCAL_PORT" 80 "$GENERATED_DIR/grafana-port-forward.log")
+  wait_http "Grafana" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/health"
+  password=$(kubectl_bm -n observability get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d)
+  curl -fsS -u "admin:$password" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/search?folderIds=0" >/dev/null
+  dashboards=$(curl -fsS -u "admin:$password" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/search?query=CETS")
+  for title in "CETS Metrics RED" "CETS Metrics USE" "CETS Logs" "CETS Traces" "CETS Profiles"; do
+    printf '%s\n' "$dashboards" | jq -e --arg title "$title" 'any(.[]; .title == $title and .folderTitle == "Cets")' >/dev/null ||
+      die "Grafana dashboard '$title' was not found in Cets folder"
+  done
 }
 
 log "checking observability pod readiness"
@@ -204,7 +360,7 @@ kubectl_bm -n observability run "$check_pod" \
 grep -q '"resultType":"streams"' "$GENERATED_DIR/observability-check.json" || die "Loki query did not return streams"
 grep -q 'cets observability check' "$GENERATED_DIR/observability-check.json" || die "Loki query did not return the pushed canary line"
 grep -q 'Prometheus Server is Ready' "$GENERATED_DIR/observability-check.json" || die "Prometheus readiness check failed"
-grep -q 'cets/cets-backend/0' "$GENERATED_DIR/observability-check.json" || die "Prometheus target for cets-backend ServiceMonitor not found"
+grep -q '"job":"cets-backend"' "$GENERATED_DIR/observability-check.json" || die "Prometheus target for cets-backend ServiceMonitor not found"
 
 log "checking Loki backend pod log ingestion"
 backend_log_pod="obs-backend-log-check-$(date +%s)"
@@ -239,10 +395,13 @@ PYROSCOPE_LOCAL_URL="http://127.0.0.1:$PYROSCOPE_LOCAL_PORT"
 
 start_lgtm_port_forwards
 generate_backend_trace
+generate_dependency_trace
 check_backend_red_metrics
 check_tempo_trace_ingest
 check_loki_trace_logs
 check_service_graph_metrics
+check_required_service_graph_edges
 check_pyroscope_profile_data
+check_grafana_cets_folder_dashboards
 
 log "observability verification completed"

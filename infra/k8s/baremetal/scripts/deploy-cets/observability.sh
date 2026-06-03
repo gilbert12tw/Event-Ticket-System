@@ -7,6 +7,11 @@ helm repo add grafana https://grafana.github.io/helm-charts >/dev/null
 helm repo update >/dev/null
 cat >"$GENERATED_DIR/kube-prometheus-stack-values.yaml" <<EOF
 grafana:
+  sidecar:
+    dashboards:
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
   additionalDataSources:
   - name: Loki
     uid: Loki
@@ -96,7 +101,7 @@ alloy:
 
         rule {
           source_labels = ["__meta_kubernetes_namespace"]
-          regex         = "$CETS_NAMESPACE"
+          regex         = "$CETS_NAMESPACE|ingress-nginx"
           action        = "keep"
         }
         rule {
@@ -113,6 +118,14 @@ alloy:
         }
         rule {
           source_labels = ["__meta_kubernetes_pod_label_app"]
+          regex         = "(.+)"
+          replacement   = "\$1"
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
+          replacement   = "\$1"
           target_label  = "app"
         }
         rule {
@@ -253,6 +266,33 @@ helm upgrade --install loki grafana/loki \
   --version 7.0.0 \
   -f "$GENERATED_DIR/loki-values.yaml"
 
+kubectl_bm -n observability delete configmap cets-k8s-lgtm-dashboard --ignore-not-found
+cat >"$GENERATED_DIR/cets-grafana-dashboards.yaml" <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cets-k8s-lgtm-dashboard
+  namespace: observability
+  annotations:
+    grafana_folder: Cets
+  labels:
+    grafana_dashboard: "1"
+data:
+EOF
+for dashboard in \
+  cets-metrics-red.json \
+  cets-metrics-use.json \
+  cets-logs.json \
+  cets-traces.json \
+  cets-profiles.json; do
+  {
+    printf '  %s: |\n' "$dashboard"
+    sed 's/^/    /' "$BM_DIR/dashboards/$dashboard"
+  } >>"$GENERATED_DIR/cets-grafana-dashboards.yaml"
+done
+kubectl_bm apply -f "$GENERATED_DIR/cets-grafana-dashboards.yaml"
+
+kubectl_bm -n "$CETS_NAMESPACE" delete service backend-metrics --ignore-not-found
 cat >"$GENERATED_DIR/cets-observability.yaml" <<EOF
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -273,7 +313,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend-metrics
+  name: cets-backend
   namespace: $CETS_NAMESPACE
   labels:
     app: backend

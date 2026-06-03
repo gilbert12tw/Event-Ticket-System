@@ -131,32 +131,10 @@ export function eventPosterUrl(eventID: string) {
 
 export async function eventPosterBlob(eventID: string) {
   const path = eventPosterUrl(eventID);
-  const response = await fetch(path, {
-    credentials: "same-origin",
-    headers: authHeaders(),
+  return fetchBlobResource(path, authHeaders(), {
+    missingLog: { poster: "missing" },
+    successLog: { poster: true },
   });
-  if (response.status === 404) {
-    logApi(`GET ${path}`, response.status, false, null, { poster: "missing" });
-    return null;
-  }
-  if (!response.ok) {
-    const contentType = response.headers.get("Content-Type") || "";
-    const envelope = contentType.includes("application/json")
-      ? ((await response.json()) as ApiEnvelope<unknown>)
-      : ({
-          success: false,
-          data: null,
-          error: await response.text(),
-        } satisfies ApiEnvelope<unknown>);
-    logApi(`GET ${path}`, response.status, false, null, envelope);
-    throw new ApiError(response.status, envelope);
-  }
-  const blob = await response.blob();
-  logApi(`GET ${path}`, response.status, true, null, {
-    poster: true,
-    content_type: response.headers.get("Content-Type") || "",
-  });
-  return blob;
 }
 
 export const listAdminEvents = () =>
@@ -370,28 +348,65 @@ export function getReportExport(exportID: string) {
 
 export async function downloadReportExport(exportID: string) {
   const path = `/api/v1/admin/reports/exports/${encoded(exportID)}/download`;
+  return fetchBlobResource(path, headersFor(), {
+    successLog: { download: true },
+  });
+}
+
+type BlobResourceLogOptions = {
+  missingLog?: Record<string, unknown>;
+  successLog: Record<string, unknown>;
+};
+
+function fetchBlobResource(
+  path: string,
+  headers: HeadersInit,
+  logOptions: BlobResourceLogOptions & { missingLog: Record<string, unknown> },
+): Promise<Blob | null>;
+function fetchBlobResource(
+  path: string,
+  headers: HeadersInit,
+  logOptions: BlobResourceLogOptions,
+): Promise<Blob>;
+async function fetchBlobResource(
+  path: string,
+  headers: HeadersInit,
+  logOptions: BlobResourceLogOptions,
+): Promise<Blob | null> {
   const response = await fetch(path, {
     credentials: "same-origin",
-    headers: headersFor(),
+    headers,
   });
+  const label = `GET ${path}`;
+  if (response.status === 404 && logOptions.missingLog) {
+    logApi(label, response.status, false, null, logOptions.missingLog);
+    return null;
+  }
   if (!response.ok) {
-    const contentType = response.headers.get("Content-Type") || "";
-    const envelope = contentType.includes("application/json")
-      ? ((await response.json()) as ApiEnvelope<unknown>)
-      : ({
-          success: false,
-          data: null,
-          error: await response.text(),
-        } satisfies ApiEnvelope<unknown>);
-    logApi(`GET ${path}`, response.status, false, null, envelope);
+    const envelope = await blobErrorEnvelope(response);
+    logApi(label, response.status, false, null, envelope);
     throw new ApiError(response.status, envelope);
   }
   const blob = await response.blob();
-  logApi(`GET ${path}`, response.status, true, null, {
-    download: true,
+  logApi(label, response.status, true, null, {
+    ...logOptions.successLog,
     content_type: response.headers.get("Content-Type") || "",
   });
   return blob;
+}
+
+async function blobErrorEnvelope(
+  response: Response,
+): Promise<ApiEnvelope<unknown>> {
+  const contentType = response.headers.get("Content-Type") || "";
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as ApiEnvelope<unknown>;
+  }
+  return {
+    success: false,
+    data: null,
+    error: await response.text(),
+  };
 }
 
 export const getOpsDashboard = () =>

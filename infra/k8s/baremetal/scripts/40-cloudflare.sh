@@ -12,7 +12,14 @@ require_env CLOUDFLARE_API_TOKEN
 require_env CLOUDFLARE_ACCOUNT_ID
 require_env CLOUDFLARE_ZONE_ID
 require_env CLOUDFLARE_ZONE_NAME
-require_env CLOUDFLARE_ACCESS_ALLOWED_EMAILS
+CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
+case "$CLOUDFLARE_ACCESS_ENABLED" in
+  true|false) ;;
+  *) die "CLOUDFLARE_ACCESS_ENABLED must be true or false" ;;
+esac
+if [ "$CLOUDFLARE_ACCESS_ENABLED" != "false" ]; then
+  require_env CLOUDFLARE_ACCESS_ALLOWED_EMAILS
+fi
 
 TF=$(tf_bin)
 CF_DIR="$BM_DIR/cloudflare"
@@ -24,9 +31,9 @@ zone_json=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 active=$(printf '%s' "$zone_json" | jq -r '.result.status')
 [ "$active" = "active" ] || die "Cloudflare zone is '$active', not active. Add the domain to Cloudflare and update registrar nameservers first."
 
-emails_json=$(printf '%s' "$CLOUDFLARE_ACCESS_ALLOWED_EMAILS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+emails_json=$(printf '%s\n' "${CLOUDFLARE_ACCESS_ALLOWED_EMAILS:-}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
 if [ -n "${CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS:-}" ]; then
-  posture_json=$(printf '%s' "$CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+  posture_json=$(printf '%s\n' "$CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
 else
   posture_json='[]'
 fi
@@ -37,6 +44,8 @@ jq -n \
   --arg cloudflare_zone_id "$CLOUDFLARE_ZONE_ID" \
   --arg cloudflare_zone_name "$CLOUDFLARE_ZONE_NAME" \
   --arg hostname "$CETS_PUBLIC_HOSTNAME" \
+  --arg grafana_hostname "${GRAFANA_PUBLIC_HOSTNAME:-}" \
+  --argjson access_enabled "$CLOUDFLARE_ACCESS_ENABLED" \
   --arg tunnel_name "$CLOUDFLARE_TUNNEL_NAME" \
   --argjson allowed_emails "$emails_json" \
   --argjson device_posture_rule_ids "$posture_json" \
@@ -46,6 +55,8 @@ jq -n \
     cloudflare_zone_id: $cloudflare_zone_id,
     cloudflare_zone_name: $cloudflare_zone_name,
     hostname: $hostname,
+    grafana_hostname: $grafana_hostname,
+    access_enabled: $access_enabled,
     tunnel_name: $tunnel_name,
     allowed_emails: $allowed_emails,
     device_posture_rule_ids: $device_posture_rule_ids

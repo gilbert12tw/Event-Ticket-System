@@ -10,11 +10,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHTTPMetricsExposeREDSignalsWithBoundedLabels(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewRegistryWithIdentity("cets-backend", "backend-1")
 
 	registry.ObserveHTTPRequest("/api/v1/events/{event_id}", "GET", 201, 80*time.Millisecond)
 
@@ -22,10 +24,23 @@ func TestHTTPMetricsExposeREDSignalsWithBoundedLabels(t *testing.T) {
 	registry.WritePrometheus(context.Background(), &body, nil)
 	metrics := body.String()
 
-	assert.Contains(t, metrics, `cets_http_requests_total{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"} 1`)
-	assert.Contains(t, metrics, `cets_http_request_seconds_bucket{route="/api/v1/events/{event_id}",method="GET",status_class="2xx",le="0.1"} 1`)
-	assert.Contains(t, metrics, `cets_http_request_seconds_count{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"} 1`)
+	assert.Contains(t, metrics, `cets_build_info{service="cets-backend",replica="backend-1"} 1`)
+	assert.Contains(t, metrics, `cets_http_requests_total{service="cets-backend",replica="backend-1",route="/api/v1/events/{event_id}",method="GET",status="201",status_class="2xx"} 1`)
+	assert.Contains(t, metrics, `cets_http_request_seconds_bucket{service="cets-backend",replica="backend-1",route="/api/v1/events/{event_id}",method="GET",status="201",status_class="2xx",le="0.1"} 1`)
+	assert.Contains(t, metrics, `cets_http_request_seconds_count{service="cets-backend",replica="backend-1",route="/api/v1/events/{event_id}",method="GET",status="201",status_class="2xx"} 1`)
 	assert.NotContains(t, metrics, "evt_secret")
+}
+
+func TestHTTPMetricsDefaultIdentityIsBounded(t *testing.T) {
+	registry := NewRegistryWithIdentity("", "")
+
+	registry.ObserveHTTPRequest("/healthz", "GET", 700, time.Millisecond)
+
+	var body bytes.Buffer
+	registry.WritePrometheus(context.Background(), &body, nil)
+
+	assert.Contains(t, body.String(), `cets_build_info{service="cets-api",replica="unknown"} 1`)
+	assert.Contains(t, body.String(), `status="unknown",status_class="unknown"`)
 }
 
 func TestHTTPMetricsCollapseUnknownMethodsToBoundedLabel(t *testing.T) {
@@ -37,7 +52,7 @@ func TestHTTPMetricsCollapseUnknownMethodsToBoundedLabel(t *testing.T) {
 	registry.WritePrometheus(context.Background(), &body, nil)
 	metrics := body.String()
 
-	assert.Contains(t, metrics, `cets_http_requests_total{route="/unknown",method="UNKNOWN",status_class="4xx"} 1`)
+	assert.Contains(t, metrics, `cets_http_requests_total{service="cets-api",replica="unknown",route="/unknown",method="UNKNOWN",status="404",status_class="4xx"} 1`)
 	assert.NotContains(t, metrics, "FOOBAR-SCANNER-TOKEN")
 }
 
@@ -234,6 +249,28 @@ func TestRateLimitMetricsExposeAuditBackedDrops(t *testing.T) {
 	assert.NotContains(t, metrics, "E1001")
 }
 
+func TestDatabaseMetricsDelegatesQueriesAndExposesPoolStats(t *testing.T) {
+	queries := []string{}
+	writeDB := fakeSQLMetricsPoolDB{
+		fakeSQLMetricsDB: fakeSQLMetricsDB{lockWaitCount: 3, queries: &queries},
+	}
+	readPool := fakePoolStater{}
+	metrics := DatabaseMetrics{Write: writeDB, Read: readPool}
+
+	rows, err := metrics.Query(context.Background(), "select outbox", "arg")
+	require.NoError(t, err)
+	rows.Close()
+	assert.Equal(t, []string{"select outbox"}, queries)
+
+	var waiting int64
+	require.NoError(t, metrics.QueryRow(context.Background(), "select locks").Scan(&waiting))
+	assert.Equal(t, int64(3), waiting)
+	assert.Equal(t, map[string]PoolStater{
+		"write": writeDB,
+		"read":  readPool,
+	}, metrics.PoolStats())
+}
+
 type fakeSQLMetricsDB struct {
 	lockWaitCount               int64
 	queries                     *[]string
@@ -345,6 +382,20 @@ func (r *fakeMetricRows) RawValues() [][]byte {
 }
 
 func (r *fakeMetricRows) Conn() *pgx.Conn {
+	return nil
+}
+
+type fakePoolStater struct{}
+
+func (fakePoolStater) Stat() *pgxpool.Stat {
+	return nil
+}
+
+type fakeSQLMetricsPoolDB struct {
+	fakeSQLMetricsDB
+}
+
+func (fakeSQLMetricsPoolDB) Stat() *pgxpool.Stat {
 	return nil
 }
 

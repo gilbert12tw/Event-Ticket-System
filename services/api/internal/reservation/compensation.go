@@ -3,6 +3,7 @@ package reservation
 import (
 	"context"
 	"errors"
+	"event-ticket-system/internal/observability"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -175,10 +176,12 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 	}
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
-	raw, err := c.release.Run(opCtx, c.client,
-		[]string{remainingKey(eventID), holdKey(eventID, idempotencyHash), pendingKey(eventID)},
-		idempotencyHash, capacity,
-	).Result()
+	raw, err := traceRedisScript(opCtx, "compensation_release", func(ctx context.Context) (interface{}, error) {
+		return c.release.Run(ctx, c.client,
+			[]string{remainingKey(eventID), holdKey(eventID, idempotencyHash), pendingKey(eventID)},
+			idempotencyHash, capacity,
+		).Result()
+	})
 	if err != nil {
 		c.logger.Warn("compensation release lua failed",
 			"event_id", eventID,
@@ -198,10 +201,12 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 func (c *Compensator) dropHold(ctx context.Context, eventID, idempotencyHash, reason string) {
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
-	raw, err := c.drop.Run(opCtx, c.client,
-		[]string{holdKey(eventID, idempotencyHash), pendingKey(eventID)},
-		idempotencyHash,
-	).Result()
+	raw, err := traceRedisScript(opCtx, "compensation_drop", func(ctx context.Context) (interface{}, error) {
+		return c.drop.Run(ctx, c.client,
+			[]string{holdKey(eventID, idempotencyHash), pendingKey(eventID)},
+			idempotencyHash,
+		).Result()
+	})
 	if err != nil {
 		c.logger.Warn("compensation drop lua failed",
 			"event_id", eventID,
@@ -229,10 +234,12 @@ func (c *Compensator) capCounter(ctx context.Context, eventID string) error {
 	if ttlSecs <= 0 {
 		ttlSecs = 60
 	}
-	raw, err := c.cap.Run(opCtx, c.client,
-		[]string{remainingKey(eventID), driftKey(eventID)},
-		capacity, ttlSecs,
-	).Result()
+	raw, err := traceRedisScript(opCtx, "compensation_cap", func(ctx context.Context) (interface{}, error) {
+		return c.cap.Run(ctx, c.client,
+			[]string{remainingKey(eventID), driftKey(eventID)},
+			capacity, ttlSecs,
+		).Result()
+	})
 	if err != nil {
 		return err
 	}
@@ -249,6 +256,13 @@ func (c *Compensator) capCounter(ctx context.Context, eventID string) error {
 func (c *Compensator) activeEvents(ctx context.Context) ([]string, error) {
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
+	opCtx, span := observability.StartDependencySpan(opCtx, observability.DependencySpanConfig{
+		System:      "redis",
+		ServiceName: "redis",
+		Operation:   "scan",
+	})
+	var scanErr error
+	defer func() { observability.EndDependencySpan(span, scanErr) }()
 	pattern := keyPrefix + "*:pending"
 	var eventIDs []string
 	iter := c.client.Scan(opCtx, 0, pattern, int64(c.cfg.MaxEvents)).Iterator()
@@ -262,6 +276,7 @@ func (c *Compensator) activeEvents(ctx context.Context) ([]string, error) {
 		}
 	}
 	if err := iter.Err(); err != nil {
+		scanErr = err
 		return nil, fmt.Errorf("scan pending keys: %w", err)
 	}
 	return eventIDs, nil
@@ -270,11 +285,18 @@ func (c *Compensator) activeEvents(ctx context.Context) ([]string, error) {
 func (c *Compensator) expiredPendingMembers(ctx context.Context, eventID string, threshold int64) ([]string, error) {
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
-	return c.client.ZRangeByScore(opCtx, pendingKey(eventID), &redis.ZRangeBy{
-		Min:   "-inf",
-		Max:   fmt.Sprintf("%d", threshold),
-		Count: int64(c.cfg.BatchSize),
-	}).Result()
+	result, err := traceRedisScript(opCtx, "zrangebyscore", func(ctx context.Context) (interface{}, error) {
+		return c.client.ZRangeByScore(ctx, pendingKey(eventID), &redis.ZRangeBy{
+			Min:   "-inf",
+			Max:   fmt.Sprintf("%d", threshold),
+			Count: int64(c.cfg.BatchSize),
+		}).Result()
+	})
+	if err != nil {
+		return nil, err
+	}
+	members, _ := result.([]string)
+	return members, nil
 }
 
 func eventIDFromPendingKey(key string) (string, bool) {

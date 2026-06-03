@@ -1,0 +1,77 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        { "expr": "up{job=\"cets-backend\"}", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "title": "Backend Target Health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"cets\", pod=~\"backend-.*|frontend-.*\", container!=\"\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A" }
+      ],
+      "title": "Backend and Frontend CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "targets": [
+        { "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"cets\", pod=~\"backend-.*|frontend-.*\", container!=\"\"})", "legendFormat": "{{pod}}", "refId": "A" }
+      ],
+      "title": "Backend and Frontend Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "id": 4,
+      "targets": [
+        { "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"cets\", pod=~\"backend-.*|frontend-.*\"}[1h]))", "legendFormat": "{{pod}}", "refId": "A" }
+      ],
+      "title": "Pod Restarts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "id": 5,
+      "targets": [
+        { "expr": "sum by (instance) (rate(cets_db_pool_acquire_wait_seconds_total[5m]))", "legendFormat": "pool wait {{instance}}", "refId": "A" },
+        { "expr": "cets_db_lock_waiting_sessions", "legendFormat": "lock waits", "refId": "B" }
+      ],
+      "title": "DB Pool Wait and Lock Sessions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "id": 6,
+      "targets": [
+        { "expr": "cets_outbox_oldest_lag_seconds", "legendFormat": "{{worker_kind}} {{event_type}} {{status}}", "refId": "A" }
+      ],
+      "title": "Outbox Oldest Lag",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["cets", "k8s", "metrics", "use"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "CETS Metrics USE",
+  "uid": "cets-k8s-metrics-use",
+  "version": 1
+}

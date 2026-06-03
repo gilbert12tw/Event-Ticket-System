@@ -235,18 +235,28 @@ services:
   backend-1:
     <<: *backend-service
     container_name: cets-phase3-backend-1
+    environment:
+      <<: *backend-env
+      CETS_REPLICA_ID: backend-1
 
   backend-2:
     <<: *backend-service
     container_name: cets-phase3-backend-2
+    environment:
+      <<: *backend-env
+      CETS_REPLICA_ID: backend-2
 
   backend-3:
     <<: *backend-service
     container_name: cets-phase3-backend-3
+    environment:
+      <<: *backend-env
+      CETS_REPLICA_ID: backend-3
 
   worker-notification:
     profiles: ["worker-isolation", "phase3-ha"]
     environment:
+      CETS_REPLICA_ID: worker-notification
       OTEL_TRACES_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: cets-worker-notification
@@ -258,6 +268,7 @@ services:
   worker-projection:
     profiles: ["worker-isolation", "phase3-ha"]
     environment:
+      CETS_REPLICA_ID: worker-projection
       OTEL_TRACES_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: cets-worker-projection
@@ -269,6 +280,7 @@ services:
   worker-compensation:
     profiles: ["worker-isolation", "phase3-ha"]
     environment:
+      CETS_REPLICA_ID: worker-compensation
       OTEL_TRACES_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: cets-worker-compensation
@@ -280,6 +292,7 @@ services:
   worker-export:
     profiles: ["worker-isolation", "phase3-ha"]
     environment:
+      CETS_REPLICA_ID: worker-export
       OTEL_TRACES_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: cets-worker-export

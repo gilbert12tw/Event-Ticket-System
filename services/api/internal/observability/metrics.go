@@ -61,14 +61,23 @@ func (m DatabaseMetrics) QueryRow(ctx context.Context, sql string, args ...inter
 
 type Registry struct {
 	mu          sync.Mutex
+	identity    registryIdentity
 	http        map[httpKey]*histogram
 	booking     map[bookingStageKey]*histogram
 	reservation map[reservationKey]*histogram
 }
 
+type registryIdentity struct {
+	Service string
+	Replica string
+}
+
 type httpKey struct {
+	Service     string
+	Replica     string
 	Route       string
 	Method      string
+	Status      string
 	StatusClass string
 }
 
@@ -79,7 +88,12 @@ type histogram struct {
 }
 
 func NewRegistry() *Registry {
+	return NewRegistryWithIdentity("cets-api", "unknown")
+}
+
+func NewRegistryWithIdentity(service string, replica string) *Registry {
 	return &Registry{
+		identity:    registryIdentity{Service: boundedLabel(service, "cets-api"), Replica: boundedLabel(replica, "unknown")},
 		http:        map[httpKey]*histogram{},
 		booking:     map[bookingStageKey]*histogram{},
 		reservation: map[reservationKey]*histogram{},
@@ -91,8 +105,11 @@ func (r *Registry) ObserveHTTPRequest(route string, method string, status int, d
 		return
 	}
 	key := httpKey{
+		Service:     r.identity.Service,
+		Replica:     r.identity.Replica,
 		Route:       boundedLabel(route, "unknown"),
 		Method:      boundedMethod(method),
+		Status:      statusLabel(status),
 		StatusClass: statusClass(status),
 	}
 	seconds := duration.Seconds()
@@ -194,6 +211,10 @@ func (r *Registry) writeHTTPMetrics(w io.Writer) {
 	writeLine(w, "# TYPE cets_http_requests_total counter")
 	writeLine(w, "# HELP cets_http_request_seconds HTTP request duration histogram by route, method, and status class.")
 	writeLine(w, "# TYPE cets_http_request_seconds histogram")
+	writeLine(w, "# HELP cets_build_info CETS service build and replica identity.")
+	writeLine(w, "# TYPE cets_build_info gauge")
+	writeFormat(w, "cets_build_info{service=\"%s\",replica=\"%s\"} 1\n",
+		escapeLabel(r.identity.Service), escapeLabel(r.identity.Replica))
 
 	r.mu.Lock()
 	keys := make([]httpKey, 0, len(r.http))
@@ -332,8 +353,9 @@ func writeFormat(w io.Writer, format string, args ...interface{}) {
 }
 
 func labelSet(key httpKey) string {
-	return fmt.Sprintf(`route="%s",method="%s",status_class="%s"`,
-		escapeLabel(key.Route), escapeLabel(key.Method), escapeLabel(key.StatusClass))
+	return fmt.Sprintf(`service="%s",replica="%s",route="%s",method="%s",status="%s",status_class="%s"`,
+		escapeLabel(key.Service), escapeLabel(key.Replica), escapeLabel(key.Route),
+		escapeLabel(key.Method), escapeLabel(key.Status), escapeLabel(key.StatusClass))
 }
 
 func bookingStageLabelSet(key bookingStageKey) string {
@@ -351,6 +373,13 @@ func statusClass(status int) string {
 		return "unknown"
 	}
 	return fmt.Sprintf("%dxx", status/100)
+}
+
+func statusLabel(status int) string {
+	if status < 100 || status > 599 {
+		return "unknown"
+	}
+	return strconv.Itoa(status)
 }
 
 func boundedLabel(value string, fallback string) string {
