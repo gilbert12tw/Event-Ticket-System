@@ -1,7 +1,12 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createReportExport, getReportExport, reports } from "@/lib/api";
+import {
+  createReportExport,
+  downloadReportExport,
+  getReportExport,
+  reports,
+} from "@/lib/api";
 import type { ReportExport, ReportRow } from "@/lib/api";
 import { HrReportsPage } from "./pages";
 
@@ -10,12 +15,14 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     createReportExport: vi.fn(),
+    downloadReportExport: vi.fn(),
     getReportExport: vi.fn(),
     reports: vi.fn(),
   };
 });
 
 const mockCreateReportExport = vi.mocked(createReportExport);
+const mockDownloadReportExport = vi.mocked(downloadReportExport);
 const mockGetReportExport = vi.mocked(getReportExport);
 const mockReports = vi.mocked(reports);
 
@@ -70,11 +77,17 @@ describe("HrReportsPage", () => {
     window.history.pushState({}, "", "/admin/reports");
     mockReports.mockReset();
     mockCreateReportExport.mockReset();
+    mockDownloadReportExport.mockReset();
     mockGetReportExport.mockReset();
     mockReports.mockResolvedValue([]);
+    mockDownloadReportExport.mockResolvedValue(new Blob(["event_id,title\n"]));
+    vi.spyOn(globalThis.URL, "createObjectURL").mockReturnValue(
+      "blob:report-export",
+    );
+    vi.spyOn(globalThis.URL, "revokeObjectURL").mockImplementation(() => {});
   });
 
-  it("shows pending copy instead of zero time for unfinished exports", async () => {
+  it("downloads ready exports and shows pending copy instead of zero time", async () => {
     mockCreateReportExport.mockResolvedValue(pendingExport);
     mockGetReportExport.mockResolvedValue({
       ...pendingExport,
@@ -87,10 +100,16 @@ describe("HrReportsPage", () => {
       screen.getByRole("button", { name: /匯出完整參與報表/ }),
     );
     await waitFor(() => expect(mockGetReportExport).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mockDownloadReportExport).toHaveBeenCalledWith("exp-pending"),
+    );
     await userEvent.click(screen.getByRole("tab", { name: "匯出狀態" }));
 
     expect(screen.getByText("尚未完成")).toBeInTheDocument();
     expect(screen.queryByText(/0001-01-01/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "下載 CSV" }),
+    ).toBeInTheDocument();
   });
 
   it("summarizes participation rows and filters by report preset", async () => {
@@ -139,6 +158,7 @@ describe("HrReportsPage", () => {
     await userEvent.click(screen.getByRole("tab", { name: "匯出狀態" }));
 
     expect(await screen.findByText("失敗")).toBeInTheDocument();
+    expect(mockDownloadReportExport).not.toHaveBeenCalled();
     expect(screen.getByText("匯出失敗，請重新產生。")).toBeInTheDocument();
     expect(screen.getByText("尚未產生")).toBeInTheDocument();
   });

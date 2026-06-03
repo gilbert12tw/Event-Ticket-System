@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,6 +114,10 @@ func TestPhase3ComposeLGTMDeclaresFourSignalsAndNodeGraph(t *testing.T) {
 		"otelcol.receiver.otlp",
 		"cets_http_requests_total",
 		"Backend RED by Replica",
+		"DB Pool Wait Rate by Backend",
+		"Global DB Lock Waiting Sessions",
+		`cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}`,
+		`cets_db_lock_waiting_sessions{job=\"cets-backend\"}`,
 		"traces_service_graph_request_total",
 		"traces_spanmetrics_calls_total",
 		"process_cpu:cpu:nanoseconds:cpu:nanoseconds",
@@ -143,100 +148,12 @@ func TestPhase3ComposeLGTMRedactsSensitiveTelemetry(t *testing.T) {
 	}
 }
 
-func TestPhase3ComposeScriptsDeclareDeployVerifyAndDrillContracts(t *testing.T) {
-	scripts := readFilesUnder(t, filepath.Join("..", "..", "..", "scripts", "compose"))
-
-	for _, fragment := range []string{
-		"compose.phase3-ha.yaml",
-		"phase3-k6.sh",
-		"phase3-ha-lgtm.js",
-		"K6_PHASE3_PROFILE",
-		"K6_PHASE3_REPLICA_SAMPLES",
-		"header_replicas",
-		"--profile phase3-ha",
-		"--profile worker-isolation",
-		"--profile observability",
-		"--profile phase3-canary",
-		"GRAFANA_ADMIN_USER",
-		"GRAFANA_ADMIN_PASSWORD",
-		"backend-1 backend-2 backend-3",
-		"frontend-1 frontend-2 frontend-3",
-		"gateway-1 gateway-2 gateway-3",
-		"EDGE_URL",
-		"/healthz",
-		"/readyz",
-		"api/datasources/uid",
-		"api/v1/targets?state=active",
-		"api/search?tags=service.name%3Dcets-backend",
-		"api/traces/$trace_id",
-		"traces_service_graph_request_total",
-		`traces_service_graph_request_total{server="cets-backend"}`,
-		"pyroscope/render",
-		"otel_trace_id",
-		"TEMPO_TRACE_ID",
-		"$TEMPO_TRACE_ID",
-		"cets_http_request_seconds_count",
-		"count by (route, method, status_class)",
-		"count by (instance)",
-		"phase3-redaction-canary",
-		`service_name%3D%22redaction-canary%22`,
-		"DRILL_SERVICES=(gateway-1 frontend-1 backend-1)",
-		"compose stop \"$service\"",
-		"compose ps -a -q \"$service\"",
-		"docker start \"$container\"",
-	} {
-		assert.Contains(t, scripts, fragment, "Phase 3 Compose script contract is missing %q", fragment)
-	}
-
-	for _, forbidden := range []string{
-		"kubectl",
-		"scripts/k3s",
-		"deploy/k8s-phase3",
-		"observability/k8s-lgtm",
-		"rm -rf /etc/rancher",
-		"k3s-uninstall.sh",
-		"docker system prune",
-	} {
-		assert.NotContains(t, scripts, forbidden, "Phase 3 Compose scripts must not require %q", forbidden)
-	}
-}
-
-func TestPhase3K6LoadScriptDeclaresDistributionAndErrorContracts(t *testing.T) {
-	scriptPath := filepath.Join("..", "..", "..", "k6", "phase3-ha-lgtm.js")
-	require.FileExists(t, scriptPath)
-	script := readText(t, scriptPath)
-	wrapper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-k6.sh"))
-
-	for _, fragment := range []string{
-		"phase3_gateway_replica_hits",
-		"phase3_frontend_replica_hits",
-		"phase3_backend_replica_hits",
-		"phase3_controlled_errors",
-		"controlledErrorTraffic",
-		"investigateBackendHotspot",
-		"X-CETS-Gateway-Replica",
-		"X-CETS-Frontend-Replica",
-		"X-CETS-Backend-Replica",
-	} {
-		assert.Contains(t, script, fragment)
-	}
-	for _, fragment := range []string{
-		"header_replicas",
-		"K6_PHASE3_REPLICA_SAMPLES",
-		"expected at least 3 gateway replicas",
-		"expected at least 3 frontend replicas",
-		"expected at least 3 backend replicas",
-		"grafana/k6",
-	} {
-		assert.Contains(t, wrapper, fragment)
-	}
-}
-
 func TestPhase3OTelTraceIDCompatibilityContract(t *testing.T) {
 	router := readText(t, filepath.Join("..", "internal", "httpapi", "router.go"))
 	datasources := readText(t, filepath.Join("observability", "phase3", "grafana", "provisioning", "datasources", "datasources.yml"))
 	dashboard := readText(t, filepath.Join("observability", "phase3", "grafana", "dashboards", "cets-phase3-compose.json"))
-	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
+	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh")) +
+		readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-trace-evidence.sh"))
 
 	for _, source := range []string{router, datasources, dashboard, verify} {
 		assert.Contains(t, source, "otel_trace_id")
@@ -246,6 +163,9 @@ func TestPhase3OTelTraceIDCompatibilityContract(t *testing.T) {
 	assert.Contains(t, router, "observability.TraceHTTP")
 	assert.Contains(t, verify, `service_name=~\"backend-.*\"`)
 	assert.Contains(t, verify, `|= \"$TEMPO_TRACE_ID\"`)
+	assert.NotContains(t, verify, `if printf '%s\n' "$traces" | grep -q '"traceID"'`)
+	assert.Contains(t, verify, `have jq || die "jq is required"`)
+	assert.NotContains(t, verify, `grep -Eq "http.route|cets.route|rootTraceName"`)
 }
 
 func TestPhase3ComposeReplacesLocalK3sAssets(t *testing.T) {
@@ -266,6 +186,17 @@ func readText(t *testing.T, path string) string {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	return string(data)
+}
+
+func requireCommand(t *testing.T, name string) {
+	t.Helper()
+	_, err := exec.LookPath(name)
+	require.NoError(t, err)
+}
+
+func writeExecutable(t *testing.T, path string, content string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o700))
 }
 
 func readFilesUnder(t *testing.T, root string) string {

@@ -16,6 +16,10 @@ type ReportObjectStore interface {
 	Put(ctx context.Context, key string, contentType string, body []byte) error
 }
 
+type ReportObjectReader interface {
+	Get(ctx context.Context, key string) ([]byte, string, error)
+}
+
 type ReportObjectExistenceChecker interface {
 	Exists(ctx context.Context, key string) (bool, error)
 }

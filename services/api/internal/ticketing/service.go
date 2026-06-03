@@ -2,8 +2,10 @@ package ticketing
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/ratelimit"
 	"event-ticket-system/internal/reservation"
 
@@ -18,6 +20,10 @@ type Service struct {
 	noShowPolicy              NoShowPolicy
 	reservationGate           reservation.Gate
 	reservationSecret         []byte
+	metrics                   *observability.Registry
+	reservationOutage         string
+	capacityPeekMu            sync.Mutex
+	capacityPeekCache         map[string]cachedEventCapacityPeek
 	bookingLimiter            ratelimit.Limiter
 	rateLimitSecret           []byte
 	bookingContentionStrategy string
@@ -54,6 +60,16 @@ func (s *Service) WithReservationGate(gate reservation.Gate, secret []byte) *Ser
 	}
 	s.reservationGate = gate
 	s.reservationSecret = secret
+	return s
+}
+
+func (s *Service) WithMetrics(metrics *observability.Registry) *Service {
+	s.metrics = metrics
+	return s
+}
+
+func (s *Service) WithReservationOutageMode(outageMode string) *Service {
+	s.reservationOutage = outageMode
 	return s
 }
 

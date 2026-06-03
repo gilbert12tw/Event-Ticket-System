@@ -30,6 +30,7 @@ export type IconName =
   | "clipboard"
   | "copy"
   | "database"
+  | "download"
   | "logout"
   | "play"
   | "plus"

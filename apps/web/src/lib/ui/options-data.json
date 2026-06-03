@@ -75,7 +75,8 @@
   ],
   "eligibilitySites": [
     ["*", "所有廠區"],
-    ["Taipei", "台北"]
+    ["Taipei HQ", "台北總部"],
+    ["Tainan HQ", "台南總部"]
   ],
   "employmentStatusFilters": [
     ["*", "所有雇用狀態"],

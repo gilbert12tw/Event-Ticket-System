@@ -303,7 +303,7 @@ func TestBookingWithGateDuplicateFreshKeyReleasesReservedSlot(t *testing.T) {
 	assert.Equal(t, 1, remaining, "duplicate booking with a fresh key must release its temporary Redis hold")
 }
 
-func TestBookingWithGateReplayDoesNotReserveAgain(t *testing.T) {
+func TestBookingWithGateReplaySkipsTemporaryHold(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	gate := &recordingReservationGate{outcome: reservation.OutcomeGranted}
@@ -329,7 +329,9 @@ func TestBookingWithGateReplayDoesNotReserveAgain(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, replay.Duplicate)
 	assert.Equal(t, first.Registration.RegistrationID, replay.Registration.RegistrationID)
-	assert.Equal(t, 1, gate.reserveCalls, "completed idempotency replay must return before Redis reservation")
+	assert.Equal(t, 1, gate.reserveCalls, "completed idempotency replay must not take a temporary Redis hold")
+	assert.Equal(t, 0, gate.releaseCalls)
+	assert.Equal(t, 1, gate.confirmCalls)
 }
 
 func TestBookingWithGateRejectsLimitedFamilyBeforeReserve(t *testing.T) {
@@ -473,27 +475,4 @@ func redisClientFromEnv(t *testing.T) *redis.Client {
 	opts, err := redis.ParseURL(url)
 	require.NoError(t, err)
 	return redis.NewClient(opts)
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := false
-	if i < 0 {
-		neg = true
-		i = -i
-	}
-	var b [20]byte
-	pos := len(b)
-	for i > 0 {
-		pos--
-		b[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		b[pos] = '-'
-	}
-	return string(b[pos:])
 }

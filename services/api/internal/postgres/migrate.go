@@ -32,6 +32,7 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
+	configureQueryTracing(cfg)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -41,6 +42,17 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, err
 	}
 	return pool, nil
+}
+
+func configureQueryTracing(cfg *pgxpool.Config) {
+	if cfg == nil || cfg.ConnConfig == nil {
+		return
+	}
+	cfg.ConnConfig.Tracer = queryTracer{
+		serverAddress: strings.TrimSpace(cfg.ConnConfig.Host),
+		serverPort:    int(cfg.ConnConfig.Port),
+		database:      strings.TrimSpace(cfg.ConnConfig.Database),
+	}
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {

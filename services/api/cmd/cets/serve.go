@@ -14,6 +14,8 @@ import (
 
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/httpapi"
+	"event-ticket-system/internal/objectstore"
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/ratelimit"
 	"event-ticket-system/internal/reservation"
@@ -51,6 +53,13 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	if err := autoMigrateIfEnabled(ctx, cfg, logger, pool); err != nil {
 		return err
 	}
+	readPool, err := connectReadPool(ctx, cfg, logger, pool)
+	if err != nil {
+		return err
+	}
+	if readPool != pool {
+		defer readPool.Close()
+	}
 	gate, redisClient, err := newBookingReservationGate(cfg, logger)
 	if err != nil {
 		return err
@@ -62,17 +71,33 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	}
 	defer closeRedisClient(logger, rateLimitClient)
 
+	metrics := observability.NewRegistry()
 	ticketingService := newTicketingService(pool, cfg, logger).
 		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret)).
-		WithBookingRateLimiter(limiter, []byte(cfg.BookingRateLimitHashSecret))
+		WithReservationOutageMode(cfg.ReservationOutageMode).
+		WithBookingRateLimiter(limiter, []byte(cfg.BookingRateLimitHashSecret)).
+		WithMetrics(metrics)
+	readTicketingService := newTicketingService(readPool, cfg, logger).
+		WithMetrics(metrics)
+	reportStore := objectstore.S3CompatibleStore{
+		Endpoint:  cfg.ObjectEndpoint,
+		Bucket:    cfg.ObjectBucket,
+		Region:    cfg.ObjectRegion,
+		AccessKey: cfg.ObjectAccessKey,
+		SecretKey: cfg.ObjectSecretKey,
+	}
 	demoClock := newDemoClockForConfig(cfg, logger)
 	if demoClock != nil {
 		ticketingService.WithClock(demoClock.Now)
+		readTicketingService.WithClock(demoClock.Now)
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		DB:                          pool,
+		MetricsDB:                   observability.DatabaseMetrics{Write: pool, Read: readPool},
 		Ticketing:                   ticketingService,
+		ReadTicketing:               readTicketingService,
 		Logger:                      logger,
+		Metrics:                     metrics,
 		DemoClock:                   demoClock,
 		TracingEnabled:              cfg.OTelTracesEnabled,
 		RequestTimeout:              cfg.RequestTimeout,
@@ -80,9 +105,26 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 		OpsAPIEnabled:               cfg.OpsAPIEnabled,
 		ProviderAuth:                httpapi.ProviderAuthConfig{Secret: cfg.ProviderTokenSecret},
 		ReportStaleThresholdSeconds: cfg.ReportStaleThresholdSeconds,
+		ReportStore:                 reportStore,
+		ObjectStore:                 reportStore,
 	})
 	server := &http.Server{Addr: cfg.AppAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	return runHTTPServer(server, cfg, logger)
+}
+
+func connectReadPool(ctx context.Context, cfg config.Config, logger *slog.Logger, fallback *pgxpool.Pool) (*pgxpool.Pool, error) {
+	readURL := strings.TrimSpace(cfg.DatabaseReadURL)
+	if readURL == "" || readURL == strings.TrimSpace(cfg.DatabaseURL) {
+		return fallback, nil
+	}
+	pool, err := postgres.Connect(ctx, readURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect read database: %w", err)
+	}
+	if logger != nil {
+		logger.Info("read database pool connected")
+	}
+	return pool, nil
 }
 
 func autoMigrateIfEnabled(ctx context.Context, cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) error {

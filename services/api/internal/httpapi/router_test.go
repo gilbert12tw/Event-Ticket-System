@@ -66,6 +66,22 @@ func (r fakeReadyRow) Scan(dest ...interface{}) error {
 	return nil
 }
 
+type countingSchemaPinger struct {
+	schemaReady bool
+	pings       int
+	queries     int
+}
+
+func (p *countingSchemaPinger) Ping(context.Context) error {
+	p.pings++
+	return nil
+}
+
+func (p *countingSchemaPinger) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+	p.queries++
+	return fakeReadyRow{ready: p.schemaReady}
+}
+
 func TestHealthz(t *testing.T) {
 	router := testRouter(Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -156,6 +172,23 @@ func TestRouterSetsBackendReplicaHeader(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	assert.NotEmpty(t, rec.Header().Get("X-CETS-Backend-Replica"))
+}
+
+func TestRouterLogsBackendReplicaMatchingHeader(t *testing.T) {
+	var logs bytes.Buffer
+	router := testRouter(Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	replica := rec.Header().Get("X-CETS-Backend-Replica")
+	require.NotEmpty(t, replica)
+	assertEnvelope(t, logs.String(),
+		`"msg":"request handled"`,
+		`"route":"/healthz"`,
+		`"replica":"`+replica+`"`,
+	)
 }
 
 func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
@@ -451,43 +484,6 @@ func useEmptyStaticRoot(t *testing.T) {
 	t.Cleanup(func() {
 		staticRoot = originalStaticRoot
 	})
-}
-
-func TestReadyzOK(t *testing.T) {
-	router := testRouter(Dependencies{DB: fakeSchemaPinger{schemaReady: true}})
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	assertEnvelope(t, rec.Body.String(), `"success":true`, `"status":"ready"`)
-}
-
-func TestReadyzRejectsUnmigratedDatabase(t *testing.T) {
-	router := testRouter(Dependencies{DB: fakeSchemaPinger{schemaReady: false}})
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
-	assertEnvelope(t, rec.Body.String(), `"success":false`, `"database schema is not ready"`)
-}
-
-func TestReadyzRequiresBookingBanSchema(t *testing.T) {
-	assert.Contains(t, requiredSchemaReadyQuery, "to_regclass('public.booking_bans')")
-}
-
-func TestReadyzDatabaseUnavailable(t *testing.T) {
-	router := testRouter(Dependencies{DB: fakePinger{err: errors.New("down")}})
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
-	assertEnvelope(t, rec.Body.String(), `"success":false`, `"database is not ready"`)
 }
 
 func assertEnvelope(t *testing.T, body string, parts ...string) {

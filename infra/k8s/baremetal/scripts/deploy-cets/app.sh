@@ -87,9 +87,9 @@ metadata:
   namespace: $CETS_NAMESPACE
 type: Opaque
 stringData:
-  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB"
-  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB"
-  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB"
+  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-8}"
+  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-8}"
+  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-8}"
   TOKEN_SIGNING_SECRET: "$TOKEN_SIGNING_SECRET"
   PROVIDER_TOKEN_SECRET: "$PROVIDER_TOKEN_SECRET"
   BOOKING_RESERVATION_HASH_SECRET: "$BOOKING_RESERVATION_HASH_SECRET"
@@ -102,7 +102,7 @@ metadata:
   name: backend
   namespace: $CETS_NAMESPACE
 spec:
-  replicas: 3
+  replicas: 6
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -120,17 +120,10 @@ $(image_pull_block)
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
+        whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
             app: backend
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: backend
-            topologyKey: kubernetes.io/hostname
       containers:
       - name: backend
         image: $CETS_API_IMAGE
@@ -193,6 +186,7 @@ data:
       location = /healthz {
         access_log off;
         add_header Content-Type text/plain;
+        add_header X-CETS-Frontend-Replica \$hostname always;
         return 200 "ok\n";
       }
 
@@ -244,6 +238,7 @@ data:
       }
 
       location / {
+        add_header X-CETS-Frontend-Replica \$hostname always;
         try_files \$uri \$uri/ /index.html;
       }
     }
@@ -456,6 +451,16 @@ spec:
 EOF
 
 kubectl_bm apply -f "$GENERATED_DIR/cets-app.yaml"
+log "restarting database client deployments to load runtime env"
+kubectl_bm -n "$CETS_NAMESPACE" rollout restart deployment/backend
+for kind in notification projection compensation export; do
+  kubectl_bm -n "$CETS_NAMESPACE" rollout restart "deployment/worker-$kind"
+done
+kubectl_bm -n "$CETS_NAMESPACE" rollout status deployment/backend --timeout=300s
+for kind in notification projection compensation export; do
+  kubectl_bm -n "$CETS_NAMESPACE" rollout status "deployment/worker-$kind" --timeout=300s
+done
+
 kubectl_bm apply -f "$GENERATED_DIR/cets-jobs.yaml"
 kubectl_bm wait --for=condition=complete job/cets-migrate -n "$CETS_NAMESPACE" --timeout=300s
 kubectl_bm wait --for=condition=complete job/cets-seed -n "$CETS_NAMESPACE" --timeout=300s

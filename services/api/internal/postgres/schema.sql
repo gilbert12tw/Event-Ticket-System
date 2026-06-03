@@ -319,6 +319,8 @@ CREATE INDEX IF NOT EXISTS idx_eligibility_impact_reviews_status ON eligibility_
 
 CREATE INDEX IF NOT EXISTS idx_registrations_event_status ON registrations(event_id, status);
 
+CREATE INDEX IF NOT EXISTS idx_registrations_employee_status ON registrations(employee_id, status);
+
 CREATE INDEX IF NOT EXISTS idx_no_show_records_employee ON no_show_records(employee_id, cooldown_until DESC);
 
 CREATE INDEX IF NOT EXISTS idx_tickets_employee ON tickets(employee_id);
@@ -539,6 +541,9 @@ ALTER TABLE offline_checkin_scans ALTER COLUMN ticket_id DROP NOT NULL;
 ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS token_hash TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE offline_checkin_scans ADD COLUMN IF NOT EXISTS conflict_reason TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_offline_checkin_scans_batch_token_time
+		ON offline_checkin_scans(batch_id, token_hash, scanned_at, created_at);
 
 ALTER TABLE tickets ALTER COLUMN signed_token SET DEFAULT '';
 

@@ -5,14 +5,72 @@ log "installing observability stack"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null
 helm repo add grafana https://grafana.github.io/helm-charts >/dev/null
 helm repo update >/dev/null
+cat >"$GENERATED_DIR/kube-prometheus-stack-values.yaml" <<EOF
+grafana:
+  additionalDataSources:
+  - name: Loki
+    uid: Loki
+    type: loki
+    access: proxy
+    url: http://loki-gateway.observability.svc.cluster.local
+    jsonData:
+      derivedFields:
+      - datasourceUid: Tempo
+        matcherRegex: '"otel_trace_id":"([a-fA-F0-9]{32})"'
+        name: otel_trace_id
+        url: "\$\${__value.raw}"
+  - name: Tempo
+    uid: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo.observability.svc.cluster.local:3200
+    jsonData:
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      tracesToLogsV2:
+        datasourceUid: Loki
+        filterByTraceID: true
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+      tracesToMetrics:
+        datasourceUid: prometheus
+        queries:
+        - name: Span request rate
+          query: "sum(rate(traces_spanmetrics_calls_total{\$\${__tags}}[5m]))"
+        - name: Span p99 latency
+          query: "histogram_quantile(0.99, sum by (le) (rate(traces_spanmetrics_duration_seconds_bucket{\$\${__tags}}[5m])))"
+      tracesToProfiles:
+        datasourceUid: Pyroscope
+        profileTypeId: "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+        tags: ["service.name", "deployment.environment", "service.version"]
+  - name: Pyroscope
+    uid: Pyroscope
+    type: grafana-pyroscope-datasource
+    access: proxy
+    url: http://pyroscope.observability.svc.cluster.local:4040
+prometheus:
+  prometheusSpec:
+    enableRemoteWriteReceiver: true
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+EOF
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace observability \
   --version 86.1.0 \
-  --set grafana.enabled=true \
-  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-  --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false
+  -f "$GENERATED_DIR/kube-prometheus-stack-values.yaml"
 cat >"$GENERATED_DIR/alloy-values.yaml" <<EOF
 alloy:
+  extraPorts:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP
   extraEnv:
   - name: NODE_NAME
     valueFrom:
@@ -83,12 +141,55 @@ alloy:
           url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
         }
       }
+
+      otelcol.receiver.otlp "cets" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces = [otelcol.exporter.otlp.tempo.input]
+        }
+      }
+
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.observability.svc.cluster.local:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
 EOF
 helm upgrade --install alloy grafana/alloy \
   --namespace observability \
   --version 1.8.2 \
   -f "$GENERATED_DIR/alloy-values.yaml"
-helm upgrade --install tempo grafana/tempo --namespace observability --version 1.24.4
+kubectl_bm -n observability rollout restart daemonset/alloy
+cat >"$GENERATED_DIR/tempo-values.yaml" <<EOF
+tempo:
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090/api/v1/write
+    processor:
+      service_graphs: {}
+      span_metrics: {}
+    registry:
+      external_labels:
+        cluster: cets-baremetal
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+        - service-graphs
+        - span-metrics
+EOF
+helm upgrade --install tempo grafana/tempo \
+  --namespace observability \
+  --version 1.24.4 \
+  -f "$GENERATED_DIR/tempo-values.yaml"
 helm upgrade --install pyroscope grafana/pyroscope --namespace observability --version 2.0.2
 
 cat >"$GENERATED_DIR/loki-values.yaml" <<EOF

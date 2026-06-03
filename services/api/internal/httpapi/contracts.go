@@ -8,6 +8,7 @@ import (
 
 type TicketingService interface {
 	EventService
+	EventAssetService
 	EligibilityService
 	RegistrationService
 	TicketService
@@ -15,6 +16,7 @@ type TicketingService interface {
 	NotificationService
 	ReportingService
 	AuditService
+	HRMetadataService
 	OpsService
 	DemoService
 }
@@ -28,6 +30,11 @@ type EventService interface {
 	DuplicateEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ArchiveEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ListEvents(ctx context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.EventSummary, error)
+}
+
+type EventAssetService interface {
+	SaveEventPoster(ctx context.Context, actor ticketing.Actor, eventID string, input ticketing.EventAssetInput) (ticketing.EventAsset, error)
+	GetEventPoster(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventAsset, error)
 }
 
 type EligibilityService interface {
@@ -76,6 +83,10 @@ type ReportingService interface {
 
 type AuditService interface {
 	AuditLogs(ctx context.Context, actor ticketing.Actor, query ...ticketing.AuditLogQuery) ([]ticketing.AuditLog, error)
+}
+
+type HRMetadataService interface {
+	AdminHROptions(ctx context.Context, actor ticketing.Actor) (ticketing.AdminHROptions, error)
 }
 
 type OpsService interface {

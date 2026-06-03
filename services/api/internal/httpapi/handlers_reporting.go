@@ -3,6 +3,7 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"event-ticket-system/internal/ticketing"
 )
@@ -84,5 +85,35 @@ func handleGetReportExport(service TicketingService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.GetReportExport(r.Context(), actorFromRequest(r), r.PathValue("export_id"))
 		writeServiceResult(w, http.StatusOK, result, err)
+	}
+}
+
+func handleDownloadReportExport(service TicketingService, store ticketing.ReportObjectReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if store == nil {
+			writeError(w, http.StatusServiceUnavailable, "report export object store is not configured")
+			return
+		}
+		export, err := service.GetReportExport(r.Context(), actorFromRequest(r), r.PathValue("export_id"))
+		if err != nil {
+			writeServiceResult(w, http.StatusOK, nil, err)
+			return
+		}
+		if export.Status != ticketing.ReportExportStatusReady {
+			writeError(w, http.StatusConflict, "report export is not ready")
+			return
+		}
+		body, contentType, err := store.Get(r.Context(), export.ObjectKey)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "report export artifact is unavailable")
+			return
+		}
+		if strings.TrimSpace(contentType) == "" {
+			contentType = "text/csv; charset=utf-8"
+		}
+		w.Header().Set(contentTypeHeader, contentType)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+export.ExportID+`.csv"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
 	}
 }

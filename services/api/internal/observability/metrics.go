@@ -31,9 +31,39 @@ type PoolStater interface {
 	Stat() *pgxpool.Stat
 }
 
+type PoolMetricsSource interface {
+	PoolStats() map[string]PoolStater
+}
+
+type DatabaseMetrics struct {
+	Write SQLMetricsDB
+	Read  PoolStater
+}
+
+func (m DatabaseMetrics) PoolStats() map[string]PoolStater {
+	pools := map[string]PoolStater{}
+	if write, ok := m.Write.(PoolStater); ok {
+		pools["write"] = write
+	}
+	if m.Read != nil {
+		pools["read"] = m.Read
+	}
+	return pools
+}
+
+func (m DatabaseMetrics) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	return m.Write.Query(ctx, sql, args...)
+}
+
+func (m DatabaseMetrics) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	return m.Write.QueryRow(ctx, sql, args...)
+}
+
 type Registry struct {
-	mu   sync.Mutex
-	http map[httpKey]*histogram
+	mu          sync.Mutex
+	http        map[httpKey]*histogram
+	booking     map[bookingStageKey]*histogram
+	reservation map[reservationKey]*histogram
 }
 
 type httpKey struct {
@@ -49,7 +79,11 @@ type histogram struct {
 }
 
 func NewRegistry() *Registry {
-	return &Registry{http: map[httpKey]*histogram{}}
+	return &Registry{
+		http:        map[httpKey]*histogram{},
+		booking:     map[bookingStageKey]*histogram{},
+		reservation: map[reservationKey]*histogram{},
+	}
 }
 
 func (r *Registry) ObserveHTTPRequest(route string, method string, status int, duration time.Duration) {
@@ -79,6 +113,64 @@ func (r *Registry) ObserveHTTPRequest(route string, method string, status int, d
 	h.Sum += seconds
 }
 
+type bookingStageKey struct {
+	Stage   string
+	Outcome string
+}
+
+func (r *Registry) ObserveBookingStage(stage string, outcome string, duration time.Duration) {
+	if r == nil {
+		return
+	}
+	key := bookingStageKey{
+		Stage:   boundedBookingStage(stage),
+		Outcome: boundedOutcome(outcome),
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	h := r.booking[key]
+	if h == nil {
+		h = &histogram{Buckets: make([]uint64, len(httpBuckets))}
+		r.booking[key] = h
+	}
+	observeDuration(h, duration.Seconds())
+}
+
+type reservationKey struct {
+	Outcome      string
+	CapacityType string
+	OutageMode   string
+}
+
+func (r *Registry) ObserveReservationAttempt(outcome string, capacityType string, outageMode string, duration time.Duration) {
+	if r == nil {
+		return
+	}
+	key := reservationKey{
+		Outcome:      boundedOutcome(outcome),
+		CapacityType: boundedCapacityType(capacityType),
+		OutageMode:   boundedOutageMode(outageMode),
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	h := r.reservation[key]
+	if h == nil {
+		h = &histogram{Buckets: make([]uint64, len(httpBuckets))}
+		r.reservation[key] = h
+	}
+	observeDuration(h, duration.Seconds())
+}
+
+func observeDuration(h *histogram, seconds float64) {
+	for i, bucket := range httpBuckets {
+		if seconds <= bucket {
+			h.Buckets[i]++
+		}
+	}
+	h.Count++
+	h.Sum += seconds
+}
+
 func (r *Registry) Handler(db any) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -91,6 +183,8 @@ func (r *Registry) WritePrometheus(ctx context.Context, w io.Writer, db any) {
 		r = NewRegistry()
 	}
 	r.writeHTTPMetrics(w)
+	r.writeBookingMetrics(w)
+	r.writeReservationMetrics(w)
 	writePoolMetrics(w, db)
 	writeSQLMetrics(ctx, w, db)
 }
@@ -133,121 +227,77 @@ func (r *Registry) writeHTTPMetrics(w io.Writer) {
 	}
 }
 
-func writePoolMetrics(w io.Writer, db any) {
-	stater, ok := db.(PoolStater)
-	if !ok {
-		return
-	}
-	stat := stater.Stat()
-	writeLine(w, "# HELP cets_db_pool_acquire_wait_seconds_total Total time spent waiting for PostgreSQL pool acquires.")
-	writeLine(w, "# TYPE cets_db_pool_acquire_wait_seconds_total counter")
-	writeFormat(w, "cets_db_pool_acquire_wait_seconds_total %s\n", strconv.FormatFloat(stat.AcquireDuration().Seconds(), 'f', -1, 64))
-	writeLine(w, "# HELP cets_db_pool_acquire_count_total Total PostgreSQL pool acquire calls.")
-	writeLine(w, "# TYPE cets_db_pool_acquire_count_total counter")
-	writeFormat(w, "cets_db_pool_acquire_count_total %d\n", stat.AcquireCount())
-	writeLine(w, "# HELP cets_db_pool_conns Current PostgreSQL pool connections by state.")
-	writeLine(w, "# TYPE cets_db_pool_conns gauge")
-	writeFormat(w, "cets_db_pool_conns{state=\"acquired\"} %d\n", stat.AcquiredConns())
-	writeFormat(w, "cets_db_pool_conns{state=\"idle\"} %d\n", stat.IdleConns())
-	writeFormat(w, "cets_db_pool_conns{state=\"total\"} %d\n", stat.TotalConns())
-}
+func (r *Registry) writeBookingMetrics(w io.Writer) {
+	writeLine(w, "# HELP cets_booking_stage_seconds Booking hot-path stage duration histogram by bounded stage and outcome.")
+	writeLine(w, "# TYPE cets_booking_stage_seconds histogram")
 
-func writeSQLMetrics(ctx context.Context, w io.Writer, db any) {
-	sqlDB, ok := db.(SQLMetricsDB)
-	if !ok {
-		return
+	r.mu.Lock()
+	keys := make([]bookingStageKey, 0, len(r.booking))
+	for key := range r.booking {
+		keys = append(keys, key)
 	}
-	writeLockWaitMetric(ctx, w, sqlDB)
-	writeOutboxMetrics(ctx, w, sqlDB)
-	writeWorkerOutcomeMetrics(ctx, w, sqlDB)
-	writeReservationCompensationMetrics(ctx, w, sqlDB)
-	writeRateLimitMetrics(ctx, w, sqlDB)
-}
-
-func writeLockWaitMetric(ctx context.Context, w io.Writer, db SQLMetricsDB) {
-	writeLine(w, "# HELP cets_db_lock_waiting_sessions PostgreSQL sessions currently waiting on locks.")
-	writeLine(w, "# TYPE cets_db_lock_waiting_sessions gauge")
-	var waiting int64
-	err := db.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'`).Scan(&waiting)
-	if err != nil {
-		writeLine(w, "cets_metrics_scrape_errors_total{collector=\"db_lock\"} 1")
-		return
-	}
-	writeFormat(w, "cets_db_lock_waiting_sessions %d\n", waiting)
-}
-
-func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
-	writeLine(w, "# HELP cets_outbox_pending_total Outbox rows still requiring worker attention.")
-	writeLine(w, "# TYPE cets_outbox_pending_total gauge")
-	writeLine(w, "# HELP cets_outbox_lag_seconds Outbox publish latency distribution for rows that reached published state.")
-	writeLine(w, "# TYPE cets_outbox_lag_seconds histogram")
-	writeLine(w, "# HELP cets_outbox_oldest_lag_seconds Age of the oldest outbox row still requiring worker attention.")
-	writeLine(w, "# TYPE cets_outbox_oldest_lag_seconds gauge")
-	writeLine(w, "# HELP cets_outbox_retry_count Retry attempts recorded on outbox rows still requiring worker attention.")
-	writeLine(w, "# TYPE cets_outbox_retry_count gauge")
-	writeLine(w, "# HELP cets_outbox_dead_letter_total Outbox rows currently in dead-letter state.")
-	writeLine(w, "# TYPE cets_outbox_dead_letter_total gauge")
-	writeLine(w, "# HELP cets_outbox_lease_held_seconds Oldest held lease age for processing outbox rows.")
-	writeLine(w, "# TYPE cets_outbox_lease_held_seconds gauge")
-	rows, err := db.Query(ctx, `WITH outbox_attention AS (
-			SELECT event_type,
-				CASE
-					WHEN event_type IN ('report.export.requested', 'report.export.requested.v2') THEN 'export'
-					WHEN event_type = 'reporting.projection.update_required.v2' THEN 'projection'
-					WHEN event_type LIKE 'reservation.compensation.%' THEN 'compensation'
-					ELSE 'notification'
-				END AS worker_kind,
-				publish_status,
-				retry_count,
-				lease_started_at,
-				created_at
-			FROM outbox_events
-			WHERE publish_status IN ('pending', 'processing', 'dead_letter')
-		)
-		SELECT event_type, worker_kind, publish_status, count(*),
-			COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0),
-			COALESCE(sum(retry_count), 0),
-			count(*) FILTER (WHERE publish_status = 'dead_letter'),
-			COALESCE(EXTRACT(EPOCH FROM now() - min(lease_started_at)), 0)
-		FROM outbox_attention
-		GROUP BY event_type, worker_kind, publish_status
-		ORDER BY worker_kind, event_type, publish_status`)
-	if err != nil {
-		writeLine(w, outboxScrapeErrorMetric)
-		return
-	}
-	defer rows.Close()
-
-	aggregates := map[outboxMetricKey]outboxMetricAggregate{}
-	for rows.Next() {
-		var eventType, workerKind, status string
-		var count, retryCount, deadLetterCount int64
-		var oldestLag, leaseHeld float64
-		if err := rows.Scan(&eventType, &workerKind, &status, &count, &oldestLag, &retryCount, &deadLetterCount, &leaseHeld); err != nil {
-			writeLine(w, outboxScrapeErrorMetric)
-			return
-		}
-		key := normalizeOutboxMetricKey(eventType, workerKind, status)
-		addOutboxMetricAggregate(aggregates, key, count, oldestLag, retryCount, deadLetterCount, leaseHeld)
-	}
-	if err := rows.Err(); err != nil {
-		writeLine(w, outboxScrapeErrorMetric)
-		return
-	}
-
-	for _, aggregate := range sortedOutboxMetricAggregates(aggregates) {
-		labels := fmt.Sprintf(`event_type="%s",worker_kind="%s",status="%s"`,
-			escapeLabel(aggregate.Key.EventType), escapeLabel(aggregate.Key.WorkerKind), escapeLabel(aggregate.Key.Status))
-		writeFormat(w, "cets_outbox_pending_total{%s} %d\n", labels, aggregate.Count)
-		writeFormat(w, "cets_outbox_oldest_lag_seconds{%s} %s\n", labels, strconv.FormatFloat(aggregate.OldestLag, 'f', -1, 64))
-		writeFormat(w, "cets_outbox_retry_count{%s} %d\n", labels, aggregate.RetryCount)
-		writeFormat(w, "cets_outbox_lease_held_seconds{%s} %s\n", labels, strconv.FormatFloat(aggregate.LeaseHeld, 'f', -1, 64))
-		if aggregate.DeadLetterCount > 0 {
-			writeFormat(w, "cets_outbox_dead_letter_total{event_type=\"%s\",worker_kind=\"%s\"} %d\n",
-				escapeLabel(aggregate.Key.EventType), escapeLabel(aggregate.Key.WorkerKind), aggregate.DeadLetterCount)
+	sort.Slice(keys, func(i, j int) bool {
+		return bookingStageLabelSet(keys[i]) < bookingStageLabelSet(keys[j])
+	})
+	snapshots := make(map[bookingStageKey]histogram, len(keys))
+	for _, key := range keys {
+		current := r.booking[key]
+		snapshots[key] = histogram{
+			Buckets: append([]uint64(nil), current.Buckets...),
+			Count:   current.Count,
+			Sum:     current.Sum,
 		}
 	}
-	writeOutboxLagHistogramMetrics(ctx, w, db)
+	r.mu.Unlock()
+
+	for _, key := range keys {
+		labels := bookingStageLabelSet(key)
+		h := snapshots[key]
+		for i, bucket := range httpBuckets {
+			writeFormat(w, "cets_booking_stage_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
+		}
+		writeFormat(w, "cets_booking_stage_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
+		writeFormat(w, "cets_booking_stage_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
+		writeFormat(w, "cets_booking_stage_seconds_count{%s} %d\n", labels, h.Count)
+	}
+}
+
+func (r *Registry) writeReservationMetrics(w io.Writer) {
+	writeLine(w, "# HELP cets_reservation_attempt_total Reservation pre-admission attempts by bounded outcome, capacity type, and outage mode.")
+	writeLine(w, "# TYPE cets_reservation_attempt_total counter")
+	writeLine(w, "# HELP cets_booking_preadmission_seconds Reservation pre-admission latency histogram by bounded outcome, capacity type, and outage mode.")
+	writeLine(w, "# TYPE cets_booking_preadmission_seconds histogram")
+
+	r.mu.Lock()
+	keys := make([]reservationKey, 0, len(r.reservation))
+	for key := range r.reservation {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return reservationLabelSet(keys[i]) < reservationLabelSet(keys[j])
+	})
+	snapshots := make(map[reservationKey]histogram, len(keys))
+	for _, key := range keys {
+		current := r.reservation[key]
+		snapshots[key] = histogram{
+			Buckets: append([]uint64(nil), current.Buckets...),
+			Count:   current.Count,
+			Sum:     current.Sum,
+		}
+	}
+	r.mu.Unlock()
+
+	for _, key := range keys {
+		labels := reservationLabelSet(key)
+		h := snapshots[key]
+		writeFormat(w, "cets_reservation_attempt_total{%s} %d\n", labels, h.Count)
+		for i, bucket := range httpBuckets {
+			writeFormat(w, "cets_booking_preadmission_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
+		}
+		writeFormat(w, "cets_booking_preadmission_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
+		writeFormat(w, "cets_booking_preadmission_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
+		writeFormat(w, "cets_booking_preadmission_seconds_count{%s} %d\n", labels, h.Count)
+	}
 }
 
 func buildAllowedOutboxMetricEventTypes() map[string]struct{} {
@@ -273,14 +323,6 @@ func buildAllowedOutboxMetricEventTypes() map[string]struct{} {
 	return allowed
 }
 
-func safeOutboxMetricEventType(eventType string) string {
-	eventType = strings.TrimSpace(eventType)
-	if _, ok := allowedOutboxMetricEventTypes[eventType]; ok {
-		return eventType
-	}
-	return "unknown"
-}
-
 func writeLine(w io.Writer, line string) {
 	_, _ = fmt.Fprintln(w, line)
 }
@@ -292,6 +334,16 @@ func writeFormat(w io.Writer, format string, args ...interface{}) {
 func labelSet(key httpKey) string {
 	return fmt.Sprintf(`route="%s",method="%s",status_class="%s"`,
 		escapeLabel(key.Route), escapeLabel(key.Method), escapeLabel(key.StatusClass))
+}
+
+func bookingStageLabelSet(key bookingStageKey) string {
+	return fmt.Sprintf(`stage="%s",outcome="%s"`,
+		escapeLabel(key.Stage), escapeLabel(key.Outcome))
+}
+
+func reservationLabelSet(key reservationKey) string {
+	return fmt.Sprintf(`outcome="%s",capacity_type="%s",outage_mode="%s"`,
+		escapeLabel(key.Outcome), escapeLabel(key.CapacityType), escapeLabel(key.OutageMode))
 }
 
 func statusClass(status int) string {
@@ -335,6 +387,46 @@ func boundedMethod(method string) string {
 		return method
 	}
 	return "UNKNOWN"
+}
+
+func boundedBookingStage(stage string) string {
+	stage = strings.TrimSpace(stage)
+	switch stage {
+	case "total", "tx", "idempotency_replay", "preadmission", "begin_tx", "idempotency_lock", "event_lock", "validate", "duplicate_lookup", "capacity", "create_response", "commit":
+		return stage
+	default:
+		return "unknown"
+	}
+}
+
+func boundedOutcome(outcome string) string {
+	outcome = strings.TrimSpace(outcome)
+	switch outcome {
+	case "success", "error", "confirmed", "waitlisted", "received", "duplicate", "granted", "exhausted", "misconfigured", "unavailable", "skipped":
+		return outcome
+	default:
+		return "unknown"
+	}
+}
+
+func boundedCapacityType(capacityType string) string {
+	capacityType = strings.TrimSpace(capacityType)
+	switch capacityType {
+	case "limited", "unlimited", "unknown":
+		return capacityType
+	default:
+		return "unknown"
+	}
+}
+
+func boundedOutageMode(outageMode string) string {
+	outageMode = strings.TrimSpace(outageMode)
+	switch outageMode {
+	case "degrade", "fail", "none", "unknown":
+		return outageMode
+	default:
+		return "unknown"
+	}
 }
 
 func escapeLabel(value string) string {

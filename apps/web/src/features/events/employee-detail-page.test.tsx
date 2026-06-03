@@ -5,6 +5,7 @@ import {
   type BookingResponse,
   bookEvent,
   cancelMyRegistration,
+  eventPosterBlob,
   getEvent,
   listEvents,
   type Ticket,
@@ -18,6 +19,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     bookEvent: vi.fn(),
     cancelMyRegistration: vi.fn(),
+    eventPosterBlob: vi.fn(),
     getEvent: vi.fn(),
     listEvents: vi.fn(),
   };
@@ -27,6 +29,7 @@ const mockListEvents = vi.mocked(listEvents);
 const mockGetEvent = vi.mocked(getEvent);
 const mockBookEvent = vi.mocked(bookEvent);
 const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
+const mockEventPosterBlob = vi.mocked(eventPosterBlob);
 
 type EventOverrides = Parameters<typeof eventFixture>[0];
 type BookingStatus = "cancelled" | "confirmed" | "waitlisted";
@@ -95,6 +98,15 @@ describe("EmployeeEventDetailPage", () => {
     mockGetEvent.mockReset();
     mockBookEvent.mockReset();
     mockCancelMyRegistration.mockReset();
+    mockEventPosterBlob.mockReset();
+    mockEventPosterBlob.mockResolvedValue(null);
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL: vi.fn(() => "blob:poster"),
+        revokeObjectURL: vi.fn(),
+      }),
+    );
     window.history.replaceState({}, "", "/user/events/detail?event_id=evt-1");
   });
 
@@ -111,6 +123,26 @@ describe("EmployeeEventDetailPage", () => {
     expect(screen.getAllByText("候補政策").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/目前不顯示候補順位/).length).toBeGreaterThan(0);
     expect(screen.getByText("取消期限")).toBeInTheDocument();
+  });
+
+  it("shows event introduction and poster when available", async () => {
+    showEvent({
+      description: "年度家庭日活動介紹",
+    });
+    mockEventPosterBlob.mockResolvedValueOnce(
+      new Blob(["poster"], { type: "image/png" }),
+    );
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "活動介紹" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("年度家庭日活動介紹").length).toBeGreaterThan(0);
+    expect(
+      await screen.findByRole("img", { name: "活動 海報" }),
+    ).toHaveAttribute("src", "blob:poster");
+    expect(mockEventPosterBlob).toHaveBeenCalledWith("evt-1");
   });
 
   it("keeps event detail actions without embedding the ticket QR", async () => {

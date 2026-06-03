@@ -61,6 +61,15 @@ export type EmployeeProfile = {
   employment_status: string;
 };
 
+export type AdminOption = {
+  value: string;
+  label: string;
+};
+
+export type AdminHROptions = {
+  sites: AdminOption[];
+};
+
 export type EligibilityRule = {
   rule_id?: string;
   event_id?: string;
@@ -166,6 +175,16 @@ export type EventSummary = EventMutableFields & {
   current_user_registration_id?: string;
   current_user_ticket?: Ticket;
   no_show_cooldown?: NoShowCooldown;
+};
+
+export type EventAsset = {
+  asset_id: string;
+  event_id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  created_by: string;
+  created_at: string;
 };
 
 function normalizeEligibilityDecision(

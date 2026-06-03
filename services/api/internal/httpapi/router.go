@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"event-ticket-system/internal/observability"
@@ -28,7 +29,9 @@ type schemaPinger interface {
 
 type Dependencies struct {
 	DB                          Pinger
+	MetricsDB                   any
 	Ticketing                   TicketingService
+	ReadTicketing               TicketingService
 	Logger                      *slog.Logger
 	Metrics                     *observability.Registry
 	DemoClock                   *ticketing.DemoClock
@@ -38,6 +41,8 @@ type Dependencies struct {
 	OpsAPIEnabled               bool
 	ProviderAuth                ProviderAuthConfig
 	ReportStaleThresholdSeconds int
+	ReportStore                 ticketing.ReportObjectReader
+	ObjectStore                 objectStore
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -55,17 +60,38 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /", handleIndex(deps.AppEnv))
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /readyz", handleReady(deps.DB, deps.RequestTimeout))
-	mux.Handle("GET /metrics", deps.Metrics.Handler(deps.DB))
+	metricsDB := deps.MetricsDB
+	if metricsDB == nil {
+		metricsDB = deps.DB
+	}
+	mux.Handle("GET /metrics", deps.Metrics.Handler(metricsDB))
 	provider := NewProviderVerifier(deps.ProviderAuth)
 	registerAuthRoutes(mux, provider, deps.AppEnv, deps.DemoClock != nil, deps.OpsAPIEnabled, deps.Logger)
 	registerDemoDebugRoutes(mux, provider, deps.DemoClock, deps.Logger)
-	registerTicketingRoutes(mux, deps.Ticketing, deps.AppEnv, provider, deps.OpsAPIEnabled, deps.ReportStaleThresholdSeconds, deps.Logger)
+	readTicketing := deps.ReadTicketing
+	if readTicketing == nil {
+		readTicketing = deps.Ticketing
+	}
+	reportStore := deps.ReportStore
+	if reportStore == nil && deps.ObjectStore != nil {
+		reportStore = deps.ObjectStore
+	}
+	registerTicketingRoutes(mux, deps.Ticketing, readTicketing, ticketingRouteConfig{
+		appEnv:                      deps.AppEnv,
+		provider:                    provider,
+		opsAPIEnabled:               deps.OpsAPIEnabled,
+		reportStaleThresholdSeconds: deps.ReportStaleThresholdSeconds,
+		reportStore:                 reportStore,
+		objectStore:                 deps.ObjectStore,
+		logger:                      deps.Logger,
+	})
 
-	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, withTimeout(deps.RequestTimeout, mux)))
+	replica := backendReplicaName()
+	handler := withHTTPMetrics(deps.Metrics, withRequestLogging(deps.Logger, replica, withTimeout(deps.RequestTimeout, mux)))
 	if deps.TracingEnabled {
 		handler = observability.TraceHTTP(routePattern, handler)
 	}
-	return withBackendReplicaHeader(withTraceID(handler))
+	return withBackendReplicaHeader(replica, withTraceID(handler))
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -73,26 +99,59 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleReady(db Pinger, timeout time.Duration) http.HandlerFunc {
+	var mu sync.Mutex
+	var cached readyCheck
 	return func(w http.ResponseWriter, r *http.Request) {
-		if db == nil {
-			writeError(w, http.StatusServiceUnavailable, "database is not configured")
+		now := time.Now()
+		mu.Lock()
+		if cached.expiresAt.After(now) {
+			result := cached
+			mu.Unlock()
+			writeReadyResult(w, result)
 			return
 		}
+		mu.Unlock()
 
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
-		if err := db.Ping(ctx); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "database is not ready")
-			return
-		}
-		if schemaDB, ok := db.(schemaPinger); ok {
-			if err := checkRequiredSchema(ctx, schemaDB); err != nil {
-				writeError(w, http.StatusServiceUnavailable, "database schema is not ready")
-				return
-			}
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		result := checkReady(ctx, db)
+		result.expiresAt = now.Add(readyCacheTTL)
+		mu.Lock()
+		cached = result
+		mu.Unlock()
+		writeReadyResult(w, result)
 	}
+}
+
+const readyCacheTTL = time.Second
+
+type readyCheck struct {
+	status    int
+	message   string
+	expiresAt time.Time
+}
+
+func checkReady(ctx context.Context, db Pinger) readyCheck {
+	if db == nil {
+		return readyCheck{status: http.StatusServiceUnavailable, message: "database is not configured"}
+	}
+	if err := db.Ping(ctx); err != nil {
+		return readyCheck{status: http.StatusServiceUnavailable, message: "database is not ready"}
+	}
+	if schemaDB, ok := db.(schemaPinger); ok {
+		if err := checkRequiredSchema(ctx, schemaDB); err != nil {
+			return readyCheck{status: http.StatusServiceUnavailable, message: "database schema is not ready"}
+		}
+	}
+	return readyCheck{status: http.StatusOK}
+}
+
+func writeReadyResult(w http.ResponseWriter, result readyCheck) {
+	if result.status != http.StatusOK {
+		writeError(w, result.status, result.message)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 var errRequiredSchemaMissing = errors.New("required database schema is not ready")
@@ -132,7 +191,7 @@ func withTimeout(timeout time.Duration, next http.Handler) http.Handler {
 	})
 }
 
-func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
+func withRequestLogging(logger *slog.Logger, replica string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -145,6 +204,9 @@ func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
 			"status", recorder.status,
 			"status_class", statusClass(recorder.status),
 			"duration_ms", time.Since(started).Milliseconds(),
+		}
+		if replica != "" {
+			attrs = append(attrs, "replica", replica)
 		}
 		if otelTraceID := otelTraceIDFromContext(r.Context()); otelTraceID != "" {
 			attrs = append(attrs, "otel_trace_id", otelTraceID)
@@ -173,8 +235,7 @@ func withTraceID(next http.Handler) http.Handler {
 	})
 }
 
-func withBackendReplicaHeader(next http.Handler) http.Handler {
-	replica := backendReplicaName()
+func withBackendReplicaHeader(replica string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if replica != "" {
 			w.Header().Set("X-CETS-Backend-Replica", replica)
