@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cets
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - migrate-job.yaml
+  - backend.yaml
+  - frontend.yaml
+  - workers.yaml
+  - ingress.yaml
+images:
+  - name: cets-api
+    newName: 111111111111.dkr.ecr.us-east-2.amazonaws.com/cets-aws-k8s/cets-api
+    newTag: v0.0.1
+  - name: cets-frontend
+    newName: 111111111111.dkr.ecr.us-east-2.amazonaws.com/cets-aws-k8s/cets-frontend
+    newTag: v0.0.1

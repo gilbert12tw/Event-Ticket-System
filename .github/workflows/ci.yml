@@ -235,6 +235,20 @@ jobs:
           go-version-file: services/api/go.mod
           cache: ${{ env.ACT != 'true' }}
           cache-dependency-path: services/api/go.sum
+      - name: Install jq for AWS infra contract tests
+        run: |
+          if command -v jq >/dev/null 2>&1; then
+            jq --version
+            exit 0
+          fi
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y jq
+          else
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y jq
+          fi
+          jq --version
       - name: Run Go tests
         working-directory: services/api
         env:

@@ -598,6 +598,27 @@ failover、disaster recovery 或 multi-region active-active 已完成。
 | Microservices | 目前不拆 full microservices；只有 same-binary worker kind isolation。若 process-first scaling 無法滿足獨立 bottleneck、故障隔離、ownership 或 release cadence，再用新 spec 拆服務。 |
 | Release strategy | DB migration backward compatible、feature flag、rollback procedure；production multi-AZ、rolling deploy、container platform 與 DB failover 需後續獨立 spec 驗證。 |
 
+### 15.3 AWS Self-Managed Kubernetes Experiment
+
+`infra/aws/self-managed-k8s/` 是獨立的 AWS production experiment，用 EC2 + kubeadm +
+CloudFormation 驗證 self-managed Kubernetes，不使用 EKS。它不取代 Phase 3 local Compose
+simulation，也不把 Kubernetes 改成 Phase 1 或 Phase 2 必交付項目。
+
+此 track 預設採 budget-first：`NODE_COUNT=1` 是省成本展示模式；`NODE_COUNT=3` 才是
+stacked etcd / control-plane HA 模式；`NODE_COUNT=2` 會被拒絕。付費帳戶預設以
+3 台 16 GiB On-Demand EC2 做兩週成本可控的多節點驗證；Spot 只作為明確接受中斷風險時的
+成本選項。Cloudflare Tunnel 是 app public ingress 的最低成本路徑，AWS app NLB 只在
+explicit opt-in 時建立。成本防線由 deploy 前 cost plan、AWS Budget/SNS/Lambda cleanup
+與 hourly TTL cleanup 組成。規格詳見
+`docs/specs/aws-self-managed-k8s.md`。
+
+此 AWS track 的 CD 採 release branch GitOps：Argo CD `Application` 預設追
+`release/aws-self-managed-k8s` 的 `infra/aws/self-managed-k8s/gitops/app`，操作者手動
+更新 image tag、commit、打 `v0.0.1` 這類 semver tag，再 push branch 與 tag；release
+branch HEAD 必須有同名 tag 才通過驗證。預設 Application 不開 automated sync，待 branch
+protection / release checks 設好後才啟用自動 rollout。GitHub workflow 只做非破壞性的
+release manifest 驗證，不直接部署 AWS 或呼叫 Argo CD sync API。
+
 ---
 
 ## 16. Agile and Delivery Plan
