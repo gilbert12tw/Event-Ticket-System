@@ -49,7 +49,7 @@ on_demand_price() {
   local instance_type=$2
   local location
   location=$(location_for_region "$region")
-  local price_json
+  local price_json price
   if ! price_json=$(aws pricing get-products \
     --region us-east-1 \
     --service-code AmazonEC2 \
@@ -65,9 +65,15 @@ on_demand_price() {
     fallback_price "$instance_type"
     return
   fi
-  printf '%s\n' "$price_json" |
-    jq -r '.. | objects | select(has("pricePerUnit")) | .pricePerUnit.USD? // empty' |
-    head -1
+  price=$(printf '%s\n' "$price_json" |
+    jq -r '.. | objects | select(has("pricePerUnit")) | .pricePerUnit.USD? // empty' 2>/dev/null |
+    head -1 || true)
+  if ! awk -v price="$price" \
+    'BEGIN { exit !(price ~ /^[0-9]+([.][0-9]+)?$/ && price + 0 > 0) }'; then
+    fallback_price "$instance_type"
+    return
+  fi
+  printf '%s\n' "$price"
 }
 
 spot_price() {
