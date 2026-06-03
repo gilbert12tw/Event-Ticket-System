@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"event-ticket-system/internal/reservation"
 )
 
 const (
@@ -19,19 +21,31 @@ func (s *Service) CapacityPressure(ctx context.Context, actor Actor) (CapacityPr
 	rows, err := s.db.Query(ctx, `WITH registration_counts AS (
 			SELECT event_id,
 				count(*) FILTER (WHERE status = 'confirmed')::int AS confirmed_count,
-				count(*) FILTER (WHERE status = 'received')::int AS reservation_count
+				count(*) FILTER (WHERE status = 'waitlisted')::int AS waitlist_count,
+				count(*) FILTER (WHERE status = 'received')::int AS received_count
 			FROM registrations
 			GROUP BY event_id
+		), rate_limit_drops AS (
+			SELECT metadata->>'event_id' AS event_id, count(*)::int AS drops
+			FROM audit_logs
+			WHERE action = 'booking.rate_limited'
+				AND created_at >= now() - interval '1 minute'
+				AND metadata ? 'event_id'
+			GROUP BY metadata->>'event_id'
 		)
 		SELECT e.event_id, e.capacity_type,
+			COALESCE(rc.confirmed_count, 0)::int,
+			COALESCE(rc.waitlist_count, 0)::int,
+			COALESCE(rc.received_count, 0)::int,
 			CASE
 				WHEN e.capacity_type = 'limited' AND e.capacity IS NOT NULL
 					THEN GREATEST(e.capacity - COALESCE(rc.confirmed_count, 0), 0)
 				ELSE NULL
 			END AS remaining_capacity,
-			COALESCE(rc.reservation_count, 0)::int
+			COALESCE(rld.drops, 0)::int
 		FROM events e
 		LEFT JOIN registration_counts rc ON rc.event_id = e.event_id
+		LEFT JOIN rate_limit_drops rld ON rld.event_id = e.event_id
 		WHERE e.archived_at IS NULL
 			AND e.status IN ('published', 'closed')
 		ORDER BY e.registration_close ASC, e.starts_at ASC, e.event_id ASC
@@ -47,12 +61,32 @@ func (s *Service) CapacityPressure(ctx context.Context, actor Actor) (CapacityPr
 		if err != nil {
 			return CapacityPressure{}, err
 		}
+		s.applyReservationPressure(ctx, &row)
 		pressure.Events = append(pressure.Events, row)
 	}
 	if err := rows.Err(); err != nil {
 		return CapacityPressure{}, err
 	}
 	return pressure, nil
+}
+
+func (s *Service) applyReservationPressure(ctx context.Context, row *CapacityPressureRow) {
+	reader, ok := s.reservationGate.(reservation.PressureReader)
+	if !ok {
+		if s.reservationGate.Enabled() {
+			row.ReservationState = reservation.PressureStateUnavailable
+			return
+		}
+		row.ReservationState = reservation.PressureStateDisabled
+		return
+	}
+	snapshot, err := reader.PressureSnapshot(ctx, row.EventID)
+	if err != nil {
+		row.ReservationState = reservation.PressureStateUnavailable
+		return
+	}
+	row.ReservationState = snapshot.State
+	row.ReservationCount = snapshot.ActiveCount
 }
 
 func (s *Service) ReportFreshness(ctx context.Context, actor Actor, thresholdSeconds int) (ReportFreshness, error) {
@@ -150,13 +184,24 @@ type capacityPressureScanner interface {
 func scanCapacityPressureRow(row capacityPressureScanner) (CapacityPressureRow, error) {
 	var pressure CapacityPressureRow
 	var remaining sql.NullInt64
-	if err := row.Scan(&pressure.EventID, &pressure.CapacityType, &remaining, &pressure.ReservationCount); err != nil {
+	var rateLimitDrops int
+	if err := row.Scan(
+		&pressure.EventID,
+		&pressure.CapacityType,
+		&pressure.ConfirmedCount,
+		&pressure.WaitlistCount,
+		&pressure.ReceivedCount,
+		&remaining,
+		&rateLimitDrops,
+	); err != nil {
 		return CapacityPressureRow{}, err
 	}
 	if remaining.Valid {
 		value := int(remaining.Int64)
 		pressure.RemainingCapacity = &value
 	}
+	pressure.RateLimitDropPerMin = &rateLimitDrops
+	pressure.RejectedPerMin = &rateLimitDrops
 	return pressure, nil
 }
 

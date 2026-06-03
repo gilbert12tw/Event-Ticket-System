@@ -3,8 +3,11 @@ package ticketing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
+
+	"event-ticket-system/internal/reservation"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,14 +19,18 @@ func TestCapacityPressureAggregatesPublishedEvents(t *testing.T) {
 	ctx := context.Background()
 	insertOpsEmployee(t, service, ctx, "E1001")
 	insertOpsEmployee(t, service, ctx, "E1002")
-	fcfs := createPublishedEvent(t, service, ctx, engineeringEventRequest("FCFS pressure", 2, 1))
+	insertOpsEmployee(t, service, ctx, "E1003")
+	fcfs := createPublishedEvent(t, service, ctx, engineeringEventRequest("FCFS pressure", 1, 1))
 	lotteryReq := engineeringEventRequest("Lottery pressure", 2, 1)
 	lotteryReq.AllocationMode = AllocationModeLottery
 	lottery := createPublishedEvent(t, service, ctx, lotteryReq)
 	_, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, fcfs.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "pressure-fcfs"})
 	require.NoError(t, err)
+	_, err = service.Book(ctx, Actor{ID: "E1003", Role: RoleEmployee}, fcfs.EventID, BookingRequest{EmployeeID: "E1003", IdempotencyKey: "pressure-fcfs-waitlist"})
+	require.NoError(t, err)
 	_, err = service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, lottery.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "pressure-lottery"})
 	require.NoError(t, err)
+	insertOpsRateLimitAudit(t, service, ctx, fcfs.EventID)
 
 	pressure, err := service.CapacityPressure(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin})
 
@@ -31,14 +38,73 @@ func TestCapacityPressureAggregatesPublishedEvents(t *testing.T) {
 	rows := capacityPressureByEvent(pressure)
 	require.Contains(t, rows, fcfs.EventID)
 	require.Contains(t, rows, lottery.EventID)
+	assert.Equal(t, 1, rows[fcfs.EventID].ConfirmedCount)
+	assert.Equal(t, 1, rows[fcfs.EventID].WaitlistCount)
+	assert.Equal(t, 0, rows[fcfs.EventID].ReceivedCount)
 	require.NotNil(t, rows[fcfs.EventID].RemainingCapacity)
-	assert.Equal(t, 1, *rows[fcfs.EventID].RemainingCapacity)
+	assert.Equal(t, 0, *rows[fcfs.EventID].RemainingCapacity)
+	assert.Equal(t, reservation.PressureStateDisabled, rows[fcfs.EventID].ReservationState)
 	assert.Equal(t, 0, rows[fcfs.EventID].ReservationCount)
+	require.NotNil(t, rows[fcfs.EventID].RateLimitDropPerMin)
+	assert.Equal(t, 1, *rows[fcfs.EventID].RateLimitDropPerMin)
+	require.NotNil(t, rows[fcfs.EventID].RejectedPerMin)
+	assert.Equal(t, 1, *rows[fcfs.EventID].RejectedPerMin)
+	assert.Equal(t, 0, rows[lottery.EventID].ConfirmedCount)
+	assert.Equal(t, 0, rows[lottery.EventID].WaitlistCount)
+	assert.Equal(t, 1, rows[lottery.EventID].ReceivedCount)
 	require.NotNil(t, rows[lottery.EventID].RemainingCapacity)
 	assert.Equal(t, 2, *rows[lottery.EventID].RemainingCapacity)
-	assert.Equal(t, 1, rows[lottery.EventID].ReservationCount)
-	assert.Nil(t, rows[lottery.EventID].RateLimitDropPerMin)
+	assert.Equal(t, 0, rows[lottery.EventID].ReservationCount)
+	assert.Equal(t, reservation.PressureStateDisabled, rows[lottery.EventID].ReservationState)
 	assert.Nil(t, rows[lottery.EventID].IdempotencyReplayPerMin)
+
+	payload, err := json.Marshal(pressure)
+	require.NoError(t, err)
+	assert.NotContains(t, string(payload), "E1001")
+	assert.NotContains(t, string(payload), "pressure-fcfs")
+}
+
+func TestCapacityPressureReturnsEmptyEvents(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	pressure, err := service.CapacityPressure(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin})
+
+	require.NoError(t, err)
+	assert.Empty(t, pressure.Events)
+}
+
+func TestCapacityPressureMarksReservationTelemetryUnavailable(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	service.WithReservationGate(pressureGate{state: reservation.PressureStateAvailable, err: errors.New("redis unavailable")}, []byte("secret"))
+	event := createPublishedEvent(t, service, ctx, engineeringEventRequest("Unavailable pressure", 1, 1))
+
+	pressure, err := service.CapacityPressure(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin})
+
+	require.NoError(t, err)
+	rows := capacityPressureByEvent(pressure)
+	require.Contains(t, rows, event.EventID)
+	assert.Equal(t, reservation.PressureStateUnavailable, rows[event.EventID].ReservationState)
+	assert.Equal(t, 0, rows[event.EventID].ReservationCount)
+}
+
+func TestCapacityPressureReadsActiveReservationTelemetry(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	service.WithReservationGate(pressureGate{state: reservation.PressureStateAvailable, activeCount: 3}, []byte("secret"))
+	event := createPublishedEvent(t, service, ctx, engineeringEventRequest("Available pressure", 5, 1))
+
+	pressure, err := service.CapacityPressure(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin})
+
+	require.NoError(t, err)
+	rows := capacityPressureByEvent(pressure)
+	require.Contains(t, rows, event.EventID)
+	assert.Equal(t, reservation.PressureStateAvailable, rows[event.EventID].ReservationState)
+	assert.Equal(t, 3, rows[event.EventID].ReservationCount)
 }
 
 func TestCapacityPressureRequiresOpsRole(t *testing.T) {
@@ -203,6 +269,44 @@ func insertOpsReplayAudit(t *testing.T, service *Service, ctx context.Context) {
 		time.Date(2026, 5, 31, 8, 0, 0, 0, time.UTC),
 	)
 	require.NoError(t, err)
+}
+
+func insertOpsRateLimitAudit(t *testing.T, service *Service, ctx context.Context, eventID string) {
+	t.Helper()
+	metadata, err := json.Marshal(map[string]string{"event_id": eventID, "scope": "event"})
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `INSERT INTO audit_logs
+		(audit_id, actor_id, role, action, entity_type, entity_id, metadata, created_at)
+		VALUES ($1, $2, $3, 'booking.rate_limited', 'event', $4, $5::jsonb, now())`,
+		"aud_rate_limit_pressure",
+		"system",
+		RoleSystemAdmin,
+		eventID,
+		string(metadata),
+	)
+	require.NoError(t, err)
+}
+
+type pressureGate struct {
+	state       string
+	activeCount int
+	err         error
+}
+
+func (g pressureGate) Enabled() bool { return true }
+
+func (g pressureGate) Reserve(context.Context, string, string, string, reservation.CapacityProbe) (reservation.Hold, error) {
+	return reservation.Hold{Outcome: reservation.OutcomeGranted}, nil
+}
+
+func (g pressureGate) Confirm(context.Context, string, string) error { return nil }
+func (g pressureGate) Release(context.Context, string, string) error { return nil }
+
+func (g pressureGate) PressureSnapshot(context.Context, string) (reservation.PressureSnapshot, error) {
+	if g.err != nil {
+		return reservation.PressureSnapshot{}, g.err
+	}
+	return reservation.PressureSnapshot{State: g.state, ActiveCount: g.activeCount}, nil
 }
 
 func capacityPressureByEvent(pressure CapacityPressure) map[string]CapacityPressureRow {

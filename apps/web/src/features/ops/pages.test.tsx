@@ -25,8 +25,13 @@ describe("OpsControlPlanePage", () => {
           {
             event_id: "evt_hot",
             capacity_type: "limited",
+            confirmed_count: 27,
+            waitlist_count: 4,
+            received_count: 0,
             remaining_capacity: 3,
             reservation_count: 9,
+            reservation_state: "available",
+            rejected_per_min: 0,
             rate_limit_drop_per_min: 0,
             idempotency_replay_per_min: 2,
           },

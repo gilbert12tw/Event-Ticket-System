@@ -223,8 +223,12 @@ func (s *fakeTicketingService) CapacityPressure(_ context.Context, actor ticketi
 	return ticketing.CapacityPressure{Events: []ticketing.CapacityPressureRow{{
 		EventID:                 "evt_1",
 		CapacityType:            ticketing.CapacityTypeLimited,
+		ConfirmedCount:          7,
+		WaitlistCount:           2,
 		RemainingCapacity:       &remaining,
 		ReservationCount:        4,
+		ReservationState:        "available",
+		RejectedPerMin:          &rateLimitDrop,
 		RateLimitDropPerMin:     &rateLimitDrop,
 		IdempotencyReplayPerMin: &idempotencyReplay,
 	}}}, nil

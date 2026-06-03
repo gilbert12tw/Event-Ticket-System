@@ -48,6 +48,19 @@ func NewRedisGate(client redis.UniversalClient, cfg Config, logger *slog.Logger)
 
 func (g *RedisGate) Enabled() bool { return g.cfg.Enabled }
 
+func (g *RedisGate) PressureSnapshot(ctx context.Context, eventID string) (PressureSnapshot, error) {
+	if !g.cfg.Enabled {
+		return PressureSnapshot{State: PressureStateDisabled}, nil
+	}
+	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
+	defer cancel()
+	count, err := g.client.ZCount(opCtx, pendingKey(eventID), strconv.FormatInt(time.Now().UTC().Unix(), 10), "+inf").Result()
+	if err != nil {
+		return PressureSnapshot{}, err
+	}
+	return PressureSnapshot{State: PressureStateAvailable, ActiveCount: int(count)}, nil
+}
+
 func (g *RedisGate) Reserve(ctx context.Context, eventID, idempotencyHash, actorHash string, probe CapacityProbe) (Hold, error) {
 	if !g.cfg.Enabled {
 		return Hold{Outcome: OutcomeGranted}, nil

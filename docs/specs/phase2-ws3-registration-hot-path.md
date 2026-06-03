@@ -107,8 +107,13 @@ Response:
       {
         "event_id": "...",
         "capacity_type": "limited|unlimited",
+        "confirmed_count": 40,
+        "waitlist_count": 7,
+        "received_count": 0,
         "remaining_capacity": 12,
         "reservation_count": 5,
+        "reservation_state": "available|disabled|unavailable",
+        "rejected_per_min": 0,
         "rate_limit_drop_per_min": null,
         "idempotency_replay_per_min": null
       }
@@ -119,7 +124,7 @@ Response:
 }
 ```
 
-This endpoint is read-only, derived, never the booking commit authority. Rate-derived telemetry is `null` until a backing metric source is attached; consumers must not interpret missing telemetry as zero drops or zero replays.
+This endpoint is read-only, derived, never the booking commit authority. `reservation_state` distinguishes disabled and unavailable reservation telemetry. Rate-derived telemetry is `null` until a backing metric source is attached; consumers must not interpret missing telemetry as zero drops or zero replays.
 
 ## 7. 12-Factor Notes
 

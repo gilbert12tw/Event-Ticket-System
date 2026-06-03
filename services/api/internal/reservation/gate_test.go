@@ -136,6 +136,25 @@ func TestRedisGateConfirmDoesNotIncrementCounter(t *testing.T) {
 	require.Equal(t, int64(0), exists)
 }
 
+func TestRedisGatePressureSnapshotCountsActiveHolds(t *testing.T) {
+	gate, client, cleanup := newTestGate(t)
+	defer cleanup()
+	ctx := context.Background()
+	eventID := uniqueEventID(t)
+	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "pressure-key")
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), holdKey(eventID, hash))
+
+	probe := func(ctx context.Context) (int, int64, error) { return 2, 1, nil }
+	_, err := gate.Reserve(ctx, eventID, hash, "actor", probe)
+	require.NoError(t, err)
+
+	snapshot, err := gate.PressureSnapshot(ctx, eventID)
+
+	require.NoError(t, err)
+	require.Equal(t, PressureStateAvailable, snapshot.State)
+	require.Equal(t, 1, snapshot.ActiveCount)
+}
+
 func TestRedisGateExhaustedDoesNotDecrementBelowZero(t *testing.T) {
 	gate, client, cleanup := newTestGate(t)
 	defer cleanup()
@@ -163,6 +182,9 @@ func TestNoopGateAlwaysGrants(t *testing.T) {
 	hold, err := g.Reserve(context.Background(), "evt", "h", "a", probe)
 	require.NoError(t, err)
 	require.Equal(t, OutcomeGranted, hold.Outcome)
+	snapshot, err := g.PressureSnapshot(context.Background(), "evt")
+	require.NoError(t, err)
+	require.Equal(t, PressureStateDisabled, snapshot.State)
 }
 
 func TestHashIsDeterministicAndDomainSeparated(t *testing.T) {

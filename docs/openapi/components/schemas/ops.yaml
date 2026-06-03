@@ -20,8 +20,13 @@ CapacityPressureRow:
   required:
     - event_id
     - capacity_type
+    - confirmed_count
+    - waitlist_count
+    - received_count
     - remaining_capacity
     - reservation_count
+    - reservation_state
+    - rejected_per_min
     - rate_limit_drop_per_min
     - idempotency_replay_per_min
   properties:
@@ -30,6 +35,15 @@ CapacityPressureRow:
       format: uuid
     capacity_type:
       "$ref": "./common.yaml#/CapacityType"
+    confirmed_count:
+      type: integer
+      minimum: 0
+    waitlist_count:
+      type: integer
+      minimum: 0
+    received_count:
+      type: integer
+      minimum: 0
     remaining_capacity:
       type:
         - integer
@@ -37,6 +51,18 @@ CapacityPressureRow:
       minimum: 0
     reservation_count:
       type: integer
+      minimum: 0
+      description: Active Redis pre-admission holds when reservation telemetry is available; 0 when disabled or unavailable.
+    reservation_state:
+      type: string
+      enum:
+        - available
+        - disabled
+        - unavailable
+    rejected_per_min:
+      type:
+        - integer
+        - "null"
       minimum: 0
     rate_limit_drop_per_min:
       type:
