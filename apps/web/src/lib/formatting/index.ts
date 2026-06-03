@@ -28,6 +28,10 @@ export function defaultEventForm() {
     tags: "家庭活動, 台北",
     entry_method: "qr",
     visibility: "eligible",
+    // UI-only: tracks the currently-selected quick-setup option so the
+    // dropdowns stay in sync with the form state. Never sent to the API.
+    _selectedTemplate: "",
+    _selectedSchedule: "custom",
   };
 }
 

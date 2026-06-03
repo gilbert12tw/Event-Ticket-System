@@ -68,7 +68,10 @@ describe("admin event CRUD helpers", () => {
   it("applies event templates without dropping unrelated form fields", () => {
     const base = { ...defaultEventForm(), entry_method: "manual" };
 
-    expect(applyEventTemplate(base, "")).toBe(base);
+    expect(applyEventTemplate(base, "")).toEqual({
+      ...base,
+      _selectedTemplate: "",
+    });
     expect(applyEventTemplate(base, "family")).toEqual(
       expect.objectContaining({
         title: "台北家庭電影夜",
@@ -93,7 +96,10 @@ describe("admin event CRUD helpers", () => {
     vi.setSystemTime(new Date(systemTime));
     const base = defaultEventForm();
 
-    expect(applySchedulePreset(base, "custom")).toBe(base);
+    expect(applySchedulePreset(base, "custom")).toEqual({
+      ...base,
+      _selectedSchedule: "custom",
+    });
     expect(applySchedulePreset(base, "open-now")).toEqual(
       expect.objectContaining({
         registration_start: expectedLocalInput(systemTime, 0),
