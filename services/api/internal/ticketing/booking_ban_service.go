@@ -21,6 +21,19 @@ func (s *Service) checkBookingBanTx(ctx context.Context, tx pgx.Tx, eventID, emp
 	return err
 }
 
+// hasActiveBookingBan returns true if the employee has an active booking ban for the event.
+func (s *Service) hasActiveBookingBan(ctx context.Context, eventID, employeeID string) (bool, error) {
+	var banID string
+	err := s.db.QueryRow(ctx, `SELECT ban_id FROM booking_bans WHERE event_id = $1 AND employee_id = $2 AND lifted_at IS NULL`, eventID, employeeID).Scan(&banID)
+	if err == nil {
+		return true, nil
+	}
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	return false, err
+}
+
 // createBookingBanTx inserts a per-event ban for an employee. It is invoked when a confirmed
 // booking is cancelled. With the partial unique index on (event_id, employee_id) WHERE lifted_at
 // IS NULL, a lifted row is not in the index — so a new INSERT always succeeds and creates a
