@@ -3,16 +3,33 @@
   "uid": "ets-service-anomaly",
   "title": "ETS 06 — Service Anomaly Investigation",
   "description": "Incident commander full investigation view — combines metrics, traces, logs, and profiles in one place. Follow the five steps in order: STEP 1 DETECT: Which route and replica is generating 500s? The 5xx table shows route×replica×status with exact counts. STEP 2 BOOKING DEPS: Is the failure in Redis gate, DB lock, or a specific booking stage? STEP 3 TRACE: Use the Traces panel to find a failing trace. Click the trace to open the waterfall view. In the trace detail, click 'Node Graph' to see the ingress→booking→postgres call chain as a visual dependency graph. Each node shows service.name and service.instance.id — this tells you exactly which of the 3 backend replicas handled the failing request. From the trace, click 'Logs for this trace' to jump to Loki logs correlated by otel_trace_id. STEP 4 LOGS: Recent error logs from all backend replicas filtered to level=error. The otel_trace_id field is a clickable link back to Tempo. STEP 5 PROFILE: CPU profile activity by service. From a trace, click 'Profiles for this span' to open the Pyroscope CPU flamegraph scoped to the exact time window of the failing request.",
-  "tags": ["cets", "ets", "incident", "traces", "service-anomaly", "investigation"],
+  "tags": [
+    "cets",
+    "ets",
+    "incident",
+    "traces",
+    "service-anomaly",
+    "investigation"
+  ],
   "refresh": "15s",
-  "time": { "from": "now-15m", "to": "now" },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
   "graphTooltip": 1,
   "templating": {
     "list": [
       {
         "allValue": ".*",
-        "current": { "selected": false, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
         "label": "Service",
@@ -25,8 +42,15 @@
       },
       {
         "allValue": ".*",
-        "current": { "selected": false, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
         "label": "Replica",
@@ -40,35 +64,124 @@
     ]
   },
   "links": [
-    { "title": "Golden Signals", "url": "/d/ets-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "RED Traffic Drilldown", "url": "/d/ets-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "Booking & Redis Pressure", "url": "/d/ets-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+    {
+      "title": "Golden Signals",
+      "url": "/d/ets-golden-signals",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "RED Traffic Drilldown",
+      "url": "/d/ets-red-traffic",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Booking & Redis Pressure",
+      "url": "/d/ets-booking-redis",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "USE Infrastructure",
+      "url": "/d/ets-use-infra",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Outbox & Worker Health",
+      "url": "/d/ets-outbox-workers",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    }
   ],
   "panels": [
+    {
+      "collapsed": false,
+      "id": 200,
+      "title": "▶ STEP 0 — TOPOLOGY: Full nginx → backend call chain (e2e trace map)",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 201,
+      "title": "E2E Service Call Chain — edge-lb → gateway → frontend-lb → backend-lb → backend → postgres",
+      "description": "Live service dependency graph derived from OTLP spans across all nginx tiers and the Go backend. Each node is a service; each edge is an actual traced request. Nodes: cets-edge-lb (browser entry) → cets-gateway (3 replicas) → cets-frontend-lb → cets-backend-lb → cets-backend (3 replicas) → postgres. A red edge = errors on that hop. Click any node to see its request rate and latency. To see the full per-request span waterfall with replica identity, click a trace in the Traces panel (STEP 3) and open 'Node Graph' inside the trace detail view.",
+      "type": "nodeGraph",
+      "datasource": {
+        "type": "tempo",
+        "uid": "Tempo"
+      },
+      "targets": [
+        {
+          "queryType": "serviceMap",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      }
+    },
     {
       "collapsed": false,
       "id": 100,
       "title": "▶ STEP 1 — DETECT: Which route and replica is generating 500s?",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      }
     },
     {
       "id": 1,
       "title": "5xx Error Rate by Route × Replica",
       "description": "5xx request rate broken down by route and replica. Each series is labelled 'route replica' so you can immediately see which backend instance (backend-1, backend-2, backend-3) is the error source. A single replica producing all errors while others are healthy = instance-specific fault. Set $replica to that value to narrow all other panels.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "custom": { "thresholdsStyle": { "mode": "line" } }
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
         },
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -77,23 +190,39 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 1 }
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 14
+      }
     },
     {
       "id": 2,
       "title": "5xx Total Last 5 min",
       "description": "Total 5xx count in the current window. Non-zero means something is actively broken.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           }
         },
@@ -104,7 +233,13 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -114,24 +249,43 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 }
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 14
+      }
     },
     {
       "id": 3,
       "title": "P99 Latency Last 5 min",
       "description": "Current P99 latency. High latency with low error rate = slow path (DB contention, Redis slow). High latency with high error rate = fast failure storm.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 2 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
             ]
           }
         },
@@ -142,7 +296,13 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -152,23 +312,62 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 5 }
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      }
     },
     {
       "id": 4,
       "title": "5xx Count — Route × Replica × Status (last 5 min)",
       "description": "Exact 5xx counts in the current window sorted by count descending. The 'replica' column is the key — it tells you which backend-1/backend-2/backend-3 is responsible. Use this to set $replica to the affected instance before proceeding to STEP 3 traces.",
       "type": "table",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": [
-          { "matcher": { "id": "byName", "options": "replica" }, "properties": [{ "id": "custom.width", "value": 110 }, { "id": "custom.displayMode", "value": "color-background" }] },
-          { "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "custom.width", "value": 80 }] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "replica"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          }
         ]
       },
       "options": {
-        "sortBy": [{ "desc": true, "displayName": "Count" }]
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Count"
+          }
+        ]
       },
       "targets": [
         {
@@ -180,24 +379,49 @@
         }
       ],
       "transformations": [
-        { "id": "organize", "options": { "renameByName": { "Value": "Count" } } }
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Value": "Count"
+            }
+          }
+        }
       ],
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 9 }
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      }
     },
     {
       "collapsed": false,
       "id": 101,
       "title": "▶ STEP 2 — BOOKING DEPS: Is Redis, DB lock, or a specific booking stage the cause?",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      }
     },
     {
       "id": 5,
       "title": "Booking Stage Error Rate by Stage",
       "description": "Rate of booking stage observations where outcome=error, per stage. A spike on 'preadmission' = Redis gate failure. A spike on 'capacity' = capacity check error (not just exhausted). A spike on 'commit' = PostgreSQL transaction failure. This narrows the STEP 3 trace search to the correct span type.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "sum by (stage) (rate(cets_booking_stage_seconds_count{outcome=\"error\"}[5m]))",
@@ -205,15 +429,28 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 }
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 31
+      }
     },
     {
       "id": 6,
       "title": "Redis Gate Errors by Operation × Outage Mode",
       "description": "Rate of Redis gate errors, broken down by operation (reserve/release/commit) and outage mode. outage_mode=fail means bookings are being rejected because of Redis. outage_mode=degrade means Redis is slow but bookings continue. No data here = Redis is not the problem.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "sum by (outcome, outage_mode) (rate(cets_reservation_attempt_total{outcome=\"error\"}[5m]))",
@@ -221,25 +458,43 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 }
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 31
+      }
     },
     {
       "id": 7,
       "title": "DB Lock Waiting Sessions",
       "description": "PostgreSQL sessions blocked on a lock. Any value > 0 means booking transactions are blocking each other. Lock contention causes acquire_wait to rise which causes pool saturation which causes 500s. This is a common root cause for backend-specific error spikes.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           },
-          "custom": { "thresholdsStyle": { "mode": "line" } }
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
         },
         "overrides": []
       },
@@ -250,15 +505,28 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 }
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 31
+      }
     },
     {
       "id": 8,
       "title": "DB Pool Acquire Wait by Backend Instance",
       "description": "Average time spent waiting for a DB connection from the pool, per backend replica. A single replica with high acquire wait = that replica's pool is saturated. Combine with the 5xx table above: if backend-2 has both errors and high acquire wait, the pool is the bottleneck.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "rate(cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}[5m]) / clamp_min(rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m]), 0.001)",
@@ -266,15 +534,28 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      }
     },
     {
       "id": 9,
       "title": "Booking Stage P95 (all stages)",
       "description": "P95 latency for every booking stage. Combine with the error rate panel: if 'commit' is both slow AND erroring, it is the failing transaction. If only 'preadmission' is slow, Redis is degraded but not erroring.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum by (stage, le) (rate(cets_booking_stage_seconds_bucket[5m])))",
@@ -282,32 +563,56 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      }
     },
     {
       "collapsed": false,
       "id": 102,
       "title": "▶ STEP 3 — TRACE: Find the failing request. Use Node Graph to identify the replica.",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      }
     },
     {
       "id": 10,
       "title": "Service Dependency Graph",
       "description": "Visual topology of service calls generated from Tempo span metrics. Edges show client→server call direction with request rate and error rate. A red edge = errors on that call path. Click a node to see its metrics. This is the service-level view — for per-request per-replica detail, click a trace in the Traces panel and then click 'Node Graph' inside the trace view.",
       "type": "nodeGraph",
-      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "Tempo"
+      },
       "targets": [
-        { "queryType": "serviceMap", "refId": "A" }
+        {
+          "queryType": "serviceMap",
+          "refId": "A"
+        }
       ],
-      "gridPos": { "h": 14, "w": 12, "x": 0, "y": 35 }
+      "gridPos": {
+        "h": 14,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      }
     },
     {
       "id": 11,
       "title": "Recent Error Traces (click to open waterfall + Node Graph)",
       "description": "Traces from cets-* services where status=error, from the selected time window. Click any trace row to open the full span waterfall in Tempo. In the trace detail, click 'Node Graph' to see the ingress→backend→postgres dependency graph for that specific request. The resource.service.instance.id attribute on each span shows exactly which replica (backend-1, backend-2, backend-3) handled the request. Use 'Logs for this trace' to jump to Loki. Use 'Profiles for this span' to open Pyroscope.",
       "type": "traces",
-      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "Tempo"
+      },
       "targets": [
         {
           "queryType": "traceql",
@@ -324,21 +629,34 @@
           "refId": "B"
         }
       ],
-      "gridPos": { "h": 14, "w": 12, "x": 12, "y": 35 }
+      "gridPos": {
+        "h": 14,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      }
     },
     {
       "collapsed": false,
       "id": 103,
       "title": "▶ STEP 4 — LOGS: Correlate structured error logs with otel_trace_id",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      }
     },
     {
       "id": 12,
       "title": "Backend Error Logs (level=error, all replicas)",
       "description": "Structured JSON logs from backend-1/2/3 and worker processes filtered to level=error. Each log line includes otel_trace_id — click the underlined trace ID link to jump directly to that trace in Tempo. The 'replica' field shows which backend instance logged the error. The 'route', 'stage', and 'outcome' fields help correlate with the metrics panels above without needing a trace.",
       "type": "logs",
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": {
+        "type": "loki",
+        "uid": "Loki"
+      },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -355,14 +673,22 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 50 }
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      }
     },
     {
       "id": 13,
       "title": "Trace-Correlated Logs (requests with otel_trace_id)",
       "description": "All backend log lines that include an otel_trace_id field — these are requests that were actively traced. Use this when looking for logs for a specific trace that you found in Tempo but haven't found in the error logs panel (the request may have succeeded but been slow).",
       "type": "logs",
-      "datasource": { "type": "loki", "uid": "Loki" },
+      "datasource": {
+        "type": "loki",
+        "uid": "Loki"
+      },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -379,21 +705,34 @@
           "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 62 }
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      }
     },
     {
       "collapsed": false,
       "id": 104,
       "title": "▶ STEP 5 — PROFILE: CPU hotspot per service and replica",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 70 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 83
+      }
     },
     {
       "id": 14,
       "title": "CPU Profile Activity by Service (Pyroscope)",
       "description": "CPU nanoseconds consumed over time per cets-* service from Pyroscope. Non-zero confirms the profiler is running and collecting data. A spike on a specific replica corresponds to high CPU utilization in USE Infrastructure. To open the CPU flamegraph for a specific time window: (1) find a failing trace in STEP 3, (2) click the trace to open the waterfall, (3) click 'Profiles for this span' — Pyroscope opens scoped to the exact 15s upload window of that request. This shows the hot call path (e.g. pgx/pool.Acquire or redis client calls) that was executing during the failure.",
       "type": "timeseries",
-      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "Pyroscope" },
+      "datasource": {
+        "type": "grafana-pyroscope-datasource",
+        "uid": "Pyroscope"
+      },
       "targets": [
         {
           "labelSelector": "{service_name=~\"cets-.*\"}",
@@ -403,7 +742,12 @@
           "legendFormat": "{{service_name}}"
         }
       ],
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 71 }
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 84
+      }
     }
   ]
 }
