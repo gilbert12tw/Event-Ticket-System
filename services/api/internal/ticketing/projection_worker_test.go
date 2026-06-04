@@ -200,7 +200,7 @@ func TestProjectionWorker_OlderEventDoesNotOverwriteNewer(t *testing.T) {
 
 	row := readEventSummary(t, service, ctx, "evt_1")
 	assert.Equal(t, 1, row.ConfirmedCount, "older event must not overwrite confirmed_count set by newer event")
-	
+
 	expectedOffset := fmt.Sprintf("%s|%s", now.Format(time.RFC3339Nano), "ob-010")
 	assert.Equal(t, expectedOffset, row.LastEventOffset, "last_event_offset must remain at newer offset")
 }
