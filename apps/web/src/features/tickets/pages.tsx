@@ -15,6 +15,7 @@ import {
 } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { TicketQrCode } from "./qr";
+import { TicketSignatureField } from "./signature-field";
 import { siteLabel, ticketStatusView } from "@/lib/ui/options";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -335,6 +336,7 @@ export function TicketPanel({
             <div className="qr-wrap">
               <TicketQrCode token={qrToken} />
             </div>
+            <TicketSignatureField token={qrToken} />
           </>
         )}
         <MetaList className="ticket-meta-list" rows={ticketMetaRows(ticket)} />
