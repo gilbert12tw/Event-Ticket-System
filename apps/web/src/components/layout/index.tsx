@@ -112,15 +112,16 @@ export function Header({
       session={
         <div className="session-pill" aria-label="目前登入身份">
           <strong>{displayName}</strong>
-            <span>
-              {userWorkspace
-                ? roleLabel(session.actor.role)
-                : `${session.actor.id} · ${roleLabel(session.actor.role)}`}
-            </span>
+          <span>
+            {userWorkspace
+              ? roleLabel(session.actor.role)
+              : `${session.actor.id} · ${roleLabel(session.actor.role)}`}
+          </span>
         </div>
       }
       utilities={
-        debugChromeAvailable && !userWorkspace && (
+        debugChromeAvailable &&
+        !userWorkspace && (
           <DebugToolsSheet
             apiLog={apiLog}
             debugChromeEnabled={debugChromeEnabled}

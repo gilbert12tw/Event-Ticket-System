@@ -201,6 +201,8 @@ func TestSonarCoverageConfigStaysLocalOnly(t *testing.T) {
 	assert.Contains(t, detectorContent, `.github/actions/setup-web/`)
 	assert.Contains(t, detectorContent, `docs/reports/phase3-`)
 	assert.Contains(t, detectorContent, `goal\.md|note\.md`)
+	assert.Contains(t, detectorContent, "git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main",
+		"local act push events can omit a usable before SHA, so change detection must prefer main before falling back to the root commit")
 	gitignore, err := os.ReadFile("../../../.gitignore")
 	require.NoError(t, err)
 	assert.Contains(t, string(gitignore), "\ngoal.md\n")

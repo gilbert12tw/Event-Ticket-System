@@ -10,10 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { selectCurrentTicket } from "@/features/tickets/ticket-readiness";
 import { TicketPanel } from "@/features/tickets/ticket-panel";
-import {
-  employeeEventDisplayState,
-  localDateKey,
-} from "./employee-calendar";
+import { employeeEventDisplayState, localDateKey } from "./employee-calendar";
 import {
   calendarRangeForView,
   employeeCalendarPath,
@@ -24,9 +21,7 @@ import {
   type EmployeeCalendarViewMode,
 } from "./employee-calendar-planner";
 import { EmployeeCalendarView } from "./employee-calendar-view";
-import {
-  EmployeeAgenda,
-} from "./employee-calendar-components";
+import { EmployeeAgenda } from "./employee-calendar-components";
 
 export function EmployeeEventsPage({
   claims,
@@ -63,12 +58,13 @@ export function EmployeeEventsPage({
   );
   const registeredEvents = useMemo(
     () =>
-      events.filter((event) =>
-        employeeEventDisplayState(
-          event,
-          ticketForEvent(tickets, event.event_id),
-          now,
-        ).isRegistered,
+      events.filter(
+        (event) =>
+          employeeEventDisplayState(
+            event,
+            ticketForEvent(tickets, event.event_id),
+            now,
+          ).isRegistered,
       ),
     [events, now, tickets],
   );
@@ -109,10 +105,7 @@ export function EmployeeEventsPage({
   }
 
   function selectDate(dateKey: string) {
-    applyCalendarState(
-      calendarState.view,
-      new Date(`${dateKey}T00:00:00`),
-    );
+    applyCalendarState(calendarState.view, new Date(`${dateKey}T00:00:00`));
   }
 
   return (
@@ -162,7 +155,9 @@ export function EmployeeEventsPage({
               }
               onSelectDate={selectDate}
               onToday={() => applyCalendarState(calendarState.view, now)}
-              onViewChange={(view) => applyCalendarState(view, calendarState.date)}
+              onViewChange={(view) =>
+                applyCalendarState(view, calendarState.date)
+              }
             />
             {registeredEvents.length > 0 && (
               <EmployeeAgenda

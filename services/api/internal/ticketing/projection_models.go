@@ -33,3 +33,12 @@ type eventSummaryRow struct {
 	DepartmentBreakdown map[string]int
 	LastEventOffset     string // TEXT outbox_id of the last applied event
 }
+
+type eventSummaryUpsert struct {
+	EventID             string
+	ConfirmedCount      int
+	CancelledCount      int
+	WaitlistCount       int
+	DepartmentBreakdown map[string]int
+	OutboxID            string
+}

@@ -2,6 +2,11 @@ import type { EventSummary, Ticket } from "@/lib/api";
 
 const defaultDurationMs = 2 * 60 * 60 * 1000;
 const productID = "-//CETS//Employee Events//ZH-TW";
+const icsBackslash = String.fromCodePoint(92);
+const icsEscapedBackslash = String.raw`\\`;
+const icsEscapedNewLine = String.raw`\n`;
+const icsEscapedSemicolon = String.raw`\;`;
+const icsEscapedComma = String.raw`\,`;
 
 export type CalendarExportArtifact = {
   content: string;
@@ -46,13 +51,14 @@ export function employeeCalendarExport(
 }
 
 function eventUID(event: EventSummary) {
-  return `cets-${stableHash(`${event.event_id}:${event.starts_at}`)}@calendar.local`;
+  const uidSeed = `${event.event_id}:${event.starts_at}`;
+  return `cets-${stableHash(uidSeed)}@calendar.local`;
 }
 
 function stableHash(value: string) {
   let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
+  for (const character of value) {
+    hash ^= character.codePointAt(0) ?? 0;
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(36);
@@ -66,20 +72,20 @@ function calendarFilename(event: EventSummary, startsAt: Date) {
   ].join("-");
   const title = event.title
     .trim()
-    .replace(/[\\/:*?"<>|#%{}~&]/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
+    .replaceAll(/[\\/:*?"<>|#%{}~&]/g, "-")
+    .replaceAll(/\s+/g, "-")
+    .replaceAll(/-+/g, "-")
     .slice(0, 48)
-    .replace(/^-|-$/g, "");
+    .replaceAll(/^-|-$/g, "");
   return `${datePrefix}-${title || "event"}.ics`;
 }
 
 function escapeICSValue(value: string) {
   return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\r\n|\r|\n/g, "\\n")
-    .replace(/;/g, "\\;")
-    .replace(/,/g, "\\,");
+    .replaceAll(icsBackslash, icsEscapedBackslash)
+    .replaceAll(/\r\n|\r|\n/g, icsEscapedNewLine)
+    .replaceAll(";", icsEscapedSemicolon)
+    .replaceAll(",", icsEscapedComma);
 }
 
 function foldICSLine(line: string) {

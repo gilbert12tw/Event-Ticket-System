@@ -143,9 +143,12 @@ export function EmployeeEventPosterCard({
           </div>
           <h3>{event.title}</h3>
           <p className="employee-event-meta">
-            {formatDate(event.starts_at)} · {siteLabel(event.location || event.event_site)}
+            {formatDate(event.starts_at)} ·{" "}
+            {siteLabel(event.location || event.event_site)}
           </p>
-          <p className="employee-event-description">{eventDescription(event)}</p>
+          <p className="employee-event-description">
+            {eventDescription(event)}
+          </p>
         </div>
         <Button asChild className="employee-event-primary-action">
           <a
@@ -175,7 +178,11 @@ export function EmployeeEventDetailHero({
   const deadline = registrationDeadlineView(event, now);
   return (
     <section className="employee-event-detail-hero">
-      <EventPoster eventID={event.event_id} title={event.title} variant="hero" />
+      <EventPoster
+        eventID={event.event_id}
+        title={event.title}
+        variant="hero"
+      />
       <div className="employee-event-detail-copy">
         <div className="employee-event-card-badges">
           <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
@@ -183,7 +190,8 @@ export function EmployeeEventDetailHero({
         </div>
         <h2>{event.title}</h2>
         <p className="employee-event-meta">
-          {formatDate(event.starts_at)} · {siteLabel(event.location || event.event_site)}
+          {formatDate(event.starts_at)} ·{" "}
+          {siteLabel(event.location || event.event_site)}
         </p>
         <p>{eventDescription(event)}</p>
         {action}

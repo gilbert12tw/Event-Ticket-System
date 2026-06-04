@@ -119,7 +119,9 @@ describe("layout components", () => {
       </AuthenticatedShell>,
     );
 
-    expect(screen.queryByRole("button", { name: "Debug" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Debug" }),
+    ).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent("E1001");
     expect(container).toHaveTextContent("員工");
   });

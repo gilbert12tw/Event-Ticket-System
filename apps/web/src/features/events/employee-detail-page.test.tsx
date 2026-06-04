@@ -139,8 +139,9 @@ describe("EmployeeEventDetailPage", () => {
       await screen.findByRole("heading", { level: 2, name: "活動" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("年度家庭日活動介紹").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length)
-      .toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length,
+    ).toBeGreaterThan(0);
     expect(
       await screen.findByRole("img", { name: "活動 海報" }),
     ).toHaveAttribute("src", "blob:poster");

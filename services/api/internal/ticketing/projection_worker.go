@@ -61,15 +61,15 @@ func (s *Service) processClaimedProjectionOutbox(
 	}
 
 	newCounts := computeNewCounts(current, proj)
-	if err := upsertEventSummary(
-		ctx, tx,
-		proj.EventID,
-		newCounts.ConfirmedCount,
-		newCounts.CancelledCount,
-		newCounts.WaitlistCount,
-		newCounts.DepartmentBreakdown,
-		claim.outboxID,
-	); err != nil {
+	summary := eventSummaryUpsert{
+		EventID:             proj.EventID,
+		ConfirmedCount:      newCounts.ConfirmedCount,
+		CancelledCount:      newCounts.CancelledCount,
+		WaitlistCount:       newCounts.WaitlistCount,
+		DepartmentBreakdown: newCounts.DepartmentBreakdown,
+		OutboxID:            claim.outboxID,
+	}
+	if err := upsertEventSummary(ctx, tx, summary); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}

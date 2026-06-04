@@ -56,8 +56,10 @@ export function calendarRangeForView(
 ): EmployeeCalendarRange {
   const anchor = startOfLocalDay(anchorDate);
   const startDate =
-    view === "month" ? startOfWeek(startOfMonth(anchor)) : rangeStart(view, anchor);
-  const dayCount = view === "month" ? 42 : view === "week" ? 7 : 1;
+    view === "month"
+      ? startOfWeek(startOfMonth(anchor))
+      : rangeStart(view, anchor);
+  const dayCount = calendarDayCount(view);
   const days = Array.from({ length: dayCount }, (_, index) => {
     const date = addDays(startDate, index);
     return calendarDayForDate(date, now);
@@ -71,6 +73,12 @@ export function calendarRangeForView(
     label: rangeLabel(view, anchor, startDate, dayCount),
     days,
   };
+}
+
+function calendarDayCount(view: EmployeeCalendarViewMode) {
+  if (view === "month") return 42;
+  if (view === "week") return 7;
+  return 1;
 }
 
 export function parseEmployeeCalendarQuery(
@@ -117,9 +125,7 @@ export function registrationDeadlineView(
     };
   }
   const closeDay = startOfLocalDay(registrationClose);
-  const daysLeft = Math.round(
-    (closeDay.getTime() - today.getTime()) / dayMs,
-  );
+  const daysLeft = Math.round((closeDay.getTime() - today.getTime()) / dayMs);
   if (daysLeft <= 0) {
     return {
       kind: "today",
@@ -254,7 +260,10 @@ function rangeLabel(
   return `${formatMonthDay(startDate)} - ${formatMonthDay(endDate)}`;
 }
 
-function calendarEventSort(left: EmployeeCalendarEvent, right: EmployeeCalendarEvent) {
+function calendarEventSort(
+  left: EmployeeCalendarEvent,
+  right: EmployeeCalendarEvent,
+) {
   const stateScore = (event: EmployeeCalendarEvent) => {
     if (event.state.kind === "entry-ready") return 0;
     if (event.state.isRegistered) return 1;

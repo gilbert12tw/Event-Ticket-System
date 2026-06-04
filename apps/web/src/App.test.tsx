@@ -215,7 +215,9 @@ describe("App", () => {
       expect(mockSelectMockProfile).toHaveBeenCalledWith("E1001"),
     );
     expect(await screen.findByText("活動首頁")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Debug/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Debug/ }),
+    ).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("E1001");
     expect(mockClearProviderToken).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/user/events");

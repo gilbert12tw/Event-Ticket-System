@@ -36,7 +36,9 @@ export function EmployeeCalendarToolbar({
   onToday,
   onViewChange,
   range,
-}: Readonly<Pick<CalendarViewProps, "onMove" | "onToday" | "onViewChange" | "range">>) {
+}: Readonly<
+  Pick<CalendarViewProps, "onMove" | "onToday" | "onViewChange" | "range">
+>) {
   return (
     <div className="employee-calendar-toolbar" aria-label="活動日曆工具列">
       <div className="employee-calendar-nav">
@@ -65,11 +67,8 @@ export function EmployeeCalendarToolbar({
       <div className="employee-calendar-title">
         <h2>{range.label}</h2>
       </div>
-      <div
-        className="employee-calendar-mode"
-        role="group"
-        aria-label="日曆視圖"
-      >
+      <fieldset className="employee-calendar-mode">
+        <legend className="sr-only">日曆視圖</legend>
         {(Object.keys(viewLabels) as EmployeeCalendarViewMode[]).map((view) => (
           <Button
             aria-pressed={range.view === view}
@@ -82,7 +81,7 @@ export function EmployeeCalendarToolbar({
             {viewLabels[view]}
           </Button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }

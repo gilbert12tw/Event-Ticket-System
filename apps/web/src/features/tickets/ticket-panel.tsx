@@ -45,7 +45,9 @@ export function TicketPanel({
     <div className={panelClassName}>
       <div className="ticket-detail">
         <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
-        <h2>{ticket.event_title || (compact ? "活動票券" : ticket.event_id)}</h2>
+        <h2>
+          {ticket.event_title || (compact ? "活動票券" : ticket.event_id)}
+        </h2>
         <div className="helper-strip">
           <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
           <span>{readiness.copy}</span>
@@ -75,7 +77,9 @@ export function TicketPanel({
         )}
         <MetaList
           className="ticket-meta-list"
-          rows={compact ? compactTicketMetaRows(ticket) : ticketMetaRows(ticket)}
+          rows={
+            compact ? compactTicketMetaRows(ticket) : ticketMetaRows(ticket)
+          }
         />
         <Button asChild variant="outline">
           <a

@@ -213,12 +213,8 @@ describe("employee calendar helpers", () => {
 
   it("shifts calendar anchors by the active view", () => {
     expect(localDateKey(shiftCalendarDate("day", now, 1))).toBe("2026-06-05");
-    expect(localDateKey(shiftCalendarDate("week", now, -1))).toBe(
-      "2026-05-28",
-    );
-    expect(localDateKey(shiftCalendarDate("month", now, 1))).toBe(
-      "2026-07-01",
-    );
+    expect(localDateKey(shiftCalendarDate("week", now, -1))).toBe("2026-05-28");
+    expect(localDateKey(shiftCalendarDate("month", now, 1))).toBe("2026-07-01");
   });
 
   it("summarizes registration deadlines for employee decisions", () => {
@@ -230,7 +226,11 @@ describe("employee calendar helpers", () => {
         }),
         now,
       ),
-    ).toMatchObject({ detail: "06/05 開放", kind: "pending", label: "尚未開放" });
+    ).toMatchObject({
+      detail: "06/05 開放",
+      kind: "pending",
+      label: "尚未開放",
+    });
     expect(
       registrationDeadlineView(
         event({ registration_close: "2026-06-04T18:00:00+08:00" }),

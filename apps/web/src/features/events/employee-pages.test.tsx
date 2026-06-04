@@ -126,7 +126,9 @@ describe("EmployeeEventsPage", () => {
     expect(
       screen.getByRole("heading", { name: "選取日期活動" }),
     ).toBeInTheDocument();
-    expect((await screen.findAllByText("不限量活動")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("不限量活動")).length).toBeGreaterThan(
+      0,
+    );
     expect(
       screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length,
     ).toBeGreaterThan(0);
@@ -134,7 +136,9 @@ describe("EmployeeEventsPage", () => {
     expect(
       screen.getByRole("button", { name: "重新整理活動" }),
     ).toHaveAttribute("data-size", "icon");
-    expect(screen.queryByRole("button", { name: "重新整理" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "重新整理" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "今天" })).toHaveAttribute(
       "data-size",
       "sm",
@@ -148,7 +152,9 @@ describe("EmployeeEventsPage", () => {
       "icon-sm",
     );
     expect(screen.queryByText("活動列表")).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /可報名/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /可報名/ }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("資格規則")).not.toBeInTheDocument();
     expect(screen.queryByText("已取消活動")).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent("evt-unlimited");
@@ -161,7 +167,9 @@ describe("EmployeeEventsPage", () => {
     render(<EmployeeEventsPage claims={claims} />);
 
     expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /可報名 0/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /可報名 0/ }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("我的報名 0")).not.toBeInTheDocument();
   });
 
@@ -176,13 +184,17 @@ describe("EmployeeEventsPage", () => {
     expect(await screen.findByLabelText("週行事曆")).toBeInTheDocument();
     const modeGroup = screen.getByRole("group", { name: "日曆視圖" });
 
-    await userEvent.click(within(modeGroup).getByRole("button", { name: "月" }));
+    await userEvent.click(
+      within(modeGroup).getByRole("button", { name: "月" }),
+    );
 
     expect(screen.getByLabelText("月行事曆")).toBeInTheDocument();
     expect(window.location.search).toContain("view=month");
     expect(window.location.search).toContain("date=");
 
-    await userEvent.click(within(modeGroup).getByRole("button", { name: "日" }));
+    await userEvent.click(
+      within(modeGroup).getByRole("button", { name: "日" }),
+    );
 
     expect(screen.getByLabelText("日行程")).toBeInTheDocument();
     expect(window.location.search).toContain("view=day");
@@ -214,7 +226,9 @@ describe("EmployeeEventsPage", () => {
     expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
     expect(screen.queryByText("已取消活動")).not.toBeInTheDocument();
     expect(screen.queryByText("不適合你的活動")).not.toBeInTheDocument();
-    expect(screen.queryByText(/department does not match/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/department does not match/),
+    ).not.toBeInTheDocument();
     expect(mockBookEvent).not.toHaveBeenCalled();
   });
 
@@ -249,7 +263,9 @@ describe("EmployeeEventsPage", () => {
       "開放報名活動",
       "已報名活動",
     ]);
-    expect(screen.queryByRole("button", { name: "取消報名" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "取消報名" }),
+    ).not.toBeInTheDocument();
   });
 
   it("downloads an ICS file for confirmed events", async () => {
@@ -314,9 +330,9 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect((await screen.findAllByText("Hsinchu Event")).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      (await screen.findAllByText("Hsinchu Event")).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText(/跨城市活動提醒/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/This event is in Hsinchu/),

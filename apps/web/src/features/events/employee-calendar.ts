@@ -56,7 +56,8 @@ export function groupEventsByCalendarDay(
       isToday: dateKey === localDateKey(today),
       eventCount: relevantEvents.length,
       hasRegistration: relevantEvents.some(
-        (event) => employeeEventDisplayState(event, undefined, now).isRegistered,
+        (event) =>
+          employeeEventDisplayState(event, undefined, now).isRegistered,
       ),
     };
   });
@@ -89,7 +90,8 @@ export function groupEventsByMonth(
       isToday: dateKey === localDateKey(startOfLocalDay(now)),
       eventCount: relevantEvents.length,
       hasRegistration: relevantEvents.some(
-        (event) => employeeEventDisplayState(event, undefined, now).isRegistered,
+        (event) =>
+          employeeEventDisplayState(event, undefined, now).isRegistered,
       ),
     };
   });
@@ -107,16 +109,18 @@ export function selectEmployeeAgenda(
       : localDateKey(startOfLocalDay(selectedDate));
   return events
     .filter((event) => localDateKey(parseDate(event.starts_at)) === selectedKey)
-    .filter((event) =>
-      employeeEventDisplayState(
-        event,
-        ticketForEvent(tickets, event.event_id),
-        now,
-      ).showInMain,
+    .filter(
+      (event) =>
+        employeeEventDisplayState(
+          event,
+          ticketForEvent(tickets, event.event_id),
+          now,
+        ).showInMain,
     )
     .sort(
       (left, right) =>
-        agendaPriority(left, tickets, now) - agendaPriority(right, tickets, now),
+        agendaPriority(left, tickets, now) -
+        agendaPriority(right, tickets, now),
     );
 }
 
@@ -125,11 +129,24 @@ export function employeeEventDisplayState(
   ticket?: Ticket,
   now: Date = new Date(),
 ): EmployeeEventDisplayState {
+  return (
+    registeredDisplayState(event, ticket, now) ??
+    unavailableDisplayState(event, now) ??
+    bookableDisplayState(event)
+  );
+}
+
+function registeredDisplayState(
+  event: EventSummary,
+  ticket: Ticket | undefined,
+  now: Date,
+) {
   const eventTicket = ticket ?? event.current_user_ticket ?? undefined;
+  if (eventTicket?.status === "active" && eventIsCurrent(event, now)) {
+    return displayState("entry-ready", "可入場", "ok", "查看票券", true, true);
+  }
   if (eventTicket?.status === "active") {
-    return eventIsCurrent(event, now)
-      ? displayState("entry-ready", "可入場", "ok", "查看票券", true, true)
-      : displayState("registered", "已報名", "ok", "查看票券", true, true);
+    return displayState("registered", "已報名", "ok", "查看票券", true, true);
   }
   if (event.current_user_status === "confirmed") {
     return displayState("registered", "已報名", "ok", "查看詳情", true, true);
@@ -137,6 +154,10 @@ export function employeeEventDisplayState(
   if (event.current_user_status === "waitlisted") {
     return displayState("waitlisted", "候補中", "warn", "查看詳情", true, true);
   }
+  return null;
+}
+
+function unavailableDisplayState(event: EventSummary, now: Date) {
   if (event.current_user_status === "cancelled") {
     return displayState(
       "unavailable",
@@ -157,6 +178,7 @@ export function employeeEventDisplayState(
       false,
     );
   }
+
   const decision = getEligibilityDecision(event);
   const cooldown = decision?.no_show_cooldown ?? event.no_show_cooldown;
   const eligible = decision ? decision.can_book : (event.eligible ?? false);
@@ -170,9 +192,18 @@ export function employeeEventDisplayState(
       false,
     );
   }
+
   if (now.getTime() < parseDate(event.registration_start).getTime()) {
-    return displayState("not-open", "尚未開放", "info", "查看詳情", true, false);
+    return displayState(
+      "not-open",
+      "尚未開放",
+      "info",
+      "查看詳情",
+      true,
+      false,
+    );
   }
+
   if (now.getTime() > parseDate(event.registration_close).getTime()) {
     return displayState(
       "closed",
@@ -183,6 +214,10 @@ export function employeeEventDisplayState(
       false,
     );
   }
+  return null;
+}
+
+function bookableDisplayState(event: EventSummary) {
   if (event.capacity_type === "unlimited") {
     return displayState("bookable", "可報名", "ok", "報名活動", true, false);
   }
