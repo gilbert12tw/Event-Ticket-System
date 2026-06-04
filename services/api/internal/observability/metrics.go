@@ -59,7 +59,6 @@ func (m DatabaseMetrics) QueryRow(ctx context.Context, sql string, args ...inter
 	return m.Write.QueryRow(ctx, sql, args...)
 }
 
-
 type httpKey struct {
 	Route       string
 	Method      string
