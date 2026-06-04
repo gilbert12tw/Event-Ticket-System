@@ -4,11 +4,13 @@ import { eventPosterBlob } from "@/lib/api";
 export function EventPoster({
   eventID,
   meta,
+  showFallbackTitle = false,
   title,
   variant = "card",
 }: Readonly<{
   eventID: string;
   meta?: string;
+  showFallbackTitle?: boolean;
   title: string;
   variant?: "card" | "hero";
 }>) {
@@ -54,6 +56,7 @@ export function EventPoster({
       ) : (
         <div className="employee-event-poster-fallback" aria-hidden="true">
           <span>{posterInitial(title)}</span>
+          {showFallbackTitle && <strong>{title}</strong>}
           <small>{meta || "企業活動"}</small>
         </div>
       )}

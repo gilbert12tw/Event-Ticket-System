@@ -176,25 +176,79 @@ export function EmployeeEventDetailHero({
   const state = employeeEventDisplayState(event, undefined, now);
   const deadline = registrationDeadlineView(event, now);
   const meta = eventMeta(event);
+  const date = eventDateDetail(event.starts_at);
+  const location = siteLabel(event.location || event.event_site);
   return (
     <section className="employee-event-detail-hero">
       <EventPoster
         eventID={event.event_id}
         meta={meta}
+        showFallbackTitle
         title={event.title}
         variant="hero"
       />
       <div className="employee-event-detail-copy">
-        <div className="employee-event-card-badges">
+        <h2>{event.title}</h2>
+        <div className="employee-event-host-row">
+          <span className="employee-event-host-stack" aria-hidden="true">
+            <span>活</span>
+            <span>動</span>
+          </span>
+          <span>
+            由 <strong>活動主辦團隊</strong> 主辦
+          </span>
+        </div>
+        <div className="employee-event-detail-facts" aria-label="活動資訊">
+          <EventDetailFact
+            icon="calendar"
+            label={date.dateLabel}
+            value={date.timeLabel}
+          >
+            <span className="employee-event-date-tile" aria-hidden="true">
+              <small>{date.monthLabel}</small>
+              <strong>{date.dayLabel}</strong>
+            </span>
+          </EventDetailFact>
+          <EventDetailFact
+            icon="mapPin"
+            label={location || "地點待公布"}
+            value={event.event_city || event.event_site || ""}
+          />
+        </div>
+        <div className="employee-event-card-badges employee-event-detail-badges">
           <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
           <EmployeeRegistrationDeadlineChip deadline={deadline} />
         </div>
-        <h2>{event.title}</h2>
-        <p className="employee-event-meta">{meta}</p>
         <p>{eventDescription(event)}</p>
         {action}
       </div>
     </section>
+  );
+}
+
+function EventDetailFact({
+  children,
+  icon,
+  label,
+  value,
+}: Readonly<{
+  children?: ReactNode;
+  icon: "calendar" | "mapPin";
+  label: string;
+  value: string;
+}>) {
+  return (
+    <div className="employee-event-detail-fact">
+      {children || (
+        <span className="employee-event-detail-fact-icon">
+          <Icon name={icon} />
+        </span>
+      )}
+      <span>
+        <strong>{label}</strong>
+        {value && <small>{value}</small>}
+      </span>
+    </div>
   );
 }
 
@@ -260,6 +314,31 @@ function eventMeta(event: EventSummary) {
   return `${formatDate(event.starts_at)} · ${siteLabel(
     event.location || event.event_site,
   )}`;
+}
+
+function eventDateDetail(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      dateLabel: value || "時間待公布",
+      dayLabel: "--",
+      monthLabel: "日期",
+      timeLabel: "",
+    };
+  }
+  return {
+    dateLabel: date.toLocaleDateString("zh-TW", {
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+    }),
+    dayLabel: date.toLocaleDateString("zh-TW", { day: "2-digit" }),
+    monthLabel: date.toLocaleDateString("zh-TW", { month: "short" }),
+    timeLabel: `${date.toLocaleTimeString("zh-TW", {
+      hour: "numeric",
+      minute: "2-digit",
+    })} 開始`,
+  };
 }
 
 function sameMonth(leftDateKey: string, rightDateKey: string) {

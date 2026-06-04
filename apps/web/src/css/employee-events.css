@@ -198,6 +198,38 @@
   border-radius: var(--radius);
 }
 
+.employee-event-poster.hero.cover-accent {
+  --poster-cover: linear-gradient(
+    135deg,
+    oklch(0.33 0.09 252),
+    oklch(0.72 0.045 224)
+  );
+}
+
+.employee-event-poster.hero.cover-info {
+  --poster-cover: linear-gradient(
+    135deg,
+    oklch(0.32 0.082 246),
+    oklch(0.72 0.052 205)
+  );
+}
+
+.employee-event-poster.hero.cover-success {
+  --poster-cover: linear-gradient(
+    135deg,
+    oklch(0.32 0.078 164),
+    oklch(0.75 0.052 188)
+  );
+}
+
+.employee-event-poster.hero.cover-warn {
+  --poster-cover: linear-gradient(
+    135deg,
+    oklch(0.34 0.082 54),
+    oklch(0.76 0.058 82)
+  );
+}
+
 .employee-event-poster img {
   position: relative;
   z-index: 1;
@@ -209,36 +241,63 @@
 
 .employee-event-poster-fallback {
   display: grid;
-  gap: 8px;
-  justify-items: center;
-  place-items: center;
-  width: min(74%, 360px);
-  padding: 14px;
+  align-content: end;
+  justify-items: start;
+  gap: 9px;
+  width: 100%;
+  height: 100%;
+  padding: 18px;
   z-index: 1;
-  border: 1px solid oklch(1 0 0 / 0.72);
-  border-radius: var(--radius);
-  background: oklch(0.985 0.004 238 / 0.82);
-  color: var(--accent);
-  text-align: center;
-  box-shadow: 0 12px 24px oklch(0.3 0.022 245 / 0.08);
+  background: linear-gradient(
+    180deg,
+    oklch(1 0 0 / 0.06),
+    oklch(0.26 0.032 252 / 0.16)
+  );
+  color: var(--ink);
+  text-align: left;
 }
 
 .employee-event-poster.hero .employee-event-poster-fallback {
-  width: min(58%, 420px);
-  padding: 18px;
+  padding: clamp(22px, 4vw, 38px);
+  background:
+    linear-gradient(180deg, transparent 18%, oklch(0.16 0.028 248 / 0.44)),
+    repeating-linear-gradient(
+      135deg,
+      oklch(1 0 0 / 0.12) 0 1px,
+      transparent 1px 88px
+    );
+  color: oklch(0.98 0.004 238);
 }
 
 .employee-event-poster-fallback span {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 42px;
+  height: 42px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border-radius: 999px;
+  background: oklch(0.99 0.004 238 / 0.9);
   color: var(--accent);
-  font-size: 1.45rem;
+  font-size: 1.12rem;
   font-weight: 820;
+  box-shadow: 0 10px 22px oklch(0.3 0.022 245 / 0.1);
+}
+
+.employee-event-poster-fallback strong {
+  display: block;
+  max-width: min(100%, 30rem);
+  color: var(--ink);
+  font-size: 1.02rem;
+  font-weight: 830;
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.employee-event-poster.hero .employee-event-poster-fallback strong {
+  color: oklch(0.98 0.004 238);
+  font-size: clamp(1.5rem, 3.2vw, 2.45rem);
+  text-shadow: 0 2px 12px oklch(0.12 0.028 245 / 0.26);
 }
 
 .employee-event-poster-fallback small {
@@ -248,6 +307,10 @@
   font-weight: 650;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.employee-event-poster.hero .employee-event-poster-fallback small {
+  color: oklch(0.93 0.012 238);
 }
 
 .employee-event-card-body {
@@ -304,18 +367,135 @@
 
 .employee-event-detail-hero {
   display: grid;
-  gap: 14px;
+  gap: 18px;
   min-width: 0;
 }
 
 .employee-event-detail-copy {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
 }
 
 .employee-event-detail-copy p {
   max-width: 72ch;
+}
+
+.employee-event-host-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.employee-event-host-row strong {
+  color: var(--ink);
+  font-weight: 780;
+}
+
+.employee-event-host-stack {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.employee-event-host-stack span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 820;
+}
+
+.employee-event-host-stack span + span {
+  margin-left: -7px;
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.employee-event-detail-facts {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.employee-event-detail-fact {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.employee-event-detail-fact > span:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.employee-event-detail-fact strong,
+.employee-event-detail-fact small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.employee-event-detail-fact strong {
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 780;
+  line-height: 1.25;
+}
+
+.employee-event-detail-fact small {
+  color: var(--muted);
+  font-size: 0.87rem;
+  line-height: 1.32;
+}
+
+.employee-event-date-tile,
+.employee-event-detail-fact-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+
+.employee-event-date-tile {
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.employee-event-date-tile small {
+  width: 100%;
+  padding: 3px 4px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 1;
+  text-align: center;
+}
+
+.employee-event-date-tile strong {
+  color: var(--ink);
+  font-size: 1.08rem;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.employee-event-detail-badges {
+  padding-top: 2px;
 }
 
 .employee-event-hero-panel {
@@ -367,6 +547,12 @@
 }
 
 @media (max-width: 1180px) {
+  .event-detail-app .employee-event-hero-panel,
+  .event-detail-app .employee-event-detail-action-panel,
+  .event-detail-app .event-detail-check-panel {
+    grid-column: 1 / -1;
+  }
+
   .employee-event-detail-action-panel {
     position: static;
     top: auto;
@@ -382,6 +568,9 @@
 @media (max-width: 760px) {
   .event-detail-app {
     padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    background:
+      linear-gradient(160deg, oklch(0.99 0.014 302), transparent 32%),
+      linear-gradient(20deg, oklch(0.955 0.04 205), transparent 38%), var(--bg);
   }
 
   .employee-calendar-header,
@@ -420,6 +609,29 @@
 
   .employee-event-poster:not(.hero) {
     aspect-ratio: 16 / 7;
+  }
+
+  .employee-event-hero-panel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .employee-event-poster.hero {
+    aspect-ratio: 1 / 1;
+    border: 0;
+    border-radius: 8px;
+    box-shadow: 0 18px 42px oklch(0.28 0.035 245 / 0.12);
+  }
+
+  .employee-event-detail-copy {
+    padding: 0 2px;
+  }
+
+  .employee-event-detail-copy h2 {
+    font-size: 1.55rem;
+    line-height: 1.13;
   }
 
   .employee-event-detail-action-panel {

@@ -35,6 +35,7 @@ export type IconName =
   | "database"
   | "download"
   | "logout"
+  | "mapPin"
   | "play"
   | "plus"
   | "refresh"
