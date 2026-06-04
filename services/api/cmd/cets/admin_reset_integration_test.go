@@ -25,7 +25,7 @@ func TestResetDemoDBResetsPostgresAndRedis(t *testing.T) {
 	cfg.DatabaseTimeout = 15 * time.Second
 	ctx := context.Background()
 	client := redisClientForTest(t, cfg.RedisURL)
-	defer client.Close()
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	otherKey := "outside:reset-demo-db:keep"
 	require.NoError(t, client.Set(ctx, "cets:v1:resv:stale:remaining", "1", time.Hour).Err())
 	require.NoError(t, client.Set(ctx, "cets:v1:rate:booking:stale:event:20260604120000", "1", time.Hour).Err())
@@ -77,7 +77,7 @@ func redisClientForTest(t *testing.T, redisURL string) *redis.Client {
 	require.NoError(t, err)
 	client := redis.NewClient(opts)
 	if err := client.Ping(context.Background()).Err(); err != nil {
-		client.Close()
+		_ = client.Close()
 		t.Skipf("Redis DB in %s is not available: %v", redisURL, err)
 	}
 	return client
