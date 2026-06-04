@@ -65,6 +65,7 @@ type Registry struct {
 	http        map[httpKey]*histogram
 	booking     map[bookingStageKey]*histogram
 	reservation map[reservationKey]*histogram
+	redisOp     map[redisOpKey]*histogram
 }
 
 type registryIdentity struct {
@@ -97,6 +98,7 @@ func NewRegistryWithIdentity(service string, replica string) *Registry {
 		http:        map[httpKey]*histogram{},
 		booking:     map[bookingStageKey]*histogram{},
 		reservation: map[reservationKey]*histogram{},
+		redisOp:     map[redisOpKey]*histogram{},
 	}
 }
 
@@ -202,6 +204,7 @@ func (r *Registry) WritePrometheus(ctx context.Context, w io.Writer, db any) {
 	r.writeHTTPMetrics(w)
 	r.writeBookingMetrics(w)
 	r.writeReservationMetrics(w)
+	r.writeRedisOperationMetrics(w)
 	writePoolMetrics(w, db)
 	writeSQLMetrics(ctx, w, db)
 }

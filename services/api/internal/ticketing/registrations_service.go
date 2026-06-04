@@ -16,6 +16,7 @@ const maxFamilyCount = 10
 
 func (s *Service) Book(ctx context.Context, actor Actor, eventID string, req BookingRequest) (BookingResponse, error) {
 	ctx, finishTotalSpan := startBookingStageSpan(ctx, "total")
+	annotateBookingSpan(ctx, eventID)
 	totalStarted := time.Now()
 	totalOutcome := "error"
 	defer func() {

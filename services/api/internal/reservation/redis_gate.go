@@ -22,6 +22,7 @@ type RedisGate struct {
 	client  redis.UniversalClient
 	cfg     Config
 	logger  *slog.Logger
+	metrics RedisOperationObserver
 	reserve *redis.Script
 	release *redis.Script
 	commit  *redis.Script
@@ -55,6 +56,11 @@ func NewRedisGate(client redis.UniversalClient, cfg Config, logger *slog.Logger)
 		release: redis.NewScript(releaseScript),
 		commit:  redis.NewScript(commitScript),
 	}
+}
+
+func (g *RedisGate) WithMetrics(m RedisOperationObserver) *RedisGate {
+	g.metrics = m
+	return g
 }
 
 func (g *RedisGate) Enabled() bool { return g.cfg.Enabled }
@@ -108,7 +114,7 @@ func (g *RedisGate) reserveWithCapacity(ctx context.Context, input reserveCapaci
 	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
 	defer cancel()
 	now := time.Now().UTC().Unix()
-	raw, err := traceRedisScript(opCtx, "reserve", func(ctx context.Context) (interface{}, error) {
+	raw, err := traceRedisScript(opCtx, "reserve", g.metrics, func(ctx context.Context) (interface{}, error) {
 		return g.reserve.Run(ctx, g.client,
 			[]string{
 				remainingKey(input.eventID),
@@ -149,7 +155,7 @@ func (g *RedisGate) Confirm(ctx context.Context, eventID, idempotencyHash string
 	}
 	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
 	defer cancel()
-	_, err := traceRedisScript(opCtx, "commit", func(ctx context.Context) (interface{}, error) {
+	_, err := traceRedisScript(opCtx, "commit", g.metrics, func(ctx context.Context) (interface{}, error) {
 		return g.commit.Run(ctx, g.client,
 			[]string{holdKey(eventID, idempotencyHash), pendingKey(eventID)},
 			idempotencyHash,
@@ -170,7 +176,7 @@ func (g *RedisGate) Release(ctx context.Context, eventID, idempotencyHash string
 	}
 	opCtx, cancel := context.WithTimeout(ctx, g.cfg.OperationTimeout)
 	defer cancel()
-	_, err := traceRedisScript(opCtx, "release", func(ctx context.Context) (interface{}, error) {
+	_, err := traceRedisScript(opCtx, "release", g.metrics, func(ctx context.Context) (interface{}, error) {
 		return g.release.Run(ctx, g.client,
 			[]string{remainingKey(eventID), holdKey(eventID, idempotencyHash), pendingKey(eventID)},
 			idempotencyHash,
@@ -193,14 +199,26 @@ func (g *RedisGate) handleOutage(err error, op string) (Hold, error) {
 	return Hold{Outcome: OutcomeGranted}, nil
 }
 
-func traceRedisScript(ctx context.Context, operation string, run func(context.Context) (interface{}, error)) (interface{}, error) {
+func traceRedisScript(ctx context.Context, operation string, metrics RedisOperationObserver, run func(context.Context) (interface{}, error)) (interface{}, error) {
 	ctx, span := observability.StartDependencySpan(ctx, observability.DependencySpanConfig{
 		System:      "redis",
 		ServiceName: "redis",
 		Operation:   operation,
 	})
+	start := time.Now()
 	result, err := run(ctx)
 	observability.EndDependencySpan(span, err)
+	if metrics != nil {
+		res := "ok"
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				res = "timeout"
+			} else {
+				res = "error"
+			}
+		}
+		metrics.ObserveRedisOperation(operation, res, time.Since(start))
+	}
 	return result, err
 }
 

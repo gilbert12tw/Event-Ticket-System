@@ -176,7 +176,7 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 	}
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
-	raw, err := traceRedisScript(opCtx, "compensation_release", func(ctx context.Context) (interface{}, error) {
+	raw, err := traceRedisScript(opCtx, "compensation_release", nil, func(ctx context.Context) (interface{}, error) {
 		return c.release.Run(ctx, c.client,
 			[]string{remainingKey(eventID), holdKey(eventID, idempotencyHash), pendingKey(eventID)},
 			idempotencyHash, capacity,
@@ -201,7 +201,7 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 func (c *Compensator) dropHold(ctx context.Context, eventID, idempotencyHash, reason string) {
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
-	raw, err := traceRedisScript(opCtx, "compensation_drop", func(ctx context.Context) (interface{}, error) {
+	raw, err := traceRedisScript(opCtx, "compensation_drop", nil, func(ctx context.Context) (interface{}, error) {
 		return c.drop.Run(ctx, c.client,
 			[]string{holdKey(eventID, idempotencyHash), pendingKey(eventID)},
 			idempotencyHash,
@@ -234,7 +234,7 @@ func (c *Compensator) capCounter(ctx context.Context, eventID string) error {
 	if ttlSecs <= 0 {
 		ttlSecs = 60
 	}
-	raw, err := traceRedisScript(opCtx, "compensation_cap", func(ctx context.Context) (interface{}, error) {
+	raw, err := traceRedisScript(opCtx, "compensation_cap", nil, func(ctx context.Context) (interface{}, error) {
 		return c.cap.Run(ctx, c.client,
 			[]string{remainingKey(eventID), driftKey(eventID)},
 			capacity, ttlSecs,
@@ -285,7 +285,7 @@ func (c *Compensator) activeEvents(ctx context.Context) ([]string, error) {
 func (c *Compensator) expiredPendingMembers(ctx context.Context, eventID string, threshold int64) ([]string, error) {
 	opCtx, cancel := context.WithTimeout(ctx, c.cfg.OperationTimeout)
 	defer cancel()
-	result, err := traceRedisScript(opCtx, "zrangebyscore", func(ctx context.Context) (interface{}, error) {
+	result, err := traceRedisScript(opCtx, "zrangebyscore", nil, func(ctx context.Context) (interface{}, error) {
 		return c.client.ZRangeByScore(ctx, pendingKey(eventID), &redis.ZRangeBy{
 			Min:   "-inf",
 			Max:   fmt.Sprintf("%d", threshold),

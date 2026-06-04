@@ -208,6 +208,45 @@
         }
       ],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
+    },
+    {
+      "collapsed": false,
+      "id": 200,
+      "title": "▶ Redis Script Call Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 9,
+      "title": "Redis Operation Rate by Operation × Result",
+      "description": "Rate of individual Redis Lua script calls (reserve, commit, release). Rising 'error' or 'timeout' results indicate Redis health degradation at the operation level.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (operation, result) (rate(cets_redis_operation_total[5m]))",
+          "legendFormat": "{{operation}} [{{result}}]",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 }
+    },
+    {
+      "id": 10,
+      "title": "Redis Operation P95 Latency by Operation",
+      "description": "P95 latency of each Redis script call type. Spikes here directly explain booking preadmission latency. Normal: <20ms. Warning: >50ms. Critical: >150ms (operation timeout).",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(cets_redis_operation_seconds_bucket[5m])))",
+          "legendFormat": "{{operation}} p95",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 }
     }
   ]
 }

@@ -54,7 +54,7 @@ func TestTraceRedisScriptUsesServiceGraphAttributes(t *testing.T) {
 	exporter, shutdown := installReservationTraceExporter(t)
 	defer shutdown()
 
-	result, err := traceRedisScript(context.Background(), "reserve", func(context.Context) (interface{}, error) {
+	result, err := traceRedisScript(context.Background(), "reserve", nil, func(context.Context) (interface{}, error) {
 		return "ok", nil
 	})
 

@@ -101,7 +101,7 @@ func TestPhase3ComposeLGTMDeclaresFourSignalsAndNodeGraph(t *testing.T) {
 		"backend-1:8080",
 		"backend-2:8080",
 		"backend-3:8080",
-		"service_graphs: {}",
+		"service_graphs:",
 		"span_metrics: {}",
 		"type: loki",
 		"type: tempo",
