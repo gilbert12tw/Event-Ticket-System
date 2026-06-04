@@ -572,9 +572,7 @@
 @media (max-width: 760px) {
   .event-detail-app {
     padding-bottom: calc(96px + env(safe-area-inset-bottom));
-    background:
-      linear-gradient(160deg, oklch(0.99 0.014 302), transparent 32%),
-      linear-gradient(20deg, oklch(0.955 0.04 205), transparent 38%), var(--bg);
+    background: var(--bg);
   }
 
   .employee-calendar-header,
