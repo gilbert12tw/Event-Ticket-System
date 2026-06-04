@@ -46,7 +46,7 @@
 
 ## 4. Phase 1 系統總覽
 
-Phase 1 的核心執行單位是一個 Go modular monolith app。應用內部以模組分層，外部依賴由 Docker Compose 啟動並透過環境變數注入。現階段 business flow 已實際連到 PostgreSQL；Redis 已作為 attached backing service 啟動但不參與 committed booking truth；MinIO 透過 S3-compatible adapter 支援 report export；Mailhog 已透過同一 binary 的 worker 消費 PostgreSQL `outbox_events` 進行本地通知投遞。
+Phase 1 的核心執行單位是一個 Go modular monolith app。應用內部以模組分層，外部依賴由 Docker Compose 啟動並透過環境變數注入。現階段 business flow 已實際連到 PostgreSQL；Redis 已作為 attached backing service 啟動但不參與 committed booking truth；MinIO 透過 S3-compatible adapter 支援 report export 與活動海報；Mailhog 已透過同一 binary 的 worker 消費 PostgreSQL `outbox_events` 進行本地通知投遞。
 
 ```mermaid
 flowchart LR
@@ -71,6 +71,7 @@ flowchart LR
   APP --> DB
   DB --> OUTBOX
   APP -.->|optional reservation/read cache| REDIS
+  APP -->|event posters| OBJ
   WORKER -->|report exports| OBJ
   OUTBOX --> WORKER
   WORKER --> MAIL
@@ -86,7 +87,7 @@ flowchart LR
 | `app` | Go modular monolith；對外 HTTP API 與 React SPA；以 `APP_PORT` port binding 對外。 | Port binding、stateless process、logs to stdout。 | 已啟動並服務 `/`, `/user/events`, `/admin/demo`, `/healthz`, `/readyz` 與 demo API；舊 demo routes 保留為 SPA aliases。 |
 | `postgres` | 報名、票券、核銷、audit log、outbox 的 source of truth。 | Backing service via `DATABASE_URL`。 | 已由 app 透過 `DATABASE_URL` 連線；`/readyz` 以 PostgreSQL connectivity 判定 readiness。 |
 | `redis` | 後續熱門活動名額 reservation、idempotency key、短 TTL cache。 | Backing service via `REDIS_URL`。 | 已 healthcheck 並作為 Compose dependency；Phase 1 committed booking truth 仍只用 PostgreSQL。 |
-| `minio` | 本地 S3-compatible object storage，儲存 report export artifacts；未來可擴充活動圖片、附件與票券檔案。 | Backing service via `OBJECT_STORAGE_*`。 | 已由 worker 的 object-storage adapter boundary 使用；local adapter 指向 MinIO。 |
+| `minio` | 本地 S3-compatible object storage，儲存 report export artifacts 與活動海報；未來可擴充附件與票券檔案。 | Backing service via `OBJECT_STORAGE_*`。 | 已由 worker report export 與 app event poster adapter boundary 使用；local adapter 指向 MinIO。 |
 | `mailhog` | 本地 mock notification provider，避免開發時誤發真實 Email。 | Backing service via `MAILER_*`。 | 已由 worker 透過 SMTP adapter 投遞通知；suppression、retry、dead-letter 與 crash recovery 由 worker tests / production gate 覆蓋。 |
 | `worker` | 消費 PostgreSQL outbox，建立站內 / Email delivery 記錄、透過 Mailhog 投遞，並生成 report export artifact。 | Process model、one codebase many process types。 | 已在 Compose 中以同一映像啟動；retry、dead-letter、idempotency、suppression 與 report export failure 由 worker tests 覆蓋。 |
 
@@ -107,7 +108,7 @@ flowchart LR
 
 - `GET /readyz` 回 200 代表 app 已透過 `DATABASE_URL` 連到 PostgreSQL；PostgreSQL 停止時 `/readyz` 必須回 503。
 - `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml ps` 代表 Redis、MinIO、Mailhog 已作為 local backing services 啟動；production gate 還必須通過 app/worker behavior tests。
-- Redis 目前是 attached resource 與 future reservation/read cache；MinIO 與 Mailhog 已分別透過 report export object-store adapter 與 worker SMTP adapter 進入 business flow。
+- Redis 目前是 attached resource 與 future reservation/read cache；MinIO 透過 report export 與 event poster object-store adapter 進入 business flow；Mailhog 已透過 worker SMTP adapter 進入 business flow。
 - worker 已在 Compose 中啟動並消費 `outbox_events`；production 完成門檻是證明 crash recovery、preference suppression、dead-letter 與重試不會產生重複投遞。
 
 ---
@@ -372,7 +373,7 @@ sequenceDiagram
 | Server-side TypeScript / NestJS | Not adopted in Phase 1 | 目前 production 缺口是 Go/PostgreSQL correctness、worker reliability、12-Factor config 與 gates；新增 NestJS backend 或 BFF 會增加 runtime、auth/session、Docker 與 CI surface，不能降低 Phase 1 風險。 |
 | Database | PostgreSQL | 目前已連接 app，負責交易、unique constraint、row locking、audit log、outbox 與關聯查詢。 |
 | Cache / Reservation | Redis | Compose 已啟動並 healthchecked；名額 reservation、idempotency key、短 TTL token cache 是 optional optimization，PostgreSQL 仍是 final truth。 |
-| Object Storage | MinIO in Compose，未來可換 S3 compatible storage | Report export 已透過 S3-compatible adapter boundary 寫入 object storage；活動圖片、附件、票券 PDF 可沿用同一 adapter。 |
+| Object Storage | MinIO in Compose，未來可換 S3 compatible storage | Report export 與活動海報已透過 S3-compatible adapter boundary 寫入 object storage；附件、票券 PDF 可沿用同一 adapter。 |
 | Queue | PostgreSQL outbox；未來可換 Redis stream 或 lightweight broker | Same-binary worker 已消費 `outbox_events`；如改外部 queue，必須保留 DB outbox 或等價可靠交付語義。 |
 | Local Dev | Docker Compose | 一鍵啟動 app 與 backing services，降低 mentor demo 與團隊 onboarding 成本。 |
 | Observability | JSON logs + basic metrics + trace_id + optional local Loki/Tempo | Phase 1 先能排查報名、票券、核銷流程；Phase 2/3 再導入完整 stack。 |

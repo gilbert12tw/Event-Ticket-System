@@ -204,6 +204,75 @@
   line-height: 1.42;
 }
 
+.admin-poster-preview {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.admin-poster-frame {
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-inset);
+}
+
+.admin-poster-frame .employee-event-poster {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.admin-poster-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-poster-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.admin-poster-copy strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 820;
+}
+
+.admin-poster-copy span,
+.admin-poster-copy small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.admin-poster-copy small {
+  color: var(--accent-strong);
+  font-weight: 740;
+}
+
+.admin-poster-upload,
+.admin-poster-field .form-hint {
+  grid-column: 1 / -1;
+}
+
+.admin-poster-clear {
+  width: fit-content;
+}
+
 .focused-tabs,
 .event-tabs,
 .create-workspace {
@@ -244,6 +313,17 @@
 .report-tabs-list {
   width: auto !important;
   min-width: 260px;
+}
+
+@media (max-width: 860px) {
+  .create-workspace,
+  .admin-poster-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-poster-clear {
+    width: 100%;
+  }
 }
 
 .focused-tabs [data-slot="tabs-list"],

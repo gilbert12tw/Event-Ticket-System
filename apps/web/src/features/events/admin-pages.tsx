@@ -54,9 +54,13 @@ type FormSubmitEvent = { preventDefault: () => void };
 export function AdminEventsPage() {
   const [form, setForm] = useState(defaultEventForm);
   const [created, setCreated] = useState<EventSummary | null>(null);
+  const [createPosterFile, setCreatePosterFile] = useState<File | null>(null);
   const [adminEvents, setAdminEvents] = useState<EventSummary[]>([]);
   const [selectedEventID, setSelectedEventID] = useState("");
   const [editForm, setEditForm] = useState(() => defaultEditEventForm());
+  const [editPosterFile, setEditPosterFile] = useState<File | null>(null);
+  const [editPosterStatus, setEditPosterStatus] = useState("");
+  const [posterPreviewVersion, setPosterPreviewVersion] = useState(0);
   const [stateForm, setStateForm] = useState({
     status: "published",
     reason: "",
@@ -164,6 +168,7 @@ export function AdminEventsPage() {
     setSelectedEventID(nextEvent?.event_id ?? "");
     if (!nextEvent) return;
     setEditForm(editFormFromEvent(nextEvent));
+    clearSelectedPosterDraft();
     setStateForm({
       status: nextEvent.status,
       reason: "",
@@ -185,14 +190,35 @@ export function AdminEventsPage() {
 
   async function submit(event: FormSubmitEvent) {
     event.preventDefault();
+    const posterFile = createPosterFile;
     setBusy(true);
     setMessage("");
     try {
       const result = await createEvent(createBody(form));
       setCreated(result);
-      setMessage("活動已建立並寫入稽核紀錄。");
-      setActiveTab("list");
       await refreshAdminEvents(result.event_id);
+      if (!posterFile) {
+        setMessage("活動已建立並寫入稽核紀錄。");
+        setActiveTab("list");
+        return;
+      }
+      try {
+        await uploadEventPoster(result.event_id, posterFile);
+        setCreatePosterFile(null);
+        setPosterPreviewVersion((version) => version + 1);
+        setMessage("活動已建立並寫入稽核紀錄，海報已上傳。");
+        setActiveTab("list");
+        await refreshAdminEvents(result.event_id);
+      } catch (posterError) {
+        const copy = errorMessage(posterError);
+        setCreatePosterFile(null);
+        setEditPosterFile(posterFile);
+        setEditPosterStatus(`海報上傳失敗：${copy}`);
+        setMessage(
+          `活動已建立，但海報上傳失敗：${copy}。請在編輯活動分頁重新上傳。`,
+        );
+        setActiveTab("edit");
+      }
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -270,17 +296,29 @@ export function AdminEventsPage() {
 
   async function uploadSelectedPoster(file: File) {
     if (!selectedAdminEvent) return;
+    setEditPosterFile(file);
+    setEditPosterStatus("正在上傳海報…");
     setBusy(true);
     setMessage("");
     try {
       await uploadEventPoster(selectedAdminEvent.event_id, file);
-      setMessage("活動海報已更新。");
       await refreshAdminEvents(selectedAdminEvent.event_id);
+      setPosterPreviewVersion((version) => version + 1);
+      setEditPosterFile(null);
+      setEditPosterStatus("已上傳此海報。");
+      setMessage("活動海報已更新。");
     } catch (error) {
-      setMessage(errorMessage(error));
+      const copy = errorMessage(error);
+      setEditPosterStatus(`海報上傳失敗：${copy}`);
+      setMessage(`海報上傳失敗：${copy}`);
     } finally {
       setBusy(false);
     }
+  }
+
+  function clearSelectedPosterDraft() {
+    setEditPosterFile(null);
+    setEditPosterStatus("");
   }
 
   return (
@@ -341,7 +379,12 @@ export function AdminEventsPage() {
               eventSiteOptions={eventSiteOptions(hrSiteOptions)}
               eligibilitySiteOptions={hrSiteOptions}
               onFormChange={setForm}
-              onReset={() => setForm(defaultEventForm())}
+              posterFile={createPosterFile}
+              onPosterSelect={setCreatePosterFile}
+              onReset={() => {
+                setForm(defaultEventForm());
+                setCreatePosterFile(null);
+              }}
               onSeed={() => void seed()}
               onSubmit={submit}
             />
@@ -352,10 +395,14 @@ export function AdminEventsPage() {
           <AdminEventEditTab
             busy={busy}
             editForm={editForm}
+            posterFile={editPosterFile}
+            posterStatus={editPosterStatus}
+            posterVersion={posterPreviewVersion}
             selectedEvent={selectedAdminEvent}
             eventSiteOptions={eventSiteOptions(hrSiteOptions)}
             windowReady={editWindowReady}
             onEditFormChange={setEditForm}
+            onPosterClear={clearSelectedPosterDraft}
             onPosterUpload={(file) => void uploadSelectedPoster(file)}
             onSave={saveSelected}
           />
