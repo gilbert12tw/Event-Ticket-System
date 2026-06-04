@@ -180,6 +180,30 @@ describe("EmployeeTicketsPage", () => {
     expect(disclosure).toHaveAttribute("open");
   });
 
+  it("reveals and copies the signature code on demand", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
+    mockGetTicket.mockResolvedValue(ticketFixture({ qr_payload: "qr-secret" }));
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    expect(await screen.findByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(screen.queryByText("qr-secret")).not.toBeInTheDocument();
+    const summary = await screen.findByText("票券使用說明");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+
+    await userEvent.click(summary);
+
+    await userEvent.click(screen.getByRole("button", { name: "顯示簽章碼" }));
+    expect(screen.getByText("qr-secret")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "複製簽章碼" }));
+    expect(writeText).toHaveBeenCalledWith("qr-secret");
+
+    vi.unstubAllGlobals();
+  });
+
   it("keeps revoked tickets concise without employee-only metadata", async () => {
     window.history.replaceState({}, "", "/user/tickets?ticket_id=T-revoked");
     mockGetTicket.mockResolvedValue(
@@ -197,6 +221,33 @@ describe("EmployeeTicketsPage", () => {
     expect(screen.queryByText("撤銷原因")).not.toBeInTheDocument();
     expect(screen.queryByText("員工已取消報名")).not.toBeInTheDocument();
     expect(screen.queryByText(/原因：員工已取消報名/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "顯示簽章碼" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not expose signature controls for unavailable tickets", async () => {
+    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-redeemed");
+    mockGetTicket.mockResolvedValue(
+      ticketFixture({
+        ticket_id: "T-redeemed",
+        status: "redeemed",
+        qr_payload: "qr-secret",
+      }),
+    );
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    expect(
+      await screen.findByText("此票券已核銷，不能再次入場。"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(await screen.findByText("票券使用說明"));
+
+    expect(screen.queryByText("qr-secret")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "顯示簽章碼" }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers event discovery from the empty ticket state", async () => {

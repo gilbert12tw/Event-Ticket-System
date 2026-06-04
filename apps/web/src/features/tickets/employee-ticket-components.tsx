@@ -13,6 +13,7 @@ import {
   ticketTimeLocation,
 } from "./employee-ticket-surface";
 import { TicketQrCode } from "./qr";
+import { TicketSignatureField } from "./signature-field";
 
 export function EmployeeTicketPass({
   onRefresh,
@@ -67,7 +68,7 @@ export function EmployeeTicketPass({
               </Button>
             )}
           </div>
-          <TicketUsageDisclosure />
+          <TicketUsageDisclosure signatureToken={canShowQr ? qrToken : ""} />
         </div>
       </div>
     </section>
@@ -183,12 +184,15 @@ function EmployeeTicketAddToCalendarButton({
   );
 }
 
-function TicketUsageDisclosure() {
+function TicketUsageDisclosure({
+  signatureToken,
+}: Readonly<{ signatureToken: string }>) {
   return (
     <details className="ticket-usage-disclosure">
       <summary>票券使用說明</summary>
       <p>票券只限持票員工本人使用，請勿截圖轉傳。</p>
       <p>驗票完成後，票券會更新為已使用。</p>
+      {signatureToken && <TicketSignatureField token={signatureToken} />}
     </details>
   );
 }

@@ -34,6 +34,8 @@ export type IconName =
   | "copy"
   | "database"
   | "download"
+  | "eye"
+  | "eyeOff"
   | "logout"
   | "mapPin"
   | "play"

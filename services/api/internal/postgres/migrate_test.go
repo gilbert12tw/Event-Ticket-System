@@ -51,6 +51,8 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS no_show_records",
 		"idx_no_show_records_employee",
 		"CREATE TABLE IF NOT EXISTS audit_logs",
+		"idx_audit_logs_rate_limited_event_recent",
+		"WHERE action = 'booking.rate_limited' AND metadata ? 'event_id'",
 		"CREATE TABLE IF NOT EXISTS outbox_events",
 		"attempts INTEGER NOT NULL DEFAULT 0",
 		"schema_version INTEGER NOT NULL DEFAULT 1",

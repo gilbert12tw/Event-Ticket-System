@@ -64,7 +64,7 @@ func TestOpsCapacityPressurePassesActorAndReturnsSnapshot(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, ticketing.RoleActivityAdmin, service.capacityPressureActor.Role)
-	assertEnvelope(t, rec.Body.String(), `"events"`, `"event_id":"evt_1"`, `"remaining_capacity":9`, `"reservation_count":4`)
+	assertEnvelope(t, rec.Body.String(), `"events"`, `"event_id":"evt_1"`, `"confirmed_count":7`, `"waitlist_count":2`, `"reservation_count":4`, `"reservation_state":"available"`)
 	assertEnvelope(t, rec.Body.String(), `"source":"operational"`)
 }
 

@@ -215,6 +215,30 @@
   margin: 6px 0 0;
 }
 
+.ticket-usage-disclosure .ticket-signature {
+  margin-top: 10px;
+  padding: 10px;
+  border-color: oklch(0.86 0.014 238);
+  background: oklch(0.976 0.005 238);
+  box-shadow: none;
+}
+
+.ticket-usage-disclosure .ticket-signature-label {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 680;
+}
+
+.ticket-usage-disclosure .ticket-signature-code {
+  background: var(--surface-inset);
+  font-size: 0.74rem;
+}
+
+.ticket-usage-disclosure .ticket-signature-actions [data-slot="button"] {
+  width: auto;
+  min-width: 0;
+}
+
 .employee-ticket-entry-hint {
   display: flex;
   gap: 10px;

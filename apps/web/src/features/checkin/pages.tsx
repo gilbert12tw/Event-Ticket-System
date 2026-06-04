@@ -204,7 +204,7 @@ export function CheckinPage() {
           </div>
           <Field
             autoComplete="off"
-            label="掃描或貼上票券"
+            label="掃描或貼上票券簽章碼"
             name="signed-token"
             value={token}
             onChange={setToken}
