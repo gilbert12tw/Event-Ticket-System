@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sonar Scanner"
+  short_description: "Bootstrap local SonarQube scans safely"
+  default_prompt: "Use $sonar-scanner to diagnose this repo local SonarQube/SonarScanner setup and tell me how to run a scan."
