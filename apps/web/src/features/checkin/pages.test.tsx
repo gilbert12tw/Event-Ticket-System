@@ -63,7 +63,7 @@ const checkinEvent: EventSummary = {
 
 describe("CheckinPage", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/admin/checkin");
+    globalThis.history.pushState({}, "", "/admin/checkin");
     localStorage.clear();
     mockCheckIn.mockClear();
     mockListAdminEvents.mockReset();
@@ -84,7 +84,7 @@ describe("CheckinPage", () => {
   it("prefills token from navigation state and ignores production localStorage tokens by default", async () => {
     localStorage.setItem("cets:lastTicketToken", "legacy-token");
 
-    window.history.pushState(
+    globalThis.history.pushState(
       { cetsCheckinToken: "state-token" },
       "",
       "/admin/checkin",
@@ -103,7 +103,7 @@ describe("CheckinPage", () => {
   });
 
   it("shows empty token input when no handoff source exists", async () => {
-    window.history.pushState({}, "", "/admin/checkin");
+    globalThis.history.pushState({}, "", "/admin/checkin");
     render(<CheckinPage />);
 
     expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);

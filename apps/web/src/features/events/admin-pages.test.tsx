@@ -94,7 +94,7 @@ describe("AdminEventsPage CRUD tabs", () => {
       configurable: true,
       value: vi.fn(),
     });
-    window.history.pushState({}, "", "/admin/events");
+    globalThis.history.pushState({}, "", "/admin/events");
     vi.mocked(listAdminEvents).mockResolvedValue([eventFixture()]);
     vi.mocked(eventPosterBlob).mockResolvedValue(null);
     vi.mocked(adminHROptions).mockResolvedValue({
@@ -187,7 +187,7 @@ describe("AdminEventsPage CRUD tabs", () => {
   });
 
   it("restores the active CRUD tab from the URL query", async () => {
-    window.history.pushState({}, "", "/admin/events?tab=danger");
+    globalThis.history.pushState({}, "", "/admin/events?tab=danger");
 
     render(<AdminEventsPage />);
 

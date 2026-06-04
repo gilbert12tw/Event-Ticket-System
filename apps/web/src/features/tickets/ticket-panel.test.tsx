@@ -177,7 +177,7 @@ describe("TicketPanel", () => {
       non_transferable: true,
     };
 
-    const pushStateSpy = vi.spyOn(window.history, "pushState");
+    const pushStateSpy = vi.spyOn(globalThis.history, "pushState");
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
     render(<TicketPanel ticket={ticket} />);
 

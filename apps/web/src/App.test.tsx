@@ -56,7 +56,7 @@ const mockReports = vi.mocked(reports);
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.pushState({}, "", "/");
+    globalThis.history.pushState({}, "", "/");
     mockListEvents.mockResolvedValue([]);
     mockReports.mockResolvedValue([]);
     mockGetOpsDashboard.mockResolvedValue({
@@ -97,7 +97,7 @@ describe("App", () => {
     });
     mockReadiness.mockResolvedValue({});
 
-    window.history.pushState({}, "", "/admin/events");
+    globalThis.history.pushState({}, "", "/admin/events");
 
     render(<App />);
 
@@ -221,7 +221,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /Debug/ })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("E1001");
     expect(mockClearProviderToken).not.toHaveBeenCalled();
-    expect(window.location.pathname).toBe("/user/events");
+    expect(globalThis.location.pathname).toBe("/user/events");
   });
 
   it("shows ops navigation only when the ops API is registered", async () => {
@@ -253,7 +253,7 @@ describe("App", () => {
       ops_api_enabled: true,
     });
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/reports");
+    globalThis.history.pushState({}, "", "/admin/reports");
 
     render(<App />);
 
@@ -286,7 +286,7 @@ describe("App", () => {
     mockMe.mockResolvedValueOnce(session);
     mockAuthBootstrap.mockRejectedValueOnce(new Error("bootstrap unavailable"));
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/demo");
+    globalThis.history.pushState({}, "", "/admin/demo");
 
     render(<App />);
 
@@ -337,7 +337,7 @@ describe("App", () => {
       demo_debug_enabled: true,
     });
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/demo");
+    globalThis.history.pushState({}, "", "/admin/demo");
 
     render(<App />);
 
@@ -381,7 +381,7 @@ describe("App", () => {
       ops_api_enabled: false,
     });
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/ops");
+    globalThis.history.pushState({}, "", "/admin/ops");
 
     render(<App />);
 

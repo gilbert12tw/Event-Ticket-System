@@ -107,7 +107,11 @@ describe("EmployeeEventDetailPage", () => {
         revokeObjectURL: vi.fn(),
       }),
     );
-    window.history.replaceState({}, "", "/user/events/detail?event_id=evt-1");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/user/events/detail?event_id=evt-1",
+    );
   });
 
   it("shows compact confirmation and waitlist policy on event detail", async () => {
@@ -228,8 +232,8 @@ describe("EmployeeEventDetailPage", () => {
       await screen.findByRole("link", { name: "查看這張票券" }),
     );
 
-    expect(window.location.pathname).toBe("/user/tickets");
-    expect(window.location.search).toBe("?ticket_id=T-3");
+    expect(globalThis.location.pathname).toBe("/user/tickets");
+    expect(globalThis.location.search).toBe("?ticket_id=T-3");
   });
 
   it("opens the exact ticket detail after booking success", async () => {
@@ -252,8 +256,8 @@ describe("EmployeeEventDetailPage", () => {
       await screen.findByRole("link", { name: "查看票券" }),
     );
 
-    expect(window.location.pathname).toBe("/user/tickets");
-    expect(window.location.search).toBe("?ticket_id=T-4");
+    expect(globalThis.location.pathname).toBe("/user/tickets");
+    expect(globalThis.location.search).toBe("?ticket_id=T-4");
   });
 
   it("shows duplicate confirmed booking as existing state with exact ticket handoff", async () => {
@@ -291,8 +295,8 @@ describe("EmployeeEventDetailPage", () => {
 
     await userEvent.click(screen.getByRole("link", { name: "查看票券" }));
 
-    expect(window.location.pathname).toBe("/user/tickets");
-    expect(window.location.search).toBe("?ticket_id=T-duplicate");
+    expect(globalThis.location.pathname).toBe("/user/tickets");
+    expect(globalThis.location.search).toBe("?ticket_id=T-duplicate");
   });
 
   it("shows duplicate waitlist booking without fresh success wording", async () => {

@@ -37,7 +37,11 @@ describe("registration governance priority", () => {
   });
 
   it("reads the initial event id from direct governance links", () => {
-    window.history.replaceState({}, "", "/admin/registrations?event_id=evt-42");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/admin/registrations?event_id=evt-42",
+    );
 
     expect(initialRegistrationEventID()).toBe("evt-42");
   });

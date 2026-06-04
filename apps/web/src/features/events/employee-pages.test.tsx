@@ -92,7 +92,7 @@ describe("EmployeeEventsPage", () => {
     mockBookEvent.mockReset();
     mockEventPosterBlob.mockReset();
     mockEventPosterBlob.mockResolvedValue(null);
-    window.history.replaceState(
+    globalThis.history.replaceState(
       {},
       "",
       `/user/events?view=week&date=${testTodayKey}`,
@@ -199,15 +199,15 @@ describe("EmployeeEventsPage", () => {
     );
 
     expect(screen.getByLabelText("月行事曆")).toBeInTheDocument();
-    expect(window.location.search).toContain("view=month");
-    expect(window.location.search).toContain("date=");
+    expect(globalThis.location.search).toContain("view=month");
+    expect(globalThis.location.search).toContain("date=");
 
     await userEvent.click(
       within(modeGroup).getByRole("button", { name: "日" }),
     );
 
     expect(screen.getByLabelText("日行程")).toBeInTheDocument();
-    expect(window.location.search).toContain("view=day");
+    expect(globalThis.location.search).toContain("view=day");
   });
 
   it("hides cancelled and ineligible rows from the main agenda", async () => {
@@ -352,8 +352,8 @@ describe("EmployeeEventsPage", () => {
       screen.getByRole("link", { name: "報名活動：Hsinchu Event" }),
     );
 
-    expect(window.location.pathname).toBe("/user/events/detail");
-    expect(window.location.search).toBe("?event_id=evt-crosscity");
+    expect(globalThis.location.pathname).toBe("/user/events/detail");
+    expect(globalThis.location.search).toBe("?event_id=evt-crosscity");
   });
 
   it("renders poster fallback when no poster is available", async () => {

@@ -35,7 +35,7 @@ describe("EmployeeTicketsPage", () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     mockEventPosterBlob.mockResolvedValue(null);
-    window.history.replaceState({}, "", "/user/tickets");
+    globalThis.history.replaceState({}, "", "/user/tickets");
   });
 
   it("renders the current ticket pass before the timeline without raw IDs", async () => {
@@ -88,11 +88,11 @@ describe("EmployeeTicketsPage", () => {
     expect(mockGetTicket).toHaveBeenCalledWith("T-2");
     expect(await screen.findByText("票券詳細")).toBeInTheDocument();
     expect(screen.getByText("第二張票")).toBeInTheDocument();
-    expect(window.location.search).toBe("?ticket_id=T-2");
+    expect(globalThis.location.search).toBe("?ticket_id=T-2");
   });
 
   it("loads a direct ticket detail URL without listing tickets", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-2");
+    globalThis.history.replaceState({}, "", "/user/tickets?ticket_id=T-2");
     mockGetTicket.mockResolvedValue(
       ticketFixture({ ticket_id: "T-2", event_title: "直接開啟票券" }),
     );
@@ -105,7 +105,7 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("shows a recoverable error for missing ticket detail without fallback", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=missing");
+    globalThis.history.replaceState({}, "", "/user/tickets?ticket_id=missing");
     mockGetTicket.mockRejectedValue(new Error("ticket not found"));
 
     render(<EmployeeTicketsPage claims={claims} />);
@@ -119,7 +119,11 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("shows a recoverable error for forbidden ticket detail without fallback", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=forbidden");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/user/tickets?ticket_id=forbidden",
+    );
     mockGetTicket.mockRejectedValue(new Error("forbidden"));
 
     render(<EmployeeTicketsPage claims={claims} />);
@@ -135,7 +139,11 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("rejects mismatched ticket detail responses without showing a QR", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-expected");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/user/tickets?ticket_id=T-expected",
+    );
     mockGetTicket.mockResolvedValue(
       ticketFixture({ ticket_id: "T-other", event_title: "錯誤票券" }),
     );
@@ -150,7 +158,7 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("keeps raw token values out of visible ticket detail text", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
+    globalThis.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
     mockGetTicket.mockResolvedValue(
       ticketFixture({
         signed_token: "signed-secret",
@@ -166,7 +174,7 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("keeps ticket usage guidance collapsed until the employee asks for it", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
+    globalThis.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
     mockGetTicket.mockResolvedValue(ticketFixture());
 
     render(<EmployeeTicketsPage claims={claims} />);
@@ -183,7 +191,7 @@ describe("EmployeeTicketsPage", () => {
   it("reveals and copies the signature code on demand", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
+    globalThis.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
     mockGetTicket.mockResolvedValue(ticketFixture({ qr_payload: "qr-secret" }));
 
     render(<EmployeeTicketsPage claims={claims} />);
@@ -205,7 +213,11 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("keeps revoked tickets concise without employee-only metadata", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-revoked");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/user/tickets?ticket_id=T-revoked",
+    );
     mockGetTicket.mockResolvedValue(
       ticketFixture({
         ticket_id: "T-revoked",
@@ -227,7 +239,11 @@ describe("EmployeeTicketsPage", () => {
   });
 
   it("does not expose signature controls for unavailable tickets", async () => {
-    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-redeemed");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/user/tickets?ticket_id=T-redeemed",
+    );
     mockGetTicket.mockResolvedValue(
       ticketFixture({
         ticket_id: "T-redeemed",

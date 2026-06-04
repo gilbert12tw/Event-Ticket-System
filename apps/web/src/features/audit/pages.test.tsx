@@ -15,7 +15,7 @@ vi.mock("@/lib/api", async () => {
 describe("AdminAuditPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.replaceState({}, "", "/admin/audit");
+    globalThis.history.replaceState({}, "", "/admin/audit");
   });
 
   it("selects audit rows directly without desktop row action buttons", async () => {
@@ -63,7 +63,7 @@ describe("AdminAuditPage", () => {
   });
 
   it("keeps audit cursor paging available when a preset page has no visible rows", async () => {
-    window.history.replaceState({}, "", "/admin/audit?tab=ticket");
+    globalThis.history.replaceState({}, "", "/admin/audit?tab=ticket");
     vi.mocked(auditLogs).mockResolvedValue([
       {
         audit_id: "aud-event-only",

@@ -74,7 +74,7 @@ const reportRows: ReportRow[] = [
 
 describe("HrReportsPage", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/admin/reports");
+    globalThis.history.pushState({}, "", "/admin/reports");
     mockReports.mockReset();
     mockCreateReportExport.mockReset();
     mockDownloadReportExport.mockReset();

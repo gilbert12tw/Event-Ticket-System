@@ -43,6 +43,46 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+function parseRequestBody(body: BodyInit | null | undefined) {
+  if (body === undefined || body === null) return undefined;
+  if (typeof body !== "string") {
+    throw new TypeError("expected request body to be a JSON string");
+  }
+  return JSON.parse(body) as unknown;
+}
+
+function eligibleEvent() {
+  return {
+    event_id: "evt/1",
+    eligible: true,
+    can_book: true,
+    reasons: [],
+    warnings: [],
+    no_show_cooldown: { active: false },
+  };
+}
+
+function offlineSyncRequest(packageSignature = "package-signature") {
+  return {
+    batch_id: "off_1",
+    event_id: "evt/1",
+    device_id: "gate-1",
+    package_signature: packageSignature,
+    scans: [
+      { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
+    ],
+  };
+}
+
+function notificationPrefs(email_enabled: boolean) {
+  return {
+    employee_id: "E1001",
+    email_enabled,
+    in_app_enabled: true,
+    opted_out_categories: email_enabled ? [] : ["booking"],
+  };
+}
+
 describe("api client", () => {
   const fetchMock = vi.fn();
   const entries: ApiLogEntry[] = [];
@@ -77,8 +117,7 @@ describe("api client", () => {
       string,
       RequestInit | undefined,
     ];
-    const body =
-      init?.body === undefined ? undefined : JSON.parse(String(init.body));
+    const body = parseRequestBody(init?.body);
     return { path, init, body };
   }
 
@@ -104,38 +143,6 @@ describe("api client", () => {
 
   function responseData<T>(index = 0) {
     return (entries[index]?.responseBody as { data: T }).data;
-  }
-
-  function eligibleEvent() {
-    return {
-      event_id: "evt/1",
-      eligible: true,
-      can_book: true,
-      reasons: [],
-      warnings: [],
-      no_show_cooldown: { active: false },
-    };
-  }
-
-  function offlineSyncRequest(packageSignature = "package-signature") {
-    return {
-      batch_id: "off_1",
-      event_id: "evt/1",
-      device_id: "gate-1",
-      package_signature: packageSignature,
-      scans: [
-        { signed_token: "ticket-secret", scanned_at: "2026-05-06T10:00:00Z" },
-      ],
-    };
-  }
-
-  function notificationPrefs(email_enabled: boolean) {
-    return {
-      employee_id: "E1001",
-      email_enabled,
-      in_app_enabled: true,
-      opted_out_categories: email_enabled ? [] : ["booking"],
-    };
   }
 
   it("returns envelope data and redacts ticket tokens in API logs", async () => {

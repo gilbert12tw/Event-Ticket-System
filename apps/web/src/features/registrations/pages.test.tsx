@@ -115,7 +115,7 @@ const rows: RegistrationDetail[] = [
 
 describe("AdminRegistrationsPage", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/admin/registrations");
+    globalThis.history.pushState({}, "", "/admin/registrations");
     vi.clearAllMocks();
     mockListAdminEvents.mockResolvedValue([event]);
     mockListRegistrations.mockResolvedValue(rows);

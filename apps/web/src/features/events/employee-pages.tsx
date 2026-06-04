@@ -35,7 +35,7 @@ export function EmployeeEventsPage({
 
   const principalID = claims.employee_id;
   const now = useMemo(
-    () => new Date((injectedNow ?? new Date()).getTime()),
+    () => new Date(injectedNow ?? Date.now()),
     [events, injectedNow, tickets],
   );
   const calendarRange = useMemo(
