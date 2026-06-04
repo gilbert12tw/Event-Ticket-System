@@ -5,24 +5,17 @@ import type { AuthMeClaims, Ticket } from "@/lib/api";
 import { navigate, ticketDetailPath } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
 import { runClientNavigation } from "@/lib/navigation";
-import {
-  Alert,
-  CompactStatsBar,
-  EmptyState,
-  SkeletonRows,
-  StatusBadge,
-} from "@/components/shared";
+import { Alert, EmptyState, SkeletonRows } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
-import { ticketStatusView } from "@/lib/ui/options";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  safeTicketID,
-  selectCurrentTicket,
-  ticketEntryReadinessView,
-  ticketListMeta,
-} from "./ticket-readiness";
-import { TicketPanel } from "./ticket-panel";
+  EmployeeTicketEntryHint,
+  EmployeeTicketPass,
+  EmployeeTicketTimeline,
+} from "./employee-ticket-components";
+import { groupEmployeeTicketsByDate } from "./employee-ticket-surface";
+import { selectCurrentTicket } from "./ticket-readiness";
 
 export { TicketPanel } from "./ticket-panel";
 
@@ -42,8 +35,8 @@ export function EmployeeTicketsPage({
   const pendingListFocusRef = useRef(false);
 
   const principalID = claims.employee_id;
-  const readinessCounts = countTicketReadiness(tickets);
   const currentTicket = selectCurrentTicket(tickets);
+  const ticketGroups = groupEmployeeTicketsByDate(tickets);
 
   async function refreshList() {
     setMessage("");
@@ -154,7 +147,6 @@ export function EmployeeTicketsPage({
               <h2 ref={detailHeadingRef} tabIndex={-1}>
                 票券詳細
               </h2>
-              <p>入場二維碼只在票券詳細頁顯示；票券簽章碼不直接顯示。</p>
             </div>
             <Button asChild variant="outline">
               <a
@@ -168,7 +160,7 @@ export function EmployeeTicketsPage({
           {detailMessage && <Alert tone="warn">{detailMessage}</Alert>}
           {detailLoading && <SkeletonRows rows={3} />}
           {!detailLoading && detailTicket && (
-            <TicketPanel
+            <EmployeeTicketPass
               ticket={detailTicket}
               onRefresh={() => void refreshDetail()}
             />
@@ -188,40 +180,30 @@ export function EmployeeTicketsPage({
     <section className="content-grid ticket-workspace">
       <Card className="panel span-12 ticket-list-panel">
         <div className="section-heading">
-          <div>
-            <h2 ref={listHeadingRef} tabIndex={-1}>
-              我的票券
-            </h2>
-            <p>目前可入場票券會直接顯示 QR code，其他票券保留在清單。</p>
-          </div>
+          <h2 className="sr-only" ref={listHeadingRef} tabIndex={-1}>
+            我的票券清單
+          </h2>
           <Button
-            variant="outline"
-            type="button"
-            onClick={() => void refreshList()}
+            aria-label="重新整理票券"
             disabled={loading}
+            size="icon"
+            title="重新整理票券"
+            type="button"
+            variant="ghost"
+            onClick={() => void refreshList()}
           >
             <Icon name="refresh" />
-            重新整理
           </Button>
         </div>
-        <CompactStatsBar
-          items={[
-            { label: "票券", value: tickets.length },
-            { label: "可入場", value: readinessCounts["entry-ready"] },
-            { label: "尚未開放", value: readinessCounts["not-open"] },
-            { label: "待產生 QR", value: readinessCounts["qr-pending"] },
-            { label: "已核銷", value: readinessCounts.redeemed },
-            { label: "已撤銷", value: readinessCounts.revoked },
-          ]}
-          label="票券摘要"
-        />
         {message && <Alert tone="warn">{message}</Alert>}
-        {listLoaded && (
-          <CurrentTicketPanel
+        {listLoaded && currentTicket && (
+          <EmployeeTicketPass
             ticket={currentTicket}
-            tickets={tickets}
             onRefresh={() => void refreshList()}
           />
+        )}
+        {listLoaded && !currentTicket && (
+          <EmployeeTicketEntryHint tickets={tickets} />
         )}
         <div className="list-stack ticket-list" aria-busy={loading}>
           {loading && tickets.length === 0 && <SkeletonRows rows={3} />}
@@ -237,98 +219,12 @@ export function EmployeeTicketsPage({
               action="完成報名確認後，票券會出現在這裡。"
             />
           )}
-          {tickets.map((ticket) => (
-            <TicketRow
-              key={ticket.ticket_id}
-              ticket={ticket}
-              onOpen={openTicket}
-            />
-          ))}
+          {!loading && tickets.length > 0 && (
+            <EmployeeTicketTimeline groups={ticketGroups} onOpen={openTicket} />
+          )}
         </div>
       </Card>
     </section>
-  );
-}
-
-function CurrentTicketPanel({
-  onRefresh,
-  ticket,
-  tickets,
-}: Readonly<{
-  onRefresh: () => void;
-  ticket?: Ticket;
-  tickets: Ticket[];
-}>) {
-  if (ticket) {
-    return (
-      <div className="current-ticket-panel" aria-label="目前可入場票券">
-        <div className="section-heading">
-          <div>
-            <h3>目前可入場票券</h3>
-            <p>入口出示此 QR code 即可，不需要先進入活動詳情。</p>
-          </div>
-        </div>
-        <TicketPanel compact ticket={ticket} onRefresh={onRefresh} />
-      </div>
-    );
-  }
-
-  if (tickets.length === 0) return null;
-  const hasFutureTicket = tickets.some(
-    (row) => ticketEntryReadinessView(row).kind === "not-open",
-  );
-  const action = hasFutureTicket
-    ? "尚未到入場時間；活動開始後 QR code 會出現在這裡。"
-    : "目前沒有可入場票券；可在下方查看過期、已核銷或待產生 QR 的票券。";
-  return <EmptyState title="目前沒有可入場票券" action={action} />;
-}
-
-function TicketRow({
-  onOpen,
-  ticket,
-}: Readonly<{
-  onOpen: (event: MouseEvent<HTMLAnchorElement>, ticketID: string) => void;
-  ticket: Ticket;
-}>) {
-  const readiness = ticketEntryReadinessView(ticket);
-  const statusView = ticketStatusView(ticket.status);
-  return (
-    <a
-      className="ticket-row"
-      href={ticketDetailPath(ticket.ticket_id)}
-      onClick={(event) => onOpen(event, ticket.ticket_id)}
-    >
-      <span className="ticket-row-main">
-        <strong>{ticket.event_title || ticket.event_id}</strong>
-        <small>{ticketListMeta(ticket)}</small>
-        <small>{safeTicketID(ticket.ticket_id)}</small>
-      </span>
-      <span className="ticket-row-badges">
-        <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
-        <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
-      </span>
-      <span className="ticket-row-action" aria-hidden="true">
-        <Icon name="arrowRight" />
-      </span>
-    </a>
-  );
-}
-
-function countTicketReadiness(tickets: Ticket[]) {
-  return tickets.reduce(
-    (counts, ticket) => {
-      counts[ticketEntryReadinessView(ticket).kind] += 1;
-      return counts;
-    },
-    {
-      "entry-ready": 0,
-      "not-open": 0,
-      "qr-pending": 0,
-      expired: 0,
-      redeemed: 0,
-      unavailable: 0,
-      revoked: 0,
-    },
   );
 }
 

@@ -3,6 +3,22 @@
   gap: 16px;
 }
 
+.workspace[data-route="user-events"] .page-header {
+  margin-bottom: 10px;
+  border-bottom: 0;
+}
+
+.workspace[data-route="user-events"] .employee-events-home {
+  border-color: oklch(0.88 0.018 245);
+  background: oklch(0.99 0.004 245);
+  box-shadow: 0 18px 42px oklch(0.34 0.035 245 / 0.07);
+}
+
+.employee-events-home > .section-heading {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+
 .employee-calendar {
   display: grid;
   gap: 12px;
@@ -255,6 +271,12 @@
 
 .employee-event-missing {
   max-width: 720px;
+}
+
+@media (max-width: 900px) {
+  .workspace[data-route="user-events"] > .app-page-header {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {

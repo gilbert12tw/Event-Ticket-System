@@ -114,8 +114,11 @@ describe("EmployeeEventsPage", () => {
     const { container } = render(<EmployeeEventsPage claims={claims} />);
 
     expect(
-      await screen.findByRole("heading", { name: "活動首頁" }),
-    ).toBeInTheDocument();
+      await screen.findByRole("heading", { name: "活動日曆" }),
+    ).toHaveClass("sr-only");
+    expect(
+      screen.queryByText("用日曆安排活動時間，卡片會提示報名期限與參加狀態。"),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText("週行事曆")).toBeInTheDocument();
     expect(
       within(screen.getByRole("group", { name: "日曆視圖" })).getByRole(
@@ -250,7 +253,8 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText("我的報名")).toBeInTheDocument();
+    expect(await screen.findByLabelText("選取日期活動")).toBeInTheDocument();
+    expect(screen.queryByText("我的報名")).not.toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: "加入行事曆：已報名活動" }).length,
     ).toBeGreaterThan(0);
@@ -261,7 +265,6 @@ describe("EmployeeEventsPage", () => {
     expect(titles.map((title) => title.textContent)).toEqual([
       "已報名活動",
       "開放報名活動",
-      "已報名活動",
     ]);
     expect(
       screen.queryByRole("button", { name: "取消報名" }),
@@ -359,7 +362,7 @@ describe("EmployeeEventsPage", () => {
     expect(mockEventPosterBlob).toHaveBeenCalledWith("evt-family");
   });
 
-  it("shows the current ticket QR without exposing compact ticket IDs", async () => {
+  it("keeps the events page focused on calendar discovery when a ticket is active", async () => {
     showEvents({
       current_user_status: "confirmed",
       event_id: "evt-current",
@@ -370,8 +373,10 @@ describe("EmployeeEventsPage", () => {
 
     const { container } = render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText("目前活動票券")).toBeInTheDocument();
-    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(await screen.findByLabelText("活動行事曆")).toBeInTheDocument();
+    expect(screen.queryByText("目前活動票券")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
+    expect(screen.getAllByText("現在入場活動").length).toBeGreaterThan(0);
     expect(container).not.toHaveTextContent("T-current");
     expect(container).not.toHaveTextContent("E1001");
     expect(container).not.toHaveTextContent("signed-secret");

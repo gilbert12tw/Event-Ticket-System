@@ -214,7 +214,10 @@ describe("App", () => {
     await waitFor(() =>
       expect(mockSelectMockProfile).toHaveBeenCalledWith("E1001"),
     );
-    expect(await screen.findByText("活動首頁")).toBeInTheDocument();
+    expect(
+      await screen.findAllByRole("heading", { name: "活動探索" }),
+    ).not.toHaveLength(0);
+    expect(screen.getByLabelText("活動行事曆")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Debug/ }),
     ).not.toBeInTheDocument();

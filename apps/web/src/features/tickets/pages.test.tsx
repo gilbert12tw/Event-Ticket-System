@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTicket, listTickets } from "@/lib/api";
+import { eventPosterBlob, getTicket, listTickets } from "@/lib/api";
 import type { AuthMeClaims, Ticket } from "@/lib/api";
 import { EmployeeTicketsPage } from "./pages";
 
@@ -9,6 +9,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
+    eventPosterBlob: vi.fn(),
     getTicket: vi.fn(),
     listTickets: vi.fn(),
   };
@@ -16,6 +17,7 @@ vi.mock("@/lib/api", async () => {
 
 const mockGetTicket = vi.mocked(getTicket);
 const mockListTickets = vi.mocked(listTickets);
+const mockEventPosterBlob = vi.mocked(eventPosterBlob);
 
 const claims: AuthMeClaims = {
   employee_id: "E1001",
@@ -31,10 +33,12 @@ const claims: AuthMeClaims = {
 describe("EmployeeTicketsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    mockEventPosterBlob.mockResolvedValue(null);
     window.history.replaceState({}, "", "/user/tickets");
   });
 
-  it("renders the current ticket QR before the rest of the ticket list", async () => {
+  it("renders the current ticket pass before the timeline without raw IDs", async () => {
     mockListTickets.mockResolvedValue([
       ticketFixture(),
       ticketFixture({ ticket_id: "T-2", status: "active", signed_token: "" }),
@@ -48,19 +52,21 @@ describe("EmployeeTicketsPage", () => {
 
     render(<EmployeeTicketsPage claims={claims} />);
 
-    expect(await screen.findByText("我的票券")).toBeInTheDocument();
-    expect(screen.getByText("目前可入場票券")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "我的票券清單" }),
+    ).toHaveClass("sr-only");
+    expect(screen.getByLabelText("目前可入場票券")).toBeInTheDocument();
     expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /T-1/ })).toHaveAttribute(
-      "href",
-      "/user/tickets?ticket_id=T-1",
-    );
-    const summary = screen.getByLabelText("票券摘要");
-    expect(summary).toHaveTextContent("可入場1");
-    expect(summary).toHaveTextContent("尚未開放1");
-    expect(summary).toHaveTextContent("待產生 QR1");
-    expect(summary).toHaveTextContent("已核銷1");
-    expect(summary).toHaveTextContent("已撤銷1");
+    expect(
+      screen.getAllByRole("link", { name: /台北家庭電影夜/ })[0],
+    ).toHaveAttribute("href", "/user/tickets?ticket_id=T-1");
+    expect(screen.queryByLabelText("票券摘要")).not.toBeInTheDocument();
+    expect(screen.queryByText("不可轉讓")).not.toBeInTheDocument();
+    expect(screen.queryByText("入場提示")).not.toBeInTheDocument();
+    expect(screen.queryByText("票券編號")).not.toBeInTheDocument();
+    expect(screen.queryByText("T-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("E1001")).not.toBeInTheDocument();
+    expect(screen.queryByText("signed-token")).not.toBeInTheDocument();
     expect(mockGetTicket).not.toHaveBeenCalled();
   });
 
@@ -159,7 +165,22 @@ describe("EmployeeTicketsPage", () => {
     expect(screen.queryByText("qr-secret")).not.toBeInTheDocument();
   });
 
-  it("shows revoked reason only in metadata, not duplicated in status copy", async () => {
+  it("keeps ticket usage guidance collapsed until the employee asks for it", async () => {
+    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
+    mockGetTicket.mockResolvedValue(ticketFixture());
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    const summary = await screen.findByText("票券使用說明");
+    const disclosure = summary.closest("details");
+    expect(disclosure).not.toHaveAttribute("open");
+
+    await userEvent.click(summary);
+
+    expect(disclosure).toHaveAttribute("open");
+  });
+
+  it("keeps revoked tickets concise without employee-only metadata", async () => {
     window.history.replaceState({}, "", "/user/tickets?ticket_id=T-revoked");
     mockGetTicket.mockResolvedValue(
       ticketFixture({
@@ -173,9 +194,41 @@ describe("EmployeeTicketsPage", () => {
 
     expect(await screen.findByText("票券詳細")).toBeInTheDocument();
     expect(screen.getByText("此票券已撤銷，不能入場。")).toBeInTheDocument();
-    expect(screen.getByText("撤銷原因")).toBeInTheDocument();
-    expect(screen.getByText("員工已取消報名")).toBeInTheDocument();
+    expect(screen.queryByText("撤銷原因")).not.toBeInTheDocument();
+    expect(screen.queryByText("員工已取消報名")).not.toBeInTheDocument();
     expect(screen.queryByText(/原因：員工已取消報名/)).not.toBeInTheDocument();
+  });
+
+  it("hides zero companion counts and exposes calendar export for active tickets", async () => {
+    const createObjectURL = vi.fn(() => "blob:ticket-calendar");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      createObjectURL,
+      revokeObjectURL,
+    });
+    mockListTickets.mockResolvedValue([
+      ticketFixture({ family_count: 0 }),
+      ticketFixture({
+        event_title: "雙人工作坊",
+        family_count: 2,
+        ticket_id: "T-family",
+      }),
+    ]);
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    expect(await screen.findByText("雙人工作坊")).toBeInTheDocument();
+    expect(screen.queryByText("同行 0 人")).not.toBeInTheDocument();
+    expect(screen.getByText("同行 2 人")).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getAllByRole("button", { name: /加入行事曆/ })[0],
+    );
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("text/calendar;charset=utf-8");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:ticket-calendar");
   });
 });
 

@@ -8,9 +8,7 @@ import { Icon } from "@/components/shared/icon";
 import { messageTone } from "./employee-event-components";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { selectCurrentTicket } from "@/features/tickets/ticket-readiness";
-import { TicketPanel } from "@/features/tickets/ticket-panel";
-import { employeeEventDisplayState, localDateKey } from "./employee-calendar";
+import { localDateKey } from "./employee-calendar";
 import {
   calendarRangeForView,
   employeeCalendarPath,
@@ -21,7 +19,6 @@ import {
   type EmployeeCalendarViewMode,
 } from "./employee-calendar-planner";
 import { EmployeeCalendarView } from "./employee-calendar-view";
-import { EmployeeAgenda } from "./employee-calendar-components";
 
 export function EmployeeEventsPage({
   claims,
@@ -56,20 +53,6 @@ export function EmployeeEventsPage({
       ),
     [calendarEvents, calendarState.dateKey],
   );
-  const registeredEvents = useMemo(
-    () =>
-      events.filter(
-        (event) =>
-          employeeEventDisplayState(
-            event,
-            ticketForEvent(tickets, event.event_id),
-            now,
-          ).isRegistered,
-      ),
-    [events, now, tickets],
-  );
-  const currentTicket = selectCurrentTicket(tickets);
-
   async function refresh() {
     setLoading(true);
     setMessage("");
@@ -112,10 +95,7 @@ export function EmployeeEventsPage({
     <section className="content-grid">
       <Card className="panel span-12 employee-events-home">
         <div className="section-heading">
-          <div>
-            <h2>活動首頁</h2>
-            <p>用日曆安排活動時間，卡片會提示報名期限與參加狀態。</p>
-          </div>
+          <h2 className="sr-only">活動日曆</h2>
           <Button
             aria-label="重新整理活動"
             className="employee-page-refresh"
@@ -130,75 +110,33 @@ export function EmployeeEventsPage({
           </Button>
         </div>
         {message && <Alert tone={messageTone(message)}>{message}</Alert>}
-        {!loading && (
-          <CurrentEventTicketPanel ticket={currentTicket} onRefresh={refresh} />
-        )}
         {loading ? (
           <SkeletonRows rows={3} />
         ) : (
-          <>
-            <EmployeeCalendarView
-              groups={calendarGroups}
-              now={now}
-              range={calendarRange}
-              selectedDateKey={calendarState.dateKey}
-              selectedEvents={selectedEvents}
-              onMove={(direction) =>
-                applyCalendarState(
+          <EmployeeCalendarView
+            groups={calendarGroups}
+            now={now}
+            range={calendarRange}
+            selectedDateKey={calendarState.dateKey}
+            selectedEvents={selectedEvents}
+            onMove={(direction) =>
+              applyCalendarState(
+                calendarState.view,
+                shiftCalendarDate(
                   calendarState.view,
-                  shiftCalendarDate(
-                    calendarState.view,
-                    calendarState.date,
-                    direction,
-                  ),
-                )
-              }
-              onSelectDate={selectDate}
-              onToday={() => applyCalendarState(calendarState.view, now)}
-              onViewChange={(view) =>
-                applyCalendarState(view, calendarState.date)
-              }
-            />
-            {registeredEvents.length > 0 && (
-              <EmployeeAgenda
-                emptyAction=""
-                emptyTitle=""
-                events={registeredEvents}
-                now={now}
-                tickets={tickets}
-                title="我的報名"
-              />
-            )}
-          </>
+                  calendarState.date,
+                  direction,
+                ),
+              )
+            }
+            onSelectDate={selectDate}
+            onToday={() => applyCalendarState(calendarState.view, now)}
+            onViewChange={(view) =>
+              applyCalendarState(view, calendarState.date)
+            }
+          />
         )}
       </Card>
     </section>
   );
-}
-
-function CurrentEventTicketPanel({
-  onRefresh,
-  ticket,
-}: Readonly<{
-  onRefresh: () => void;
-  ticket?: Ticket;
-}>) {
-  if (ticket) {
-    return (
-      <div className="current-ticket-panel" aria-label="目前活動票券 QR code">
-        <div className="section-heading">
-          <div>
-            <h3>目前活動票券</h3>
-            <p>有可入場票券時，QR code 會直接顯示在活動首頁。</p>
-          </div>
-        </div>
-        <TicketPanel compact ticket={ticket} onRefresh={onRefresh} />
-      </div>
-    );
-  }
-  return null;
-}
-
-function ticketForEvent(tickets: Ticket[], eventID: string) {
-  return tickets.find((ticket) => ticket.event_id === eventID);
 }

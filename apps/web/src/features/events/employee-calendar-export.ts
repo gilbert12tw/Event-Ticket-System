@@ -14,6 +14,11 @@ export type CalendarExportArtifact = {
   mimeType: "text/calendar;charset=utf-8";
 };
 
+export type CalendarExportEvent = Pick<
+  EventSummary,
+  "description" | "event_id" | "event_site" | "location" | "starts_at" | "title"
+>;
+
 export function canAddToCalendar(event: EventSummary, ticket?: Ticket) {
   return (
     ticket?.status === "active" || event.current_user_status === "confirmed"
@@ -21,7 +26,7 @@ export function canAddToCalendar(event: EventSummary, ticket?: Ticket) {
 }
 
 export function employeeCalendarExport(
-  event: EventSummary,
+  event: CalendarExportEvent,
   now: Date = new Date(),
 ): CalendarExportArtifact {
   const startsAt = parseDate(event.starts_at);
@@ -50,7 +55,7 @@ export function employeeCalendarExport(
   };
 }
 
-function eventUID(event: EventSummary) {
+function eventUID(event: CalendarExportEvent) {
   const uidSeed = `${event.event_id}:${event.starts_at}`;
   return `cets-${stableHash(uidSeed)}@calendar.local`;
 }
@@ -64,7 +69,7 @@ function stableHash(value: string) {
   return (hash >>> 0).toString(36);
 }
 
-function calendarFilename(event: EventSummary, startsAt: Date) {
+function calendarFilename(event: CalendarExportEvent, startsAt: Date) {
   const datePrefix = [
     startsAt.getUTCFullYear(),
     String(startsAt.getUTCMonth() + 1).padStart(2, "0"),
