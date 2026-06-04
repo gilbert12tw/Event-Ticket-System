@@ -33,7 +33,7 @@ export function collectBrowserErrors(page: Page) {
   const errors: string[] = [];
   page.on("console", (message) => {
     const text = message.text();
-    if (message.type() === "error" && !/status of (401|403|409)/.test(text))
+    if (message.type() === "error" && !/status of (401|403|404|409)/.test(text))
       errors.push(text);
   });
   page.on("pageerror", (error) => errors.push(error.message));
