@@ -164,14 +164,15 @@ test("employee event agenda keeps a single desktop card at reusable width", asyn
 
   const cardBox = await eventCard.boundingBox();
   const listBox = await cardList.boundingBox();
-  expect(cardBox).not.toBeNull();
-  expect(listBox).not.toBeNull();
+  if (!cardBox || !listBox) {
+    throw new Error("employee event card layout bounds are unavailable");
+  }
   expect(
-    cardBox!.width,
+    cardBox.width,
     "single event card keeps desktop card width",
   ).toBeLessThanOrEqual(380);
   expect(
-    listBox!.width - cardBox!.width,
+    listBox.width - cardBox.width,
     "single event card does not stretch across the agenda",
   ).toBeGreaterThan(120);
   await expectNoHorizontalOverflow(page);
