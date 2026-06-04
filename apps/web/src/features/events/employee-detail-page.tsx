@@ -42,6 +42,8 @@ import {
 import { EmployeeEventDetailHero } from "./employee-calendar-components";
 import { registrationDeadlineView } from "./employee-calendar-planner";
 import { EmployeeRegistrationDeadlineChip } from "./employee-registration-deadline-chip";
+import { canAddToCalendar } from "./employee-calendar-export";
+import { EmployeeAddToCalendarButton } from "./employee-add-to-calendar-button";
 
 type PendingAction = "book" | "cancel" | "";
 
@@ -213,6 +215,12 @@ export function EmployeeEventDetailPage({
         <EmployeeRegistrationDeadlineChip
           deadline={registrationDeadlineView(detail, now)}
         />
+        {canAddToCalendar(detail, detail.current_user_ticket) && (
+          <div className="employee-detail-calendar-action">
+            <span>已報名可加入手機行事曆</span>
+            <EmployeeAddToCalendarButton event={detail} />
+          </div>
+        )}
         <div className="summary-block event-action-rail event-detail-action-bar">
           <DetailActionControls
             claims={claims}

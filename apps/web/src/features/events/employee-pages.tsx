@@ -124,13 +124,16 @@ export function EmployeeEventsPage({
             <p>用日曆安排活動時間，卡片會提示報名期限與參加狀態。</p>
           </div>
           <Button
-            variant="outline"
-            type="button"
-            onClick={refresh}
+            aria-label="重新整理活動"
+            className="employee-page-refresh"
             disabled={loading}
+            size="icon"
+            title="重新整理活動"
+            type="button"
+            variant="ghost"
+            onClick={refresh}
           >
             <Icon name="refresh" />
-            重新整理
           </Button>
         </div>
         {message && <Alert tone={messageTone(message)}>{message}</Alert>}

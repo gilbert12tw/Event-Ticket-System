@@ -1,10 +1,10 @@
 .employee-calendar-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: auto minmax(5.5rem, 1fr) auto;
+  gap: 8px;
   align-items: center;
   min-width: 0;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-raised);
@@ -14,7 +14,7 @@
 .employee-calendar-mode {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -31,14 +31,57 @@
   text-align: center;
 }
 
-.employee-calendar-title h2,
-.employee-calendar-title p {
+.employee-calendar-title h2 {
   margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.employee-calendar-title p {
+.employee-page-refresh {
+  justify-self: end;
   color: var(--muted);
-  font-size: 0.86rem;
+}
+
+.employee-page-refresh:hover {
+  color: var(--ink);
+}
+
+.employee-events-home > .section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.employee-events-home > .section-heading > div {
+  min-width: 0;
+}
+
+.employee-events-home
+  > .section-heading
+  > .employee-page-refresh[data-slot="button"] {
+  width: 2rem;
+  min-width: 2rem;
+  flex: 0 0 2rem;
+}
+
+.employee-calendar-nav [data-size="icon-sm"] {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  flex: 0 0 1.75rem;
+}
+
+.employee-calendar-nav [data-size="sm"],
+.employee-calendar-mode [data-size="sm"] {
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.employee-calendar-mode [data-size="sm"] {
+  padding-inline: 0.6rem;
 }
 
 .employee-week-calendar {
@@ -244,25 +287,73 @@
   font-size: 0.72rem;
 }
 
+.employee-add-calendar-button {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  flex: 0 0 1.75rem;
+  color: var(--muted);
+}
+
+.employee-add-calendar-button:hover {
+  color: var(--accent);
+}
+
+.employee-event-card-badges
+  > .employee-add-calendar-button[data-slot="button"],
+.employee-detail-calendar-action
+  > .employee-add-calendar-button[data-slot="button"] {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  max-width: 2.75rem;
+  flex: 0 0 2.75rem;
+}
+
+.employee-detail-calendar-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.employee-detail-calendar-action span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 @media (max-width: 900px) {
   .employee-calendar-toolbar {
-    grid-template-columns: 1fr;
-    align-items: stretch;
+    grid-template-columns: auto minmax(4.6rem, 1fr) auto;
   }
 
-  .employee-calendar-title {
-    order: -1;
-    text-align: left;
+  .employee-calendar-nav,
+  .employee-calendar-mode {
+    flex-wrap: nowrap;
   }
 
-  .employee-calendar-mode,
-  .employee-calendar-nav {
-    justify-content: stretch;
+  .employee-calendar-mode {
+    justify-content: flex-end;
   }
 
-  .employee-calendar-mode [data-slot="button"],
-  .employee-calendar-nav [data-slot="button"]:first-child {
-    flex: 1;
+  .employee-calendar-toolbar [data-slot="button"] {
+    min-width: 0;
+  }
+
+  .employee-events-home > .section-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .employee-events-home
+    > .section-heading
+    > .employee-page-refresh[data-slot="button"] {
+    width: 2rem;
+    min-width: 2rem;
   }
 
   .employee-week-calendar {
@@ -300,8 +391,18 @@
 }
 
 @media (max-width: 520px) {
-  .employee-calendar-title p {
-    display: none;
+  .employee-calendar-toolbar {
+    gap: 6px;
+    padding: 7px;
+  }
+
+  .employee-calendar-nav,
+  .employee-calendar-mode {
+    gap: 4px;
+  }
+
+  .employee-calendar-title h2 {
+    font-size: 0.92rem;
   }
 
   .employee-event-card-badges .employee-deadline-chip small {

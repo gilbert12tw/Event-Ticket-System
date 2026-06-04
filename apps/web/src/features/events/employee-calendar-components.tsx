@@ -13,6 +13,8 @@ import {
   localDateKey,
 } from "./employee-calendar";
 import { registrationDeadlineView } from "./employee-calendar-planner";
+import { canAddToCalendar } from "./employee-calendar-export";
+import { EmployeeAddToCalendarButton } from "./employee-add-to-calendar-button";
 import { EventPoster } from "./employee-event-poster";
 import { EmployeeRegistrationDeadlineChip } from "./employee-registration-deadline-chip";
 
@@ -135,6 +137,9 @@ export function EmployeeEventPosterCard({
           <div className="employee-event-card-badges">
             <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
             <EmployeeRegistrationDeadlineChip deadline={deadline} />
+            {canAddToCalendar(event, ticket) && (
+              <EmployeeAddToCalendarButton event={event} />
+            )}
           </div>
           <h3>{event.title}</h3>
           <p className="employee-event-meta">

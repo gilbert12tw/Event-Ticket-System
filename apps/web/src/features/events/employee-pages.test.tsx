@@ -83,6 +83,8 @@ function isoFromNowHours(hourOffset: number) {
 
 describe("EmployeeEventsPage", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     mockListEvents.mockReset();
     mockListTickets.mockReset();
     mockListTickets.mockResolvedValue([]);
@@ -129,6 +131,22 @@ describe("EmployeeEventsPage", () => {
       screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length,
     ).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "報名活動" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "重新整理活動" }),
+    ).toHaveAttribute("data-size", "icon");
+    expect(screen.queryByRole("button", { name: "重新整理" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "今天" })).toHaveAttribute(
+      "data-size",
+      "sm",
+    );
+    expect(screen.getByRole("button", { name: "上一週" })).toHaveAttribute(
+      "data-size",
+      "icon-sm",
+    );
+    expect(screen.getByRole("button", { name: "下一週" })).toHaveAttribute(
+      "data-size",
+      "icon-sm",
+    );
     expect(screen.queryByText("活動列表")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /可報名/ })).not.toBeInTheDocument();
     expect(screen.queryByText("資格規則")).not.toBeInTheDocument();
@@ -219,6 +237,12 @@ describe("EmployeeEventsPage", () => {
     render(<EmployeeEventsPage claims={claims} />);
 
     expect(await screen.findByText("我的報名")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "加入行事曆：已報名活動" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: "加入行事曆：開放報名活動" }),
+    ).not.toBeInTheDocument();
     const titles = await screen.findAllByRole("heading", { level: 3 });
     expect(titles.map((title) => title.textContent)).toEqual([
       "已報名活動",
@@ -226,6 +250,44 @@ describe("EmployeeEventsPage", () => {
       "已報名活動",
     ]);
     expect(screen.queryByRole("button", { name: "取消報名" })).not.toBeInTheDocument();
+  });
+
+  it("downloads an ICS file for confirmed events", async () => {
+    showEvents({
+      current_user_registration_id: "R-registered",
+      current_user_status: "confirmed",
+      description: "團隊交流",
+      event_id: "evt-registered",
+      location: "Taipei HQ",
+      starts_at: "2026-06-04T13:00:00+08:00",
+      title: "已報名活動",
+    });
+    const createObjectURL = vi.fn(() => "blob:calendar");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL,
+        revokeObjectURL,
+      }),
+    );
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    const addButtons = await screen.findAllByRole("button", {
+      name: "加入行事曆：已報名活動",
+    });
+    await userEvent.click(addButtons[0]);
+
+    expect(click).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("text/calendar;charset=utf-8");
+    await expect(blob.text()).resolves.toContain("BEGIN:VCALENDAR");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:calendar");
   });
 
   it("keeps cross-city warnings out of the main card while allowing detail handoff", async () => {

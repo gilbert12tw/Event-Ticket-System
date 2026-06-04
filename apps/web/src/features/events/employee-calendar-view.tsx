@@ -40,12 +40,12 @@ export function EmployeeCalendarToolbar({
   return (
     <div className="employee-calendar-toolbar" aria-label="活動日曆工具列">
       <div className="employee-calendar-nav">
-        <Button type="button" variant="outline" onClick={onToday}>
+        <Button size="sm" type="button" variant="outline" onClick={onToday}>
           今天
         </Button>
         <Button
           aria-label={`上一${viewLabels[range.view]}`}
-          size="icon"
+          size="icon-sm"
           type="button"
           variant="outline"
           onClick={() => onMove(-1)}
@@ -54,7 +54,7 @@ export function EmployeeCalendarToolbar({
         </Button>
         <Button
           aria-label={`下一${viewLabels[range.view]}`}
-          size="icon"
+          size="icon-sm"
           type="button"
           variant="outline"
           onClick={() => onMove(1)}
@@ -64,7 +64,6 @@ export function EmployeeCalendarToolbar({
       </div>
       <div className="employee-calendar-title">
         <h2>{range.label}</h2>
-        <p>活動依舉辦日期排列，卡片會提示報名期限。</p>
       </div>
       <div
         className="employee-calendar-mode"
@@ -75,6 +74,7 @@ export function EmployeeCalendarToolbar({
           <Button
             aria-pressed={range.view === view}
             key={view}
+            size="sm"
             type="button"
             variant={range.view === view ? "default" : "outline"}
             onClick={() => onViewChange(view)}

@@ -147,6 +147,9 @@ describe("EmployeeEventDetailPage", () => {
     expect(mockEventPosterBlob).toHaveBeenCalledWith("evt-1");
     expect(screen.queryByText("活動編號")).not.toBeInTheDocument();
     expect(screen.queryByText("evt-1")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "加入行事曆：活動" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps event detail actions without embedding the ticket QR", async () => {
@@ -158,6 +161,9 @@ describe("EmployeeEventDetailPage", () => {
     render(<EmployeeEventDetailPage claims={claims} />);
 
     expect(await screen.findByText("主要操作")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "加入行事曆：活動" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "查看這張票券" }),
     ).toBeInTheDocument();

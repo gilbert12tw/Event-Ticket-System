@@ -26,6 +26,7 @@ export type IconName =
   | "ban"
   | "bell"
   | "calendar"
+  | "calendarPlus"
   | "chart"
   | "chevronLeft"
   | "chevronRight"
