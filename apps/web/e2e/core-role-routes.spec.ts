@@ -117,7 +117,7 @@ test("employee booking CTAs keep primary visual treatment", async ({
     remaining_capacity: 0,
   };
 
-  await openRoute(page, "E1001", "/user/events", {
+  await openRoute(page, "E1001", "/user/events?view=week&date=2026-06-04", {
     eventDetail: bookableEvent,
     events: [bookableEvent, waitlistEvent],
   });
