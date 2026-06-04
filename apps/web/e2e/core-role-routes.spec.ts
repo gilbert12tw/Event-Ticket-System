@@ -124,8 +124,8 @@ test("employee booking CTAs keep primary visual treatment", async ({
     events: [bookableEvent, waitlistEvent],
   });
 
-  await expectPrimaryCtaTreatment(page.getByRole("link", { name: /立即報名/ }));
-  await expectPrimaryCtaTreatment(page.getByRole("link", { name: /加入候補/ }));
+  await expectPrimaryCtaTreatment(page.getByRole("link", { name: "報名活動" }));
+  await expectPrimaryCtaTreatment(page.getByRole("link", { name: "查看詳情" }));
 
   await page.goto("/user/events/detail?event_id=evt-waitlist", {
     waitUntil: "domcontentloaded",
@@ -166,9 +166,13 @@ test("employee cancellation requires confirmation before API call", async ({
     }
   });
   await loginAs(page, "E1001");
-  await page.goto("/user/events?tab=registered", {
+  await page.goto("/user/events", {
     waitUntil: "domcontentloaded",
   });
+  await page.getByRole("link", { name: "查看活動詳情" }).click();
+  await expect(page).toHaveURL(
+    /\/user\/events\/detail\?event_id=evt-cets-001$/,
+  );
 
   await page.getByRole("button", { name: "取消報名" }).click();
   const dialog = page.getByRole("alertdialog");
