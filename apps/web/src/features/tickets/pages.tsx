@@ -143,17 +143,23 @@ export function EmployeeTicketsPage({
           aria-busy={detailLoading}
         >
           <div className="section-heading ticket-detail-heading">
-            <div>
-              <h2 ref={detailHeadingRef} tabIndex={-1}>
-                票券詳細
-              </h2>
-            </div>
-            <Button asChild variant="outline">
+            <h2 className="sr-only" ref={detailHeadingRef} tabIndex={-1}>
+              票券詳細
+            </h2>
+            <Button
+              asChild
+              aria-label="返回我的票券"
+              className="ticket-detail-back-button"
+              size="icon"
+              title="返回我的票券"
+              variant="ghost"
+            >
               <a
                 href="/user/tickets"
                 onClick={(event) => runClientNavigation(event, returnToList)}
               >
-                返回我的票券
+                <Icon name="chevronLeft" />
+                <span className="sr-only">返回我的票券</span>
               </a>
             </Button>
           </div>
