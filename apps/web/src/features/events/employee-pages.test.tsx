@@ -32,6 +32,8 @@ const mockListEvents = vi.mocked(listEvents);
 const mockListTickets = vi.mocked(listTickets);
 const mockBookEvent = vi.mocked(bookEvent);
 const mockEventPosterBlob = vi.mocked(eventPosterBlob);
+const testNow = new Date("2026-06-04T10:00:00+08:00");
+const testTodayKey = "2026-06-04";
 
 type EventOverrides = Parameters<typeof eventFixture>[0];
 
@@ -69,16 +71,15 @@ function showEvents(...events: EventOverrides[]) {
 }
 
 function isoOnDay(dayOffset: number, hour: number) {
-  const date = new Date();
-  date.setHours(hour, 0, 0, 0);
-  date.setDate(date.getDate() + dayOffset);
-  return date.toISOString();
+  return new Date(Date.UTC(2026, 5, 4 + dayOffset, hour - 8)).toISOString();
 }
 
 function isoFromNowHours(hourOffset: number) {
-  const date = new Date();
-  date.setHours(date.getHours() + hourOffset, 0, 0, 0);
-  return date.toISOString();
+  return new Date(testNow.getTime() + hourOffset * 60 * 60_000).toISOString();
+}
+
+function renderEmployeeEventsPage() {
+  return render(<EmployeeEventsPage claims={claims} now={testNow} />);
 }
 
 describe("EmployeeEventsPage", () => {
@@ -91,7 +92,11 @@ describe("EmployeeEventsPage", () => {
     mockBookEvent.mockReset();
     mockEventPosterBlob.mockReset();
     mockEventPosterBlob.mockResolvedValue(null);
-    window.history.replaceState({}, "", "/user/events");
+    window.history.replaceState(
+      {},
+      "",
+      `/user/events?view=week&date=${testTodayKey}`,
+    );
   });
 
   it("renders a calendar-first employee home without technical IDs", async () => {
@@ -111,7 +116,7 @@ describe("EmployeeEventsPage", () => {
       },
     );
 
-    const { container } = render(<EmployeeEventsPage claims={claims} />);
+    const { container } = renderEmployeeEventsPage();
 
     expect(
       await screen.findByRole("heading", { name: "活動日曆" }),
@@ -169,7 +174,7 @@ describe("EmployeeEventsPage", () => {
   it("shows a clear empty state without zero-stat tabs", async () => {
     showEvents();
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
     expect(
@@ -184,7 +189,7 @@ describe("EmployeeEventsPage", () => {
       title: "午餐講座",
     });
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     expect(await screen.findByLabelText("週行事曆")).toBeInTheDocument();
     const modeGroup = screen.getByRole("group", { name: "日曆視圖" });
@@ -226,7 +231,7 @@ describe("EmployeeEventsPage", () => {
       },
     );
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
     expect(screen.queryByText("已取消活動")).not.toBeInTheDocument();
@@ -253,7 +258,7 @@ describe("EmployeeEventsPage", () => {
       },
     );
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     expect(await screen.findByLabelText("選取日期活動")).toBeInTheDocument();
     expect(screen.queryByText("我的報名")).not.toBeInTheDocument();
@@ -296,7 +301,7 @@ describe("EmployeeEventsPage", () => {
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     const addButtons = await screen.findAllByRole("button", {
       name: "加入行事曆：已報名活動",
@@ -333,7 +338,7 @@ describe("EmployeeEventsPage", () => {
       title: "Hsinchu Event",
     });
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     expect(
       (await screen.findAllByText("Hsinchu Event")).length,
@@ -357,7 +362,7 @@ describe("EmployeeEventsPage", () => {
       title: "家庭日",
     });
 
-    const { container } = render(<EmployeeEventsPage claims={claims} />);
+    const { container } = renderEmployeeEventsPage();
 
     expect((await screen.findAllByText("家庭日")).length).toBeGreaterThan(0);
     expect(
@@ -375,7 +380,7 @@ describe("EmployeeEventsPage", () => {
     });
     mockListTickets.mockResolvedValue([ticket("T-current", "R-current")]);
 
-    const { container } = render(<EmployeeEventsPage claims={claims} />);
+    const { container } = renderEmployeeEventsPage();
 
     expect(await screen.findByLabelText("活動行事曆")).toBeInTheDocument();
     expect(screen.queryByText("目前活動票券")).not.toBeInTheDocument();
@@ -395,7 +400,7 @@ describe("EmployeeEventsPage", () => {
       title: "No Eligibility Event",
     });
 
-    render(<EmployeeEventsPage claims={claims} />);
+    renderEmployeeEventsPage();
 
     expect(
       (await screen.findAllByText("No Eligibility Event")).length,

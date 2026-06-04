@@ -22,17 +22,22 @@ import { EmployeeCalendarView } from "./employee-calendar-view";
 
 export function EmployeeEventsPage({
   claims,
-}: Readonly<{ claims: AuthMeClaims }>) {
+  now: injectedNow,
+}: Readonly<{ claims: AuthMeClaims; now?: Date }>) {
+  const initialNow = injectedNow ?? new Date();
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [calendarState, setCalendarState] = useState(() =>
-    parseEmployeeCalendarQuery(globalThis.location.search),
+    parseEmployeeCalendarQuery(globalThis.location.search, initialNow),
   );
 
   const principalID = claims.employee_id;
-  const now = useMemo(() => new Date(), [events, tickets]);
+  const now = useMemo(
+    () => new Date((injectedNow ?? new Date()).getTime()),
+    [events, injectedNow, tickets],
+  );
   const calendarRange = useMemo(
     () => calendarRangeForView(calendarState.view, calendarState.date, now),
     [calendarState.date, calendarState.view, now],
