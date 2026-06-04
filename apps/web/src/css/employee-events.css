@@ -130,8 +130,12 @@
 
 .employee-event-card-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(18rem, 100%), min(22.5rem, 100%))
+  );
   gap: 14px;
+  justify-content: start;
   min-width: 0;
 }
 

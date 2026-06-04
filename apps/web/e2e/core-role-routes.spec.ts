@@ -138,6 +138,45 @@ test("employee booking CTAs keep primary visual treatment", async ({
   await expectNoHorizontalOverflow(page);
 });
 
+test("employee event agenda keeps a single desktop card at reusable width", async ({
+  page,
+}) => {
+  if ((page.viewportSize()?.width ?? 0) <= 900) return;
+
+  const singleEvent: EventFixture = {
+    ...sampleEvent,
+    event_id: "evt-single-card",
+    title: "單一活動桌面比例檢查",
+    starts_at: "2026-06-04T10:00:00+08:00",
+    registration_close: "2099-01-09T23:00:00Z",
+    current_user_status: undefined,
+    current_user_ticket: undefined,
+  };
+
+  await openRoute(page, "E1001", "/user/events?view=day&date=2026-06-04", {
+    events: [singleEvent],
+  });
+
+  const cardList = page.locator(".employee-event-card-list").first();
+  const eventCard = page.locator(".employee-event-card").first();
+  await expect(eventCard).toBeVisible();
+  await expect(page.locator(".employee-event-card")).toHaveCount(1);
+
+  const cardBox = await eventCard.boundingBox();
+  const listBox = await cardList.boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect(
+    cardBox!.width,
+    "single event card keeps desktop card width",
+  ).toBeLessThanOrEqual(380);
+  expect(
+    listBox!.width - cardBox!.width,
+    "single event card does not stretch across the agenda",
+  ).toBeGreaterThan(120);
+  await expectNoHorizontalOverflow(page);
+});
+
 test("employee ticket detail missing state is recoverable", async ({
   page,
 }) => {
