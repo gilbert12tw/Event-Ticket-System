@@ -49,6 +49,22 @@ type Gate interface {
 	Release(ctx context.Context, eventID, idempotencyHash string) error
 }
 
+const (
+	PressureStateAvailable   = "available"
+	PressureStateDisabled    = "disabled"
+	PressureStateUnavailable = "unavailable"
+)
+
+type PressureSnapshot struct {
+	State       string
+	ActiveCount int
+}
+
+type PressureReader interface {
+	PressureSnapshot(ctx context.Context, eventID string) (PressureSnapshot, error)
+	PressureSnapshots(ctx context.Context, eventIDs []string) (map[string]PressureSnapshot, error)
+}
+
 // NoopGate is the disabled gate. Reserve always returns OutcomeGranted so the
 // caller falls through to the Phase 1 DB-only path.
 type NoopGate struct{}
@@ -61,6 +77,22 @@ func (NoopGate) Reserve(_ context.Context, _, _, _ string, _ CapacityProbe) (Hol
 
 func (NoopGate) Confirm(_ context.Context, _, _ string) error { return nil }
 func (NoopGate) Release(_ context.Context, _, _ string) error { return nil }
+
+func (NoopGate) PressureSnapshot(context.Context, string) (PressureSnapshot, error) {
+	return PressureSnapshot{State: PressureStateDisabled}, nil
+}
+
+func (NoopGate) PressureSnapshots(_ context.Context, eventIDs []string) (map[string]PressureSnapshot, error) {
+	return disabledPressureSnapshots(eventIDs), nil
+}
+
+func disabledPressureSnapshots(eventIDs []string) map[string]PressureSnapshot {
+	snapshots := make(map[string]PressureSnapshot, len(eventIDs))
+	for _, eventID := range eventIDs {
+		snapshots[eventID] = PressureSnapshot{State: PressureStateDisabled}
+	}
+	return snapshots
+}
 
 // ErrUnavailable is returned when the gate is configured to fail closed and
 // Redis is unreachable, times out, or returns misconfigured.

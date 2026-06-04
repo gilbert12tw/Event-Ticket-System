@@ -9,8 +9,13 @@ type CapacityPressure struct {
 type CapacityPressureRow struct {
 	EventID                 string `json:"event_id"`
 	CapacityType            string `json:"capacity_type"`
+	ConfirmedCount          int    `json:"confirmed_count"`
+	WaitlistCount           int    `json:"waitlist_count"`
+	ReceivedCount           int    `json:"received_count"`
 	RemainingCapacity       *int   `json:"remaining_capacity"`
 	ReservationCount        int    `json:"reservation_count"`
+	ReservationState        string `json:"reservation_state"`
+	RejectedPerMin          *int   `json:"rejected_per_min"`
 	RateLimitDropPerMin     *int   `json:"rate_limit_drop_per_min"`
 	IdempotencyReplayPerMin *int   `json:"idempotency_replay_per_min"`
 }
