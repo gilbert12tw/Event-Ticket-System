@@ -3,7 +3,6 @@ import { navigate, ticketDetailPath } from "@/app/routes";
 import {
   bookEvent,
   cancelMyRegistration,
-  eventPosterBlob,
   getEvent,
   listEvents,
 } from "@/lib/api";
@@ -40,6 +39,7 @@ import {
   attendeeActionState,
   canSubmitAttendeeAction,
 } from "./employee-event-state";
+import { EmployeeEventDetailHero } from "./employee-calendar-components";
 
 type PendingAction = "book" | "cancel" | "";
 
@@ -168,63 +168,21 @@ export function EmployeeEventDetailPage({
 
   const visibleBookingResult = bookingResult || bookingResultRef.current;
 
-  return (
-    <section className="content-grid">
-      {detail && (
-        <Card className="panel span-8 event-intro-panel">
-          <EventIntroPanel event={detail} />
-        </Card>
-      )}
-      <Card className="panel span-4 event-primary-action-panel">
-        <h2>主要操作</h2>
-        {detail && (
-          <p className="form-hint event-action-context">{detail.title}</p>
-        )}
-        {!detail && (
+  if (!detail) {
+    return (
+      <section className="content-grid">
+        <Card className="panel span-12 employee-event-missing">
           <EmptyState
-            title="尚未選擇活動"
-            action="選擇活動後會顯示報名與取消控制。"
+            title={busy ? "載入活動中" : "找不到活動"}
+            action={
+              busy
+                ? "正在載入活動資料。"
+                : "回到活動首頁，從行事曆選擇你想看的活動。"
+            }
           />
-        )}
-        {detail && (
-          <div className="summary-block event-action-rail">
-            <DetailActionControls
-              claims={claims}
-              detail={detail}
-              familyCount={familyCount}
-              pendingAction={pendingAction}
-              onBook={() => void bookSelected()}
-              onFamilyCountChange={setFamilyCount}
-              suppressActiveTicketLink={Boolean(visibleBookingResult?.ticketID)}
-            />
-            <CancellationControl
-              busy={pendingAction === "cancel"}
-              event={detail}
-              reason={cancelReason}
-              onCancel={() => void cancelSelected()}
-              onReasonChange={setCancelReason}
-            />
-            <BookingResultBlock
-              eventID={detail.event_id}
-              result={visibleBookingResult || undefined}
-            />
-            {detail.current_user_ticket?.status === "active" &&
-              !visibleBookingResult?.ticketID && (
-                <TicketHandoff ticket={detail.current_user_ticket} />
-              )}
-          </div>
-        )}
-      </Card>
-      <Card className="panel span-8 event-detail-check-panel">
-        <div className="section-heading">
-          <div>
-            <h2>報名前檢查</h2>
-            <p>
-              目前頁面只檢查這一個活動；系統送出時仍會重新檢查資格、活動狀態與名額。
-            </p>
-          </div>
-          <div className="toolbar">
-            <Button asChild variant="outline">
+          {message && <Alert tone={messageTone(message)}>{message}</Alert>}
+          {!busy && (
+            <Button asChild>
               <a
                 href="/user/events"
                 onClick={(event) =>
@@ -232,70 +190,90 @@ export function EmployeeEventDetailPage({
                 }
               >
                 <Icon name="calendar" />
-                返回活動列表
+                回活動
               </a>
             </Button>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => void refresh()}
-              disabled={busy || !selectedID}
-            >
-              <Icon name="refresh" />
-              重新整理
-            </Button>
-          </div>
-        </div>
-        {message && <Alert tone={messageTone(message)}>{message}</Alert>}
-        {!detail && (
-          <EmptyState
-            title="尚未選擇活動"
-            action="請選擇活動以檢查報名狀態。"
-          />
-        )}
-        {detail && <EventSummaryBlock event={detail} />}
-      </Card>
-    </section>
-  );
-}
-
-function EventIntroPanel({ event }: Readonly<{ event: EventSummary }>) {
-  const [posterURL, setPosterURL] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    let objectURL = "";
-    void eventPosterBlob(event.event_id)
-      .then((blob) => {
-        if (!active || !blob) return;
-        objectURL = URL.createObjectURL(blob);
-        setPosterURL(objectURL);
-      })
-      .catch(() => {
-        if (active) setPosterURL("");
-      });
-    return () => {
-      active = false;
-      if (objectURL) URL.revokeObjectURL(objectURL);
-    };
-  }, [event.event_id]);
+          )}
+        </Card>
+      </section>
+    );
+  }
 
   return (
-    <div className="event-intro">
-      <div>
-        <h2>活動介紹</h2>
-        <p>{event.description || "未提供活動介紹。"}</p>
-      </div>
-      {posterURL && (
-        <div className="event-poster-frame">
-          <img
-            alt={`${event.title} 海報`}
-            className="event-poster-image"
-            src={posterURL}
+    <section className="content-grid event-detail-app">
+      <Card className="panel span-8 employee-event-hero-panel">
+        <EmployeeEventDetailHero event={detail} now={new Date()} />
+      </Card>
+      <Card className="panel span-4 event-primary-action-panel employee-event-detail-action-panel">
+        <h2>主要操作</h2>
+        <p className="form-hint event-action-context">{detail.title}</p>
+        <div className="summary-block event-action-rail event-detail-action-bar">
+          <DetailActionControls
+            claims={claims}
+            detail={detail}
+            familyCount={familyCount}
+            pendingAction={pendingAction}
+            onBook={() => void bookSelected()}
+            onFamilyCountChange={setFamilyCount}
+            suppressActiveTicketLink={Boolean(visibleBookingResult?.ticketID)}
           />
+          <CancellationControl
+            busy={pendingAction === "cancel"}
+            event={detail}
+            reason={cancelReason}
+            onCancel={() => void cancelSelected()}
+            onReasonChange={setCancelReason}
+          />
+          <BookingResultBlock
+            eventID={detail.event_id}
+            result={visibleBookingResult || undefined}
+          />
+          {detail.current_user_ticket?.status === "active" &&
+            !visibleBookingResult?.ticketID && (
+              <TicketHandoff ticket={detail.current_user_ticket} />
+            )}
         </div>
-      )}
-    </div>
+      </Card>
+      <Card className="panel span-12 event-detail-check-panel">
+        {message && <Alert tone={messageTone(message)}>{message}</Alert>}
+        <details className="event-readiness-details">
+          <summary>
+            <span>
+              <strong>報名前系統檢查</strong>
+              <small>{detailReadinessCopy(detail)}</small>
+            </span>
+          </summary>
+          <div className="event-readiness-body">
+            <p className="form-hint">
+              送出時系統仍會重新檢查資格、活動狀態與名額。
+            </p>
+            <EventSummaryBlock compact event={detail} />
+            <div className="toolbar">
+              <Button asChild variant="outline">
+                <a
+                  href="/user/events"
+                  onClick={(event) =>
+                    runClientNavigation(event, () => navigate("/user/events"))
+                  }
+                >
+                  <Icon name="calendar" />
+                  回活動
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => void refresh()}
+                disabled={busy || !selectedID}
+              >
+                <Icon name="refresh" />
+                重新整理
+              </Button>
+            </div>
+          </div>
+        </details>
+      </Card>
+    </section>
   );
 }
 
@@ -387,6 +365,22 @@ function DetailActionControls({
       )}
     </>
   );
+}
+
+function detailReadinessCopy(event: EventSummary) {
+  if (event.current_user_ticket?.status === "active") {
+    return "你已完成報名，可以查看票券。";
+  }
+  if (event.current_user_status === "confirmed") {
+    return "你已完成報名，票券核發後會出現在我的票券。";
+  }
+  if (event.current_user_status === "waitlisted") {
+    return "你已在候補名單中。";
+  }
+  if (canSubmitAttendeeAction(event)) {
+    return "你符合資格，可以報名。";
+  }
+  return "目前不能報名，展開查看原因。";
 }
 
 function TicketHandoff({ ticket }: Readonly<{ ticket: Ticket }>) {

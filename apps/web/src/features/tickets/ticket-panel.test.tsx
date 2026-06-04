@@ -53,12 +53,14 @@ describe("TicketPanel", () => {
     expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
   });
 
-  it("supports compact rendering for narrow event detail panels", () => {
+  it("keeps compact ticket panels focused on entry details", () => {
     const ticket: Ticket = {
       ticket_id: "tic_1234567890abcdef1234567890abcdef",
       registration_id: "R-1",
       event_id: "evt_1234567890abcdef1234567890abcdef",
       employee_id: "E1001",
+      event_location: "Taipei HQ",
+      event_starts_at: "2026-05-06T10:00:00Z",
       status: "active",
       signed_token: "signed-secret",
       issued_at: "2026-05-06T10:00:00Z",
@@ -70,12 +72,15 @@ describe("TicketPanel", () => {
     expect(
       container.querySelector(".ticket-panel.compact"),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("evt_1234567890abcdef1234567890abcdef"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("tic_1234567890abcdef1234567890abcdef"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("活動票券")).toBeInTheDocument();
+    expect(screen.getByText("地點")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(
+      "evt_1234567890abcdef1234567890abcdef",
+    );
+    expect(container).not.toHaveTextContent(
+      "tic_1234567890abcdef1234567890abcdef",
+    );
+    expect(container).not.toHaveTextContent("E1001");
   });
 
   it("renders unavailable tickets as a single non-QR state without repeated copy", () => {

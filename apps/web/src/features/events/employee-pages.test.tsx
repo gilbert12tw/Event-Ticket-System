@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type Ticket,
   bookEvent,
-  cancelMyRegistration,
+  eventPosterBlob,
   listEvents,
   listTickets,
 } from "@/lib/api";
@@ -21,7 +21,7 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     bookEvent: vi.fn(),
-    cancelMyRegistration: vi.fn(),
+    eventPosterBlob: vi.fn(),
     getEvent: vi.fn(),
     listEvents: vi.fn(),
     listTickets: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock("@/lib/api", async () => {
 const mockListEvents = vi.mocked(listEvents);
 const mockListTickets = vi.mocked(listTickets);
 const mockBookEvent = vi.mocked(bookEvent);
-const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
+const mockEventPosterBlob = vi.mocked(eventPosterBlob);
 
 type EventOverrides = Parameters<typeof eventFixture>[0];
 
@@ -41,17 +41,44 @@ function ticket(
 ): Ticket {
   return {
     employee_id: "E1001",
-    event_id: "evt-1",
-    issued_at: "2026-05-06T10:00:00Z",
+    event_id: "evt-current",
+    event_location: "Taipei HQ",
+    event_starts_at: isoFromNowHours(-1),
+    event_title: "現在入場活動",
+    expires_at: isoFromNowHours(4),
+    issued_at: isoFromNowHours(-2),
     non_transferable: true,
     registration_id,
+    signed_token: "signed-secret",
     status: "active",
     ticket_id,
   };
 }
 
 function showEvents(...events: EventOverrides[]) {
-  mockListEvents.mockResolvedValue(events.map((event) => eventFixture(event)));
+  mockListEvents.mockResolvedValue(
+    events.map((event) =>
+      eventFixture({
+        registration_close: isoOnDay(30, 23),
+        registration_start: isoOnDay(-7, 9),
+        starts_at: isoOnDay(0, 10),
+        ...event,
+      }),
+    ),
+  );
+}
+
+function isoOnDay(dayOffset: number, hour: number) {
+  const date = new Date();
+  date.setHours(hour, 0, 0, 0);
+  date.setDate(date.getDate() + dayOffset);
+  return date.toISOString();
+}
+
+function isoFromNowHours(hourOffset: number) {
+  const date = new Date();
+  date.setHours(date.getHours() + hourOffset, 0, 0, 0);
+  return date.toISOString();
 }
 
 describe("EmployeeEventsPage", () => {
@@ -60,170 +87,189 @@ describe("EmployeeEventsPage", () => {
     mockListTickets.mockReset();
     mockListTickets.mockResolvedValue([]);
     mockBookEvent.mockReset();
-    mockCancelMyRegistration.mockReset();
+    mockEventPosterBlob.mockReset();
+    mockEventPosterBlob.mockResolvedValue(null);
     window.history.replaceState({}, "", "/user/events");
   });
 
-  it("renders a compact formal event list without debug identity panels", async () => {
+  it("renders a calendar-first employee home without technical IDs", async () => {
     showEvents(
       {
-        event_id: "evt-limited",
-        title: "限量活動",
-        capacity_type: "limited",
-        capacity: 5,
-        remaining_capacity: 3,
         current_user_status: "cancelled",
+        event_id: "evt-cancelled",
+        title: "已取消活動",
       },
       {
-        event_id: "evt-unlimited",
-        title: "不限量活動",
-        capacity_type: "unlimited",
         capacity: null,
+        capacity_type: "unlimited",
+        description: "一起參加公司家庭日與交流活動。",
+        event_id: "evt-unlimited",
         remaining_capacity: null,
-        allows_family: true,
+        title: "不限量活動",
+      },
+    );
+
+    const { container } = render(<EmployeeEventsPage claims={claims} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "活動首頁" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本週活動" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "今日活動" })).toBeInTheDocument();
+    expect(await screen.findByText("不限量活動")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "報名活動" })).toBeInTheDocument();
+    expect(screen.queryByText("活動列表")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /可報名/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("資格規則")).not.toBeInTheDocument();
+    expect(screen.queryByText("已取消活動")).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent("evt-unlimited");
+    expect(container).not.toHaveTextContent("E1001");
+  });
+
+  it("shows a clear empty state without zero-stat tabs", async () => {
+    showEvents();
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /可報名 0/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("我的報名 0")).not.toBeInTheDocument();
+  });
+
+  it("hides cancelled and ineligible rows from the main agenda", async () => {
+    showEvents(
+      {
+        current_user_status: "cancelled",
+        event_id: "evt-cancelled",
+        title: "已取消活動",
+      },
+      {
+        eligibility: {
+          can_book: false,
+          eligible: false,
+          event_id: "evt-ineligible",
+          no_show_cooldown: { active: false },
+          reasons: ["department does not match"],
+          warnings: [],
+        },
+        event_id: "evt-ineligible",
+        title: "不適合你的活動",
       },
     );
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText("活動列表")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "可報名 1" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "我的報名 0" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "不可報名 1" })).toBeInTheDocument();
-    expect(screen.getAllByText("符合資格").length).toBeGreaterThan(0);
-    expect(screen.queryByText("員工入口")).not.toBeInTheDocument();
-    expect(screen.queryByText("身分宣告")).not.toBeInTheDocument();
-    expect(screen.queryByText("資格規則")).not.toBeInTheDocument();
-    expect(screen.queryByText("已取消")).not.toBeInTheDocument();
-    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
-  });
-
-  it("blocks cancelled registrations from appearing as bookable actions", async () => {
-    showEvents({
-      current_user_status: "cancelled",
-      event_id: "evt-cancelled",
-      title: "已取消活動",
-    });
-
-    render(<EmployeeEventsPage claims={claims} />);
-
-    await userEvent.click(
-      await screen.findByRole("tab", { name: "不可報名 1" }),
-    );
-
-    const cancelledAction = await screen.findByRole("button", {
-      name: /已取消/,
-    });
-    expect(cancelledAction).toBeDisabled();
-
-    await userEvent.click(cancelledAction);
-
+    expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
+    expect(screen.queryByText("已取消活動")).not.toBeInTheDocument();
+    expect(screen.queryByText("不適合你的活動")).not.toBeInTheDocument();
+    expect(screen.queryByText(/department does not match/)).not.toBeInTheDocument();
     expect(mockBookEvent).not.toHaveBeenCalled();
   });
 
-  it("shows cooldown feedback and disables self-cancel after registration close", async () => {
-    showEvents({
-      current_user_registration_id: "reg-closed",
-      current_user_status: "confirmed",
-      event_id: "evt-cooldown",
-      no_show_cooldown: {
-        active: true,
-        applies_to: "limited",
-        until: "2026-08-01T00:00:00Z",
-        reason: "no_show_cooldown",
+  it("prioritizes registered events and keeps cancellation out of the home page", async () => {
+    showEvents(
+      {
+        event_id: "evt-bookable",
+        starts_at: isoOnDay(0, 11),
+        title: "開放報名活動",
       },
-      registration_close: "2020-01-01T00:00:00Z",
-      title: "冷卻期活動",
-      eligibility: {
-        event_id: "evt-cooldown",
-        eligible: true,
-        can_book: false,
-        reasons: [],
-        warnings: [],
-        no_show_cooldown: {
-          active: true,
-          until: "2026-08-01T00:00:00Z",
-          reason: "no_show_cooldown",
-        },
+      {
+        current_user_registration_id: "R-registered",
+        current_user_status: "confirmed",
+        event_id: "evt-registered",
+        starts_at: isoOnDay(0, 12),
+        title: "已報名活動",
       },
-    });
+    );
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    await userEvent.click(
-      await screen.findByRole("tab", { name: "我的報名 1" }),
-    );
-    expect(
-      await screen.findByText(/限量活動因缺席冷卻期暫停報名/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /已報名/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "取消報名" })).toBeDisabled();
-    expect(screen.getByText(/自助取消已關閉/)).toBeInTheDocument();
+    expect(await screen.findByText("我的報名")).toBeInTheDocument();
+    const titles = await screen.findAllByRole("heading", { level: 3 });
+    expect(titles.map((title) => title.textContent)).toEqual([
+      "已報名活動",
+      "開放報名活動",
+      "已報名活動",
+    ]);
+    expect(screen.queryByRole("button", { name: "取消報名" })).not.toBeInTheDocument();
   });
 
-  it("renders cross-city warning and keeps booking link enabled when can_book=true", async () => {
+  it("keeps cross-city warnings out of the main card while allowing detail handoff", async () => {
     showEvents({
-      event_id: "evt-crosscity",
-      title: "Hsinchu Event",
-      event_city: "Hsinchu",
       eligibility: {
-        event_id: "evt-crosscity",
-        eligible: true,
         can_book: true,
+        eligible: true,
+        event_id: "evt-crosscity",
+        no_show_cooldown: { active: false },
         reasons: [],
         warnings: [
           {
             code: "cross_city",
-            message:
-              "This event is in Hsinchu; your registered city is Taipei.",
             employee_city: "Taipei",
             event_city: "Hsinchu",
+            message: "This event is in Hsinchu; your city is Taipei.",
           },
         ],
-        no_show_cooldown: { active: false },
       },
+      event_city: "Hsinchu",
+      event_id: "evt-crosscity",
+      title: "Hsinchu Event",
     });
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText(/跨城市活動提醒/)).toBeInTheDocument();
+    expect(await screen.findByText("Hsinchu Event")).toBeInTheDocument();
+    expect(screen.queryByText(/跨城市活動提醒/)).not.toBeInTheDocument();
     expect(
-      await screen.findByText(/此活動位於 Hsinchu，你的登錄城市為 Taipei。/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /立即報名/ })).toBeInTheDocument();
+      screen.queryByText(/This event is in Hsinchu/),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "報名活動" }));
+
+    expect(window.location.pathname).toBe("/user/events/detail");
+    expect(window.location.search).toBe("?event_id=evt-crosscity");
   });
 
-  it("disables booking and shows reason when can_book=false", async () => {
+  it("renders poster fallback when no poster is available", async () => {
     showEvents({
-      event_id: "evt-ineligible",
-      title: "Legal Event",
-      eligibility: {
-        event_id: "evt-ineligible",
-        eligible: false,
-        can_book: false,
-        reasons: ["department does not match"],
-        warnings: [],
-        no_show_cooldown: { active: false },
-      },
+      event_id: "evt-family",
+      title: "家庭日",
     });
 
-    render(<EmployeeEventsPage claims={claims} />);
+    const { container } = render(<EmployeeEventsPage claims={claims} />);
 
-    await userEvent.click(
-      await screen.findByRole("tab", { name: "不可報名 1" }),
-    );
+    expect(await screen.findByText("家庭日")).toBeInTheDocument();
     expect(
-      (await screen.findAllByText(/department does not match/)).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /不符合資格/ })).toBeDisabled();
+      container.querySelector(".employee-event-poster-fallback"),
+    ).toHaveTextContent("家");
+    expect(mockEventPosterBlob).toHaveBeenCalledWith("evt-family");
+  });
+
+  it("shows the current ticket QR without exposing compact ticket IDs", async () => {
+    showEvents({
+      current_user_status: "confirmed",
+      event_id: "evt-current",
+      starts_at: isoFromNowHours(-1),
+      title: "現在入場活動",
+    });
+    mockListTickets.mockResolvedValue([ticket("T-current", "R-current")]);
+
+    const { container } = render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByText("目前活動票券")).toBeInTheDocument();
+    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("T-current");
+    expect(container).not.toHaveTextContent("E1001");
+    expect(container).not.toHaveTextContent("signed-secret");
   });
 
   it("renders event without eligibility object without crashing", async () => {
     showEvents({
-      event_id: "evt-noelig",
-      title: "No Eligibility Event",
+      eligibility: undefined,
       eligible: true,
       eligibility_reason: "eligible",
+      event_id: "evt-noelig",
+      title: "No Eligibility Event",
     });
 
     render(<EmployeeEventsPage claims={claims} />);
@@ -272,71 +318,5 @@ describe("EmployeeEventsPage", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("shows a disabled blocker action for unavailable event rows", async () => {
-    showEvents({
-      eligible: false,
-      eligibility_reason: "department Sales is not eligible",
-      event_id: "evt-blocked",
-      title: "不可報名活動",
-    });
-
-    render(<EmployeeEventsPage claims={claims} />);
-
-    await userEvent.click(
-      await screen.findByRole("tab", { name: "不可報名 1" }),
-    );
-
-    const blockedAction = await screen.findByRole("button", {
-      name: /不符合資格/,
-    });
-    expect(blockedAction).toBeDisabled();
-    expect(blockedAction).toHaveAttribute(
-      "title",
-      expect.stringContaining("不符合資格"),
-    );
-    expect(screen.getByRole("link", { name: "詳情" })).toBeInTheDocument();
-  });
-
-  it("opens event detail from list booking actions instead of submitting", async () => {
-    showEvents({
-      event_id: "evt-open",
-      title: "開放報名活動",
-      remaining_capacity: 2,
-    });
-
-    render(<EmployeeEventsPage claims={claims} />);
-
-    await userEvent.click(
-      await screen.findByRole("link", { name: "立即報名" }),
-    );
-
-    expect(mockBookEvent).not.toHaveBeenCalled();
-    expect(window.location.pathname).toBe("/user/events/detail");
-    expect(window.location.search).toBe("?event_id=evt-open");
-  });
-
-  it("dismisses cancellation confirmation without calling the API", async () => {
-    showEvents({
-      current_user_registration_id: "R-keep",
-      current_user_status: "confirmed",
-      title: "保留報名活動",
-    });
-
-    render(<EmployeeEventsPage claims={claims} />);
-
-    await userEvent.click(
-      await screen.findByRole("tab", { name: "我的報名 1" }),
-    );
-    await userEvent.click(
-      await screen.findByRole("button", { name: "取消報名" }),
-    );
-    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "保留報名" }));
-
-    expect(mockCancelMyRegistration).not.toHaveBeenCalled();
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

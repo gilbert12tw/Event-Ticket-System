@@ -103,6 +103,7 @@ export function Header({
 }>) {
   const item = routes.find((candidate) => candidate.key === route) || routes[0];
   const displayName = session.claims.display_name || session.actor.id;
+  const userWorkspace = item.workspace === "user";
   return (
     <AppPageHeader
       eyebrow={item.eyebrow}
@@ -111,13 +112,15 @@ export function Header({
       session={
         <div className="session-pill" aria-label="目前登入身份">
           <strong>{displayName}</strong>
-          <span>
-            {session.actor.id} · {roleLabel(session.actor.role)}
-          </span>
+            <span>
+              {userWorkspace
+                ? roleLabel(session.actor.role)
+                : `${session.actor.id} · ${roleLabel(session.actor.role)}`}
+            </span>
         </div>
       }
       utilities={
-        debugChromeAvailable && (
+        debugChromeAvailable && !userWorkspace && (
           <DebugToolsSheet
             apiLog={apiLog}
             debugChromeEnabled={debugChromeEnabled}

@@ -239,6 +239,12 @@
     white-space: normal;
   }
 
+  .workspace .employee-calendar-header > [data-slot="button"] {
+    width: 44px;
+    min-width: 44px;
+    flex: 0 0 44px;
+  }
+
   .workspace [data-slot="select-value"] {
     white-space: normal;
   }

@@ -162,7 +162,7 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("selects and switches local mock profiles", async () => {
+  it("selects local mock profiles into the employee app chrome", async () => {
     const session: AuthSession = {
       actor: {
         id: "E1001",
@@ -214,19 +214,10 @@ describe("App", () => {
     await waitFor(() =>
       expect(mockSelectMockProfile).toHaveBeenCalledWith("E1001"),
     );
-    expect(await screen.findByText("活動列表")).toBeInTheDocument();
-
-    const debugButtons = await screen.findAllByRole("button", {
-      name: /Debug/,
-    });
-    await userEvent.click(debugButtons[0]);
-    const switchButtons = await screen.findAllByRole("button", {
-      name: /切換身分/,
-    });
-    await userEvent.click(switchButtons[0]);
-
-    expect(mockClearProviderToken).toHaveBeenCalled();
-    expect(await screen.findByLabelText("本機身分清單")).toBeInTheDocument();
+    expect(await screen.findByText("活動首頁")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Debug/ })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("E1001");
+    expect(mockClearProviderToken).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/user/events");
   });
 

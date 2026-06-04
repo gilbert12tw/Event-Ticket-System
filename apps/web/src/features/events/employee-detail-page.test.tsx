@@ -125,7 +125,7 @@ describe("EmployeeEventDetailPage", () => {
     expect(screen.getByText("取消期限")).toBeInTheDocument();
   });
 
-  it("shows event introduction and poster when available", async () => {
+  it("shows app-style event hero and poster when available", async () => {
     showEvent({
       description: "年度家庭日活動介紹",
     });
@@ -136,13 +136,15 @@ describe("EmployeeEventDetailPage", () => {
     render(<EmployeeEventDetailPage claims={claims} />);
 
     expect(
-      await screen.findByRole("heading", { name: "活動介紹" }),
+      await screen.findByRole("heading", { level: 2, name: "活動" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("年度家庭日活動介紹").length).toBeGreaterThan(0);
     expect(
       await screen.findByRole("img", { name: "活動 海報" }),
     ).toHaveAttribute("src", "blob:poster");
     expect(mockEventPosterBlob).toHaveBeenCalledWith("evt-1");
+    expect(screen.queryByText("活動編號")).not.toBeInTheDocument();
+    expect(screen.queryByText("evt-1")).not.toBeInTheDocument();
   });
 
   it("keeps event detail actions without embedding the ticket QR", async () => {

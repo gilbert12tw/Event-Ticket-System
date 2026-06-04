@@ -1,82 +1,70 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { cancelMyRegistration, listEvents, listTickets } from "@/lib/api";
+import { listEvents, listTickets } from "@/lib/api";
 import type { AuthMeClaims, EventSummary, Ticket } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
-import {
-  Alert,
-  CompactStatsBar,
-  EmptyState,
-  SkeletonRows,
-} from "@/components/shared";
+import { Alert, SkeletonRows } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useUrlTab } from "@/hooks/use-url-tab";
-import {
-  EmployeeEventCard,
-  messageTone,
-  registrationIDFor,
-} from "./employee-event-components";
-import { localizedMessage } from "@/lib/ui/options";
-import { type BookingResultState } from "./employee-booking-result";
-import { canSubmitAttendeeAction } from "./employee-event-state";
+import { messageTone } from "./employee-event-components";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { selectCurrentTicket } from "@/features/tickets/ticket-readiness";
 import { TicketPanel } from "@/features/tickets/ticket-panel";
-
-type TextByEvent = Record<string, string>;
-type EmployeeEventTab = "available" | "registered" | "unavailable";
-const employeeEventTabs = ["available", "registered", "unavailable"] as const;
+import {
+  employeeEventDisplayState,
+  groupEventsByCalendarDay,
+  groupEventsByMonth,
+  localDateKey,
+  selectEmployeeAgenda,
+} from "./employee-calendar";
+import {
+  EmployeeAgenda,
+  EmployeeCalendarStrip,
+  agendaTitle,
+} from "./employee-calendar-components";
 
 export function EmployeeEventsPage({
   claims,
 }: Readonly<{ claims: AuthMeClaims }>) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [pendingActionID, setPendingActionID] = useState("");
-  const [bookingResults, setBookingResults] = useState<
-    Record<string, BookingResultState>
-  >({});
-  const [activeTab, setActiveTab] = useUrlTab<EmployeeEventTab>(
-    "tab",
-    employeeEventTabs,
-    "available",
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selectedDateKey, setSelectedDateKey] = useState(() =>
+    localDateKey(new Date()),
   );
 
   const principalID = claims.employee_id;
-  const eventStats = useMemo(
-    () => ({
-      eligible: events.filter((event) => canSubmitAttendeeAction(event)).length,
-      confirmed: events.filter(
-        (event) => event.current_user_status === "confirmed",
-      ).length,
-      waitlisted: events.filter(
-        (event) => event.current_user_status === "waitlisted",
-      ).length,
-      openSeats: events.reduce(
-        (sum, event) => sum + (event.remaining_capacity ?? 0),
-        0,
+  const now = useMemo(() => new Date(), [events, tickets]);
+  const selectedDate = useMemo(
+    () => new Date(`${selectedDateKey}T00:00:00`),
+    [selectedDateKey],
+  );
+  const weekDays = useMemo(
+    () => groupEventsByCalendarDay(events, now),
+    [events, now],
+  );
+  const monthDays = useMemo(
+    () => groupEventsByMonth(events, selectedDate, now),
+    [events, now, selectedDate],
+  );
+  const agendaEvents = useMemo(
+    () => selectEmployeeAgenda(events, selectedDateKey, tickets, now),
+    [events, selectedDateKey, tickets, now],
+  );
+  const registeredEvents = useMemo(
+    () =>
+      events.filter((event) =>
+        employeeEventDisplayState(
+          event,
+          ticketForEvent(tickets, event.event_id),
+          now,
+        ).isRegistered,
       ),
-    }),
-    [events],
-  );
-  const availableEvents = events.filter((event) =>
-    canSubmitAttendeeAction(event),
-  );
-  const registeredEvents = events.filter(
-    (event) =>
-      event.current_user_status === "confirmed" ||
-      event.current_user_status === "waitlisted",
-  );
-  const unavailableEvents = events.filter(
-    (event) =>
-      !availableEvents.includes(event) && !registeredEvents.includes(event),
+    [events, now, tickets],
   );
   const currentTicket = selectCurrentTicket(tickets);
+
   async function refresh() {
     setLoading(true);
     setMessage("");
@@ -98,43 +86,13 @@ export function EmployeeEventsPage({
     void refresh();
   }, [principalID]);
 
-  async function cancel(event: EventSummary) {
-    const registrationID = registrationIDFor(event);
-    if (!registrationID) return;
-    const reason =
-      (cancelReasons[event.event_id] || "").trim() || "employee cancellation";
-    setMessage("");
-    setPendingActionID(`cancel-${event.event_id}`);
-    try {
-      const result = await cancelMyRegistration(
-        registrationID,
-        reason,
-        `cancel-${registrationID}-${principalID}`,
-      );
-      setMessage(localizedMessage(result.message));
-      setBookingResults((current) => ({
-        ...current,
-        [event.event_id]: {
-          title: "報名已取消",
-          copy: cancellationResultCopy(event),
-          tone: "ok",
-        },
-      }));
-      await refresh();
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setPendingActionID("");
-    }
-  }
-
   return (
     <section className="content-grid">
-      <Card className="panel span-12 focused-tabs event-list-panel">
+      <Card className="panel span-12 employee-events-home">
         <div className="section-heading">
           <div>
-            <h2>活動列表</h2>
-            <p>先看可報名活動；完整資格與容量細節保留在活動詳情。</p>
+            <h2>活動首頁</h2>
+            <p>用行事曆查看最近活動，選一天就能看到適合你的安排。</p>
           </div>
           <Button
             variant="outline"
@@ -146,108 +104,40 @@ export function EmployeeEventsPage({
             重新整理
           </Button>
         </div>
-        <CompactStatsBar
-          items={[
-            { label: "符合資格", value: eventStats.eligible },
-            { label: "已報名", value: eventStats.confirmed },
-            { label: "候補中", value: eventStats.waitlisted },
-            { label: "剩餘名額", value: eventStats.openSeats },
-          ]}
-        />
         {message && <Alert tone={messageTone(message)}>{message}</Alert>}
         {!loading && (
-          <CurrentEventTicketPanel
-            ticket={currentTicket}
-            tickets={tickets}
-            onRefresh={() => void refresh()}
-          />
+          <CurrentEventTicketPanel ticket={currentTicket} onRefresh={refresh} />
         )}
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as EmployeeEventTab)}
-          className="event-tabs"
-        >
-          <TabsList>
-            <TabsTrigger value="available">
-              可報名 {availableEvents.length}
-            </TabsTrigger>
-            <TabsTrigger value="registered">
-              我的報名 {registeredEvents.length}
-            </TabsTrigger>
-            <TabsTrigger value="unavailable">
-              不可報名 {unavailableEvents.length}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="available">
-            <EventListState
-              loading={loading}
-              rows={availableEvents}
-              emptyTitle={
-                events.length === 0 ? "尚無活動" : "目前沒有可報名活動"
-              }
-              emptyAction={
-                events.length === 0
-                  ? "請活動主辦先發布活動。"
-                  : "已報名、候補或不符合資格的活動已移到其他分頁。"
-              }
-              render={(event) => (
-                <EmployeeEventCard
-                  event={event}
-                  key={event.event_id}
-                  mode="available"
-                />
-              )}
+        {loading ? (
+          <SkeletonRows rows={3} />
+        ) : (
+          <>
+            <EmployeeCalendarStrip
+              days={weekDays}
+              monthDays={monthDays}
+              monthOpen={calendarOpen}
+              selectedDateKey={selectedDateKey}
+              onSelectDate={setSelectedDateKey}
+              onToggleMonth={() => setCalendarOpen((open) => !open)}
             />
-          </TabsContent>
-          <TabsContent value="registered">
-            <EventListState
-              loading={loading}
-              rows={registeredEvents}
-              emptyTitle="尚無報名紀錄"
-              emptyAction="完成報名或加入候補後，會出現在這裡。"
-              render={(event) => (
-                <EmployeeEventCard
-                  cancelReason={cancelReasons[event.event_id] || ""}
-                  event={event}
-                  key={event.event_id}
-                  mode="registered"
-                  onCancel={() => void cancel(event)}
-                  cancelBusy={pendingActionID === `cancel-${event.event_id}`}
-                  onCancelReasonChange={(value) =>
-                    setCancelReasons((current) => ({
-                      ...current,
-                      [event.event_id]: value,
-                    }))
-                  }
-                  result={
-                    bookingResults[event.event_id] && (
-                      <output
-                        className={`booking-result ${bookingResults[event.event_id].tone}`}
-                      >
-                        <p>{bookingResults[event.event_id].copy}</p>
-                      </output>
-                    )
-                  }
-                />
-              )}
+            <EmployeeAgenda
+              events={agendaEvents}
+              now={now}
+              tickets={tickets}
+              title={agendaTitle(selectedDateKey, now)}
             />
-          </TabsContent>
-          <TabsContent value="unavailable">
-            <EventListState
-              loading={loading}
-              rows={unavailableEvents}
-              emptyTitle="沒有不可報名活動"
-              emptyAction="目前所有活動都可報名，或已在我的報名中。"
-              render={(event) => (
-                <EmployeeEventCard
-                  event={event}
-                  key={event.event_id}
-                  mode="unavailable"
-                />
-              )}
-            />
-          </TabsContent>
-        </Tabs>
+            {registeredEvents.length > 0 && (
+              <EmployeeAgenda
+                emptyAction=""
+                emptyTitle=""
+                events={registeredEvents}
+                now={now}
+                tickets={tickets}
+                title="我的報名"
+              />
+            )}
+          </>
+        )}
       </Card>
     </section>
   );
@@ -256,11 +146,9 @@ export function EmployeeEventsPage({
 function CurrentEventTicketPanel({
   onRefresh,
   ticket,
-  tickets,
 }: Readonly<{
   onRefresh: () => void;
   ticket?: Ticket;
-  tickets: Ticket[];
 }>) {
   if (ticket) {
     return (
@@ -275,39 +163,9 @@ function CurrentEventTicketPanel({
       </div>
     );
   }
-
-  if (tickets.length === 0) return null;
-  return (
-    <EmptyState
-      title="目前沒有可入場票券"
-      action="已報名票券會保留在我的票券；活動開始後 QR code 會顯示在這裡。"
-    />
-  );
+  return null;
 }
 
-function EventListState({
-  emptyAction,
-  emptyTitle,
-  loading,
-  render,
-  rows,
-}: Readonly<{
-  emptyAction: string;
-  emptyTitle: string;
-  loading: boolean;
-  render: (event: EventSummary) => ReactNode;
-  rows: EventSummary[];
-}>) {
-  if (loading) return <SkeletonRows rows={3} />;
-  if (rows.length === 0) {
-    return <EmptyState title={emptyTitle} action={emptyAction} />;
-  }
-  return <div className="event-list">{rows.map(render)}</div>;
-}
-
-function cancellationResultCopy(event: EventSummary) {
-  const ticketCopy = event.current_user_ticket
-    ? "已核發票券會同步失效。"
-    : "目前沒有已核發票券。";
-  return `報名已取消。${ticketCopy}名額與候補可能更新；若需恢復或重新報名，請聯絡活動主辦。`;
+function ticketForEvent(tickets: Ticket[], eventID: string) {
+  return tickets.find((ticket) => ticket.event_id === eventID);
 }

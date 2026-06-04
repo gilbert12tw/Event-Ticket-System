@@ -1,0 +1,318 @@
+.employee-events-home {
+  display: grid;
+  gap: 16px;
+}
+
+.employee-calendar {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.employee-calendar-header,
+.employee-section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.employee-calendar-header h2,
+.employee-section-title h2 {
+  margin: 0;
+}
+
+.employee-calendar-header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.employee-week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(44px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.employee-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(44px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.employee-calendar-day {
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  gap: 3px;
+  align-content: center;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--ink);
+  text-align: center;
+  touch-action: manipulation;
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.employee-calendar-day:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+
+.employee-calendar-day:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.employee-calendar-day.selected {
+  border-color: var(--accent-line);
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.employee-calendar-day.today strong {
+  color: var(--accent);
+}
+
+.employee-calendar-day.muted {
+  opacity: 0.58;
+}
+
+.employee-calendar-day.month {
+  min-height: 58px;
+}
+
+.employee-calendar-day span,
+.employee-calendar-day small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.employee-calendar-day strong {
+  font-size: 1.06rem;
+  line-height: 1.1;
+}
+
+.employee-agenda {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.employee-event-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 360px));
+  gap: 12px;
+  justify-content: start;
+  min-width: 0;
+}
+
+.employee-event-card {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.employee-event-poster {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--accent-wash), var(--surface-inset));
+}
+
+.employee-event-poster.hero {
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.employee-event-poster img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.employee-event-poster-fallback {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 1.45rem;
+  font-weight: 820;
+}
+
+.employee-event-card-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.employee-event-card-main {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.employee-event-card h3,
+.employee-event-detail-copy h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.employee-event-meta,
+.employee-event-description,
+.employee-event-detail-copy p {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.employee-event-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.employee-event-primary-action {
+  width: 100%;
+  min-height: 44px;
+}
+
+.employee-event-detail-hero {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.employee-event-detail-copy {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.employee-event-detail-copy p {
+  max-width: 72ch;
+}
+
+.employee-event-hero-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.employee-event-detail-action-panel {
+  position: sticky;
+  top: 14px;
+}
+
+.event-detail-action-bar {
+  display: grid;
+}
+
+.event-detail-action-bar [data-slot="button"] {
+  width: 100%;
+  min-height: 44px;
+}
+
+.event-readiness-details {
+  display: grid;
+  min-width: 0;
+}
+
+.event-readiness-details summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 760;
+}
+
+.event-readiness-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 12px;
+}
+
+.employee-event-missing {
+  max-width: 720px;
+}
+
+@media (max-width: 760px) {
+  .employee-calendar-header,
+  .employee-section-title {
+    align-items: stretch;
+  }
+
+  .employee-week-strip {
+    overflow-x: auto;
+    grid-template-columns: repeat(7, minmax(64px, 1fr));
+    padding-bottom: 2px;
+    overscroll-behavior-inline: contain;
+  }
+
+  .employee-month-grid {
+    grid-template-columns: repeat(7, minmax(44px, 1fr));
+    gap: 6px;
+  }
+
+  .employee-calendar-day {
+    min-height: 68px;
+  }
+
+  .employee-calendar-day.month {
+    min-height: 52px;
+    padding: 6px 4px;
+  }
+
+  .employee-calendar-day.month small {
+    display: none;
+  }
+
+  .employee-event-card-list {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-event-poster:not(.hero) {
+    aspect-ratio: 16 / 7;
+  }
+
+  .employee-event-detail-action-panel {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    top: auto;
+    margin-right: -14px;
+    margin-left: -14px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+
+  .event-detail-app .employee-event-detail-action-panel {
+    order: 2;
+  }
+
+  .event-detail-app .event-detail-check-panel {
+    order: 3;
+  }
+}

@@ -45,7 +45,7 @@ export function TicketPanel({
     <div className={panelClassName}>
       <div className="ticket-detail">
         <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
-        <h2>{ticket.event_title || ticket.event_id}</h2>
+        <h2>{ticket.event_title || (compact ? "活動票券" : ticket.event_id)}</h2>
         <div className="helper-strip">
           <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
           <span>{readiness.copy}</span>
@@ -73,7 +73,10 @@ export function TicketPanel({
             </div>
           </>
         )}
-        <MetaList className="ticket-meta-list" rows={ticketMetaRows(ticket)} />
+        <MetaList
+          className="ticket-meta-list"
+          rows={compact ? compactTicketMetaRows(ticket) : ticketMetaRows(ticket)}
+        />
         <Button asChild variant="outline">
           <a
             href={eventDetailHref}
@@ -121,4 +124,18 @@ function ticketMetaRows(ticket: Ticket): Array<[string, ReactNode]> {
   if (ticket.expires_at) rows.push(["有效期限", formatDate(ticket.expires_at)]);
   if (ticket.revoked_reason) rows.push(["撤銷原因", ticket.revoked_reason]);
   return rows;
+}
+
+function compactTicketMetaRows(ticket: Ticket): Array<[string, ReactNode]> {
+  return [
+    ["地點", siteLabel(ticket.event_location)],
+    ["開始時間", formatDate(ticket.event_starts_at)],
+    [
+      "同行人數",
+      <>
+        {ticket.family_count ?? 0} 人
+        <span className="table-muted">入場時核對人數。</span>
+      </>,
+    ],
+  ];
 }

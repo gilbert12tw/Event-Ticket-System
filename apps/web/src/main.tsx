@@ -9,6 +9,7 @@ import "./css/shell.css";
 import "./css/layout.css";
 import "./css/forms-navigation.css";
 import "./css/events.css";
+import "./css/employee-events.css";
 import "./css/status-data.css";
 import "./css/ops.css";
 import "./css/tickets-checkin.css";
