@@ -100,7 +100,7 @@ function posterInitial(title: string) {
 function posterCoverTone(eventID: string, title: string) {
   const seed = `${eventID}:${title}`;
   const total = Array.from(seed).reduce(
-    (sum, char) => sum + char.charCodeAt(0),
+    (sum, char) => sum + (char.codePointAt(0) ?? 0),
     0,
   );
   return ["accent", "info", "success", "warn"][total % 4];

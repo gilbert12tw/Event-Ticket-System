@@ -15,4 +15,6 @@ FROM public.ecr.aws/docker/library/nginx:1.29-alpine
 
 COPY apps/web/nginx.phase3.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /src/services/api/internal/httpapi/static /usr/share/nginx/html
+RUN chown -R nginx:nginx /etc/nginx/conf.d /usr/share/nginx/html /var/cache/nginx /var/log/nginx /var/run
+USER nginx
 EXPOSE 8080

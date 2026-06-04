@@ -23,7 +23,7 @@ spec:
               app: frontend
       containers:
         - name: frontend
-          image: cets-frontend
+          image: cets-frontend:v0.0.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

@@ -13,9 +13,9 @@ import (
 )
 
 func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
+	envExample, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 	combined := string(compose) + "\n" + string(envExample)
 
@@ -215,7 +215,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	composeText := string(compose)
 
@@ -237,7 +237,7 @@ func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
 }
 
 func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	prometheus, err := os.ReadFile("observability/prometheus.yml")
 	require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
 }
 
 func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	composeText := string(compose)
 

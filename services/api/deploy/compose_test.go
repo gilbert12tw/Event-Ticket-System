@@ -10,9 +10,9 @@ import (
 )
 
 func TestComposeAppPortBindingInvariant(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
+	envExample, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 
 	composeText := string(compose)
@@ -25,9 +25,9 @@ func TestComposeAppPortBindingInvariant(t *testing.T) {
 }
 
 func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
+	envExample, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 	combined := string(compose) + "\n" + string(envExample)
 
@@ -83,7 +83,7 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 }
 
 func TestComposeDBResetIsManualAdminOneOff(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	composeText := string(compose)
 
@@ -98,8 +98,8 @@ func TestComposeDBResetIsManualAdminOneOff(t *testing.T) {
 
 func TestComposeExternalImagesAreDigestPinned(t *testing.T) {
 	for _, file := range []string{
-		"compose.yaml",
-		"compose.phase3-ha.yaml",
+		composeFile,
+		composePhase3HAFile,
 		"compose.dev.yaml",
 	} {
 		content := readComposeTestFile(t, file)
@@ -118,9 +118,9 @@ func TestComposeExternalImagesAreDigestPinned(t *testing.T) {
 }
 
 func TestComposePassesNoShowPolicyConfig(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
+	envExample, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 
 	composeText := string(compose)
@@ -132,7 +132,7 @@ func TestComposePassesNoShowPolicyConfig(t *testing.T) {
 }
 
 func TestPhase3BackendCanEnableBookingPreadmission(t *testing.T) {
-	compose, err := os.ReadFile("compose.phase3-ha.yaml")
+	compose, err := os.ReadFile(composePhase3HAFile)
 	require.NoError(t, err)
 	composeText := string(compose)
 
@@ -159,7 +159,7 @@ func readComposeTestFile(t *testing.T, path string) string {
 func TestComposeDevOverlayDeclaresFrontendHotReloadContract(t *testing.T) {
 	compose, err := os.ReadFile("compose.dev.yaml")
 	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
+	envExample, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 	viteConfig, err := os.ReadFile("../../../apps/web/vite.config.ts")
 	require.NoError(t, err)

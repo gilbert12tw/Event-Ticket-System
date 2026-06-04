@@ -9,17 +9,20 @@ const videoMode =
 const webServerCommand = isCI
   ? `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`
   : `pnpm exec vite --host 127.0.0.1 --port ${port}`;
-const workerCount = process.env.PLAYWRIGHT_WORKERS
-  ? Number(process.env.PLAYWRIGHT_WORKERS)
-  : isCI
-    ? 4
-    : undefined;
+const workerCount = configuredWorkerCount();
 const viewports = [
   { name: "375", width: 375, height: 812 },
   { name: "768", width: 768, height: 1024 },
   { name: "1024", width: 1024, height: 768 },
   { name: "1440", width: 1440, height: 900 },
 ];
+
+function configuredWorkerCount() {
+  if (process.env.PLAYWRIGHT_WORKERS) {
+    return Number(process.env.PLAYWRIGHT_WORKERS);
+  }
+  return isCI ? 4 : undefined;
+}
 
 export default defineConfig({
   testDir: "./e2e",

@@ -99,14 +99,32 @@ function scrapeMetrics() {
 function assertNonNotificationLag(metrics, requiredWorkerKinds = []) {
   const series = parseOutboxLagBuckets(metrics);
   const backlog = parseOutboxOldestLag(metrics);
+  const observedWorkerKinds = {};
+  const { p95Breaches, maxBreaches } = lagBucketBreaches(series, observedWorkerKinds);
+  const backlogBreaches = lagBacklogBreaches(backlog);
+  const missingEvidence = requiredWorkerKinds.filter((kind) => !observedWorkerKinds[kind]);
+
+  const ok = check(null, {
+    [`non-notification outbox p95 lag <= ${p95MaxSeconds}s`]: () => p95Breaches.length === 0,
+    [`non-notification outbox max lag <= ${maxSeconds}s`]: () => maxBreaches.length === 0,
+    "non-notification backlog age stays bounded": () => backlogBreaches.length === 0,
+    "worker isolation lag evidence is non-empty": () => missingEvidence.length === 0
+  });
+  if (!ok) {
+    exec.test.abort(
+      `non-notification outbox lag breached: p95=[${p95Breaches.join("; ")}] ` +
+        `max=[${maxBreaches.join("; ")}] backlog=[${backlogBreaches.join("; ")}] ` +
+        `missing=[${missingEvidence.join(",")}]`
+    );
+  }
+}
+
+function lagBucketBreaches(series, observedWorkerKinds) {
   const p95Breaches = [];
   const maxBreaches = [];
-  const backlogBreaches = [];
-  const observedWorkerKinds = {};
-
   for (const key of Object.keys(series)) {
     const item = series[key];
-    if (item.workerKind === "notification" || item.workerKind === "unknown") {
+    if (!tracksLagForWorker(item.workerKind)) {
       continue;
     }
     const total = item.buckets["+Inf"] || 0;
@@ -123,8 +141,13 @@ function assertNonNotificationLag(metrics, requiredWorkerKinds = []) {
       maxBreaches.push(`${item.workerKind}/${item.eventType}: ${bucketCount(item.buckets, maxSeconds)}/${total}`);
     }
   }
+  return { p95Breaches, maxBreaches };
+}
+
+function lagBacklogBreaches(backlog) {
+  const backlogBreaches = [];
   for (const item of backlog) {
-    if (item.workerKind === "notification" || item.workerKind === "unknown") {
+    if (!tracksLagForWorker(item.workerKind)) {
       continue;
     }
     if (item.status !== "dead_letter" && item.lagSeconds > p95MaxSeconds) {
@@ -135,21 +158,11 @@ function assertNonNotificationLag(metrics, requiredWorkerKinds = []) {
       backlogBreaches.push(`${item.workerKind}/${item.status}/${item.eventType}: ${item.lagSeconds}s`);
     }
   }
-  const missingEvidence = requiredWorkerKinds.filter((kind) => !observedWorkerKinds[kind]);
+  return backlogBreaches;
+}
 
-  const ok = check(null, {
-    [`non-notification outbox p95 lag <= ${p95MaxSeconds}s`]: () => p95Breaches.length === 0,
-    [`non-notification outbox max lag <= ${maxSeconds}s`]: () => maxBreaches.length === 0,
-    "non-notification backlog age stays bounded": () => backlogBreaches.length === 0,
-    "worker isolation lag evidence is non-empty": () => missingEvidence.length === 0
-  });
-  if (!ok) {
-    exec.test.abort(
-      `non-notification outbox lag breached: p95=[${p95Breaches.join("; ")}] ` +
-        `max=[${maxBreaches.join("; ")}] backlog=[${backlogBreaches.join("; ")}] ` +
-        `missing=[${missingEvidence.join(",")}]`
-    );
-  }
+function tracksLagForWorker(workerKind) {
+  return workerKind !== "notification" && workerKind !== "unknown";
 }
 
 function waitForNotificationPressure() {
@@ -226,11 +239,16 @@ function parseOutboxOldestLag(metrics) {
 
 function parseLabels(labelText) {
   const labels = {};
-  const pattern = /([a-zA-Z_]+)="([^"]*)"/g;
-  let match = pattern.exec(labelText);
-  while (match !== null) {
-    labels[match[1]] = match[2];
-    match = pattern.exec(labelText);
+  for (const pair of labelText.split(",")) {
+    const separator = pair.indexOf("=");
+    if (separator <= 0) {
+      continue;
+    }
+    const key = pair.slice(0, separator).trim();
+    const rawValue = pair.slice(separator + 1).trim();
+    labels[key] = rawValue.startsWith('"') && rawValue.endsWith('"')
+      ? rawValue.slice(1, -1)
+      : rawValue;
   }
   return labels;
 }
@@ -326,7 +344,7 @@ function providerTokenFor(actorId) {
 function envelopeData(response, label, fallback = null) {
   try {
     const payload = response.json();
-    check(payload, { [`${label} envelope success`]: (body) => body && body.success === true });
+    check(payload, { [`${label} envelope success`]: (body) => body?.success === true });
     return payload.data || fallback;
   } catch {
     check(response, { [`${label} json envelope parsed`]: () => false });
@@ -335,7 +353,7 @@ function envelopeData(response, label, fallback = null) {
 }
 
 function requireValue(value, label) {
-  const ok = check(value, { [label]: (candidate) => Boolean(candidate) });
+  const ok = check(value, { [label]: Boolean });
   if (!ok) {
     exec.test.abort(label);
   }

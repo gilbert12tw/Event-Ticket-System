@@ -41,7 +41,7 @@ func TestPhase2AsyncDeploymentDoesNotDeclareExternalBrokers(t *testing.T) {
 }
 
 func TestWorkerIsolationComposeOverlayDeclaresKindScopedProcesses(t *testing.T) {
-	overlay, err := os.ReadFile("compose.worker-isolation.yaml")
+	overlay, err := os.ReadFile(composeWorkerIsolation)
 	require.NoError(t, err)
 	content := string(overlay)
 
@@ -69,9 +69,9 @@ func TestWorkerIsolationComposeOverlayDeclaresKindScopedProcesses(t *testing.T) 
 }
 
 func TestComposeWorkerHonorsConfiguredShutdownGraceBudget(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
-	env, err := os.ReadFile(".env.example")
+	env, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 
 	assert.Contains(t, string(compose), "stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-45s}")
@@ -84,20 +84,20 @@ func TestActiveDeploymentManifestsStayComposeOnly(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "active K8s manifests must not return while Phase 3 is single-host Compose simulation")
 
 	for _, file := range []string{
-		"compose.yaml",
-		"compose.phase3-ha.yaml",
-		"compose.worker-isolation.yaml",
+		composeFile,
+		composePhase3HAFile,
+		composeWorkerIsolation,
 	} {
 		require.FileExists(t, file)
 	}
 }
 
 func TestLiveGatesUseWorkerIsolationComposeOverlay(t *testing.T) {
-	workflow, err := os.ReadFile("../../../.github/workflows/ci.yml")
+	workflow, err := os.ReadFile(githubCIWorkflowFile)
 	require.NoError(t, err)
 	content := string(workflow)
 
-	assert.Contains(t, content, "compose.worker-isolation.yaml")
+	assert.Contains(t, content, composeWorkerIsolation)
 	assert.Contains(t, content, "--profile worker-isolation")
 	for _, service := range []string{
 		"worker-notification",
@@ -112,7 +112,7 @@ func TestLiveGatesUseWorkerIsolationComposeOverlay(t *testing.T) {
 }
 
 func TestLiveGatesRunWorkerIsolationLagK6Gate(t *testing.T) {
-	workflow, err := os.ReadFile("../../../.github/workflows/ci.yml")
+	workflow, err := os.ReadFile(githubCIWorkflowFile)
 	require.NoError(t, err)
 	detector, err := os.ReadFile("../../../scripts/ci/detect-changes.sh")
 	require.NoError(t, err)
@@ -171,13 +171,14 @@ func TestLiveGatesRunWorkerIsolationLagK6Gate(t *testing.T) {
 	assert.Contains(t, scriptContent, "K6_OUTBOX_P95_MAX_SECONDS")
 	assert.Contains(t, scriptContent, "K6_OUTBOX_MAX_SECONDS")
 	assert.Contains(t, scriptContent, "K6_REQUIRED_WORKER_KINDS")
-	assert.Contains(t, scriptContent, "workerKind === \"notification\"")
+	assert.Contains(t, scriptContent, "tracksLagForWorker(workerKind)")
+	assert.Contains(t, scriptContent, "workerKind !== \"notification\"")
 	assert.Contains(t, scriptContent, "0.95")
 	assert.Contains(t, scriptContent, "exec.test.abort")
 }
 
 func TestSonarCoverageConfigStaysLocalOnly(t *testing.T) {
-	workflow, err := os.ReadFile("../../../.github/workflows/ci.yml")
+	workflow, err := os.ReadFile(githubCIWorkflowFile)
 	require.NoError(t, err)
 	actrc, err := os.ReadFile("../../../.actrc")
 	require.NoError(t, err)

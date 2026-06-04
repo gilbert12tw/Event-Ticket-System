@@ -236,5 +236,5 @@ async function providerTokenFor(request: APIRequestContext, profileID: string) {
 }
 
 function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }

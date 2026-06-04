@@ -4,6 +4,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import {
   admin,
   api,
@@ -32,7 +33,7 @@ test.describe.serial("第一階段實際產品流程", () => {
     request,
   }) => {
     const browserErrors = collectBrowserErrors(page);
-    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const suffix = `${Date.now()}-${randomUUID()}`;
     const event = await createLiveEvent(request, suffix);
 
     await loginThroughUi(page, request, employee.id, "活動探索");
@@ -162,7 +163,7 @@ async function expectEmployeeTicketAndNotifications(
   await page.locator(".ticket-row").filter({ hasText: event.title }).click();
   await expect(page).toHaveURL(
     new RegExp(
-      `/user/tickets\\?ticket_id=${encodeURIComponent(ticket?.ticket_id || "")}$`,
+      String.raw`/user/tickets\?ticket_id=${encodeURIComponent(ticket?.ticket_id || "")}$`,
     ),
   );
   await expect(page.getByLabel("票券二維碼")).toBeVisible();
