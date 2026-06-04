@@ -106,6 +106,46 @@
   background: var(--ink);
 }
 
+.ticket-signature {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.ticket-signature-head {
+  display: grid;
+  gap: 2px;
+}
+
+.ticket-signature-label {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 780;
+}
+
+.ticket-signature-code {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.ticket-signature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .ticket-detail {
   display: grid;
   gap: 12px;
