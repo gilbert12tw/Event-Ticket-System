@@ -1,6 +1,6 @@
 import type {
   ApiEnvelope,
-  ApiLogEntry,
+  AdminHROptions,
   AuditLog,
   AuditLogFilters,
   AuthBootstrap,
@@ -13,6 +13,7 @@ import type {
   DemoClockUpdateRequest,
   EligibilityDecision,
   EligibilityImpactReview,
+  EventAsset,
   EligibilityPreviewRequest,
   EligibilityPreviewResponse,
   EventSummary,
@@ -35,163 +36,31 @@ import type {
   UpdateNotificationPreferencesRequest,
   UpdateEventRequest,
 } from "./contracts";
+import {
+  ApiError,
+  adminEventPath,
+  api,
+  apiList,
+  authHeaders,
+  encoded,
+  eventPath,
+  headersFor,
+  logApi,
+  post,
+  postForm,
+  setProviderToken,
+} from "./http";
 import type { OpsDashboard } from "./ops-contracts";
-import { redact } from "./redaction";
 
 export { employees } from "./demo-data";
-
-type RequestOptions = Omit<RequestInit, "headers" | "body"> & {
-  body?: unknown;
-};
-
-export type ApiObserver = (entry: ApiLogEntry) => void;
-export type ProviderTokenProvider = () => string | null | undefined;
-export type ProviderTokenSnapshot = Readonly<{
-  explicitProviderToken: string | null;
-}>;
-
-let observer: ApiObserver | null = null;
-let apiLogSequence = 0;
-let explicitProviderToken: string | null = null;
-let providerTokenProvider: ProviderTokenProvider = defaultProviderTokenProvider;
-
-export function setApiObserver(next: ApiObserver | null) {
-  observer = next;
-}
-
-export function setProviderToken(token: string | null) {
-  explicitProviderToken = token;
-}
-
-export function captureProviderToken(): ProviderTokenSnapshot {
-  return { explicitProviderToken };
-}
-
-export function restoreProviderToken(snapshot: ProviderTokenSnapshot) {
-  explicitProviderToken = snapshot.explicitProviderToken;
-}
-
-export function setProviderTokenProvider(next: ProviderTokenProvider | null) {
-  providerTokenProvider = next ?? defaultProviderTokenProvider;
-}
-
-export class ApiError extends Error {
-  status: number;
-  response: ApiEnvelope<unknown>;
-
-  constructor(status: number, response: ApiEnvelope<unknown>) {
-    super(response.error || "request failed");
-    this.status = status;
-    this.response = response;
-  }
-}
-
-function headersFor(): HeadersInit {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  const providerToken = currentProviderToken();
-  if (providerToken) {
-    headers.Authorization = `Bearer ${providerToken}`;
-  }
-  return headers;
-}
-
-function defaultProviderTokenProvider() {
-  const token = (
-    globalThis as typeof globalThis & {
-      __CETS_PROVIDER_TOKEN__?: string | null;
-    }
-  ).__CETS_PROVIDER_TOKEN__;
-  return typeof token === "string" ? token : "";
-}
-
-function currentProviderToken() {
-  return (explicitProviderToken ?? providerTokenProvider() ?? "").trim();
-}
-
-async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const method = options.method || "GET";
-  const requestBody = options.body ?? null;
-  try {
-    const response = await fetch(path, {
-      ...options,
-      credentials: "same-origin",
-      headers: headersFor(),
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
-    const contentType = response.headers.get("Content-Type") || "";
-    const envelope = contentType.includes("application/json")
-      ? ((await response.json()) as ApiEnvelope<T>)
-      : ({
-          success: false,
-          data: null as T,
-          error: await response.text(),
-        } satisfies ApiEnvelope<T>);
-
-    logApi(
-      `${method} ${path}`,
-      response.status,
-      response.ok,
-      requestBody,
-      envelope,
-    );
-    if (!response.ok) {
-      throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
-    }
-    return envelope.data;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    logApi(`${method} ${path}`, "ERR", false, requestBody, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-}
-
-async function apiList<T>(path: string, options: RequestOptions = {}) {
-  return (await api<T[] | null>(path, options)) ?? [];
-}
-
-function encoded(value: string) {
-  return encodeURIComponent(value);
-}
-
-function eventPath(eventID: string, suffix = "") {
-  return `/api/v1/events/${encoded(eventID)}${suffix}`;
-}
-
-function adminEventPath(eventID: string, suffix = "") {
-  return `/api/v1/admin/events/${encoded(eventID)}${suffix}`;
-}
-
-function post<T>(path: string, body: unknown = {}) {
-  return api<T>(path, { method: "POST", body });
-}
-
-function nextApiLogID() {
-  apiLogSequence = (apiLogSequence + 1) % Number.MAX_SAFE_INTEGER;
-  return `${Date.now()}-${apiLogSequence}`;
-}
-
-function logApi(
-  label: string,
-  status: number | "ERR",
-  ok: boolean,
-  requestBody: unknown,
-  responseBody: unknown,
-) {
-  observer?.({
-    id: nextApiLogID(),
-    label,
-    status,
-    ok,
-    requestBody: redact(requestBody),
-    responseBody: redact(responseBody),
-    createdAt: new Date().toISOString(),
-  });
-}
+export {
+  ApiError,
+  captureProviderToken,
+  restoreProviderToken,
+  setApiObserver,
+  setProviderToken,
+  setProviderTokenProvider,
+} from "./http";
 
 export function authSessionFromClaims(claims: AuthMeClaims): AuthSession {
   return {
@@ -240,8 +109,54 @@ export function seedDemo() {
   return post<{ status: string }>("/api/v1/admin/seed-demo");
 }
 
+export const adminHROptions = () =>
+  api<AdminHROptions>("/api/v1/admin/hr/options");
+
 export function createEvent(body: CreateEventRequest) {
   return post<EventSummary>("/api/v1/admin/events", body);
+}
+
+export function uploadEventPoster(eventID: string, file: File) {
+  const body = new FormData();
+  body.append("poster", file);
+  return postForm<EventAsset>(
+    `/api/v1/admin/events/${encoded(eventID)}/poster`,
+    body,
+  );
+}
+
+export function eventPosterUrl(eventID: string) {
+  return `/api/v1/events/${encoded(eventID)}/poster`;
+}
+
+export async function eventPosterBlob(eventID: string) {
+  const path = eventPosterUrl(eventID);
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    headers: authHeaders(),
+  });
+  if (response.status === 404) {
+    logApi(`GET ${path}`, response.status, false, null, { poster: "missing" });
+    return null;
+  }
+  if (!response.ok) {
+    const contentType = response.headers.get("Content-Type") || "";
+    const envelope = contentType.includes("application/json")
+      ? ((await response.json()) as ApiEnvelope<unknown>)
+      : ({
+          success: false,
+          data: null,
+          error: await response.text(),
+        } satisfies ApiEnvelope<unknown>);
+    logApi(`GET ${path}`, response.status, false, null, envelope);
+    throw new ApiError(response.status, envelope);
+  }
+  const blob = await response.blob();
+  logApi(`GET ${path}`, response.status, true, null, {
+    poster: true,
+    content_type: response.headers.get("Content-Type") || "",
+  });
+  return blob;
 }
 
 export const listAdminEvents = () =>
@@ -451,6 +366,32 @@ export function getReportExport(exportID: string) {
   return api<ReportExport>(
     `/api/v1/admin/reports/exports/${encoded(exportID)}`,
   );
+}
+
+export async function downloadReportExport(exportID: string) {
+  const path = `/api/v1/admin/reports/exports/${encoded(exportID)}/download`;
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    headers: headersFor(),
+  });
+  if (!response.ok) {
+    const contentType = response.headers.get("Content-Type") || "";
+    const envelope = contentType.includes("application/json")
+      ? ((await response.json()) as ApiEnvelope<unknown>)
+      : ({
+          success: false,
+          data: null,
+          error: await response.text(),
+        } satisfies ApiEnvelope<unknown>);
+    logApi(`GET ${path}`, response.status, false, null, envelope);
+    throw new ApiError(response.status, envelope);
+  }
+  const blob = await response.blob();
+  logApi(`GET ${path}`, response.status, true, null, {
+    download: true,
+    content_type: response.headers.get("Content-Type") || "",
+  });
+  return blob;
 }
 
 export const getOpsDashboard = () =>

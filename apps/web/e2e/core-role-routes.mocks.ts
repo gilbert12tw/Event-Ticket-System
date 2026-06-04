@@ -34,10 +34,15 @@ const get = withMethod("GET");
 const patch = withMethod("PATCH");
 const post = withMethod("POST");
 const put = withMethod("PUT");
+const tinyPosterPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+  "base64",
+);
 
 const eventBookingPath = /^\/api\/v1\/events\/[^/]+\/bookings$/;
 const eventDetailPath = /^\/api\/v1\/events\/[^/]+$/;
 const eventEligibilityPath = /^\/api\/v1\/events\/[^/]+\/eligibility$/;
+const eventPosterPath = /^\/api\/v1\/events\/[^/]+\/poster$/;
 const adminEventDetailPath = /^\/api\/v1\/admin\/events\/[^/]+$/;
 const adminRegistrationPath =
   /^\/api\/v1\/admin\/events\/[^/]+\/registrations$/;
@@ -272,6 +277,14 @@ export async function ensureSessionRoutes(
       return ok(ticket);
     }
 
+    if (eventPosterPath.test(pathName) && method === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        body: tinyPosterPng,
+      });
+    }
+
     const simpleResponse = routeData([
       get("/healthz", () => ({ status: "ok" })),
       get("/readyz", () => ({ status: "ok" })),
@@ -288,6 +301,13 @@ export async function ensureSessionRoutes(
         () => options.bookingResponse ?? defaultBookingResponse(),
       ),
       get("/api/v1/admin/events", () => eventRows),
+      get("/api/v1/admin/hr/options", () => ({
+        sites: [
+          { value: "*", label: "所有廠區" },
+          { value: "Taipei HQ", label: "Taipei HQ" },
+          { value: "Tainan HQ", label: "Tainan HQ" },
+        ],
+      })),
       get(adminEventDetailPath, () => fallbackEventDetail),
       post(/^\/api\/v1\/admin\/events\/[^/]+\/state$/, () => sampleEvent),
       get(adminRegistrationPath, () => [registrationRow()]),

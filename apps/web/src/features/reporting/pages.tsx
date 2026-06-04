@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createReportExport,
+  downloadReportExport,
   getReportExport,
   reports,
   type ReportExport,
@@ -64,7 +65,11 @@ export function HrReportsPage() {
       for (let attempt = 0; attempt < 12; attempt++) {
         const current = await getReportExport(requested.export_id);
         setLastExport(current);
-        if (current.status === "ready" || current.status === "failed") return;
+        if (current.status === "ready") {
+          await downloadReadyExport(current);
+          return;
+        }
+        if (current.status === "failed") return;
         await new Promise((resolve) => globalThis.setTimeout(resolve, 500));
       }
     } catch (error) {
@@ -324,6 +329,18 @@ export function HrReportsPage() {
                   ],
                 ]}
               />
+              {lastExport.status === "ready" && (
+                <div className="toolbar">
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => void downloadReadyExport(lastExport)}
+                  >
+                    <Icon name="download" />
+                    下載 CSV
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <EmptyState
@@ -335,6 +352,18 @@ export function HrReportsPage() {
       </Tabs>
     </section>
   );
+}
+
+async function downloadReadyExport(reportExport: ReportExport) {
+  const blob = await downloadReportExport(reportExport.export_id);
+  const url = globalThis.URL.createObjectURL(blob);
+  const link = globalThis.document.createElement("a");
+  link.href = url;
+  link.download = `${reportExport.export_id}.csv`;
+  globalThis.document.body.append(link);
+  link.click();
+  link.remove();
+  globalThis.URL.revokeObjectURL(url);
 }
 
 function reportPresetMatches(row: ReportRow, preset: string) {

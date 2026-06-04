@@ -114,3 +114,25 @@ func TestS3CompatibleStoreExistsReturnsFalseOnNotFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists)
 }
+
+func TestS3CompatibleStoreGetSignsAndDownloadsObject(t *testing.T) {
+	transport := &recordingRoundTripper{response: "event_id,title\n"}
+	store := S3CompatibleStore{
+		Endpoint:  "http://minio:9000",
+		Bucket:    "cets-dev",
+		Region:    "us-east-1",
+		AccessKey: "minioadmin",
+		SecretKey: "minioadmin_dev_password",
+		Client:    &http.Client{Transport: transport},
+		now:       func() time.Time { return time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC) },
+	}
+
+	body, _, err := store.Get(context.Background(), "exports/report 1.csv")
+
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodGet, transport.request.Method)
+	assert.Equal(t, "/cets-dev/exports/report%201.csv", transport.request.URL.EscapedPath())
+	assert.Contains(t, transport.request.Header.Get("Authorization"), "AWS4-HMAC-SHA256 Credential=minioadmin/20260506/us-east-1/s3/aws4_request")
+	assert.Equal(t, "event_id,title\n", string(body))
+	assert.Empty(t, transport.body)
+}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  adminHROptions,
   archiveEvent,
   changeEventState,
   createEvent,
@@ -8,6 +9,7 @@ import {
   listAdminEvents,
   seedDemo,
   updateEvent,
+  uploadEventPoster,
 } from "@/lib/api";
 import type {
   CreateEventRequest,
@@ -26,7 +28,12 @@ import {
 import { Alert, CompactStatsBar } from "@/components/shared";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
-import { localizedMessage } from "@/lib/ui/options";
+import {
+  eligibilitySiteOptions as fallbackEligibilitySiteOptions,
+  localizedMessage,
+  siteLabel,
+  type Option,
+} from "@/lib/ui/options";
 import {
   AdminEventCreateTab,
   AdminEventEditTab,
@@ -56,6 +63,9 @@ export function AdminEventsPage() {
     initialTab(),
   );
   const [message, setMessage] = useState("");
+  const [hrSiteOptions, setHrSiteOptions] = useState<Option[]>(
+    fallbackEligibilitySiteOptions,
+  );
   const [busy, setBusy] = useState(false);
   const selectedAdminEvent =
     adminEvents.find((event) => event.event_id === selectedEventID) ??
@@ -109,7 +119,25 @@ export function AdminEventsPage() {
 
   useEffect(() => {
     void refreshAdminEvents();
+    void refreshHROptions();
   }, []);
+
+  async function refreshHROptions() {
+    try {
+      const options = await adminHROptions();
+      if (options.sites.length > 0) {
+        setHrSiteOptions(
+          options.sites.map((option) => ({
+            value: option.value,
+            label: option.label || siteLabel(option.value),
+          })),
+        );
+      }
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setHrSiteOptions(fallbackEligibilitySiteOptions);
+    }
+  }
 
   async function refreshAdminEvents(nextSelectedID = selectedEventID) {
     try {
@@ -234,6 +262,21 @@ export function AdminEventsPage() {
     }
   }
 
+  async function uploadSelectedPoster(file: File) {
+    if (!selectedAdminEvent) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await uploadEventPoster(selectedAdminEvent.event_id, file);
+      setMessage("活動海報已更新。");
+      await refreshAdminEvents(selectedAdminEvent.event_id);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="content-grid">
       {message && (
@@ -289,6 +332,8 @@ export function AdminEventsPage() {
               publishChecks={publishChecks}
               zeroAudiencePublishBlocked={zeroAudiencePublishBlocked}
               windowReady={createWindowReady}
+              eventSiteOptions={eventSiteOptions(hrSiteOptions)}
+              eligibilitySiteOptions={hrSiteOptions}
               onFormChange={setForm}
               onReset={() => setForm(defaultEventForm())}
               onSeed={() => void seed()}
@@ -302,8 +347,10 @@ export function AdminEventsPage() {
             busy={busy}
             editForm={editForm}
             selectedEvent={selectedAdminEvent}
+            eventSiteOptions={eventSiteOptions(hrSiteOptions)}
             windowReady={editWindowReady}
             onEditFormChange={setEditForm}
+            onPosterUpload={(file) => void uploadSelectedPoster(file)}
             onSave={saveSelected}
           />
         </TabsContent>
@@ -344,6 +391,7 @@ function createBody(
     description: form.description.trim(),
     location: form.location.trim(),
     event_city: form.event_city.trim() || undefined,
+    event_site: form.event_site.trim() || undefined,
     starts_at: toISO(form.starts_at),
     registration_start: toISO(form.registration_start),
     registration_close: toISO(form.registration_close),
@@ -373,6 +421,7 @@ function updateBody(
     description: editForm.description.trim(),
     location: editForm.location.trim(),
     event_city: editForm.event_city.trim() || undefined,
+    event_site: editForm.event_site.trim() || undefined,
     starts_at: toISO(editForm.starts_at),
     registration_start: toISO(editForm.registration_start),
     registration_close: toISO(editForm.registration_close),
@@ -384,6 +433,13 @@ function updateBody(
     entry_method: editForm.entry_method.trim(),
     visibility: editForm.visibility.trim(),
   };
+}
+
+function eventSiteOptions(siteOptions: Option[]) {
+  return [
+    { value: "", label: "未設定" },
+    ...siteOptions.filter((option) => option.value !== "*"),
+  ];
 }
 
 function initialTab(): AdminEventTab {

@@ -26,8 +26,10 @@ type fakeTicketingService struct {
 	listTicketsEmployeeID string
 	checkinActor          ticketing.Actor
 	checkinErr            error
+	offlinePackageActor   ticketing.Actor
 	offlineSyncActor      ticketing.Actor
 	reportsActor          ticketing.Actor
+	hrOptionsActor        ticketing.Actor
 	auditActor            ticketing.Actor
 	auditQuery            []ticketing.AuditLogQuery
 	queueStatusActor      ticketing.Actor
@@ -40,6 +42,8 @@ type fakeTicketingService struct {
 	notificationOpsQuery  []ticketing.NotificationDeliveryOpsQuery
 	createRequest         ticketing.CreateEventRequest
 	updateRequest         ticketing.UpdateEventRequest
+	reportExport          ticketing.ReportExport
+	posterInput           ticketing.EventAssetInput
 }
 
 func (s *fakeTicketingService) CreateEvent(ctx context.Context, actor ticketing.Actor, req ticketing.CreateEventRequest) (ticketing.EventSummary, error) {
@@ -79,6 +83,15 @@ func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Act
 	s.listEventsActor = actor
 	s.listEventsEmployeeID = employeeID
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
+}
+
+func (s *fakeTicketingService) SaveEventPoster(_ context.Context, _ ticketing.Actor, eventID string, input ticketing.EventAssetInput) (ticketing.EventAsset, error) {
+	s.posterInput = input
+	return ticketing.EventAsset{AssetID: "ast_1", EventID: eventID, ObjectKey: input.ObjectKey, FileName: input.FileName, ContentType: input.ContentType, SizeBytes: input.SizeBytes}, nil
+}
+
+func (s *fakeTicketingService) GetEventPoster(context.Context, ticketing.Actor, string) (ticketing.EventAsset, error) {
+	return ticketing.EventAsset{AssetID: "ast_1", EventID: "evt_1", ObjectKey: "events/evt_1/poster.png", ContentType: "image/png"}, nil
 }
 
 func (s *fakeTicketingService) CheckEligibility(_ context.Context, actor ticketing.Actor, _ string, employeeID string) (ticketing.EligibilityDecision, error) {
@@ -159,7 +172,8 @@ func (s *fakeTicketingService) CheckIn(_ context.Context, actor ticketing.Actor,
 	return ticketing.CheckinResponse{CheckinID: "chk_1", Duplicate: s.checkinErr != nil}, s.checkinErr
 }
 
-func (s *fakeTicketingService) OfflineCheckinPackage(context.Context, ticketing.Actor, string, string) (ticketing.OfflineCheckinPackage, error) {
+func (s *fakeTicketingService) OfflineCheckinPackage(_ context.Context, actor ticketing.Actor, _ string, _ string) (ticketing.OfflineCheckinPackage, error) {
+	s.offlinePackageActor = actor
 	return ticketing.OfflineCheckinPackage{BatchID: "off_1", EventID: "evt_1", PackageSignature: "sig_1", TicketCount: 1}, nil
 }
 
@@ -260,6 +274,9 @@ func (s *fakeTicketingService) CreateReportExport(context.Context, ticketing.Act
 }
 
 func (s *fakeTicketingService) GetReportExport(context.Context, ticketing.Actor, string) (ticketing.ReportExport, error) {
+	if s.reportExport.ExportID != "" {
+		return s.reportExport, nil
+	}
 	return ticketing.ReportExport{ExportID: "exp_1", ReportType: ticketing.ReportExportTypeParticipation, Format: ticketing.ReportExportFormatCSV, Status: "ready", ObjectKey: "exports/exp_1.csv"}, nil
 }
 
@@ -267,6 +284,15 @@ func (s *fakeTicketingService) AuditLogs(_ context.Context, actor ticketing.Acto
 	s.auditActor = actor
 	s.auditQuery = query
 	return []ticketing.AuditLog{{AuditID: "aud_1"}}, nil
+}
+
+func (s *fakeTicketingService) AdminHROptions(_ context.Context, actor ticketing.Actor) (ticketing.AdminHROptions, error) {
+	s.hrOptionsActor = actor
+	return ticketing.AdminHROptions{Sites: []ticketing.AdminOption{
+		{Value: "*", Label: "所有廠區"},
+		{Value: "Taipei HQ", Label: "Taipei HQ"},
+		{Value: "Tainan HQ", Label: "Tainan HQ"},
+	}}, nil
 }
 
 func (s *fakeTicketingService) SeedDemoData(context.Context) error {

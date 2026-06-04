@@ -7,6 +7,8 @@ ROOT = Pathname.new(__dir__).join("..").expand_path
 OPENAPI_ROOT = ROOT.join("docs/openapi.yaml")
 OPENAPI_SOURCE_GLOB = ROOT.join("docs/openapi/**/*.yaml").to_s
 
+require_relative "openapi_contract_helpers"
+
 HTTP_METHODS = %w[get put post delete options head patch trace].freeze
 BANNED_PATHS = [
   "/auth/login",
@@ -20,6 +22,8 @@ ADMIN_EVENT_PATH = "/admin/events/{event_id}"
 CHECKINS_PATH = "/checkins"
 NOTIFICATION_PREFERENCES_PATH = "/notifications/preferences"
 DEBUG_DEMO_CLOCK_PATH = "/debug/demo-clock"
+EVENT_POSTER_PATH = "/events/{event_id}/poster"
+REPORT_EXPORT_DOWNLOAD_PATH = "/admin/reports/exports/{export_id}/download"
 
 EXPECTED_OPERATIONS = {
   "/auth/me" => %w[get],
@@ -28,11 +32,13 @@ EXPECTED_OPERATIONS = {
   ADMIN_EVENTS_PATH => %w[get post],
   "/events" => %w[get],
   "/events/{event_id}" => %w[get],
+  EVENT_POSTER_PATH => %w[get],
   "/events/{event_id}/eligibility" => %w[get],
   "/events/{event_id}/bookings" => %w[post],
   "/me/tickets" => %w[get],
   "/me/registrations/{registration_id}/cancel" => %w[post],
   ADMIN_EVENT_PATH => %w[patch delete],
+  "/admin/events/{event_id}/poster" => %w[post],
   "/admin/events/{event_id}/state" => %w[post],
   "/admin/events/{event_id}/duplicate" => %w[post],
   "/admin/events/{event_id}/eligibility/preview" => %w[post],
@@ -55,6 +61,8 @@ EXPECTED_OPERATIONS = {
   "/admin/reports" => %w[get],
   "/admin/reports/exports" => %w[post],
   "/admin/reports/exports/{export_id}" => %w[get],
+  REPORT_EXPORT_DOWNLOAD_PATH => %w[get],
+  "/admin/hr/options" => %w[get],
   "/admin/audit-logs" => %w[get],
   "/admin/ops/capacity-pressure" => %w[get],
   "/admin/ops/queues" => %w[get],
@@ -67,6 +75,11 @@ PUBLIC_OPERATIONS = [
   ["get", "/auth/bootstrap"]
 ].freeze
 
+BINARY_OPERATIONS = [
+  ["get", EVENT_POSTER_PATH],
+  ["get", REPORT_EXPORT_DOWNLOAD_PATH]
+].freeze
+
 EXPECTED_REQUIRED_ROLES = {
   ["get", "/auth/me"] => %w[employee activity_admin checkin_staff hr_admin system_admin],
   ["get", DEBUG_DEMO_CLOCK_PATH] => %w[activity_admin system_admin],
@@ -75,12 +88,14 @@ EXPECTED_REQUIRED_ROLES = {
   ["post", ADMIN_EVENTS_PATH] => %w[activity_admin],
   ["get", "/events"] => %w[employee],
   ["get", "/events/{event_id}"] => %w[employee],
+  ["get", EVENT_POSTER_PATH] => %w[employee activity_admin checkin_staff hr_admin system_admin],
   ["get", "/events/{event_id}/eligibility"] => %w[employee],
   ["post", "/events/{event_id}/bookings"] => %w[employee],
   ["get", "/me/tickets"] => %w[employee],
   ["post", "/me/registrations/{registration_id}/cancel"] => %w[employee],
   ["patch", ADMIN_EVENT_PATH] => %w[activity_admin],
   ["delete", ADMIN_EVENT_PATH] => %w[activity_admin],
+  ["post", "/admin/events/{event_id}/poster"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/state"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/duplicate"] => %w[activity_admin],
   ["post", "/admin/events/{event_id}/eligibility/preview"] => %w[activity_admin],
@@ -104,6 +119,8 @@ EXPECTED_REQUIRED_ROLES = {
   ["get", "/admin/reports"] => %w[hr_admin system_admin],
   ["post", "/admin/reports/exports"] => %w[hr_admin system_admin],
   ["get", "/admin/reports/exports/{export_id}"] => %w[hr_admin system_admin],
+  ["get", REPORT_EXPORT_DOWNLOAD_PATH] => %w[hr_admin system_admin],
+  ["get", "/admin/hr/options"] => %w[activity_admin hr_admin system_admin],
   ["get", "/admin/audit-logs"] => %w[hr_admin system_admin],
   ["get", "/admin/ops/capacity-pressure"] => %w[activity_admin hr_admin system_admin],
   ["get", "/admin/ops/queues"] => %w[hr_admin system_admin],
@@ -113,116 +130,6 @@ EXPECTED_REQUIRED_ROLES = {
 }.freeze
 
 @documents = {}
-
-def fail_contract(message)
-  warn "OpenAPI contract check failed: #{message}"
-  exit 1
-end
-
-def load_yaml(path)
-  expanded = Pathname.new(path).expand_path
-  @documents[expanded.to_s] ||= YAML.load_file(expanded.to_s) || {}
-rescue Psych::SyntaxError => e
-  fail_contract("Invalid YAML in #{expanded}: #{e.message}")
-end
-
-def pointer_token(token)
-  token.gsub("~1", "/").gsub("~0", "~")
-end
-
-def resolve_pointer(document, fragment, source)
-  return document if fragment.nil? || fragment.empty?
-
-  fail_contract("Unsupported $ref fragment ##{fragment} in #{source}") unless fragment.start_with?("/")
-
-  fragment.split("/").drop(1).reduce(document) do |current, raw_token|
-    token = pointer_token(raw_token)
-    next current[token] if current.is_a?(Hash) && current.key?(token)
-    next current[token.to_i] if current.is_a?(Array) && token.match?(/\A\d+\z/) && current.length > token.to_i
-
-    fail_contract("Unresolved $ref fragment ##{fragment} in #{source}")
-  end
-end
-
-def resolve_ref(ref, base_file)
-  file_part, fragment = ref.split("#", 2)
-  target_file =
-    if file_part.nil? || file_part.empty?
-      Pathname.new(base_file).expand_path
-    else
-      Pathname.new(base_file).dirname.join(file_part).expand_path
-    end
-
-  fail_contract("Missing $ref target file #{target_file} from #{base_file}") unless target_file.file?
-
-  [resolve_pointer(load_yaml(target_file), fragment.to_s, "#{base_file} -> #{ref}"), target_file.to_s]
-end
-
-def resolve_if_ref(value, base_file)
-  return value unless value.is_a?(Hash) && value["$ref"].is_a?(String)
-
-  resolved, = resolve_ref(value.fetch("$ref"), base_file)
-  resolved
-end
-
-def each_ref(value, refs = [])
-  case value
-  when Hash
-    refs << value["$ref"] if value["$ref"].is_a?(String)
-    value.each_value { |child| each_ref(child, refs) }
-  when Array
-    value.each { |child| each_ref(child, refs) }
-  else
-    nil
-  end
-  refs
-end
-
-def walk_hashes(value, path = [], &block)
-  case value
-  when Hash
-    yield value, path
-    value.each { |key, child| walk_hashes(child, path + [key], &block) }
-  when Array
-    value.each_with_index { |child, index| walk_hashes(child, path + [index], &block) }
-  else
-    nil
-  end
-end
-
-def path_item_for(root, path)
-  item = root.fetch("paths").fetch(path)
-  item = resolve_if_ref(item, OPENAPI_ROOT.to_s)
-  item
-end
-
-def operation_success_response?(operation)
-  operation.fetch("responses", {}).keys.any? { |status| status.to_s.match?(/\A2\d\d\z/) }
-end
-
-def operation_json_schema?(operation)
-  operation.fetch("responses", {}).any? do |status, response|
-    next false unless status.to_s.match?(/\A2\d\d\z/)
-
-    resolved = resolve_if_ref(response, OPENAPI_ROOT.to_s)
-    resolved.dig("content", "application/json", "schema").is_a?(Hash)
-  end
-end
-
-def require_schema_ref(root, name)
-  entry = root.dig("components", "schemas", name)
-  fail_contract("Missing component schema #{name}") unless entry
-
-  resolve_if_ref(entry, OPENAPI_ROOT.to_s)
-end
-
-def require_schema_fields(root, schema_name, fields)
-  schema = require_schema_ref(root, schema_name)
-  fields.each do |field|
-    fail_contract("#{schema_name} must expose #{field}") unless schema.dig("properties", field)
-    fail_contract("#{schema_name} must require #{field}") unless schema.fetch("required", []).include?(field)
-  end
-end
 
 fail_contract("Missing #{OPENAPI_ROOT}") unless OPENAPI_ROOT.file?
 
@@ -248,7 +155,7 @@ allowed_roles = require_schema_ref(root, "AppRole").fetch("enum")
 EXPECTED_OPERATIONS.each do |path, methods|
   fail_contract("Missing OpenAPI path #{path}") unless paths.key?(path)
 
-  item = path_item_for(root, path)
+  item, item_source = path_item_with_source(root, path)
   actual_methods = item.keys.select { |key| HTTP_METHODS.include?(key) }
   missing_methods = methods - actual_methods
   fail_contract("Missing methods for #{path}: #{missing_methods.join(", ")}") unless missing_methods.empty?
@@ -275,7 +182,9 @@ EXPECTED_OPERATIONS.each do |path, methods|
 
     responses = operation.fetch("responses", {})
     fail_contract("Missing 2xx success response for #{operation_id}") unless operation_success_response?(operation)
-    fail_contract("Missing JSON success envelope for #{operation_id}") unless operation_json_schema?(operation)
+    unless BINARY_OPERATIONS.include?([method, path]) || operation_json_success_envelope?(operation, item_source)
+      fail_contract("Missing JSON success envelope for #{operation_id}")
+    end
     unless public_operation
       fail_contract("Missing 401 auth error response for #{operation_id}") unless responses.key?("401")
       fail_contract("Missing 403 authorization error response for #{operation_id}") unless responses.key?("403")

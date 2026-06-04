@@ -114,6 +114,24 @@ func TestComposePassesNoShowPolicyConfig(t *testing.T) {
 	}
 }
 
+func TestPhase3BackendCanEnableBookingPreadmission(t *testing.T) {
+	compose, err := os.ReadFile("compose.phase3-ha.yaml")
+	require.NoError(t, err)
+	composeText := string(compose)
+
+	for _, name := range []string{
+		"BOOKING_PREADMISSION",
+		"REDIS_OUTAGE_MODE",
+		"RESERVATION_TTL_SECONDS",
+		"RESERVATION_TTL_GRACE_SECONDS",
+		"RESERVATION_COMPENSATION_INTERVAL_SECONDS",
+		"REDIS_OPERATION_TIMEOUT_MS",
+		"BOOKING_RESERVATION_HASH_SECRET",
+	} {
+		assert.Contains(t, composeText, name+":", "Phase3 backend must receive %s for capacity tuning", name)
+	}
+}
+
 func readComposeTestFile(t *testing.T, path string) string {
 	t.Helper()
 	content, err := os.ReadFile(path)

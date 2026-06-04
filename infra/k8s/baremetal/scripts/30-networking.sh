@@ -89,6 +89,8 @@ controller:
   config:
     use-forwarded-headers: "true"
     compute-full-forwarded-for: "true"
+    server-snippet: |
+      add_header X-CETS-Gateway-Replica \$hostname always;
 EOF
 
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \

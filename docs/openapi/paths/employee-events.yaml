@@ -57,6 +57,43 @@
         "$ref": "../components/responses.yaml#/Forbidden"
       "404":
         "$ref": "../components/responses.yaml#/NotFound"
+"/events/{event_id}/poster":
+  get:
+    tags:
+      - Events
+    operationId: getEventPoster
+    x-required-roles:
+      - employee
+      - activity_admin
+      - checkin_staff
+      - hr_admin
+      - system_admin
+    summary: Read the event poster image.
+    description: Returns the poster binary for callers who can see the event. The endpoint returns 404 when no poster exists.
+    parameters:
+      - "$ref": "../components/parameters.yaml#/EventId"
+    responses:
+      "200":
+        description: Event poster image.
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      "401":
+        "$ref": "../components/responses.yaml#/Unauthorized"
+      "403":
+        "$ref": "../components/responses.yaml#/Forbidden"
+      "404":
+        "$ref": "../components/responses.yaml#/NotFound"
 "/events/{event_id}/eligibility":
   get:
     tags:

@@ -20,6 +20,7 @@ const (
 	OutcomeDuplicate     Outcome = "duplicate"
 	OutcomeExhausted     Outcome = "exhausted"
 	OutcomeMisconfigured Outcome = "misconfigured"
+	outcomeNeedsProbe    Outcome = "needs_probe"
 )
 
 // Hold is the redacted snapshot the application service uses after a reserve.

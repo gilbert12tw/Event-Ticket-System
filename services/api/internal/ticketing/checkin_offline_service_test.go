@@ -100,11 +100,12 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	assert.NotEmpty(t, pkg.Tickets[0].Holder.DisplayName)
 	assert.NotEmpty(t, pkg.Tickets[0].Holder.Department)
 	assert.NotEmpty(t, pkg.Tickets[0].Holder.City)
+	scannedAt := time.Date(2026, 6, 2, 10, 12, 13, 123456789, time.UTC)
 	scans := []OfflineCheckinScanInput{
-		{SignedToken: "bad.token", ScannedAt: time.Now().UTC().Add(time.Second)},
-		{SignedToken: otherTicket.SignedToken, ScannedAt: time.Now().UTC().Add(2 * time.Second)},
-		{SignedToken: claimsMismatchToken, ScannedAt: time.Now().UTC().Add(3 * time.Second)},
-		{SignedToken: ticket.SignedToken, ScannedAt: time.Now().UTC().Add(4 * time.Second)},
+		{SignedToken: "bad.token", ScannedAt: scannedAt.Add(time.Second)},
+		{SignedToken: otherTicket.SignedToken, ScannedAt: scannedAt.Add(2 * time.Second)},
+		{SignedToken: claimsMismatchToken, ScannedAt: scannedAt.Add(3 * time.Second)},
+		{SignedToken: ticket.SignedToken, ScannedAt: scannedAt.Add(4 * time.Second)},
 	}
 
 	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{

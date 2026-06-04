@@ -222,6 +222,58 @@ func TestReportsHandler_ThresholdFromEnv(t *testing.T) {
 	assertEnvelope(t, rec.Body.String(), `"degraded":true`)
 }
 
+type fakeReportStore struct {
+	body        []byte
+	contentType string
+	key         string
+}
+
+func (s *fakeReportStore) Get(_ context.Context, key string) ([]byte, string, error) {
+	s.key = key
+	return s.body, s.contentType, nil
+}
+
+func TestReportExportDownloadHandlerServesReadyCSV(t *testing.T) {
+	service := &fakeTicketingService{}
+	store := &fakeReportStore{
+		body:        []byte("event_id,title\n"),
+		contentType: "text/csv; charset=utf-8",
+	}
+	router := testRouter(Dependencies{Ticketing: service, ReportStore: store})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/reports/exports/exp_1/download", nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "exports/exp_1.csv", store.key)
+	assert.Equal(t, "text/csv; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Equal(t, `attachment; filename="exp_1.csv"`, rec.Header().Get("Content-Disposition"))
+	assert.Equal(t, "event_id,title\n", rec.Body.String())
+}
+
+func TestReportExportDownloadHandlerRejectsPendingExport(t *testing.T) {
+	service := &fakeTicketingService{reportExport: ticketing.ReportExport{
+		ExportID:   "exp_pending",
+		ReportType: ticketing.ReportExportTypeParticipation,
+		Format:     ticketing.ReportExportFormatCSV,
+		Status:     ticketing.ReportExportStatusPending,
+		ObjectKey:  "exports/exp_pending.csv",
+	}}
+	store := &fakeReportStore{body: []byte("should not read")}
+	router := testRouter(Dependencies{Ticketing: service, ReportStore: store})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/reports/exports/exp_pending/download", nil)
+	authorizeRequest(t, req, ticketing.RoleHRAdmin)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+	assert.Empty(t, store.key)
+	assertEnvelope(t, rec.Body.String(), `"success":false`, `"report export is not ready"`)
+}
+
 type reportsResponse struct {
 	Success bool                  `json:"success"`
 	Data    []ticketing.ReportRow `json:"data"`

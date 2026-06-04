@@ -3,6 +3,7 @@ package ticketing
 import (
 	"context"
 	"errors"
+	"time"
 
 	"event-ticket-system/internal/reservation"
 
@@ -18,6 +19,13 @@ type eventCapacityPeek struct {
 	Version        int64
 }
 
+type cachedEventCapacityPeek struct {
+	peek      eventCapacityPeek
+	expiresAt time.Time
+}
+
+const eventCapacityPeekCacheTTL = time.Second
+
 // peekEventCapacity reads the event capacity_type and capacity outside any
 // transaction. It is only consulted to decide whether the Redis reservation
 // gate applies; PostgreSQL still rechecks the event row inside the booking
@@ -25,6 +33,14 @@ type eventCapacityPeek struct {
 // exhausted bookings use a shared lock because they can only create waitlist
 // rows.
 func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventCapacityPeek, error) {
+	now := time.Now()
+	s.capacityPeekMu.Lock()
+	if cached, ok := s.capacityPeekCache[eventID]; ok && cached.expiresAt.After(now) {
+		s.capacityPeekMu.Unlock()
+		return cached.peek, nil
+	}
+	s.capacityPeekMu.Unlock()
+
 	var peek eventCapacityPeek
 	var capacity *int
 	var version int64
@@ -40,6 +56,15 @@ func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventC
 		peek.Capacity = *capacity
 	}
 	peek.Version = version
+	s.capacityPeekMu.Lock()
+	if s.capacityPeekCache == nil {
+		s.capacityPeekCache = make(map[string]cachedEventCapacityPeek)
+	}
+	s.capacityPeekCache[eventID] = cachedEventCapacityPeek{
+		peek:      peek,
+		expiresAt: now.Add(eventCapacityPeekCacheTTL),
+	}
+	s.capacityPeekMu.Unlock()
 	return peek, nil
 }
 
@@ -50,18 +75,34 @@ func (s *Service) peekEventCapacity(ctx context.Context, eventID string) (eventC
 // the event, the returned Hold is granted and idempotencyHash is empty (the
 // caller skips gate finalization).
 func (s *Service) preadmitBooking(ctx context.Context, eventID, employeeID, idempotencyKey string, familyCount int) (reservation.Hold, string, error) {
+	started := time.Now()
+	capacityType := "unknown"
+	outcome := "skipped"
+	defer func() {
+		s.observeBookingStage("preadmission", outcome, time.Since(started))
+		if s.metrics != nil {
+			outageMode := s.reservationOutage
+			if outageMode == "" {
+				outageMode = "none"
+			}
+			s.metrics.ObserveReservationAttempt(outcome, capacityType, outageMode, time.Since(started))
+		}
+	}()
 	if !s.reservationGate.Enabled() {
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
 	peek, err := s.peekEventCapacity(ctx, eventID)
 	if err != nil {
 		// Event missing or DB error: let the booking tx surface the real error.
+		outcome = "granted"
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
+	capacityType = peek.CapacityType
 	if peek.CapacityType != CapacityTypeLimited || peek.AllocationMode == AllocationModeLottery {
 		return reservation.Hold{Outcome: reservation.OutcomeGranted}, "", nil
 	}
 	if familyCount > 0 {
+		outcome = "error"
 		return reservation.Hold{}, "", badRequest("limited events cannot accept family attendees")
 	}
 	idempotencyHash := reservation.Hash(s.reservationSecret, reservationOperation, eventID, employeeID, idempotencyKey)
@@ -69,11 +110,13 @@ func (s *Service) preadmitBooking(ctx context.Context, eventID, employeeID, idem
 	probe := s.remainingCapacityProbe(eventID, peek)
 	hold, err := s.reservationGate.Reserve(ctx, eventID, idempotencyHash, actorHash, probe)
 	if err != nil {
+		outcome = "unavailable"
 		if errors.Is(err, reservation.ErrUnavailable) {
 			return reservation.Hold{}, "", serviceUnavailable("RESERVATION_GATE_UNAVAILABLE", "reservation gate unavailable; retry shortly")
 		}
 		return reservation.Hold{}, "", err
 	}
+	outcome = string(hold.Outcome)
 	return hold, idempotencyHash, nil
 }
 

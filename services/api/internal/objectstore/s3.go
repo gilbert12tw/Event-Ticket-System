@@ -14,6 +14,11 @@ import (
 	"time"
 )
 
+const (
+	amzContentSHA256Header = "X-Amz-Content-Sha256"
+	amzDateHeader          = "X-Amz-Date"
+)
+
 type S3CompatibleStore struct {
 	Endpoint  string
 	Bucket    string
@@ -41,8 +46,8 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	payloadHash := sha256Hex(body)
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	request.Header.Set("X-Amz-Date", amzDate)
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
 	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
 	response, err := s.httpClient().Do(request)
@@ -69,8 +74,8 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 	payloadHash := sha256Hex(nil)
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	request.Header.Set("X-Amz-Date", amzDate)
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
 	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
 	response, err := s.httpClient().Do(request)
@@ -86,6 +91,35 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 	}
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
 	return false, fmt.Errorf("object storage head failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+}
+
+func (s S3CompatibleStore) Get(ctx context.Context, key string) ([]byte, string, error) {
+	endpoint, canonicalURI, region, now, err := s.requestParts(key)
+	if err != nil {
+		return nil, "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, "", err
+	}
+	payloadHash := sha256Hex(nil)
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
+	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
+
+	response, err := s.httpClient().Do(request)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		body, err := io.ReadAll(response.Body)
+		return body, response.Header.Get("Content-Type"), err
+	}
+	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+	return nil, "", fmt.Errorf("object storage get failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
 func (s S3CompatibleStore) requestParts(key string) (*url.URL, string, string, time.Time, error) {

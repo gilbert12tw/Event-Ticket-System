@@ -47,6 +47,8 @@ paths:
     "$ref": "./openapi/paths/employee-events.yaml#/~1events"
   "/events/{event_id}":
     "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}"
+  "/events/{event_id}/poster":
+    "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}~1poster"
   "/events/{event_id}/eligibility":
     "$ref": "./openapi/paths/employee-events.yaml#/~1events~1{event_id}~1eligibility"
   "/events/{event_id}/bookings":
@@ -57,6 +59,8 @@ paths:
     "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events"
   "/admin/events/{event_id}":
     "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}"
+  "/admin/events/{event_id}/poster":
+    "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}~1poster"
   "/admin/events/{event_id}/state":
     "$ref": "./openapi/paths/admin-events.yaml#/~1admin~1events~1{event_id}~1state"
   "/admin/events/{event_id}/duplicate":
@@ -103,6 +107,10 @@ paths:
     "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports"
   "/admin/reports/exports/{export_id}":
     "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports~1{export_id}"
+  "/admin/reports/exports/{export_id}/download":
+    "$ref": "./openapi/paths/reports.yaml#/~1admin~1reports~1exports~1{export_id}~1download"
+  "/admin/hr/options":
+    "$ref": "./openapi/paths/hr-options.yaml#/~1admin~1hr~1options"
   "/admin/audit-logs":
     "$ref": "./openapi/paths/audit.yaml#/~1admin~1audit-logs"
   "/admin/ops/capacity-pressure":
@@ -221,6 +229,14 @@ components:
       "$ref": "./openapi/components/schemas/events.yaml#/EventSummary"
     EventDetail:
       "$ref": "./openapi/components/schemas/events.yaml#/EventDetail"
+    EventAsset:
+      "$ref": "./openapi/components/schemas/events.yaml#/EventAsset"
+    EventAssetResponse:
+      "$ref": "./openapi/components/schemas/events.yaml#/EventAssetResponse"
+    AdminOption:
+      "$ref": "./openapi/components/schemas/events.yaml#/AdminOption"
+    AdminHROptionsResponse:
+      "$ref": "./openapi/components/schemas/events.yaml#/AdminHROptionsResponse"
     CreateEventRequest:
       "$ref": "./openapi/components/schemas/events.yaml#/CreateEventRequest"
     UpdateEventRequest:

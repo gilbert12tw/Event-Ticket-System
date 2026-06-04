@@ -90,7 +90,7 @@ function cleanGeneratedStaticAssets() {
       const entries = await readdir(staticOutDirURL);
       await Promise.all(
         entries
-          .filter((entry) => entry !== "placeholder.txt")
+          .filter((entry) => entry === "assets" || entry === "index.html")
           .map((entry) =>
             rm(new URL(entry, staticOutDirURL), {
               force: true,

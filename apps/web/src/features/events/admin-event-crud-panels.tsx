@@ -14,6 +14,7 @@ import {
   eventStatusView,
   eventTemplateOptions,
   schedulePresetOptions,
+  type Option,
   visibilityOptions,
 } from "@/lib/ui/options";
 import {
@@ -158,6 +159,8 @@ export function AdminEventCreateTab({
   onReset,
   onSeed,
   onSubmit,
+  eventSiteOptions,
+  eligibilitySiteOptions,
 }: Readonly<{
   busy: boolean;
   canSubmit: boolean;
@@ -172,6 +175,8 @@ export function AdminEventCreateTab({
   onReset: () => void;
   onSeed: () => void;
   onSubmit: FormSubmitHandler;
+  eventSiteOptions: Option[];
+  eligibilitySiteOptions: Option[];
 }>) {
   return (
     <form className="form-grid" onSubmit={onSubmit}>
@@ -206,11 +211,16 @@ export function AdminEventCreateTab({
       </fieldset>
       <EventCoreFields
         form={form}
+        siteOptions={eventSiteOptions}
         onChange={onFormChange}
         windowReady={windowReady}
         capacityReady={capacityReady}
       />
-      <EligibilityFields form={form} onChange={onFormChange} />
+      <EligibilityFields
+        form={form}
+        siteOptions={eligibilitySiteOptions}
+        onChange={onFormChange}
+      />
       <fieldset className="form-section full">
         <legend>投遞與標籤</legend>
         <SelectField
@@ -272,15 +282,19 @@ export function AdminEventEditTab({
   busy,
   editForm,
   selectedEvent,
+  eventSiteOptions,
   windowReady,
   onEditFormChange,
+  onPosterUpload,
   onSave,
 }: Readonly<{
   busy: boolean;
   editForm: AdminEditForm;
   selectedEvent?: EventSummary;
+  eventSiteOptions: Option[];
   windowReady: boolean;
   onEditFormChange: (next: AdminEditForm) => void;
+  onPosterUpload: (file: File) => void;
   onSave: FormSubmitHandler;
 }>) {
   if (!selectedEvent) return <SelectEventFirst action="編輯" />;
@@ -297,6 +311,7 @@ export function AdminEventEditTab({
       </div>
       <EventCoreFields
         form={editForm}
+        siteOptions={eventSiteOptions}
         onChange={onEditFormChange}
         windowReady={windowReady}
         capacityReady
@@ -329,6 +344,23 @@ export function AdminEventEditTab({
           value={editForm.tags}
           onChange={(tags) => onEditFormChange({ ...editForm, tags })}
         />
+      </fieldset>
+      <fieldset className="form-section full">
+        <legend>活動海報</legend>
+        <label className="field">
+          <span>活動海報</span>
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            disabled={busy}
+            type="file"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) onPosterUpload(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        <p className="form-hint">JPG、PNG、WebP，最多 5MB。</p>
       </fieldset>
       <div className="form-actions full">
         <Button type="submit" disabled={busy || !windowReady}>

@@ -90,18 +90,21 @@ func validateBookingIdempotencyResult(result bookingIdempotencyResult, eventID s
 }
 
 func (s *Service) bookingIdempotencyResultForUpdateTx(ctx context.Context, tx pgx.Tx, key string) (bookingIdempotencyResult, error) {
+	return scanBookingIdempotencyResult(tx.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count, idempotency_hash,
+			registration_id, registration_status, ticket_id, remaining_capacity, message, completed_at
+		FROM booking_idempotency_results
+		WHERE idempotency_key = $1
+		FOR UPDATE`, key))
+}
+
+func scanBookingIdempotencyResult(row pgx.Row) (bookingIdempotencyResult, error) {
 	var result bookingIdempotencyResult
 	var registrationID sql.NullString
 	var ticketID sql.NullString
 	var idempotencyHash sql.NullString
 	var completedAt sql.NullTime
-	err := tx.QueryRow(ctx, `SELECT idempotency_key, event_id, employee_id, family_count, idempotency_hash,
-			registration_id, registration_status, ticket_id, remaining_capacity, message, completed_at
-		FROM booking_idempotency_results
-		WHERE idempotency_key = $1
-		FOR UPDATE`, key).
-		Scan(&result.IdempotencyKey, &result.EventID, &result.EmployeeID, &result.FamilyCount, &idempotencyHash,
-			&registrationID, &result.RegistrationStatus, &ticketID, &result.RemainingCapacity, &result.Message, &completedAt)
+	err := row.Scan(&result.IdempotencyKey, &result.EventID, &result.EmployeeID, &result.FamilyCount, &idempotencyHash,
+		&registrationID, &result.RegistrationStatus, &ticketID, &result.RemainingCapacity, &result.Message, &completedAt)
 	if err != nil {
 		return bookingIdempotencyResult{}, err
 	}

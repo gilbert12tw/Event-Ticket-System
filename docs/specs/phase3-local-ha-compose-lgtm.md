@@ -129,13 +129,17 @@ measured bottleneck, failure-isolation, ownership, or release-cadence need.
 - `scripts/compose/phase3-deploy.sh` builds images and starts the Phase 3 Compose HA topology.
 - `scripts/compose/phase3-k6.sh` runs `k6/phase3-ha-lgtm.js` in `smoke`, `stress`, or
   `investigate` mode and fails when replica distribution evidence is incomplete.
+- `scripts/compose/phase3-capacity.sh` runs the external edge path with the 80/20
+  read/booking capacity profile, searches for the highest passing RPS, records before/after
+  evidence, and checks confirmed registrations do not exceed event capacity.
 - `scripts/compose/phase3-verify.sh` checks replica state, endpoint smoke, Grafana datasource
   provisioning, k6 stress evidence, Prometheus RED targets, Tempo trace ingest, Tempo service graph
   metrics, Pyroscope profile data, Loki trace-correlated logs, and telemetry redaction canaries.
   Its LGTM assertions are intentionally data-level checks, not just health checks: RED must prove
-  request/error/duration evidence by route/status/backend instance, Tempo must produce a trace ID,
-  Loki must return backend logs for that same trace ID, Pyroscope must return non-zero backend CPU
-  samples, and service graph metrics must include `cets-backend` as a server node.
+  request/error/duration evidence by route/status/backend instance, booking and reservation metrics
+  must expose hot-path bottleneck evidence, Tempo must produce a trace ID, Loki must return backend
+  logs for that same trace ID, Pyroscope must return non-zero backend CPU samples, and service graph
+  metrics must include `cets-backend` as a server node.
 - `scripts/compose/phase3-drill.sh` stops one stateless replica at a time and verifies recovery.
 - `cd services/api && go test ./... -count=1`.
 - `pnpm --filter cets-web lint`, `pnpm --filter cets-web test`, and `pnpm --filter cets-web build`.

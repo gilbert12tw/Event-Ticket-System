@@ -235,6 +235,8 @@ jobs:
           go-version-file: services/api/go.mod
           cache: ${{ env.ACT != 'true' }}
           cache-dependency-path: services/api/go.sum
+      - name: Set up Docker CLI for local act runs
+        uses: ./.github/actions/setup-docker-act
       - name: Install jq for AWS infra contract tests
         run: |
           if command -v jq >/dev/null 2>&1; then
