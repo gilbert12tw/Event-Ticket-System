@@ -152,6 +152,7 @@ export function EmployeeEventPosterCard({
         </div>
         <Button asChild className="employee-event-primary-action">
           <a
+            aria-label={`${state.primaryLabel}：${event.title}`}
             href={href}
             onClick={(clickEvent) =>
               runClientNavigation(clickEvent, () => navigate(href))
@@ -223,6 +224,7 @@ function CalendarDayButton({
     .join(" ");
   return (
     <button
+      aria-label={calendarDayLabel(day, muted)}
       aria-pressed={selected}
       className={className}
       type="button"
@@ -259,6 +261,22 @@ function eventDescription(event: EventSummary) {
 
 function sameMonth(leftDateKey: string, rightDateKey: string) {
   return leftDateKey.slice(0, 7) === rightDateKey.slice(0, 7);
+}
+
+function calendarDayLabel(day: EmployeeCalendarDay, muted: boolean) {
+  const labels = [
+    new Date(`${day.dateKey}T00:00:00`).toLocaleDateString("zh-TW", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+    }),
+    day.eventCount > 0 ? `${day.eventCount} 場活動` : "無活動",
+    day.hasRegistration ? "已報名" : "",
+    day.isToday ? "今天" : "",
+    muted ? "非本月日期" : "",
+  ].filter(Boolean);
+  return labels.join("，");
 }
 
 export function agendaTitle(dateKey: string, now: Date) {

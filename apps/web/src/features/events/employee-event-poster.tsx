@@ -11,12 +11,32 @@ export function EventPoster({
   variant?: "card" | "hero";
 }>) {
   const posterURL = useEventPoster(eventID);
-  const className =
-    variant === "hero" ? "employee-event-poster hero" : "employee-event-poster";
+  const className = [
+    "employee-event-poster",
+    variant === "hero" ? "hero" : "",
+    `cover-${posterCoverTone(eventID, title)}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const dimensions =
+    variant === "hero" ? { width: 1200, height: 675 } : { width: 960, height: 600 };
   return (
     <div className={className}>
       {posterURL ? (
-        <img alt={`${title} 海報`} src={posterURL} />
+        <img
+          alt={`${title} 海報`}
+          decoding="async"
+          fetchPriority={variant === "hero" ? "high" : "auto"}
+          height={dimensions.height}
+          loading={variant === "hero" ? "eager" : "lazy"}
+          sizes={
+            variant === "hero"
+              ? "(max-width: 900px) 100vw, 66vw"
+              : "(max-width: 760px) 100vw, 360px"
+          }
+          src={posterURL}
+          width={dimensions.width}
+        />
       ) : (
         <div className="employee-event-poster-fallback" aria-hidden="true">
           <span>{posterInitial(title)}</span>
@@ -57,4 +77,13 @@ export function useEventPoster(eventID: string) {
 function posterInitial(title: string) {
   const trimmed = title.trim();
   return trimmed ? trimmed.slice(0, 1).toUpperCase() : "C";
+}
+
+function posterCoverTone(eventID: string, title: string) {
+  const seed = `${eventID}:${title}`;
+  const total = Array.from(seed).reduce(
+    (sum, char) => sum + char.charCodeAt(0),
+    0,
+  );
+  return ["accent", "info", "success", "warn"][total % 4];
 }

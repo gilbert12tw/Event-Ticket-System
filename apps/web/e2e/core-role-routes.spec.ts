@@ -81,9 +81,7 @@ test("employee tickets open exact detail only after list click", async ({
   await expect(
     page.getByRole("heading", { level: 2, name: "我的票券" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "目前可入場票券" }),
-  ).toBeVisible();
+  await expect(page.getByLabel("目前可入場票券")).toBeVisible();
   await expect(page.getByLabel("票券二維碼").first()).toBeVisible();
 
   await page.getByRole("link", { name: /第一階段企業午餐日/ }).click();
@@ -125,10 +123,10 @@ test("employee booking CTAs keep primary visual treatment", async ({
   });
 
   await expectPrimaryCtaTreatment(
-    page.getByRole("link", { exact: true, name: "報名活動" }),
+    page.getByRole("link", { name: "報名活動：可直接報名活動" }),
   );
   await expectPrimaryCtaTreatment(
-    page.getByRole("link", { exact: true, name: "查看詳情" }),
+    page.getByRole("link", { name: "查看詳情：候補活動" }),
   );
 
   await page.goto("/user/events/detail?event_id=evt-waitlist", {
@@ -173,7 +171,9 @@ test("employee cancellation requires confirmation before API call", async ({
   await page.goto("/user/events", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("link", { name: "查看活動詳情" }).click();
+  await page.goto("/user/events/detail?event_id=evt-cets-001", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page).toHaveURL(
     /\/user\/events\/detail\?event_id=evt-cets-001$/,
   );

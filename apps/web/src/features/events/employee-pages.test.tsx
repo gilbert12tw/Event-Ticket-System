@@ -135,7 +135,9 @@ describe("EmployeeEventsPage", () => {
     expect(
       screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "報名活動" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "報名活動：不限量活動" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "重新整理活動" }),
     ).toHaveAttribute("data-size", "icon");
@@ -341,7 +343,9 @@ describe("EmployeeEventsPage", () => {
       screen.queryByText(/This event is in Hsinchu/),
     ).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("link", { name: "報名活動" }));
+    await userEvent.click(
+      screen.getByRole("link", { name: "報名活動：Hsinchu Event" }),
+    );
 
     expect(window.location.pathname).toBe("/user/events/detail");
     expect(window.location.search).toBe("?event_id=evt-crosscity");

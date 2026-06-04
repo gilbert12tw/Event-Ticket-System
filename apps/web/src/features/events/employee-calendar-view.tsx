@@ -204,6 +204,7 @@ export function EmployeeMonthCalendar({
     <div className="employee-month-calendar" aria-label="月行事曆">
       {groups.map((group) => (
         <button
+          aria-label={calendarGroupLabel(group)}
           aria-pressed={group.dateKey === selectedDateKey}
           className={[
             "employee-month-cell",
@@ -284,6 +285,7 @@ function CalendarDayHeader({
 }>) {
   return (
     <button
+      aria-label={calendarGroupLabel(group)}
       aria-pressed={selected}
       className="employee-week-day-header"
       type="button"
@@ -306,6 +308,9 @@ function EmployeeCalendarEventBlock({
   const href = primaryHref(calendarEvent);
   return (
     <a
+      aria-label={`開啟活動：${event.title}，${eventTime(
+        event.starts_at,
+      )}，${siteLabel(event.location || event.event_site)}，${state.label}`}
       className="employee-calendar-event-block"
       href={href}
       onClick={(clickEvent) =>
@@ -335,5 +340,25 @@ function eventTime(value: string) {
   return new Date(value).toLocaleTimeString("zh-TW", {
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function calendarGroupLabel(group: EmployeeCalendarDayGroup) {
+  const labels = [
+    calendarDateLabel(group.dateKey),
+    group.eventCount > 0 ? `${group.eventCount} 場活動` : "無活動",
+    group.hasRegistration ? "已報名" : "",
+    group.isToday ? "今天" : "",
+    group.isOutsideMonth ? "非本月日期" : "",
+  ].filter(Boolean);
+  return labels.join("，");
+}
+
+function calendarDateLabel(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00`).toLocaleDateString("zh-TW", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
   });
 }

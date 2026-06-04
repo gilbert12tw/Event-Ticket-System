@@ -199,6 +199,18 @@ describe("EmployeeTicketsPage", () => {
     expect(screen.queryByText(/原因：員工已取消報名/)).not.toBeInTheDocument();
   });
 
+  it("offers event discovery from the empty ticket state", async () => {
+    mockListTickets.mockResolvedValue([]);
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    expect(await screen.findByText("尚無票券")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "瀏覽活動" })).toHaveAttribute(
+      "href",
+      "/user/events",
+    );
+  });
+
   it("hides zero companion counts and exposes calendar export for active tickets", async () => {
     const createObjectURL = vi.fn(() => "blob:ticket-calendar");
     const revokeObjectURL = vi.fn();

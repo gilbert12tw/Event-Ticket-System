@@ -115,6 +115,7 @@ export function EmployeeEventCard({
           {!canRunPrimary && <BlockedEventAction event={event} />}
           <Button asChild size="sm" variant="ghost">
             <a
+              aria-label={`查看活動詳情：${event.title}`}
               href={detailHref}
               onClick={(clickEvent) =>
                 runClientNavigation(clickEvent, () => navigate(detailHref))

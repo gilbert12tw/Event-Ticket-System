@@ -85,7 +85,7 @@
 }
 
 .employee-calendar-day:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -100,7 +100,9 @@
 }
 
 .employee-calendar-day.muted {
-  opacity: 0.58;
+  border-color: oklch(0.87 0.01 238);
+  background: oklch(0.952 0.005 238);
+  color: var(--muted);
 }
 
 .employee-calendar-day.month {
@@ -128,9 +130,8 @@
 
 .employee-event-card-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 360px));
-  gap: 12px;
-  justify-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 14px;
   min-width: 0;
 }
 
@@ -141,15 +142,54 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-raised);
+  box-shadow: 0 12px 28px oklch(0.34 0.035 245 / 0.055);
+  transition:
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.employee-event-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  box-shadow: 0 16px 34px oklch(0.34 0.035 245 / 0.075);
 }
 
 .employee-event-poster {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
   aspect-ratio: 16 / 10;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--accent-wash), var(--surface-inset));
+  isolation: isolate;
+  background: var(--surface-inset);
+}
+
+.employee-event-poster::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(135deg, transparent 0 54%, oklch(1 0 0 / 0.34) 54% 100%),
+    var(--poster-cover);
+  content: "";
+}
+
+.employee-event-poster.cover-accent {
+  --poster-cover: linear-gradient(135deg, var(--accent-wash), var(--surface));
+}
+
+.employee-event-poster.cover-info {
+  --poster-cover: linear-gradient(135deg, var(--info-bg), var(--surface));
+}
+
+.employee-event-poster.cover-success {
+  --poster-cover: linear-gradient(135deg, var(--success-bg), var(--surface));
+}
+
+.employee-event-poster.cover-warn {
+  --poster-cover: linear-gradient(135deg, var(--warn-bg), var(--surface));
 }
 
 .employee-event-poster.hero {
@@ -159,6 +199,8 @@
 }
 
 .employee-event-poster img {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -170,11 +212,14 @@
   place-items: center;
   width: 54px;
   height: 54px;
-  border-radius: 50%;
-  background: var(--surface);
+  z-index: 1;
+  border: 1px solid oklch(1 0 0 / 0.72);
+  border-radius: var(--radius);
+  background: oklch(0.985 0.004 238 / 0.82);
   color: var(--accent);
   font-size: 1.45rem;
   font-weight: 820;
+  box-shadow: 0 12px 24px oklch(0.3 0.022 245 / 0.08);
 }
 
 .employee-event-card-body {
@@ -194,6 +239,19 @@
 .employee-event-detail-copy h2 {
   margin: 0;
   overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.employee-event-card h3 {
+  color: var(--ink);
+  font-size: 1.02rem;
+  line-height: 1.22;
+}
+
+.employee-event-detail-copy h2 {
+  color: var(--ink);
+  font-size: 1.38rem;
+  line-height: 1.18;
 }
 
 .employee-event-meta,
@@ -234,7 +292,8 @@
 
 .employee-event-hero-panel {
   display: grid;
-  gap: 14px;
+  gap: 16px;
+  background: var(--surface);
 }
 
 .employee-event-detail-action-panel {
@@ -280,6 +339,10 @@
 }
 
 @media (max-width: 760px) {
+  .event-detail-app {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+
   .employee-calendar-header,
   .employee-section-title {
     align-items: stretch;
@@ -321,13 +384,14 @@
   .employee-event-detail-action-panel {
     position: sticky;
     z-index: 3;
-    bottom: 0;
+    bottom: calc(74px + env(safe-area-inset-bottom));
     top: auto;
     margin-right: -14px;
     margin-left: -14px;
     border-right: 0;
     border-left: 0;
-    border-radius: var(--radius) var(--radius) 0 0;
+    border-radius: var(--radius);
+    box-shadow: 0 -12px 30px oklch(0.3 0.022 245 / 0.08);
   }
 
   .event-detail-app .employee-event-detail-action-panel {

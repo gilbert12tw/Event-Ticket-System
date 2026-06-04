@@ -90,7 +90,7 @@ export function ticketListMeta(ticket: Ticket) {
 
 export function safeTicketID(ticketID: string) {
   if (ticketID.length <= 24) return ticketID;
-  return `${ticketID.slice(0, 12)}...${ticketID.slice(-6)}`;
+  return `${ticketID.slice(0, 12)}…${ticketID.slice(-6)}`;
 }
 
 export function selectCurrentTicket(

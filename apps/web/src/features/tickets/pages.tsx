@@ -220,10 +220,13 @@ export function EmployeeTicketsPage({
             />
           )}
           {!loading && listLoaded && tickets.length === 0 && !message && (
-            <EmptyState
-              title="尚無票券"
-              action="完成報名確認後，票券會出現在這裡。"
-            />
+            <div className="ticket-empty-state">
+              <EmptyState
+                title="尚無票券"
+                action="完成報名確認後，票券會出現在這裡。"
+              />
+              <BrowseEventsAction />
+            </div>
           )}
           {!loading && tickets.length > 0 && (
             <EmployeeTicketTimeline groups={ticketGroups} onOpen={openTicket} />
@@ -236,4 +239,20 @@ export function EmployeeTicketsPage({
 
 function ticketIDFromLocation() {
   return new URLSearchParams(globalThis.location.search).get("ticket_id") || "";
+}
+
+function BrowseEventsAction() {
+  return (
+    <Button asChild variant="outline">
+      <a
+        href="/user/events"
+        onClick={(event) =>
+          runClientNavigation(event, () => navigate("/user/events"))
+        }
+      >
+        <Icon name="calendar" />
+        瀏覽活動
+      </a>
+    </Button>
+  );
 }

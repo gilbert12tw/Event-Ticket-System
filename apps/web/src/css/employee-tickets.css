@@ -87,14 +87,14 @@
 .employee-ticket-pass {
   display: grid;
   grid-template-columns: minmax(180px, 232px) minmax(0, 1fr);
-  gap: 18px;
+  gap: 20px;
   align-items: start;
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-raised);
-  box-shadow: 0 16px 36px oklch(0.34 0.035 245 / 0.08);
+  background: var(--surface);
+  box-shadow: 0 16px 36px oklch(0.34 0.035 245 / 0.07);
 }
 
 .employee-ticket-pass-poster,
@@ -172,7 +172,10 @@
   width: min(232px, 100%);
   height: auto;
   aspect-ratio: 1;
+  border-color: var(--line-strong);
   border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 4px var(--surface-raised);
 }
 
 .employee-ticket-qr-placeholder {
@@ -220,6 +223,14 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-inset);
+}
+
+.ticket-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 0;
 }
 
 .employee-ticket-entry-hint > .icon {
@@ -334,8 +345,14 @@
     display: none;
   }
 
+  .ticket-workspace,
+  .ticket-detail-workspace {
+    padding-bottom: calc(104px + env(safe-area-inset-bottom));
+  }
+
   .employee-ticket-pass {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+    scroll-margin-bottom: calc(104px + env(safe-area-inset-bottom));
   }
 
   .employee-ticket-pass-info {

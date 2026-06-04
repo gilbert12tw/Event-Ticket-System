@@ -139,7 +139,7 @@
 .employee-week-day-header:focus-visible,
 .employee-month-cell:focus-visible,
 .employee-calendar-event-block:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -250,7 +250,13 @@
 }
 
 .employee-month-cell.muted {
-  opacity: 0.58;
+  border-color: oklch(0.87 0.01 238);
+  background: oklch(0.952 0.005 238);
+  color: var(--muted);
+}
+
+.employee-month-cell.muted .employee-month-previews span {
+  color: var(--muted);
 }
 
 .employee-month-date {
