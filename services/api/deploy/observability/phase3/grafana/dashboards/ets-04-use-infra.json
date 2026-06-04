@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 41,
+  "uid": "ets-use-infra",
+  "title": "ETS 04 — USE Infrastructure",
+  "description": "SRE/Infra resource owner view. Use when services are degraded but error rates are near-zero — look for CPU or memory saturation before tracing individual requests. USE = Utilization (% of capacity used) + Saturation (queue or wait time) + Errors (resource errors). Decision guide: If backend CPU > 80% → open Pyroscope to find the hot function. If DB pool acquired/total > 70% → check lock contention in Service Anomaly. If memory > 85% → check GC pressure in profiles. If DB acquire wait is rising → look for lock contention or slow queries.",
+  "tags": ["cets", "ets", "use", "infrastructure", "sre"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "Golden Signals", "url": "/d/ets-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "RED Traffic Drilldown", "url": "/d/ets-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/ets-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ CPU & MEMORY — Application load per replica + aggregate Docker resource usage",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "HTTP Request Rate by Backend Instance (CPU load proxy)",
+      "description": "Request rate per backend instance. Used as a relative CPU load proxy when per-container cAdvisor metrics are unavailable (e.g., overlayfs Docker storage driver). If one instance handles significantly more requests, it is under more CPU pressure. Correlate with Pyroscope CPU profiles for exact hotspot identification.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(cets_http_requests_total{job=\"cets-backend\"}[1m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Total Docker Container Memory (aggregate)",
+      "description": "Total memory used by all Docker containers combined (from cAdvisor /docker cgroup). Per-container breakdown is not available when Docker uses overlayfs storage driver — the cAdvisor container layer scan fails silently. Use this as a host-level saturation signal; if total Docker memory approaches host memory, OOM pressure is imminent.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{job=\"cets-cadvisor\"}",
+          "legendFormat": "{{id}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ DATABASE CONNECTIONS — Pool Utilization and Saturation per backend replica",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 3,
+      "title": "DB Pool Connections by State (per instance)",
+      "description": "Number of acquired (active), idle, and total connections per backend replica. acquired/total > 70% = approaching saturation. All connections acquired = pool exhausted; new requests will queue on acquire_wait. Each replica has its own pool — a hot replica exhausts its pool independently of healthy replicas.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"acquired\"}",
+          "legendFormat": "acquired {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"idle\"}",
+          "legendFormat": "idle {{instance}}",
+          "refId": "B"
+        },
+        {
+          "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"total\"}",
+          "legendFormat": "total {{instance}}",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 }
+    },
+    {
+      "id": 4,
+      "title": "DB Pool Average Acquire Wait (per instance)",
+      "description": "Average time a goroutine waits to acquire a DB connection from the pool, per backend replica. Rising above 20ms = pool is saturated and requests are queuing. Correlated with booking P99 rising? The DB pool is the bottleneck. Check DB lock sessions panel.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}[5m]) / clamp_min(rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m]), 0.001)",
+          "legendFormat": "avg wait {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 }
+    },
+    {
+      "id": 5,
+      "title": "DB Lock Waiting Sessions",
+      "description": "Number of PostgreSQL sessions waiting on a lock. Any value > 0 indicates lock contention. Persistent lock waits block booking transactions and cause connection pool saturation. Navigate to Service Anomaly to find the blocked trace and identify which booking stage holds the lock.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max by (job) (cets_db_lock_waiting_sessions{job=\"cets-backend\"})",
+          "legendFormat": "lock waiters",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 }
+    },
+    {
+      "id": 6,
+      "title": "DB Pool Acquire Count Rate",
+      "description": "Rate of pool acquire calls per instance. Correlates with request rate — sudden drop means a replica is no longer handling traffic.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m])",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 }
+    },
+    {
+      "id": 7,
+      "title": "Metrics Scrape Errors",
+      "description": "Increments when a metrics collector fails during a /metrics scrape. Non-zero means some metrics (outbox, DB lock, etc.) may be missing data. Check the 'collector' label to identify which subsystem is failing.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(cets_metrics_scrape_errors_total[5m])",
+          "legendFormat": "{{collector}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ HOST NODE — CPU and Memory Utilization (node_exporter)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }
+    },
+    {
+      "id": 8,
+      "title": "Node CPU by Mode",
+      "description": "Host CPU time by mode: 'user' = application code, 'system' = kernel, 'iowait' = waiting on disk/network I/O, 'idle' = free. High iowait with low user = storage bottleneck. High system = too many syscalls (possible goroutine explosion).",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (mode) (rate(node_cpu_seconds_total[2m])) / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 }
+    },
+    {
+      "id": 9,
+      "title": "Node Memory Available",
+      "description": "Host memory available as fraction of total. Below 15% available = memory pressure on the host. This affects all containers — if the host is running out of memory, containers will be OOM killed regardless of their individual limits.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "legendFormat": "available",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 }
+    },
+    {
+      "id": 10,
+      "title": "Network I/O (node)",
+      "description": "Host-level network receive and transmit bytes/s. Used to spot network saturation or unusual traffic patterns (e.g. large export jobs flooding the network).",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(node_network_receive_bytes_total{device!~\"lo|veth.*\"}[2m]))",
+          "legendFormat": "rx",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_network_transmit_bytes_total{device!~\"lo|veth.*\"}[2m]))",
+          "legendFormat": "tx",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 }
+    },
+    {
+      "id": 11,
+      "title": "Disk I/O (node)",
+      "description": "Host-level disk read/write bytes/s. High write rate correlates with Loki/Tempo/PostgreSQL WAL writes. Sustained high I/O can cause iowait and slow down all container workloads.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(node_disk_read_bytes_total[2m]))",
+          "legendFormat": "read",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_disk_written_bytes_total[2m]))",
+          "legendFormat": "write",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 }
+    }
+  ]
+}

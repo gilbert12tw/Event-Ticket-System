@@ -23,68 +23,85 @@ func TestBaremetalK8sLGTMProvisionsGrafanaDashboard(t *testing.T) {
 	}
 
 	for _, fragment := range []string{
+		// Deployment infrastructure — from observability.sh / Helm values
 		"cets-grafana-dashboards.yaml",
 		"kind: ConfigMap",
 		`grafana_dashboard: "1"`,
-		"grafana_folder: Cets",
+		"grafana_folder: Event-Ticket-System",
 		"folderAnnotation: grafana_folder",
 		"foldersFromFilesStructure: true",
-		"CETS Metrics RED",
-		"CETS Metrics USE",
-		"CETS Logs",
-		"CETS Traces",
-		"CETS Profiles",
+		// New dashboard titles — one per dashboard file
+		"ETS 01 — Golden Signals",
+		"ETS 02 — RED Traffic Drilldown",
+		"ETS 03 — Booking & Redis Pressure",
+		"ETS 04 — USE Infrastructure",
+		"ETS 05 — Outbox & Worker Health",
+		"ETS 06 — Service Anomaly Investigation",
+		// Template variable queries — present in k8s-01/02
 		"CETS_REPLICA_ID",
 		"fieldPath: metadata.name",
 		"cets_build_info",
 		"label_values(cets_build_info, service)",
-		"label_values(cets_build_info{service=~\\\"$service\\\"}, replica)",
-		"sum by (service, route) (rate(cets_http_requests_total[1m]))",
-		"sum by (service) (rate(cets_http_requests_total{status_class=\\\"5xx\\\"}[5m]))",
-		"sum by (service, replica, route, status) (rate(cets_http_requests_total{service=~\\\"$service\\\",replica=~\\\"$replica\\\",status_class=\\\"5xx\\\"}[1m]))",
+		`label_values(cets_build_info{service=~\"$service\"}, replica)`,
+		// RED metrics queries — present across k8s-01/02/06
+		`sum by (service, route) (rate(cets_http_requests_total[1m]))`,
+		`sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m]))`,
+		`sum by (service, replica, route, status) (increase(cets_http_requests_total{service=~\"$service\",replica=~\"$replica\",status_class=\"5xx\"}[5m]))`,
+		// Infrastructure queries — present in k8s-04
 		"cets_db_pool_acquire_wait_seconds_total",
 		"cets_db_lock_waiting_sessions",
+		// Datasource UIDs — in every dashboard
 		`"uid": "Prometheus"`,
 		`"uid": "Loki"`,
 		`"uid": "Tempo"`,
 		`"uid": "Pyroscope"`,
 		`"type": "grafana-pyroscope-datasource"`,
+		// Tempo-derived service graph metrics — in k8s-06 service anomaly
 		"traces_service_graph_request_total",
 		"traces_spanmetrics_calls_total",
-		"Tempo Service Graph (Trace-Derived Only)",
-		"K8s Deployment Topology (Not Tempo-Derived)",
-		"UI/static routes: /",
-		"API/health/ready routes: /api /healthz /readyz",
-		"This is K8s deployment topology, not Tempo-derived node graph data.",
-		"ingress-nginx emits spans",
-		"backend proxy client spans",
-		"enable-opentelemetry: \"true\"",
-		"otlp-collector-host: \"alloy.observability.svc.cluster.local\"",
-		"otlp-collector-port: \"4317\"",
-		"otel-service-name: \"ingress-nginx\"",
+		// K8s-specific: OpenTelemetry ingress configuration — from networking.sh
+		`enable-opentelemetry: "true"`,
+		`otlp-collector-host: "alloy.observability.svc.cluster.local"`,
+		`otlp-collector-port: "4317"`,
+		`otel-service-name: "ingress-nginx"`,
+		// K8s operational references — from README.md
 		"kubectl -n observability port-forward svc/kube-prometheus-stack-grafana 3000:80",
 		"66-verify-observability.sh",
+		// Topology notes about ingress spans — from README.md
+		"ingress-nginx emits spans",
+		"backend proxy client spans",
 	} {
 		assert.Contains(t, combined, fragment, "K8s LGTM dashboard contract is missing %q", fragment)
 	}
+
+	// K8s dashboards must use Kubernetes log labels, not Docker Compose service_name labels.
 	for filename, dashboardText := range dashboardTexts {
 		assert.NotContains(t, dashboardText, `{service_name=~"backend-.*|worker-.*"}`,
 			"K8s dashboard %s must use Kubernetes labels instead of Compose service labels", filename)
 	}
 
 	dashboards := parseK8sDashboards(t, dashboardTexts)
-	assertDashboardTitle(t, dashboards, "CETS Metrics RED")
-	assertDashboardTitle(t, dashboards, "CETS Metrics USE")
-	assertDashboardTitle(t, dashboards, "CETS Logs")
-	assertDashboardTitle(t, dashboards, "CETS Traces")
-	assertDashboardTitle(t, dashboards, "CETS Profiles")
-	assert.True(t, containsJSONValue(dashboards["cets-logs.json"], `{namespace="cets", app="backend"} |= "otel_trace_id"`))
-	assert.True(t, containsJSONValue(dashboards["cets-profiles.json"], `process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="cets-backend"}`))
-	for _, fragment := range []string{"user", "ingress-nginx", "frontend", "cets-backend", "postgres", "redis", "minio"} {
-		assert.True(t, containsJSONValue(dashboards["cets-traces.json"], fragment), "trace dashboard missing topology label %q", fragment)
-	}
-	assert.False(t, containsJSONValue(dashboards["cets-traces.json"], "ingress-nginx -> frontend -> cets-backend"),
-		"trace dashboard must not imply API routes currently pass through frontend")
+	// Verify all six new dashboard titles are present.
+	assertDashboardTitle(t, dashboards, "ETS 01 — Golden Signals")
+	assertDashboardTitle(t, dashboards, "ETS 02 — RED Traffic Drilldown")
+	assertDashboardTitle(t, dashboards, "ETS 03 — Booking & Redis Pressure")
+	assertDashboardTitle(t, dashboards, "ETS 04 — USE Infrastructure")
+	assertDashboardTitle(t, dashboards, "ETS 05 — Outbox & Worker Health")
+	assertDashboardTitle(t, dashboards, "ETS 06 — Service Anomaly Investigation")
+
+	// k8s-06 must use Kubernetes log label selectors, not Docker Compose service_name.
+	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], `{namespace="cets", app=~"backend|worker"}`),
+		"k8s-06 error log panel must use namespace+app labels")
+	// k8s-06 must have a Pyroscope CPU profile panel.
+	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], `process_cpu:cpu:nanoseconds:cpu:nanoseconds`),
+		"k8s-06 must include a Pyroscope CPU profiling panel")
+	// k8s-06 must have trace-derived service graph metrics from Tempo.
+	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], "traces_service_graph_request_total"),
+		"k8s-06 must include Tempo-derived service graph metrics")
+	// k8s-06 must not imply API routes currently pass through the frontend tier.
+	assert.False(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], "ingress-nginx -> frontend -> cets-backend"),
+		"k8s-06 must not imply API routes pass through frontend")
+
 	verifyScript := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "66-verify-observability.sh"))
 	assert.Contains(t, verifyScript, `client="user",server="ingress-nginx"`)
 	assert.Contains(t, verifyScript, `client="user",server="cets-backend"`)
@@ -103,7 +120,7 @@ func readK8sDashboardTexts(t *testing.T) map[string]string {
 		}
 		texts[entry.Name()] = readText(t, filepath.Join(dashboardDir, entry.Name()))
 	}
-	require.Len(t, texts, 5)
+	require.Len(t, texts, 6)
 	return texts
 }
 

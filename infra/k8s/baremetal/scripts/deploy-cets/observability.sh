@@ -274,17 +274,18 @@ metadata:
   name: cets-k8s-lgtm-dashboard
   namespace: observability
   annotations:
-    grafana_folder: Cets
+    grafana_folder: Event-Ticket-System
   labels:
     grafana_dashboard: "1"
 data:
 EOF
 for dashboard in \
-  cets-metrics-red.json \
-  cets-metrics-use.json \
-  cets-logs.json \
-  cets-traces.json \
-  cets-profiles.json; do
+  k8s-01-golden-signals.json \
+  k8s-02-red-traffic.json \
+  k8s-03-booking-redis.json \
+  k8s-04-use-infra.json \
+  k8s-05-outbox-workers.json \
+  k8s-06-service-anomaly.json; do
   {
     printf '  %s: |\n' "$dashboard"
     sed 's/^/    /' "$BM_DIR/dashboards/$dashboard"

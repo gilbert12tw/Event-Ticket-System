@@ -1,0 +1,363 @@
+{
+  "schemaVersion": 41,
+  "uid": "ets-golden-signals",
+  "title": "ETS 01 — Golden Signals",
+  "description": "SRE/Oncall first-response. Open this when any alert fires. The four quadrants — Traffic, Errors, Latency, Saturation — tell you scope and severity within seconds. Saturation covers DB pool exhaustion and active replica count. Navigate to a specialised dashboard once you know which signal is anomalous: RED Traffic for route/replica breakdown, Booking & Redis for booking hot-path, USE Infrastructure for resource saturation, Outbox & Workers for async delivery, or Service Anomaly for the full traces+logs+profiles investigation.",
+  "tags": ["cets", "ets", "golden-signals", "sre"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "RED Traffic Drilldown", "url": "/d/ets-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/ets-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ TRAFFIC — How much load is the system handling?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "Total RPS",
+      "description": "Overall request rate across all services. Sudden drop = traffic lost or service down. Sudden spike = load event.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        { "expr": "sum(rate(cets_http_requests_total[1m]))", "legendFormat": "RPS", "refId": "A" }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "5xx Error Rate",
+      "description": "Fraction of requests returning 5xx. >1% is warning; >5% is critical. Navigate to RED Traffic to see which route and replica.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(cets_http_requests_total[5m])), 0.001)",
+          "legendFormat": "5xx ratio",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 }
+    },
+    {
+      "id": 3,
+      "title": "P99 Latency",
+      "description": "99th-percentile end-to-end HTTP latency. >1s is warning; >2s is critical. Navigate to RED Traffic or Booking & Redis to identify the slow path.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cets_http_request_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 }
+    },
+    {
+      "id": 4,
+      "title": "DB Pool Saturation",
+      "description": "Fraction of DB connections actively acquired vs total pool size. >70% is warning; >90% is critical. Navigate to USE Infrastructure to see per-replica breakdown.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "red", "value": 0.9 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(cets_db_pool_conns{state=\"acquired\"}) / clamp_min(sum(cets_db_pool_conns{state=\"total\"}), 1)",
+          "legendFormat": "acquired/total",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 }
+    },
+    {
+      "id": 5,
+      "title": "Active Backend Replicas",
+      "description": "Number of backend instances reporting metrics. Should be 3. If <3, a replica crashed — check RED Traffic for uneven error distribution.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "count(cets_build_info)",
+          "legendFormat": "replicas",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 }
+    },
+    {
+      "id": 6,
+      "title": "Blackbox: Edge Probe",
+      "description": "HTTP probe success from the blackbox exporter hitting the edge entrypoint. 0 = edge is down or returning non-2xx.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 }, "1": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "min(probe_success)",
+          "legendFormat": "probe",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ TREND — How are the four signals moving over time?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+    },
+    {
+      "id": 7,
+      "title": "Traffic — Rate by Service",
+      "description": "Request rate per service over time. Useful for confirming load is distributed and spotting sudden traffic changes.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (service) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{service}}", "refId": "A" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }
+    },
+    {
+      "id": 8,
+      "title": "Errors — 5xx Rate by Service",
+      "description": "5xx error rate per service. A line that rises above the baseline means errors on that service. Navigate to RED Traffic to drill by route and replica.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
+    },
+    {
+      "id": 9,
+      "title": "Latency — P99 by Service",
+      "description": "99th-percentile request latency per service. Persistent elevation above 1s means something is slow — check booking stages or DB pool next.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{service}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{service}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{service}}",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 }
+    },
+    {
+      "id": 10,
+      "title": "Saturation — DB Pool Acquire Wait by Backend",
+      "description": "Rate of cumulative time spent waiting for a DB connection from the pool, per backend replica. Rising trend = pool is saturated. Navigate to USE Infrastructure for connections breakdown.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 }
+    }
+  ]
+}
