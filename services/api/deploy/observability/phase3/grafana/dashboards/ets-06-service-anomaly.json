@@ -125,8 +125,33 @@
     },
     {
       "id": 201,
-      "title": "E2E Service Call Chain — edge-lb → gateway → frontend-lb → backend-lb → backend → postgres",
-      "description": "Live service dependency graph derived from OTLP spans across all nginx tiers and the Go backend. Each node is a service; each edge is an actual traced request. Nodes: cets-edge-lb (browser entry) → cets-gateway (3 replicas) → cets-frontend-lb → cets-backend-lb → cets-backend (3 replicas) → postgres. A red edge = errors on that hop. Click any node to see its request rate and latency. To see the full per-request span waterfall with replica identity, click a trace in the Traces panel (STEP 3) and open 'Node Graph' inside the trace detail view.",
+      "title": "E2E Traces — click any trace → open Node Graph for full nginx → frontend → backend → postgres chain",
+      "description": "Recent traces rooted at cets-edge-lb showing the full ingress path. Click any trace row to open the span waterfall in Tempo. In the trace detail view, click 'Node Graph' to see the visual dependency graph: cets-edge-lb → cets-gateway-{1,2,3} → cets-frontend-lb → cets-frontend-{1,2,3} → cets-backend-lb → cets-backend → postgres. Each node shows the service name — the gateway and frontend nodes include the replica number so you can identify exactly which instance handled the request. The Node Graph uses parent-child span relationships (not the aggregated service graph metrics) and shows the complete chain even for nginx SERVER-only spans.",
+      "type": "traces",
+      "datasource": {
+        "type": "tempo",
+        "uid": "Tempo"
+      },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"cets-edge-lb\" && span.peer.service=\"cets-gateway\"}",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      }
+    },
+    {
+      "id": 202,
+      "title": "Backend → Postgres Service Graph (CLIENT span edges)",
+      "description": "Aggregated service dependency graph from Tempo's metrics generator. Shows edges where the Go backend makes CLIENT-kind calls to PostgreSQL. The nginx proxy tiers are not shown here because nginx only produces SERVER spans — use the per-trace Node Graph (click a trace in the left panel) for the full nginx → frontend → backend chain.",
       "type": "nodeGraph",
       "datasource": {
         "type": "tempo",
@@ -139,9 +164,9 @@
         }
       ],
       "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
+        "h": 10,
+        "w": 12,
+        "x": 12,
         "y": 1
       }
     },
