@@ -153,7 +153,7 @@ describe("TicketPanel", () => {
       screen.getByText("活動尚未開始，請於開始時間到場後再出示二維碼驗票。"),
     ).toBeInTheDocument();
     expect(screen.queryByText("可入場")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
     expect(screen.queryByText("入場提示")).not.toBeInTheDocument();
   });
 

@@ -126,6 +126,11 @@ describe("HrReportsPage", () => {
       "到場率30%",
     );
     expect(
+      screen
+        .getAllByRole("link", { name: "家庭電影夜" })[0]
+        ?.getAttribute("href"),
+    ).toBe("/admin/events/evt-full/registrations?event_id=evt-full");
+    expect(
       screen.getAllByText("Taipei: 6 / Hsinchu: 2").length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("不限量").length).toBeGreaterThan(0);

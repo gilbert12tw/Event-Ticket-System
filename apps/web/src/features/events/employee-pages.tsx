@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { cancelMyRegistration, listEvents } from "@/lib/api";
-import type { AuthMeClaims, EventSummary } from "@/lib/api";
+import { cancelMyRegistration, listEvents, listTickets } from "@/lib/api";
+import type { AuthMeClaims, EventSummary, Ticket } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
 import {
   Alert,
@@ -22,6 +22,8 @@ import { type BookingResultState } from "./employee-booking-result";
 import { canSubmitAttendeeAction } from "./employee-event-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { selectCurrentTicket } from "@/features/tickets/ticket-readiness";
+import { TicketPanel } from "@/features/tickets/ticket-panel";
 
 type TextByEvent = Record<string, string>;
 type EmployeeEventTab = "available" | "registered" | "unavailable";
@@ -31,6 +33,7 @@ export function EmployeeEventsPage({
   claims,
 }: Readonly<{ claims: AuthMeClaims }>) {
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [cancelReasons, setCancelReasons] = useState<TextByEvent>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -73,11 +76,17 @@ export function EmployeeEventsPage({
     (event) =>
       !availableEvents.includes(event) && !registeredEvents.includes(event),
   );
+  const currentTicket = selectCurrentTicket(tickets);
   async function refresh() {
     setLoading(true);
     setMessage("");
     try {
-      setEvents(await listEvents());
+      const [nextEvents, nextTickets] = await Promise.all([
+        listEvents(),
+        listTickets(),
+      ]);
+      setEvents(nextEvents);
+      setTickets(nextTickets);
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -146,6 +155,13 @@ export function EmployeeEventsPage({
           ]}
         />
         {message && <Alert tone={messageTone(message)}>{message}</Alert>}
+        {!loading && (
+          <CurrentEventTicketPanel
+            ticket={currentTicket}
+            tickets={tickets}
+            onRefresh={() => void refresh()}
+          />
+        )}
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as EmployeeEventTab)}
@@ -234,6 +250,38 @@ export function EmployeeEventsPage({
         </Tabs>
       </Card>
     </section>
+  );
+}
+
+function CurrentEventTicketPanel({
+  onRefresh,
+  ticket,
+  tickets,
+}: Readonly<{
+  onRefresh: () => void;
+  ticket?: Ticket;
+  tickets: Ticket[];
+}>) {
+  if (ticket) {
+    return (
+      <div className="current-ticket-panel" aria-label="目前活動票券 QR code">
+        <div className="section-heading">
+          <div>
+            <h3>目前活動票券</h3>
+            <p>有可入場票券時，QR code 會直接顯示在活動首頁。</p>
+          </div>
+        </div>
+        <TicketPanel compact ticket={ticket} onRefresh={onRefresh} />
+      </div>
+    );
+  }
+
+  if (tickets.length === 0) return null;
+  return (
+    <EmptyState
+      title="目前沒有可入場票券"
+      action="已報名票券會保留在我的票券；活動開始後 QR code 會顯示在這裡。"
+    />
   );
 }
 

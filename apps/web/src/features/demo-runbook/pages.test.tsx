@@ -395,8 +395,8 @@ describe("DemoRunbookPage", () => {
     await runStep("檢查 received 名單", "received=2; total=2");
     await runStep("快進到 cutoff 後", /fixed now=2026-05-31T09:01:00Z/);
     await runStep("執行 deterministic lottery", "candidates=2; winners=1");
-    await runStep("查看 winner 票券", "E1001: ticket=ticket-1");
-    await runStep("現場首次驗票", /accepted at/);
+    await runStep("目前票券 QR", "E1001: ticket=ticket-1");
+    await runStep("掃描即驗票", /accepted at/);
     await runStep("重複掃描拒絕", "duplicate scan rejected");
     await runStep("查報表與稽核", "reports=1; event_confirmed=1; audits=1");
 

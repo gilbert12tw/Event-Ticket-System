@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { navigate, ticketDetailPath } from "@/app/routes";
 import {
   listEvents,
   listNotificationDeliveries,
@@ -40,7 +41,9 @@ import {
   canRetryDelivery,
   retryButtonLabel,
   retryDisabledReason,
+  sortDeliveriesByAttention,
 } from "./delivery-helpers";
+import { runClientNavigation } from "@/lib/navigation";
 
 export function UserNotificationsPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -76,6 +79,9 @@ export function UserNotificationsPage() {
       .filter((event) => event.current_user_status)
       .map((event) => ({
         id: `registration-${event.event_id}`,
+        href: `/user/events/detail?event_id=${encodeURIComponent(
+          event.event_id,
+        )}`,
         kind: "報名",
         title: event.title,
         status: event.current_user_status,
@@ -86,6 +92,7 @@ export function UserNotificationsPage() {
       })),
     ...tickets.map((ticket) => ({
       id: ticket.ticket_id,
+      href: ticketDetailPath(ticket.ticket_id),
       kind: "票券",
       title: ticket.event_title || ticket.event_id,
       status: ticket.status,
@@ -140,7 +147,9 @@ export function UserNotificationsPage() {
             mobileCards={notificationRows.map((row) => (
               <article className="mobile-summary-card" key={row.id}>
                 <div>
-                  <h3>{row.title}</h3>
+                  <h3>
+                    <NotificationSubject href={row.href} title={row.title} />
+                  </h3>
                   <p className="table-muted">{row.kind}</p>
                 </div>
                 <NotificationStatusBadge kind={row.kind} status={row.status} />
@@ -160,7 +169,9 @@ export function UserNotificationsPage() {
               {notificationRows.map((row) => (
                 <tr key={row.id}>
                   <td>{row.kind}</td>
-                  <td>{row.title}</td>
+                  <td>
+                    <NotificationSubject href={row.href} title={row.title} />
+                  </td>
                   <td>
                     <NotificationStatusBadge
                       kind={row.kind}
@@ -185,6 +196,20 @@ export function UserNotificationsPage() {
 }
 
 type NotificationStatusProps = { kind: string; status?: string };
+
+function NotificationSubject({
+  href,
+  title,
+}: Readonly<{ href: string; title: string }>) {
+  return (
+    <a
+      href={href}
+      onClick={(event) => runClientNavigation(event, () => navigate(href))}
+    >
+      {title}
+    </a>
+  );
+}
 
 function NotificationStatusBadge({
   kind,
@@ -240,8 +265,10 @@ export function NotificationDeliveryPage() {
     }
   }
 
-  const filteredDeliveries = deliveries.filter(
-    (delivery) => statusFilter === "all" || delivery.status === statusFilter,
+  const filteredDeliveries = sortDeliveriesByAttention(
+    deliveries.filter(
+      (delivery) => statusFilter === "all" || delivery.status === statusFilter,
+    ),
   );
   const deliveryCounts = deliveries.reduce<Record<string, number>>(
     (counts, delivery) => {

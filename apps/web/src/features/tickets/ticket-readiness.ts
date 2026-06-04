@@ -2,11 +2,14 @@ import type { Ticket } from "@/lib/api";
 import { formatDate } from "@/lib/formatting";
 import { siteLabel } from "@/lib/ui/options";
 
+const fallbackTicketWindowMs = 24 * 60 * 60 * 1000;
+
 export type TicketReadinessView = {
   kind:
     | "entry-ready"
     | "not-open"
     | "qr-pending"
+    | "expired"
     | "redeemed"
     | "revoked"
     | "unavailable";
@@ -15,12 +18,22 @@ export type TicketReadinessView = {
   copy: string;
 };
 
-export function ticketEntryReadinessView(ticket: Ticket): TicketReadinessView {
+export function ticketEntryReadinessView(
+  ticket: Ticket,
+  now: Date = new Date(),
+): TicketReadinessView {
   if (ticket.status === "active") {
-    if (
-      ticket.event_starts_at &&
-      new Date(ticket.event_starts_at) > new Date()
-    ) {
+    const startsAt = parseTime(ticket.event_starts_at);
+    const expiresAt = ticketExpiryTime(ticket);
+    if (expiresAt > 0 && expiresAt <= now.getTime()) {
+      return {
+        kind: "expired",
+        label: "已過期",
+        tone: "neutral",
+        copy: "此票券已超過有效期限，不能入場。",
+      };
+    }
+    if (startsAt > now.getTime()) {
       return {
         kind: "not-open",
         label: "尚未開放入場",
@@ -78,4 +91,36 @@ export function ticketListMeta(ticket: Ticket) {
 export function safeTicketID(ticketID: string) {
   if (ticketID.length <= 24) return ticketID;
   return `${ticketID.slice(0, 12)}...${ticketID.slice(-6)}`;
+}
+
+export function selectCurrentTicket(
+  tickets: Ticket[],
+  now: Date = new Date(),
+): Ticket | undefined {
+  return tickets
+    .filter(
+      (ticket) => ticketEntryReadinessView(ticket, now).kind === "entry-ready",
+    )
+    .sort((left, right) => {
+      const leftStart = parseTime(left.event_starts_at);
+      const rightStart = parseTime(right.event_starts_at);
+      return rightStart - leftStart;
+    })[0];
+}
+
+function ticketExpiryTime(ticket: Ticket) {
+  const explicitExpiry = parseTime(ticket.expires_at);
+  const startsAt = parseTime(ticket.event_starts_at);
+  const fallbackExpiry = startsAt > 0 ? startsAt + fallbackTicketWindowMs : 0;
+  if (explicitExpiry > 0 && fallbackExpiry > 0) {
+    return Math.min(explicitExpiry, fallbackExpiry);
+  }
+  if (explicitExpiry > 0) return explicitExpiry;
+  return fallbackExpiry;
+}
+
+function parseTime(value?: string) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
 }

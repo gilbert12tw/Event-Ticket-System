@@ -20,6 +20,7 @@ import {
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { prioritizeOpsDashboard } from "./ops-priority";
 
 const emptyDashboard: OpsDashboard = {
   capacity_pressure: { events: [] },
@@ -66,11 +67,15 @@ export function OpsControlPlanePage() {
     };
   }, []);
 
-  const capacityRows = dashboard.capacity_pressure.events;
-  const queueRows = dashboard.queues.queues;
-  const freshnessRows = dashboard.reports_freshness.projections;
-  const deadLetters = dashboard.dead_letter_recent ?? [];
-  const replays = dashboard.replay_recent ?? [];
+  const prioritizedDashboard = useMemo(
+    () => prioritizeOpsDashboard(dashboard),
+    [dashboard],
+  );
+  const capacityRows = prioritizedDashboard.capacity_pressure.events;
+  const queueRows = prioritizedDashboard.queues.queues;
+  const freshnessRows = prioritizedDashboard.reports_freshness.projections;
+  const deadLetters = prioritizedDashboard.dead_letter_recent ?? [];
+  const replays = prioritizedDashboard.replay_recent ?? [];
   const stats = useMemo(
     () => opsStats(capacityRows, queueRows, freshnessRows),
     [capacityRows, queueRows, freshnessRows],

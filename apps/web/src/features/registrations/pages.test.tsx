@@ -163,6 +163,7 @@ describe("AdminRegistrationsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Annual Summit" }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("報名治理摘要")).toHaveTextContent("需處理3");
     expect(screen.getByText("reg-confirmed")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "候補名單" }));

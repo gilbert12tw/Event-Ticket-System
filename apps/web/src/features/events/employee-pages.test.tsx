@@ -6,6 +6,7 @@ import {
   bookEvent,
   cancelMyRegistration,
   listEvents,
+  listTickets,
 } from "@/lib/api";
 import {
   canBook,
@@ -23,10 +24,12 @@ vi.mock("@/lib/api", async () => {
     cancelMyRegistration: vi.fn(),
     getEvent: vi.fn(),
     listEvents: vi.fn(),
+    listTickets: vi.fn(),
   };
 });
 
 const mockListEvents = vi.mocked(listEvents);
+const mockListTickets = vi.mocked(listTickets);
 const mockBookEvent = vi.mocked(bookEvent);
 const mockCancelMyRegistration = vi.mocked(cancelMyRegistration);
 
@@ -54,6 +57,8 @@ function showEvents(...events: EventOverrides[]) {
 describe("EmployeeEventsPage", () => {
   beforeEach(() => {
     mockListEvents.mockReset();
+    mockListTickets.mockReset();
+    mockListTickets.mockResolvedValue([]);
     mockBookEvent.mockReset();
     mockCancelMyRegistration.mockReset();
     window.history.replaceState({}, "", "/user/events");

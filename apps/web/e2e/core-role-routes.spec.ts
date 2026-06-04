@@ -78,8 +78,13 @@ test("employee tickets open exact detail only after list click", async ({
 }) => {
   await openRoute(page, "E1001", "/user/tickets");
 
-  await expect(page.getByRole("heading", { name: "票券清單" })).toBeVisible();
-  await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { level: 2, name: "我的票券" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "目前可入場票券" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("票券二維碼").first()).toBeVisible();
 
   await page.getByRole("link", { name: /第一階段企業午餐日/ }).click();
   await expect(page).toHaveURL(/\/user\/tickets\?ticket_id=ticket-001$/);

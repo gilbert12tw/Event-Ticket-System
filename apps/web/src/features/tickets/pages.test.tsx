@@ -34,7 +34,7 @@ describe("EmployeeTicketsPage", () => {
     window.history.replaceState({}, "", "/user/tickets");
   });
 
-  it("renders a single-column ticket list without exposing a QR by default", async () => {
+  it("renders the current ticket QR before the rest of the ticket list", async () => {
     mockListTickets.mockResolvedValue([
       ticketFixture(),
       ticketFixture({ ticket_id: "T-2", status: "active", signed_token: "" }),
@@ -48,7 +48,9 @@ describe("EmployeeTicketsPage", () => {
 
     render(<EmployeeTicketsPage claims={claims} />);
 
-    expect(await screen.findByText("票券清單")).toBeInTheDocument();
+    expect(await screen.findByText("我的票券")).toBeInTheDocument();
+    expect(screen.getByText("目前可入場票券")).toBeInTheDocument();
+    expect(screen.getByLabelText("票券二維碼")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /T-1/ })).toHaveAttribute(
       "href",
       "/user/tickets?ticket_id=T-1",
@@ -59,7 +61,6 @@ describe("EmployeeTicketsPage", () => {
     expect(summary).toHaveTextContent("待產生 QR1");
     expect(summary).toHaveTextContent("已核銷1");
     expect(summary).toHaveTextContent("已撤銷1");
-    expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
     expect(mockGetTicket).not.toHaveBeenCalled();
   });
 
@@ -187,9 +188,10 @@ function ticketFixture(overrides: Partial<Ticket> = {}): Ticket {
     status: "active",
     signed_token: "signed-token",
     issued_at: "2026-05-06T10:00:00Z",
+    expires_at: "2099-12-31T23:59:59Z",
     event_title: "台北家庭電影夜",
     event_location: "Taipei HQ",
-    event_starts_at: "2026-05-19T10:00:00Z",
+    event_starts_at: "2026-06-04T00:00:00Z",
     employee_name: "Ariel Chen",
     non_transferable: true,
     ...overrides,

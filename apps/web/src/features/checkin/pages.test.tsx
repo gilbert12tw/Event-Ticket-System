@@ -222,6 +222,17 @@ describe("CheckinPage", () => {
 
   it("fills the token field when QR detection reads a code", async () => {
     mockReports.mockResolvedValue([]);
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-qr",
+      ticket_id: "tkt-qr",
+      event_id: "evt-live",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-05-16T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
     const controls = { stop: vi.fn() };
     zxingMocks.decodeFromConstraints.mockImplementation(
       async (_constraints, _video, callback) => {
@@ -236,9 +247,15 @@ describe("CheckinPage", () => {
     );
 
     expect(
-      await screen.findByText("已讀取 QR code，可以送出驗票。"),
+      await screen.findByText("已讀取 QR code，系統會自動送出驗票。"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue("qr-token-123");
+    expect(mockCheckIn).toHaveBeenCalledWith(
+      "qr-token-123",
+      "gate-1",
+      "evt-live",
+      "",
+    );
     expect(controls.stop).toHaveBeenCalledTimes(1);
   });
 
@@ -253,7 +270,7 @@ describe("CheckinPage", () => {
     );
 
     expect(
-      await screen.findByText("相機已開啟，請將 QR code 對準畫面中央。"),
+      await screen.findByText("相機已開啟，請將 QR code 對準掃描框。"),
     ).toBeInTheDocument();
     expect(zxingMocks.decodeFromConstraints).toHaveBeenCalled();
   });

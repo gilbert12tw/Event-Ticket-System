@@ -50,6 +50,10 @@ describe("AdminAuditPage", () => {
     ).not.toBeInTheDocument();
     expect(container.querySelectorAll(".audit-mobile-card")).toHaveLength(2);
     expect(screen.getByText("aud-1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "開啟相關頁面" })).toHaveAttribute(
+      "href",
+      "/admin/checkin",
+    );
 
     const secondRow = within(table).getByText("staff-2").closest("tr");
     expect(secondRow).not.toBeNull();

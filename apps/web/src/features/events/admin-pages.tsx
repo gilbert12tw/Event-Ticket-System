@@ -25,6 +25,10 @@ import {
   splitTags,
   toISO,
 } from "@/lib/formatting";
+import {
+  selectCurrentEventID,
+  sortEventsByManagementPriority,
+} from "@/lib/current-event";
 import { Alert, CompactStatsBar } from "@/components/shared";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
@@ -141,11 +145,13 @@ export function AdminEventsPage() {
 
   async function refreshAdminEvents(nextSelectedID = selectedEventID) {
     try {
-      const rows = await listAdminEvents();
+      const rows = sortEventsByManagementPriority(await listAdminEvents());
       setAdminEvents(rows);
       applySelectedEvent(
         rows,
-        nextSelectedID === "" ? (rows[0]?.event_id ?? "") : nextSelectedID,
+        nextSelectedID === ""
+          ? selectCurrentEventID(rows, selectedEventID)
+          : nextSelectedID,
       );
     } catch (error) {
       setMessage(errorMessage(error));

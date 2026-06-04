@@ -59,10 +59,11 @@ The app should scan from role context to current task to operational proof. Page
 ## 6. Production Page Standards
 
 - **Local SSO:** Login is a real access surface, not a marketing hero. It shows app readiness, role groups, and the cookie security note with restrained hierarchy.
-- **Employee Events:** Eligibility, capacity, booking state, and action availability must be visible on each event row.
-- **Employee Tickets:** Ticket selection and QR display must preserve token redaction while making the check-in handoff obvious.
-- **Admin Events:** Publish readiness, zero-match eligibility, capacity, and audit consequence must be visible before submit.
-- **Check-in:** Manual token entry remains the Phase 1 scanner boundary. Duplicate scan handling is explicit and high contrast.
-- **Reports and Audit:** Tables prioritize scanability, filtering, aggregation, and metadata detail without exposing unnecessary personal data.
-- **Demo Control Panel:** The AC-9 flow is preserved as a practical verification tool with manual steps, visible API activity, real data artifacts, and optional debug-clock time travel.
+- **Employee Events:** Eligibility, capacity, booking state, and action availability must be visible on each event row. When the employee has an active ticket inside the current entry window, the current QR block is shown before event browsing.
+- **Employee Tickets:** Ticket selection and QR display must preserve token redaction while making the check-in handoff obvious. Current active tickets appear first; unavailable, not-open, expired, or revoked tickets use a single clear empty/readiness state instead of showing unusable QR.
+- **Admin Events:** Publish readiness, zero-match eligibility, capacity, and audit consequence must be visible before submit. Current or actionable activities are selected and listed before passive archived work.
+- **Check-in:** Online scanner flow is scan-first: the current event is auto-selected, the QR camera has an alignment frame, scanned tokens submit immediately with debounce, and manual token entry remains as fallback. PWA/offline scanner redesign is deferred; the existing offline route remains separate.
+- **Registration Governance:** Waitlist, active-ticket governance, cancellation, and revocation rows are ordered by needs-attention before passive records.
+- **Reports and Audit:** Tables prioritize scanability, filtering, aggregation, and metadata detail without exposing unnecessary personal data. Waitlist, low-attendance, stale, conflict, failed, or retryable rows should surface before passive rows and include direct workspace links where safe.
+- **Demo Control Panel:** The AC-9 flow is preserved as a practical verification tool with current-first ticket QR handoff, scan-first check-in wording, visible API activity, real data artifacts, and optional debug-clock time travel.
 - **Responsive and Accessibility:** Verify 375px, 768px, 1024px, and 1440px. Maintain WCAG AA contrast, visible keyboard focus, reduced motion support, and no incoherent text overlap.
