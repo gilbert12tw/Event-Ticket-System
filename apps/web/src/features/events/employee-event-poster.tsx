@@ -3,14 +3,18 @@ import { eventPosterBlob } from "@/lib/api";
 
 export function EventPoster({
   eventID,
+  meta,
   title,
   variant = "card",
 }: Readonly<{
   eventID: string;
+  meta?: string;
   title: string;
   variant?: "card" | "hero";
 }>) {
   const posterURL = useEventPoster(eventID);
+  const [imageRejected, setImageRejected] = useState(false);
+  useEffect(() => setImageRejected(false), [posterURL]);
   const className = [
     "employee-event-poster",
     variant === "hero" ? "hero" : "",
@@ -19,10 +23,13 @@ export function EventPoster({
     .filter(Boolean)
     .join(" ");
   const dimensions =
-    variant === "hero" ? { width: 1200, height: 675 } : { width: 960, height: 600 };
+    variant === "hero"
+      ? { width: 1200, height: 675 }
+      : { width: 960, height: 600 };
+  const showPosterImage = Boolean(posterURL) && !imageRejected;
   return (
     <div className={className}>
-      {posterURL ? (
+      {showPosterImage ? (
         <img
           alt={`${title} 海報`}
           decoding="async"
@@ -36,10 +43,18 @@ export function EventPoster({
           }
           src={posterURL}
           width={dimensions.width}
+          onError={() => setImageRejected(true)}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth <= 2 && image.naturalHeight <= 2) {
+              setImageRejected(true);
+            }
+          }}
         />
       ) : (
         <div className="employee-event-poster-fallback" aria-hidden="true">
           <span>{posterInitial(title)}</span>
+          <small>{meta || "企業活動"}</small>
         </div>
       )}
     </div>

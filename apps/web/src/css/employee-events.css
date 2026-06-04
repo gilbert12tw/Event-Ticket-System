@@ -209,17 +209,45 @@
 
 .employee-event-poster-fallback {
   display: grid;
+  gap: 8px;
+  justify-items: center;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: min(74%, 360px);
+  padding: 14px;
   z-index: 1;
   border: 1px solid oklch(1 0 0 / 0.72);
   border-radius: var(--radius);
   background: oklch(0.985 0.004 238 / 0.82);
   color: var(--accent);
+  text-align: center;
+  box-shadow: 0 12px 24px oklch(0.3 0.022 245 / 0.08);
+}
+
+.employee-event-poster.hero .employee-event-poster-fallback {
+  width: min(58%, 420px);
+  padding: 18px;
+}
+
+.employee-event-poster-fallback span {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
   font-size: 1.45rem;
   font-weight: 820;
-  box-shadow: 0 12px 24px oklch(0.3 0.022 245 / 0.08);
+}
+
+.employee-event-poster-fallback small {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .employee-event-card-body {
@@ -321,6 +349,12 @@
   font-weight: 760;
 }
 
+.event-readiness-details summary:focus-visible {
+  outline: 3px solid oklch(0.62 0.078 250 / 0.46);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
 .event-readiness-body {
   display: grid;
   gap: 12px;
@@ -330,6 +364,13 @@
 
 .employee-event-missing {
   max-width: 720px;
+}
+
+@media (max-width: 1180px) {
+  .employee-event-detail-action-panel {
+    position: static;
+    top: auto;
+  }
 }
 
 @media (max-width: 900px) {
@@ -382,16 +423,16 @@
   }
 
   .employee-event-detail-action-panel {
-    position: sticky;
-    z-index: 3;
-    bottom: calc(74px + env(safe-area-inset-bottom));
+    position: static;
+    z-index: auto;
+    bottom: auto;
     top: auto;
-    margin-right: -14px;
-    margin-left: -14px;
-    border-right: 0;
-    border-left: 0;
+    margin-right: 0;
+    margin-left: 0;
+    border-right: 1px solid var(--line);
+    border-left: 1px solid var(--line);
     border-radius: var(--radius);
-    box-shadow: 0 -12px 30px oklch(0.3 0.022 245 / 0.08);
+    box-shadow: var(--shadow-soft);
   }
 
   .event-detail-app .employee-event-detail-action-panel {

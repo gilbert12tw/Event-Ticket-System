@@ -129,9 +129,10 @@ export function EmployeeEventPosterCard({
   const state = employeeEventDisplayState(event, ticket, now);
   const deadline = registrationDeadlineView(event, now);
   const href = primaryHref(event, ticket, state.kind);
+  const meta = eventMeta(event);
   return (
     <article className="employee-event-card">
-      <EventPoster eventID={event.event_id} title={event.title} />
+      <EventPoster eventID={event.event_id} meta={meta} title={event.title} />
       <div className="employee-event-card-body">
         <div className="employee-event-card-main">
           <div className="employee-event-card-badges">
@@ -142,10 +143,7 @@ export function EmployeeEventPosterCard({
             )}
           </div>
           <h3>{event.title}</h3>
-          <p className="employee-event-meta">
-            {formatDate(event.starts_at)} ·{" "}
-            {siteLabel(event.location || event.event_site)}
-          </p>
+          <p className="employee-event-meta">{meta}</p>
           <p className="employee-event-description">
             {eventDescription(event)}
           </p>
@@ -177,10 +175,12 @@ export function EmployeeEventDetailHero({
 }>) {
   const state = employeeEventDisplayState(event, undefined, now);
   const deadline = registrationDeadlineView(event, now);
+  const meta = eventMeta(event);
   return (
     <section className="employee-event-detail-hero">
       <EventPoster
         eventID={event.event_id}
+        meta={meta}
         title={event.title}
         variant="hero"
       />
@@ -190,10 +190,7 @@ export function EmployeeEventDetailHero({
           <EmployeeRegistrationDeadlineChip deadline={deadline} />
         </div>
         <h2>{event.title}</h2>
-        <p className="employee-event-meta">
-          {formatDate(event.starts_at)} ·{" "}
-          {siteLabel(event.location || event.event_site)}
-        </p>
+        <p className="employee-event-meta">{meta}</p>
         <p>{eventDescription(event)}</p>
         {action}
       </div>
@@ -257,6 +254,12 @@ function ticketForEvent(tickets: Ticket[], eventID: string) {
 
 function eventDescription(event: EventSummary) {
   return (event.description || "未提供活動介紹。").trim();
+}
+
+function eventMeta(event: EventSummary) {
+  return `${formatDate(event.starts_at)} · ${siteLabel(
+    event.location || event.event_site,
+  )}`;
 }
 
 function sameMonth(leftDateKey: string, rightDateKey: string) {

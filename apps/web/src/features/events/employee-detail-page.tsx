@@ -62,6 +62,7 @@ export function EmployeeEventDetailPage({
     null,
   );
   const [pendingAction, setPendingAction] = useState<PendingAction>("");
+  const [calendarMessage, setCalendarMessage] = useState("");
   const principalID = claims.employee_id;
   const refreshRequestRef = useRef(0);
   const bookingResultRef = useRef<BookingResultState | null>(null);
@@ -215,12 +216,6 @@ export function EmployeeEventDetailPage({
         <EmployeeRegistrationDeadlineChip
           deadline={registrationDeadlineView(detail, now)}
         />
-        {canAddToCalendar(detail, detail.current_user_ticket) && (
-          <div className="employee-detail-calendar-action">
-            <span>已報名可加入手機行事曆</span>
-            <EmployeeAddToCalendarButton event={detail} />
-          </div>
-        )}
         <div className="summary-block event-action-rail event-detail-action-bar">
           <DetailActionControls
             claims={claims}
@@ -231,6 +226,25 @@ export function EmployeeEventDetailPage({
             onFamilyCountChange={setFamilyCount}
             suppressActiveTicketLink={Boolean(visibleBookingResult?.ticketID)}
           />
+          {canAddToCalendar(detail, detail.current_user_ticket) && (
+            <div className="employee-detail-calendar-action">
+              <span>
+                <strong>行事曆提醒</strong>
+                <small aria-live="polite">
+                  {calendarMessage ||
+                    "下載 .ics 後可匯入手機、Google 或 Outlook 行事曆。"}
+                </small>
+              </span>
+              <EmployeeAddToCalendarButton
+                className="employee-detail-calendar-download"
+                event={detail}
+                label="下載行事曆 (.ics)"
+                onDownloaded={(filename) =>
+                  setCalendarMessage(`已下載行事曆檔案：${filename}`)
+                }
+              />
+            </div>
+          )}
           <CancellationControl
             busy={pendingAction === "cancel"}
             event={detail}
@@ -374,7 +388,7 @@ function DetailActionControls({
           disabled={pendingAction === "book" || !canSubmit}
         >
           <Icon name={canSubmit ? "ticket" : "ban"} />
-          {pendingAction === "book" ? "送出中" : action.label}
+          {pendingAction === "book" ? "送出中…" : action.label}
         </Button>
       )}
     </>

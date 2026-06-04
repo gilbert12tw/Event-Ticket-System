@@ -40,6 +40,7 @@ export function EmployeeTicketPass({
         <div className="employee-ticket-pass-poster">
           <EventPoster
             eventID={ticket.event_id}
+            meta={ticketTimeLocation(ticket)}
             title={ticket.event_title || "活動票券"}
           />
         </div>
@@ -140,6 +141,7 @@ function EmployeeTicketCard({
       >
         <EventPoster
           eventID={ticket.event_id}
+          meta={ticketTimeLocation(ticket)}
           title={ticket.event_title || "活動票券"}
         />
         <span className="employee-ticket-card-copy">

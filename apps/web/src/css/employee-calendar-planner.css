@@ -318,9 +318,9 @@
 }
 
 .employee-detail-calendar-action {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-width: 0;
   padding: 7px 8px;
@@ -329,10 +329,29 @@
   background: var(--surface-raised);
 }
 
-.employee-detail-calendar-action span {
+.employee-detail-calendar-action > span {
+  display: grid;
+  gap: 2px;
   min-width: 0;
+}
+
+.employee-detail-calendar-action > span > strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.employee-detail-calendar-action > span > small {
   color: var(--muted);
   font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.employee-detail-calendar-action
+  > .employee-detail-calendar-download[data-slot="button"] {
+  width: auto;
+  min-width: max-content;
+  max-width: none;
+  flex: none;
 }
 
 @media (max-width: 900px) {
@@ -416,5 +435,16 @@
 
   .employee-event-card-badges .employee-deadline-chip small {
     flex-basis: 100%;
+  }
+
+  .employee-detail-calendar-action {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .employee-detail-calendar-action
+    > .employee-detail-calendar-download[data-slot="button"] {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
   }
 }

@@ -163,13 +163,57 @@ describe("EmployeeEventDetailPage", () => {
 
     expect(await screen.findByText("主要操作")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "加入行事曆：活動" }),
+      screen.getByRole("button", { name: /下載行事曆.*活動/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "查看這張票券" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
     expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
+  });
+
+  it("downloads an ICS file from event detail with visible feedback", async () => {
+    showEvent({
+      current_user_ticket: ticket("T-calendar", "R-calendar"),
+      current_user_status: "confirmed",
+      description: "團隊交流",
+      location: "Taipei HQ",
+      starts_at: "2026-06-04T13:00:00+08:00",
+      title: "已報名活動",
+    });
+    const createObjectURL = vi.fn(() => "blob:calendar");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL,
+        revokeObjectURL,
+      }),
+    );
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "下載行事曆 (.ics)：已報名活動",
+      }),
+    );
+
+    expect(click).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("text/calendar;charset=utf-8");
+    await expect(blob.text()).resolves.toContain("BEGIN:VCALENDAR");
+    await expect(blob.text()).resolves.toContain("SUMMARY:已報名活動");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:calendar");
+    expect(
+      await screen.findByText("已下載行事曆檔案：2026-06-04-已報名活動.ics"),
+    ).toBeInTheDocument();
+
+    click.mockRestore();
   });
 
   it("opens the exact ticket detail from the event detail handoff", async () => {
