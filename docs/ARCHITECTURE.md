@@ -98,7 +98,7 @@ flowchart LR
 - app 與 worker 使用同一份映像與同一份設定來源，只是啟動 command 不同。
 - app 提供 `health` / `ready` endpoint；Compose 使用 `healthcheck` 與 `depends_on: service_healthy` 等待 PostgreSQL / Redis ready，但 business readiness 目前只驗證 PostgreSQL。
 - 所有服務日誌輸出到 stdout / stderr，由 `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml logs` 觀察。
-- migration、seed、修復腳本以 one-off admin process 執行，例如未來可用 `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml run --rm app <migration command>`。
+- migration、seed、修復腳本以 one-off admin process 執行，例如可用 `docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml run --rm app <migration command>`；demo 重置使用手動 `admin` profile：`docker compose --env-file services/api/deploy/.env -f services/api/deploy/compose.yaml --profile admin run --rm db-reset`，只清 app data 與 CETS Redis key，不刪服務或 volume。
 
 ### 4.3 Phase 1 Connectivity Acceptance
 

@@ -34,6 +34,7 @@ func TestRunRejectsUnsafeUnknownCommandWithoutEcho(t *testing.T) {
 
 func TestRunCommandsRequireDatabaseURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
 
 	tests := []struct {
 		name string
@@ -43,6 +44,7 @@ func TestRunCommandsRequireDatabaseURL(t *testing.T) {
 		{name: "serve", args: []string{"serve"}},
 		{name: "ready", args: []string{"ready"}},
 		{name: "migrate", args: []string{"migrate"}},
+		{name: "reset demo db", args: []string{"reset-demo-db"}},
 		{name: "seed", args: []string{"seed"}},
 		{name: "worker", args: []string{"worker"}},
 		{name: "hr sync", args: []string{"hr-sync"}},
@@ -257,6 +259,10 @@ func TestCommandsReturnDatabaseParseErrorsAfterValidation(t *testing.T) {
 		{name: "serve", run: func(cfg config.Config) error { return serve(cfg, testLogger()) }},
 		{name: "ready", run: ready},
 		{name: "migrate", run: func(cfg config.Config) error { return migrate(cfg, testLogger()) }},
+		{name: "reset demo db", run: func(cfg config.Config) error {
+			cfg.RedisURL = "redis://localhost:6379/0"
+			return resetDemoDB(cfg, testLogger())
+		}},
 		{name: "seed", run: func(cfg config.Config) error { return seed(cfg, testLogger()) }},
 		{name: "worker", run: func(cfg config.Config) error { return worker(cfg, testLogger(), nil) }},
 		{name: "hr sync", run: func(cfg config.Config) error { return hrSync(cfg, testLogger(), []string{"scheduled import"}) }},
@@ -276,6 +282,26 @@ func TestCommandsReturnDatabaseParseErrorsAfterValidation(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestResetDemoDBRejectsMissingRedisURLBeforeDatabaseConnect(t *testing.T) {
+	cfg := validCommandConfig()
+	cfg.RedisURL = ""
+
+	err := resetDemoDB(cfg, testLogger())
+
+	require.ErrorContains(t, err, "REDIS_URL is required")
+	require.NotContains(t, err.Error(), "invalid database URL")
+}
+
+func TestResetDemoDBRejectsInvalidRedisURLBeforeDatabaseConnect(t *testing.T) {
+	cfg := validCommandConfig()
+	cfg.RedisURL = "://invalid"
+
+	err := resetDemoDB(cfg, testLogger())
+
+	require.ErrorContains(t, err, "invalid REDIS_URL")
+	require.NotContains(t, err.Error(), "invalid database URL")
 }
 
 func TestNewTicketingServiceBuildsService(t *testing.T) {

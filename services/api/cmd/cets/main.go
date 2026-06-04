@@ -32,6 +32,8 @@ func run(args []string, logger *slog.Logger) error {
 		return migrate(cfg, logger)
 	case "ready":
 		return ready(cfg)
+	case "reset-demo-db":
+		return resetDemoDB(cfg, logger)
 	case "seed":
 		return seed(cfg, logger)
 	case "worker":

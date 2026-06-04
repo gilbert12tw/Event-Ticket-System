@@ -31,14 +31,9 @@ func TestServiceBookingAndCheckinFlow(t *testing.T) {
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	hr := Actor{ID: "hr-1", Role: RoleHRAdmin}
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:       "Engineering Demo Day",
-		Description: "Demo",
-		Location:    "Taipei HQ",
-		Capacity:    1,
-		Status:      EventStatusPublished,
-		Rule:        RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	req := checkinReadyEventRequest(service, "Engineering Demo Day", 1)
+	req.Description = "Demo"
+	event, err := service.CreateEvent(ctx, admin, req)
 	require.NoError(t, err)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'event.created' AND entity_id = $1`, event.EventID, 1)
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM eligibility_rule_versions WHERE event_id = $1 AND version = 1`, event.EventID, 1)

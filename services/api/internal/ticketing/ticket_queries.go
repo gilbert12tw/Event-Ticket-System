@@ -14,7 +14,7 @@ const (
 		r.family_count, e.full_name, e.department, e.site`
 	checkinTicketSelectColumns = `t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
 		COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
-		ev.title, e.full_name, e.department, e.site`
+		ev.title, ev.starts_at, e.full_name, e.department, e.site`
 )
 
 type ticketQuerier interface {
@@ -123,7 +123,7 @@ func scanTicketRow(row pgx.Row, ticket *Ticket) error {
 }
 
 func scanCheckinTicketRow(row pgx.Row, ticket *Ticket) error {
-	err := row.Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+	err := row.Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EventStartsAt, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if err != nil {
 		return err
 	}

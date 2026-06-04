@@ -56,6 +56,9 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 		`command: ["worker"]`,
 		"migrate:",
 		`command: ["migrate"]`,
+		"db-reset:",
+		`profiles: ["admin"]`,
+		`command: ["reset-demo-db"]`,
 		"postgres:",
 		"image: postgres:16.13-alpine",
 		"redis:",
@@ -77,6 +80,20 @@ func TestComposeDeclaresPhase1BackingServiceContracts(t *testing.T) {
 	for _, fragment := range required {
 		assert.Contains(t, combined, fragment, "compose/env contract is missing %q", fragment)
 	}
+}
+
+func TestComposeDBResetIsManualAdminOneOff(t *testing.T) {
+	compose, err := os.ReadFile("compose.yaml")
+	require.NoError(t, err)
+	composeText := string(compose)
+
+	assert.Contains(t, composeText, "db-reset:")
+	assert.Contains(t, composeText, `profiles: ["admin"]`)
+	assert.Contains(t, composeText, `command: ["reset-demo-db"]`)
+	assert.Contains(t, composeText, "REDIS_URL: redis://redis:6379/0")
+	assert.Contains(t, composeText, "postgres:\n        condition: service_healthy")
+	assert.Contains(t, composeText, "redis:\n        condition: service_healthy")
+	assert.NotContains(t, composeText, "condition: service_completed_successfully\n      db-reset:")
 }
 
 func TestComposeExternalImagesAreDigestPinned(t *testing.T) {
