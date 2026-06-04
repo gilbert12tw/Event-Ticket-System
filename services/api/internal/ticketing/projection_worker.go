@@ -54,7 +54,7 @@ func (s *Service) processClaimedProjectionOutbox(
 	switch proj.InnerType {
 	case projectionInnerTypeCheckinCompleted:
 		// checkin has no aggregate effect — advance offset and mark published.
-		if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, claim.outboxID); err != nil {
+		if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
 			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
@@ -86,13 +86,13 @@ func (s *Service) processClaimedProjectionOutbox(
 		newCounts.CancelledCount,
 		newCounts.WaitlistCount,
 		newCounts.DepartmentBreakdown,
-		claim.outboxID,
+		proj.OutboxID,
 	); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
 
-	if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, claim.outboxID); err != nil {
+	if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
@@ -163,7 +163,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 			if eventID != "" && triggerEventID != "" {
 				return ProjectionEvent{
 					EventID:        eventID,
-					OutboxID:       fmt.Sprintf("%s|%s", claim.createdAt.Format(time.RFC3339Nano), claim.outboxID),
+					OutboxID:       fmt.Sprintf("%s|%s", claim.createdAt.UTC().Format(time.RFC3339Nano), claim.outboxID),
 					TriggerEventID: triggerEventID,
 					Department:     strings.TrimSpace(v2.Payload.Department),
 				}, true
@@ -186,7 +186,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	}
 	return ProjectionEvent{
 		EventID:    eventID,
-		OutboxID:   fmt.Sprintf("%s|%s", claim.createdAt.Format(time.RFC3339Nano), claim.outboxID),
+		OutboxID:   fmt.Sprintf("%s|%s", claim.createdAt.UTC().Format(time.RFC3339Nano), claim.outboxID),
 		InnerType:  innerType,
 		Department: strings.TrimSpace(v1.Department),
 	}, true

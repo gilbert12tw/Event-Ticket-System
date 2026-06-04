@@ -163,7 +163,7 @@ func TestProjectionWorker_CountNeverGoesBelowZero(t *testing.T) {
 func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 	service, ctx := newWorkerTest(t)
 	// Seed the primary event with a higher outbox ID.
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-10 * time.Second)
 	insertProjectionOutboxAt(t, service, ctx, "ob-500", "evt_1", projectionInnerTypeBookingConfirmed, now)
 
 	// Process first time.
@@ -185,7 +185,7 @@ func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 func TestProjectionWorker_OlderEventDoesNotOverwriteNewer(t *testing.T) {
 	service, ctx := newWorkerTest(t)
 
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-10 * time.Second)
 
 	// Process ob-010 first — sets confirmed_count to 1.
 	insertProjectionOutboxAt(t, service, ctx, "ob-010", "evt_1", projectionInnerTypeBookingConfirmed, now)
@@ -245,8 +245,9 @@ func TestProjectionWorker_UnknownInnerEventTypeIsSkipped(t *testing.T) {
 // with no double-counts.
 func TestProjectionWorker_CrashRecovery(t *testing.T) {
 	service, ctx := newWorkerTest(t)
-	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, "")
-	insertProjectionOutbox(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	baseTime := time.Now().UTC()
+	insertProjectionOutboxAt(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, baseTime)
+	insertProjectionOutboxAt(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, baseTime.Add(1*time.Second))
 
 	// Process ob-1 and ob-2 normally.
 	_, err := runProjectionWorkerOnce(service, ctx)
@@ -254,10 +255,10 @@ func TestProjectionWorker_CrashRecovery(t *testing.T) {
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
-	// Simulate a "restart": ob-2 is re-queued as ob-2b with the same inner
+	// Simulate a "restart": ob-1 is re-queued as ob-1b with the same inner
 	// event but a lower offset than the current watermark — idempotency guard
 	// must prevent double-count.
-	insertProjectionOutbox(t, service, ctx, "ob-1b", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	insertProjectionOutboxAt(t, service, ctx, "ob-1b", "evt_1", projectionInnerTypeBookingConfirmed, baseTime)
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
