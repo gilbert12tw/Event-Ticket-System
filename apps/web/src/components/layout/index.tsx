@@ -120,8 +120,7 @@ export function Header({
         </div>
       }
       utilities={
-        debugChromeAvailable &&
-        !userWorkspace && (
+        debugChromeAvailable && (
           <DebugToolsSheet
             apiLog={apiLog}
             debugChromeEnabled={debugChromeEnabled}

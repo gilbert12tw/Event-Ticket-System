@@ -202,7 +202,7 @@ function MobileTopBar({
           <SheetHeader>
             <SheetTitle>工作區工具</SheetTitle>
             <SheetDescription>
-              {userWorkspace
+              {userWorkspace && !debugChromeAvailable
                 ? "目前登入身份。"
                 : "身分、Debug、服務狀態與介接紀錄。"}
             </SheetDescription>
@@ -215,22 +215,19 @@ function MobileTopBar({
                 : `${session.actor.id} · ${roleLabel(session.actor.role)}`}
             </span>
           </div>
-          {debugChromeAvailable && !userWorkspace && (
+          {debugChromeAvailable && (
             <DebugToggle
               enabled={debugChromeEnabled}
               onToggle={onToggleDebugChrome}
             />
           )}
-          {debugChromeEnabled &&
-            !userWorkspace &&
-            mockProfilesEnabled &&
-            onSwitchProfile && (
-              <Button variant="outline" type="button" onClick={onSwitchProfile}>
-                <Icon name="logout" />
-                切換身分
-              </Button>
-            )}
-          {debugChromeEnabled && !userWorkspace && (
+          {debugChromeEnabled && mockProfilesEnabled && onSwitchProfile && (
+            <Button variant="outline" type="button" onClick={onSwitchProfile}>
+              <Icon name="logout" />
+              切換身分
+            </Button>
+          )}
+          {debugChromeEnabled && (
             <>
               <StatusPanel health={health} ready={ready} />
               <ApiActivity

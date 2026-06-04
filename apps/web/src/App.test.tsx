@@ -218,9 +218,7 @@ describe("App", () => {
       await screen.findAllByRole("heading", { name: "活動探索" }),
     ).not.toHaveLength(0);
     expect(screen.getByLabelText("活動行事曆")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Debug/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Debug/ })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("E1001");
     expect(mockClearProviderToken).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/user/events");

@@ -73,7 +73,7 @@ describe("layout components", () => {
     expect(screen.queryByLabelText("切換工作區")).not.toBeInTheDocument();
   });
 
-  it("keeps employee workspace chrome free of debug controls and employee IDs", () => {
+  it("keeps employee workspace debug available without exposing employee IDs", () => {
     const activeRoute = routes.find((route) => route.key === "user-events");
     const session: AuthSession = {
       actor: {
@@ -119,9 +119,7 @@ describe("layout components", () => {
       </AuthenticatedShell>,
     );
 
-    expect(
-      screen.queryByRole("button", { name: "Debug" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Debug" })).toBeInTheDocument();
     expect(container).not.toHaveTextContent("E1001");
     expect(container).toHaveTextContent("員工");
   });
