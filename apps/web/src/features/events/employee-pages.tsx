@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { navigate } from "@/app/routes";
 import { listEvents, listTickets } from "@/lib/api";
 import type { AuthMeClaims, EventSummary, Ticket } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
@@ -11,15 +12,20 @@ import { selectCurrentTicket } from "@/features/tickets/ticket-readiness";
 import { TicketPanel } from "@/features/tickets/ticket-panel";
 import {
   employeeEventDisplayState,
-  groupEventsByCalendarDay,
-  groupEventsByMonth,
   localDateKey,
-  selectEmployeeAgenda,
 } from "./employee-calendar";
 import {
+  calendarRangeForView,
+  employeeCalendarPath,
+  groupEmployeeCalendarEventsByDay,
+  parseEmployeeCalendarQuery,
+  selectEmployeeCalendarEvents,
+  shiftCalendarDate,
+  type EmployeeCalendarViewMode,
+} from "./employee-calendar-planner";
+import { EmployeeCalendarView } from "./employee-calendar-view";
+import {
   EmployeeAgenda,
-  EmployeeCalendarStrip,
-  agendaTitle,
 } from "./employee-calendar-components";
 
 export function EmployeeEventsPage({
@@ -29,28 +35,31 @@ export function EmployeeEventsPage({
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [selectedDateKey, setSelectedDateKey] = useState(() =>
-    localDateKey(new Date()),
+  const [calendarState, setCalendarState] = useState(() =>
+    parseEmployeeCalendarQuery(globalThis.location.search),
   );
 
   const principalID = claims.employee_id;
   const now = useMemo(() => new Date(), [events, tickets]);
-  const selectedDate = useMemo(
-    () => new Date(`${selectedDateKey}T00:00:00`),
-    [selectedDateKey],
+  const calendarRange = useMemo(
+    () => calendarRangeForView(calendarState.view, calendarState.date, now),
+    [calendarState.date, calendarState.view, now],
   );
-  const weekDays = useMemo(
-    () => groupEventsByCalendarDay(events, now),
-    [events, now],
+  const calendarEvents = useMemo(
+    () => selectEmployeeCalendarEvents(events, tickets, calendarRange, now),
+    [calendarRange, events, now, tickets],
   );
-  const monthDays = useMemo(
-    () => groupEventsByMonth(events, selectedDate, now),
-    [events, now, selectedDate],
+  const calendarGroups = useMemo(
+    () => groupEmployeeCalendarEventsByDay(calendarEvents, calendarRange),
+    [calendarEvents, calendarRange],
   );
-  const agendaEvents = useMemo(
-    () => selectEmployeeAgenda(events, selectedDateKey, tickets, now),
-    [events, selectedDateKey, tickets, now],
+  const selectedEvents = useMemo(
+    () =>
+      calendarEvents.filter(
+        ({ event }) =>
+          localDateKey(new Date(event.starts_at)) === calendarState.dateKey,
+      ),
+    [calendarEvents, calendarState.dateKey],
   );
   const registeredEvents = useMemo(
     () =>
@@ -86,13 +95,33 @@ export function EmployeeEventsPage({
     void refresh();
   }, [principalID]);
 
+  useEffect(() => {
+    const syncFromLocation = () =>
+      setCalendarState(parseEmployeeCalendarQuery(globalThis.location.search));
+    globalThis.addEventListener("popstate", syncFromLocation);
+    return () => globalThis.removeEventListener("popstate", syncFromLocation);
+  }, []);
+
+  function applyCalendarState(view: EmployeeCalendarViewMode, date: Date) {
+    const dateKey = localDateKey(date);
+    setCalendarState({ view, date, dateKey });
+    navigate(employeeCalendarPath(view, dateKey));
+  }
+
+  function selectDate(dateKey: string) {
+    applyCalendarState(
+      calendarState.view,
+      new Date(`${dateKey}T00:00:00`),
+    );
+  }
+
   return (
     <section className="content-grid">
       <Card className="panel span-12 employee-events-home">
         <div className="section-heading">
           <div>
             <h2>活動首頁</h2>
-            <p>用行事曆查看最近活動，選一天就能看到適合你的安排。</p>
+            <p>用日曆安排活動時間，卡片會提示報名期限與參加狀態。</p>
           </div>
           <Button
             variant="outline"
@@ -112,19 +141,25 @@ export function EmployeeEventsPage({
           <SkeletonRows rows={3} />
         ) : (
           <>
-            <EmployeeCalendarStrip
-              days={weekDays}
-              monthDays={monthDays}
-              monthOpen={calendarOpen}
-              selectedDateKey={selectedDateKey}
-              onSelectDate={setSelectedDateKey}
-              onToggleMonth={() => setCalendarOpen((open) => !open)}
-            />
-            <EmployeeAgenda
-              events={agendaEvents}
+            <EmployeeCalendarView
+              groups={calendarGroups}
               now={now}
-              tickets={tickets}
-              title={agendaTitle(selectedDateKey, now)}
+              range={calendarRange}
+              selectedDateKey={calendarState.dateKey}
+              selectedEvents={selectedEvents}
+              onMove={(direction) =>
+                applyCalendarState(
+                  calendarState.view,
+                  shiftCalendarDate(
+                    calendarState.view,
+                    calendarState.date,
+                    direction,
+                  ),
+                )
+              }
+              onSelectDate={selectDate}
+              onToday={() => applyCalendarState(calendarState.view, now)}
+              onViewChange={(view) => applyCalendarState(view, calendarState.date)}
             />
             {registeredEvents.length > 0 && (
               <EmployeeAgenda

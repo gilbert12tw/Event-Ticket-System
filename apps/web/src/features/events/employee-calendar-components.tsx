@@ -12,7 +12,9 @@ import {
   employeeEventDisplayState,
   localDateKey,
 } from "./employee-calendar";
+import { registrationDeadlineView } from "./employee-calendar-planner";
 import { EventPoster } from "./employee-event-poster";
+import { EmployeeRegistrationDeadlineChip } from "./employee-registration-deadline-chip";
 
 export function EmployeeCalendarStrip({
   days,
@@ -123,13 +125,17 @@ export function EmployeeEventPosterCard({
   ticket?: Ticket;
 }>) {
   const state = employeeEventDisplayState(event, ticket, now);
+  const deadline = registrationDeadlineView(event, now);
   const href = primaryHref(event, ticket, state.kind);
   return (
     <article className="employee-event-card">
       <EventPoster eventID={event.event_id} title={event.title} />
       <div className="employee-event-card-body">
         <div className="employee-event-card-main">
-          <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+          <div className="employee-event-card-badges">
+            <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+            <EmployeeRegistrationDeadlineChip deadline={deadline} />
+          </div>
           <h3>{event.title}</h3>
           <p className="employee-event-meta">
             {formatDate(event.starts_at)} · {siteLabel(event.location || event.event_site)}
@@ -161,11 +167,15 @@ export function EmployeeEventDetailHero({
   now: Date;
 }>) {
   const state = employeeEventDisplayState(event, undefined, now);
+  const deadline = registrationDeadlineView(event, now);
   return (
     <section className="employee-event-detail-hero">
       <EventPoster eventID={event.event_id} title={event.title} variant="hero" />
       <div className="employee-event-detail-copy">
-        <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+        <div className="employee-event-card-badges">
+          <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+          <EmployeeRegistrationDeadlineChip deadline={deadline} />
+        </div>
         <h2>{event.title}</h2>
         <p className="employee-event-meta">
           {formatDate(event.starts_at)} · {siteLabel(event.location || event.event_site)}

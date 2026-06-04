@@ -10,6 +10,7 @@ import "./css/layout.css";
 import "./css/forms-navigation.css";
 import "./css/events.css";
 import "./css/employee-events.css";
+import "./css/employee-calendar-planner.css";
 import "./css/status-data.css";
 import "./css/ops.css";
 import "./css/tickets-checkin.css";

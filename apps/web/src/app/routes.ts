@@ -27,6 +27,8 @@ export type IconName =
   | "bell"
   | "calendar"
   | "chart"
+  | "chevronLeft"
+  | "chevronRight"
   | "clipboard"
   | "copy"
   | "database"

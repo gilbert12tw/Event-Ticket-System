@@ -40,6 +40,8 @@ import {
   canSubmitAttendeeAction,
 } from "./employee-event-state";
 import { EmployeeEventDetailHero } from "./employee-calendar-components";
+import { registrationDeadlineView } from "./employee-calendar-planner";
+import { EmployeeRegistrationDeadlineChip } from "./employee-registration-deadline-chip";
 
 type PendingAction = "book" | "cancel" | "";
 
@@ -167,6 +169,7 @@ export function EmployeeEventDetailPage({
   }
 
   const visibleBookingResult = bookingResult || bookingResultRef.current;
+  const now = new Date();
 
   if (!detail) {
     return (
@@ -202,11 +205,14 @@ export function EmployeeEventDetailPage({
   return (
     <section className="content-grid event-detail-app">
       <Card className="panel span-8 employee-event-hero-panel">
-        <EmployeeEventDetailHero event={detail} now={new Date()} />
+        <EmployeeEventDetailHero event={detail} now={now} />
       </Card>
       <Card className="panel span-4 event-primary-action-panel employee-event-detail-action-panel">
         <h2>主要操作</h2>
         <p className="form-hint event-action-context">{detail.title}</p>
+        <EmployeeRegistrationDeadlineChip
+          deadline={registrationDeadlineView(detail, now)}
+        />
         <div className="summary-block event-action-rail event-detail-action-bar">
           <DetailActionControls
             claims={claims}

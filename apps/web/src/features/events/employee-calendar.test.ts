@@ -9,6 +9,14 @@ import {
   selectEmployeeAgenda,
   shouldShowCapacityHint,
 } from "./employee-calendar";
+import {
+  calendarRangeForView,
+  groupEmployeeCalendarEventsByDay,
+  parseEmployeeCalendarQuery,
+  registrationDeadlineView,
+  selectEmployeeCalendarEvents,
+  shiftCalendarDate,
+} from "./employee-calendar-planner";
 
 const now = new Date("2026-06-04T10:00:00+08:00");
 
@@ -165,5 +173,131 @@ describe("employee calendar helpers", () => {
     expect(localDateKey(new Date("2026-06-04T01:30:00+08:00"))).toBe(
       "2026-06-04",
     );
+  });
+
+  it("builds day, week, and month ranges with Monday week starts", () => {
+    const week = calendarRangeForView("week", now, now);
+    const day = calendarRangeForView("day", now, now);
+    const month = calendarRangeForView("month", now, now);
+
+    expect(week.days.map((day) => day.dateKey)).toEqual([
+      "2026-06-01",
+      "2026-06-02",
+      "2026-06-03",
+      "2026-06-04",
+      "2026-06-05",
+      "2026-06-06",
+      "2026-06-07",
+    ]);
+    expect(week.label).toBe("06/01 - 06/07");
+    expect(week.days.find((day) => day.isToday)?.dateKey).toBe("2026-06-04");
+    expect(day.days.map((row) => row.dateKey)).toEqual(["2026-06-04"]);
+    expect(month.days).toHaveLength(42);
+    expect(month.label).toBe("2026年6月");
+  });
+
+  it("parses calendar query with safe defaults", () => {
+    expect(
+      parseEmployeeCalendarQuery("?view=month&date=2026-06-12", now),
+    ).toMatchObject({
+      dateKey: "2026-06-12",
+      view: "month",
+    });
+    expect(
+      parseEmployeeCalendarQuery("?view=year&date=2026-99-12", now),
+    ).toMatchObject({
+      dateKey: "2026-06-04",
+      view: "week",
+    });
+  });
+
+  it("shifts calendar anchors by the active view", () => {
+    expect(localDateKey(shiftCalendarDate("day", now, 1))).toBe("2026-06-05");
+    expect(localDateKey(shiftCalendarDate("week", now, -1))).toBe(
+      "2026-05-28",
+    );
+    expect(localDateKey(shiftCalendarDate("month", now, 1))).toBe(
+      "2026-07-01",
+    );
+  });
+
+  it("summarizes registration deadlines for employee decisions", () => {
+    expect(
+      registrationDeadlineView(
+        event({
+          registration_start: "2026-06-05T09:00:00+08:00",
+          registration_close: "2026-06-10T18:00:00+08:00",
+        }),
+        now,
+      ),
+    ).toMatchObject({ detail: "06/05 開放", kind: "pending", label: "尚未開放" });
+    expect(
+      registrationDeadlineView(
+        event({ registration_close: "2026-06-04T18:00:00+08:00" }),
+        now,
+      ),
+    ).toMatchObject({ kind: "today", label: "今天截止", tone: "warn" });
+    expect(
+      registrationDeadlineView(
+        event({ registration_close: "2026-06-05T18:00:00+08:00" }),
+        now,
+      ),
+    ).toMatchObject({ kind: "tomorrow", label: "明天截止" });
+    expect(
+      registrationDeadlineView(
+        event({ registration_close: "2026-06-08T18:00:00+08:00" }),
+        now,
+      ),
+    ).toMatchObject({ kind: "soon", label: "報名剩 4 天" });
+    expect(
+      registrationDeadlineView(
+        event({ registration_close: "2026-06-20T18:00:00+08:00" }),
+        now,
+      ),
+    ).toMatchObject({ kind: "open", label: "報名至 06/20" });
+    expect(
+      registrationDeadlineView(
+        event({ registration_close: "2026-06-03T18:00:00+08:00" }),
+        now,
+      ),
+    ).toMatchObject({ kind: "closed", label: "已截止" });
+  });
+
+  it("selects visible calendar events and groups them by rendered days", () => {
+    const range = calendarRangeForView("week", now, now);
+    const rows = selectEmployeeCalendarEvents(
+      [
+        event({ event_id: "bookable", title: "Bookable" }),
+        event({
+          current_user_status: "confirmed",
+          event_id: "registered",
+          title: "Registered",
+        }),
+        event({
+          eligible: false,
+          event_id: "hidden",
+          title: "Hidden",
+        }),
+        event({
+          event_id: "next-week",
+          starts_at: "2026-06-08T10:00:00+08:00",
+        }),
+      ],
+      [],
+      range,
+      now,
+    );
+    const groups = groupEmployeeCalendarEventsByDay(rows, range);
+
+    expect(rows.map(({ event }) => event.event_id)).toEqual([
+      "registered",
+      "bookable",
+    ]);
+    expect(
+      groups.find((group) => group.dateKey === "2026-06-04"),
+    ).toMatchObject({
+      eventCount: 2,
+      hasRegistration: true,
+    });
   });
 });

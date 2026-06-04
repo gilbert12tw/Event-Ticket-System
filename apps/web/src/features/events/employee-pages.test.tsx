@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -114,9 +114,20 @@ describe("EmployeeEventsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "活動首頁" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "本週活動" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "今日活動" })).toBeInTheDocument();
-    expect(await screen.findByText("不限量活動")).toBeInTheDocument();
+    expect(screen.getByLabelText("週行事曆")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "日曆視圖" })).getByRole(
+        "button",
+        { name: "週" },
+      ),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("heading", { name: "選取日期活動" }),
+    ).toBeInTheDocument();
+    expect((await screen.findAllByText("不限量活動")).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "報名活動" })).toBeInTheDocument();
     expect(screen.queryByText("活動列表")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /可報名/ })).not.toBeInTheDocument();
@@ -134,6 +145,29 @@ describe("EmployeeEventsPage", () => {
     expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /可報名 0/ })).not.toBeInTheDocument();
     expect(screen.queryByText("我的報名 0")).not.toBeInTheDocument();
+  });
+
+  it("switches day, week, and month views while keeping the URL shareable", async () => {
+    showEvents({
+      event_id: "evt-planner",
+      title: "午餐講座",
+    });
+
+    render(<EmployeeEventsPage claims={claims} />);
+
+    expect(await screen.findByLabelText("週行事曆")).toBeInTheDocument();
+    const modeGroup = screen.getByRole("group", { name: "日曆視圖" });
+
+    await userEvent.click(within(modeGroup).getByRole("button", { name: "月" }));
+
+    expect(screen.getByLabelText("月行事曆")).toBeInTheDocument();
+    expect(window.location.search).toContain("view=month");
+    expect(window.location.search).toContain("date=");
+
+    await userEvent.click(within(modeGroup).getByRole("button", { name: "日" }));
+
+    expect(screen.getByLabelText("日行程")).toBeInTheDocument();
+    expect(window.location.search).toContain("view=day");
   });
 
   it("hides cancelled and ineligible rows from the main agenda", async () => {
@@ -218,7 +252,9 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText("Hsinchu Event")).toBeInTheDocument();
+    expect((await screen.findAllByText("Hsinchu Event")).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.queryByText(/跨城市活動提醒/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/This event is in Hsinchu/),
@@ -238,7 +274,7 @@ describe("EmployeeEventsPage", () => {
 
     const { container } = render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText("家庭日")).toBeInTheDocument();
+    expect((await screen.findAllByText("家庭日")).length).toBeGreaterThan(0);
     expect(
       container.querySelector(".employee-event-poster-fallback"),
     ).toHaveTextContent("家");
@@ -274,7 +310,9 @@ describe("EmployeeEventsPage", () => {
 
     render(<EmployeeEventsPage claims={claims} />);
 
-    expect(await screen.findByText("No Eligibility Event")).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText("No Eligibility Event")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("classifies reusable event action helpers", () => {
