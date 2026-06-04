@@ -300,4 +300,16 @@ describe("employee calendar helpers", () => {
       hasRegistration: true,
     });
   });
+
+  it("keeps early morning events inside the employee calendar day", () => {
+    const range = calendarRangeForView("day", now, now);
+    const rows = selectEmployeeCalendarEvents(
+      [event({ event_id: "early", starts_at: "2026-06-04T01:30:00+08:00" })],
+      [],
+      range,
+      now,
+    );
+
+    expect(rows.map(({ event }) => event.event_id)).toEqual(["early"]);
+  });
 });

@@ -124,8 +124,12 @@ test("employee booking CTAs keep primary visual treatment", async ({
     events: [bookableEvent, waitlistEvent],
   });
 
-  await expectPrimaryCtaTreatment(page.getByRole("link", { name: "報名活動" }));
-  await expectPrimaryCtaTreatment(page.getByRole("link", { name: "查看詳情" }));
+  await expectPrimaryCtaTreatment(
+    page.getByRole("link", { exact: true, name: "報名活動" }),
+  );
+  await expectPrimaryCtaTreatment(
+    page.getByRole("link", { exact: true, name: "查看詳情" }),
+  );
 
   await page.goto("/user/events/detail?event_id=evt-waitlist", {
     waitUntil: "domcontentloaded",

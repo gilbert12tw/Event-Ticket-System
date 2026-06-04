@@ -1,6 +1,17 @@
 import type { EventSummary, Ticket } from "@/lib/api";
 import { getEligibilityDecision } from "@/lib/api/contracts";
 import type { Tone } from "@/lib/ui/options";
+import {
+  addEmployeeCalendarDays,
+  employeeCalendarDayNumber,
+  employeeCalendarWeekdayLabel,
+  localDateKey,
+  startOfEmployeeCalendarDay,
+  startOfEmployeeCalendarMonth,
+  startOfEmployeeCalendarWeek,
+} from "./employee-calendar-date";
+
+export { localDateKey } from "./employee-calendar-date";
 
 const dayMs = 24 * 60 * 60 * 1000;
 const scarceSeatThreshold = 5;
@@ -38,10 +49,10 @@ export function groupEventsByCalendarDay(
   events: EventSummary[],
   now: Date = new Date(),
 ): EmployeeCalendarDay[] {
-  const today = startOfLocalDay(now);
-  const firstDay = startOfWeek(today);
+  const today = startOfEmployeeCalendarDay(now);
+  const firstDay = startOfEmployeeCalendarWeek(today);
   return Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(firstDay, index);
+    const date = addEmployeeCalendarDays(firstDay, index);
     const dateKey = localDateKey(date);
     const relevantEvents = events.filter(
       (event) =>
@@ -51,8 +62,8 @@ export function groupEventsByCalendarDay(
     return {
       date,
       dateKey,
-      weekdayLabel: date.toLocaleDateString("zh-TW", { weekday: "short" }),
-      dayNumber: String(date.getDate()),
+      weekdayLabel: employeeCalendarWeekdayLabel(date),
+      dayNumber: employeeCalendarDayNumber(date),
       isToday: dateKey === localDateKey(today),
       eventCount: relevantEvents.length,
       hasRegistration: relevantEvents.some(
@@ -68,14 +79,10 @@ export function groupEventsByMonth(
   selectedDate: Date,
   now: Date = new Date(),
 ): EmployeeCalendarDay[] {
-  const firstOfMonth = new Date(
-    selectedDate.getFullYear(),
-    selectedDate.getMonth(),
-    1,
-  );
-  const gridStart = startOfWeek(firstOfMonth);
+  const firstOfMonth = startOfEmployeeCalendarMonth(selectedDate);
+  const gridStart = startOfEmployeeCalendarWeek(firstOfMonth);
   return Array.from({ length: 42 }, (_, index) => {
-    const date = addDays(gridStart, index);
+    const date = addEmployeeCalendarDays(gridStart, index);
     const dateKey = localDateKey(date);
     const relevantEvents = events.filter(
       (event) =>
@@ -85,9 +92,9 @@ export function groupEventsByMonth(
     return {
       date,
       dateKey,
-      weekdayLabel: date.toLocaleDateString("zh-TW", { weekday: "short" }),
-      dayNumber: String(date.getDate()),
-      isToday: dateKey === localDateKey(startOfLocalDay(now)),
+      weekdayLabel: employeeCalendarWeekdayLabel(date),
+      dayNumber: employeeCalendarDayNumber(date),
+      isToday: dateKey === localDateKey(startOfEmployeeCalendarDay(now)),
       eventCount: relevantEvents.length,
       hasRegistration: relevantEvents.some(
         (event) =>
@@ -106,7 +113,7 @@ export function selectEmployeeAgenda(
   const selectedKey =
     typeof selectedDate === "string"
       ? selectedDate
-      : localDateKey(startOfLocalDay(selectedDate));
+      : localDateKey(startOfEmployeeCalendarDay(selectedDate));
   return events
     .filter((event) => localDateKey(parseDate(event.starts_at)) === selectedKey)
     .filter(
@@ -248,13 +255,6 @@ export function shouldShowCapacityHint(event: EventSummary) {
   return remaining > 0 && remaining <= scarceSeatThreshold;
 }
 
-export function localDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function ticketForEvent(tickets: Ticket[], eventID: string) {
   return tickets.find((ticket) => ticket.event_id === eventID);
 }
@@ -298,22 +298,6 @@ function eventIsCurrent(event: EventSummary, now: Date) {
     startsAt <= now.getTime() &&
     now.getTime() < startsAt + dayMs
   );
-}
-
-function startOfWeek(date: Date) {
-  const day = date.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  return addDays(date, mondayOffset);
-}
-
-function startOfLocalDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return startOfLocalDay(next);
 }
 
 function parseDate(value?: string) {

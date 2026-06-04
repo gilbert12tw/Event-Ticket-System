@@ -1,10 +1,23 @@
 import type { EventSummary, Ticket } from "@/lib/api";
 import type { Tone } from "@/lib/ui/options";
 import {
+  addEmployeeCalendarDays,
+  employeeCalendarDayNumber,
+  employeeCalendarMonthKey,
+  employeeCalendarMonthTitle,
+  employeeCalendarWeekdayLabel,
+  formatEmployeeCalendarClock,
+  formatEmployeeCalendarMonthDay,
+  localDateKey,
+  parseEmployeeCalendarDateKey,
+  startOfEmployeeCalendarDay,
+  startOfEmployeeCalendarMonth,
+  startOfEmployeeCalendarWeek,
+} from "./employee-calendar-date";
+import {
   type EmployeeCalendarDay,
   type EmployeeEventDisplayState,
   employeeEventDisplayState,
-  localDateKey,
 } from "./employee-calendar";
 
 export type EmployeeCalendarViewMode = "day" | "week" | "month";
@@ -54,14 +67,14 @@ export function calendarRangeForView(
   anchorDate: Date,
   now: Date = new Date(),
 ): EmployeeCalendarRange {
-  const anchor = startOfLocalDay(anchorDate);
+  const anchor = startOfEmployeeCalendarDay(anchorDate);
   const startDate =
     view === "month"
-      ? startOfWeek(startOfMonth(anchor))
+      ? startOfEmployeeCalendarWeek(startOfEmployeeCalendarMonth(anchor))
       : rangeStart(view, anchor);
   const dayCount = calendarDayCount(view);
   const days = Array.from({ length: dayCount }, (_, index) => {
-    const date = addDays(startDate, index);
+    const date = addEmployeeCalendarDays(startDate, index);
     return calendarDayForDate(date, now);
   });
   return {
@@ -69,7 +82,7 @@ export function calendarRangeForView(
     anchorDate: anchor,
     anchorDateKey: localDateKey(anchor),
     startDate,
-    endDate: addDays(startDate, dayCount),
+    endDate: addEmployeeCalendarDays(startDate, dayCount),
     label: rangeLabel(view, anchor, startDate, dayCount),
     days,
   };
@@ -105,7 +118,7 @@ export function registrationDeadlineView(
   event: EventSummary,
   now: Date = new Date(),
 ): EmployeeRegistrationDeadlineView {
-  const today = startOfLocalDay(now);
+  const today = startOfEmployeeCalendarDay(now);
   const registrationStart = parseDate(event.registration_start);
   const registrationClose = parseDate(event.registration_close);
   if (now.getTime() < registrationStart.getTime()) {
@@ -124,7 +137,7 @@ export function registrationDeadlineView(
       tone: "neutral",
     };
   }
-  const closeDay = startOfLocalDay(registrationClose);
+  const closeDay = startOfEmployeeCalendarDay(registrationClose);
   const daysLeft = Math.round((closeDay.getTime() - today.getTime()) / dayMs);
   if (daysLeft <= 0) {
     return {
@@ -200,7 +213,8 @@ export function groupEmployeeCalendarEventsByDay(
       events: dayEvents,
       isOutsideMonth:
         range.view === "month" &&
-        day.date.getMonth() !== range.anchorDate.getMonth(),
+        employeeCalendarMonthKey(day.date) !==
+          employeeCalendarMonthKey(range.anchorDate),
     };
   });
 }
@@ -211,13 +225,15 @@ export function shiftCalendarDate(
   direction: -1 | 1,
 ) {
   if (view === "month") {
-    return new Date(
-      anchorDate.getFullYear(),
-      anchorDate.getMonth() + direction,
-      1,
+    return addEmployeeCalendarMonths(
+      startOfEmployeeCalendarMonth(anchorDate),
+      direction,
     );
   }
-  return addDays(anchorDate, view === "week" ? direction * 7 : direction);
+  return addEmployeeCalendarDays(
+    anchorDate,
+    view === "week" ? direction * 7 : direction,
+  );
 }
 
 export function employeeCalendarPath(
@@ -231,15 +247,15 @@ export function employeeCalendarPath(
 }
 
 function rangeStart(view: EmployeeCalendarViewMode, anchor: Date) {
-  return view === "week" ? startOfWeek(anchor) : anchor;
+  return view === "week" ? startOfEmployeeCalendarWeek(anchor) : anchor;
 }
 
 function calendarDayForDate(date: Date, now: Date): EmployeeCalendarDay {
   return {
     date,
     dateKey: localDateKey(date),
-    weekdayLabel: date.toLocaleDateString("zh-TW", { weekday: "short" }),
-    dayNumber: String(date.getDate()),
+    weekdayLabel: employeeCalendarWeekdayLabel(date),
+    dayNumber: employeeCalendarDayNumber(date),
     isToday: localDateKey(date) === localDateKey(now),
     eventCount: 0,
     hasRegistration: false,
@@ -253,10 +269,10 @@ function rangeLabel(
   dayCount: number,
 ) {
   if (view === "month") {
-    return `${anchorDate.getFullYear()}年${anchorDate.getMonth() + 1}月`;
+    return employeeCalendarMonthTitle(anchorDate);
   }
   if (view === "day") return formatMonthDay(startDate);
-  const endDate = addDays(startDate, dayCount - 1);
+  const endDate = addEmployeeCalendarDays(startDate, dayCount - 1);
   return `${formatMonthDay(startDate)} - ${formatMonthDay(endDate)}`;
 }
 
@@ -285,19 +301,7 @@ function ticketForEvent(tickets: Ticket[], eventID: string) {
 }
 
 function parseDateKey(value: string, fallback: Date) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return startOfLocalDay(fallback);
-  const date = new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
-  );
-  const valid =
-    !Number.isNaN(date.getTime()) &&
-    date.getFullYear() === Number(match[1]) &&
-    date.getMonth() === Number(match[2]) - 1 &&
-    date.getDate() === Number(match[3]);
-  return valid ? date : startOfLocalDay(fallback);
+  return parseEmployeeCalendarDateKey(value, fallback);
 }
 
 function parseDate(value?: string) {
@@ -306,36 +310,16 @@ function parseDate(value?: string) {
   return date;
 }
 
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function startOfWeek(date: Date) {
-  const day = date.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  return addDays(date, mondayOffset);
-}
-
-function startOfLocalDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return startOfLocalDay(next);
-}
-
 function formatMonthDay(date: Date) {
-  return date.toLocaleDateString("zh-TW", {
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return formatEmployeeCalendarMonthDay(date);
 }
 
 function formatClock(date: Date) {
-  return date.toLocaleTimeString("zh-TW", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEmployeeCalendarClock(date);
+}
+
+function addEmployeeCalendarMonths(date: Date, months: number) {
+  const shifted = new Date(date);
+  shifted.setUTCMonth(shifted.getUTCMonth() + months);
+  return startOfEmployeeCalendarMonth(shifted);
 }
