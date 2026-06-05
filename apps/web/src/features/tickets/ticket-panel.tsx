@@ -30,7 +30,9 @@ export function TicketPanel({
   const qrToken = ticket.qr_payload || ticket.signed_token || "";
   const readiness = ticketEntryReadinessView(ticket);
   const statusView = ticketStatusView(ticket.status);
-  const canShowQr = Boolean(qrToken) && readiness.kind === "entry-ready";
+  const canShowQr =
+    Boolean(qrToken) &&
+    (readiness.kind === "entry-ready" || readiness.kind === "not-open");
   const eventDetailHref = `/user/events/detail?event_id=${encodeURIComponent(
     ticket.event_id,
   )}`;

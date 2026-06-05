@@ -6,6 +6,8 @@ import {
   employeeCalendarExport,
 } from "./employee-calendar-export";
 
+const utf8Encoder = new TextEncoder();
+
 function ticket(status = "active"): Ticket {
   return {
     employee_id: "E1001",
@@ -65,6 +67,29 @@ describe("employee calendar export", () => {
     expect(artifact.content).toContain("\r\n ");
   });
 
+  it("folds CJK ICS lines by UTF-8 octets without splitting content", () => {
+    const title = "跨部門產品設計工程資料平台年度策略工作坊";
+    const artifact = employeeCalendarExport(
+      eventFixture({
+        description: `${title}，請攜帶筆電並準時完成報到。`,
+        event_id: "evt-cjk-title",
+        title,
+      }),
+      new Date("2026-06-01T00:00:00Z"),
+    );
+    const physicalLines = artifact.content.split("\r\n").filter(Boolean);
+    const unfoldedLines = unfoldICSLines(physicalLines);
+
+    expect(artifact.content).toContain("\r\n ");
+    expect(
+      physicalLines.every((line) => utf8Encoder.encode(line).length <= 75),
+    ).toBe(true);
+    expect(unfoldedLines).toContain(`SUMMARY:${title}`);
+    expect(unfoldedLines).toContain(
+      `DESCRIPTION:${title}，請攜帶筆電並準時完成報到。`,
+    );
+  });
+
   it("only allows confirmed or active-ticket events to be exported", () => {
     expect(
       canAddToCalendar(
@@ -88,3 +113,15 @@ describe("employee calendar export", () => {
     ).toBe(false);
   });
 });
+
+function unfoldICSLines(lines: string[]) {
+  const unfolded: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith(" ")) {
+      unfolded[unfolded.length - 1] += line.slice(1);
+      continue;
+    }
+    unfolded.push(line);
+  }
+  return unfolded;
+}

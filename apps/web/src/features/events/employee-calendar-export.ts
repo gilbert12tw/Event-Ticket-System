@@ -7,6 +7,9 @@ const icsEscapedBackslash = String.raw`\\`;
 const icsEscapedNewLine = String.raw`\n`;
 const icsEscapedSemicolon = String.raw`\;`;
 const icsEscapedComma = String.raw`\,`;
+const utf8Encoder = new TextEncoder();
+const icsLineOctetLimit = 75;
+const icsContinuationOctetLimit = 74;
 
 export type CalendarExportArtifact = {
   content: string;
@@ -104,15 +107,29 @@ function escapeICSValue(value: string) {
 }
 
 function foldICSLine(line: string) {
-  if (line.length <= 75) return line;
+  if (utf8OctetLength(line) <= icsLineOctetLimit) return line;
   const chunks: string[] = [];
-  let remaining = line;
-  while (remaining.length > 75) {
-    chunks.push(remaining.slice(0, 75));
-    remaining = remaining.slice(75);
+  let chunk = "";
+  let chunkOctets = 0;
+  let octetLimit = icsLineOctetLimit;
+  for (const character of line) {
+    const characterOctets = utf8OctetLength(character);
+    if (chunk && chunkOctets + characterOctets > octetLimit) {
+      chunks.push(chunk);
+      chunk = character;
+      chunkOctets = characterOctets;
+      octetLimit = icsContinuationOctetLimit;
+      continue;
+    }
+    chunk += character;
+    chunkOctets += characterOctets;
   }
-  chunks.push(remaining);
+  if (chunk) chunks.push(chunk);
   return chunks.join("\r\n ");
+}
+
+function utf8OctetLength(value: string) {
+  return utf8Encoder.encode(value).length;
 }
 
 function formatICSDate(date: Date) {

@@ -36,9 +36,26 @@ describe("employee ticket surface", () => {
     expect(state.copy).toBe("入口出示 QR code 即可。");
   });
 
-  it("allows calendar export for future active tickets without showing QR", () => {
+  it("allows future active tickets to preload issued QR codes", () => {
     const state = employeeTicketSurfaceState(
       ticket({ event_starts_at: "2026-06-06T13:42:00+08:00" }),
+      now,
+    );
+
+    expect(state.kind).toBe("upcoming");
+    expect(state.canShowQr).toBe(true);
+    expect(state.canAddToCalendar).toBe(true);
+    expect(state.copy).toBe(
+      "活動尚未開始，可先確認 QR code，入場時再出示給驗票員。",
+    );
+  });
+
+  it("keeps future active tickets without tokens in the QR placeholder state", () => {
+    const state = employeeTicketSurfaceState(
+      ticket({
+        event_starts_at: "2026-06-06T13:42:00+08:00",
+        signed_token: undefined,
+      }),
       now,
     );
 

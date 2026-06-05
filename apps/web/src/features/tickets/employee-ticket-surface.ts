@@ -42,6 +42,7 @@ export function employeeTicketSurfaceState(
   now: Date = new Date(),
 ): EmployeeTicketSurfaceState {
   const readiness = ticketEntryReadinessView(ticket, now);
+  const hasQrToken = Boolean(ticket.qr_payload || ticket.signed_token);
   if (readiness.kind === "entry-ready") {
     return {
       actionLabel: "出示票券",
@@ -57,8 +58,10 @@ export function employeeTicketSurfaceState(
     return {
       actionLabel: "查看票券",
       canAddToCalendar: true,
-      canShowQr: false,
-      copy: "活動開始後再開啟票券出示 QR code。",
+      canShowQr: hasQrToken,
+      copy: hasQrToken
+        ? "活動尚未開始，可先確認 QR code，入場時再出示給驗票員。"
+        : "活動開始後再開啟票券出示 QR code。",
       kind: "upcoming",
       label: "即將到來",
       tone: "info",
