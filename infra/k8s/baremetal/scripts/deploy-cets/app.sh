@@ -57,7 +57,7 @@ metadata:
   namespace: $CETS_NAMESPACE
 data:
   APP_ADDR: ":8080"
-  APP_ENV: "baremetal"
+  APP_ENV: "${CETS_APP_ENV:-baremetal}"
   AUTO_MIGRATE: "false"
   OPS_API_ENABLED: "false"
   POSTGRES_DB: "$POSTGRES_DB"
@@ -133,6 +133,10 @@ $(image_pull_block)
         env:
         - name: OTEL_SERVICE_NAME
           value: cets-backend
+        - name: CETS_REPLICA_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: PYROSCOPE_APPLICATION_NAME
           value: cets-backend
         envFrom:
@@ -383,6 +387,10 @@ $(image_pull_block)
           value: "$kind"
         - name: OTEL_SERVICE_NAME
           value: cets-worker-$kind
+        - name: CETS_REPLICA_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: PYROSCOPE_APPLICATION_NAME
           value: cets-worker-$kind
         envFrom:
@@ -451,6 +459,10 @@ spec:
 EOF
 
 kubectl_bm apply -f "$GENERATED_DIR/cets-app.yaml"
+kubectl_bm apply -f "$GENERATED_DIR/cets-jobs.yaml"
+kubectl_bm wait --for=condition=complete job/cets-migrate -n "$CETS_NAMESPACE" --timeout=300s
+kubectl_bm wait --for=condition=complete job/cets-seed -n "$CETS_NAMESPACE" --timeout=300s
+
 log "restarting database client deployments to load runtime env"
 kubectl_bm -n "$CETS_NAMESPACE" rollout restart deployment/backend
 for kind in notification projection compensation export; do
@@ -461,9 +473,6 @@ for kind in notification projection compensation export; do
   kubectl_bm -n "$CETS_NAMESPACE" rollout status "deployment/worker-$kind" --timeout=300s
 done
 
-kubectl_bm apply -f "$GENERATED_DIR/cets-jobs.yaml"
-kubectl_bm wait --for=condition=complete job/cets-migrate -n "$CETS_NAMESPACE" --timeout=300s
-kubectl_bm wait --for=condition=complete job/cets-seed -n "$CETS_NAMESPACE" --timeout=300s
 if kubectl_bm -n "$CETS_NAMESPACE" get secret cloudflared-token >/dev/null 2>&1; then
   kubectl_bm apply -f "$GENERATED_DIR/cloudflared.yaml"
 else

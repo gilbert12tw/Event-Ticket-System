@@ -50,9 +50,9 @@ func (queryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 }
 
 func (t queryTracer) dependencyAttributes() []attribute.KeyValue {
-	attrs := make([]attribute.KeyValue, 0, 3)
-	if t.serverAddress != "" {
-		attrs = append(attrs, attribute.String("server.address", t.serverAddress))
+	attrs := []attribute.KeyValue{
+		attribute.String("peer.service", "postgres"),
+		attribute.String("server.address", "postgres"),
 	}
 	if t.serverPort > 0 {
 		attrs = append(attrs, attribute.Int("server.port", t.serverPort))

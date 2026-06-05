@@ -1,0 +1,646 @@
+{
+  "schemaVersion": 41,
+  "uid": "k8s-outbox-workers",
+  "title": "ETS 05 — Outbox & Worker Health",
+  "description": "Async-flow engineer view. Use when users report: missing booking confirmation emails (worker_kind=notification), stale reporting views (worker_kind=projection), unreleased reservations after timeout (worker_kind=compensation), or slow export generation (worker_kind=export). The outbox is the transactional event queue between booking writes and async side-effects. Oldest lag > 300s triggers a page-level alert. Dead letter count > 0 requires manual triage — check the 'reason' label: invalid_payload = bad data that will never succeed; retry_exhausted = transient failure that gave up; retryable_failure = still failing, investigate the downstream system.",
+  "tags": [
+    "ck8s",
+    "k8s",
+    "outbox",
+    "workers",
+    "async",
+    "notifications"
+  ],
+  "refresh": "15s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Golden Signals",
+      "url": "/d/k8s-golden-signals",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "RED Traffic Drilldown",
+      "url": "/d/k8s-red-traffic",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Booking & Redis Pressure",
+      "url": "/d/k8s-booking-redis",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "USE Infrastructure",
+      "url": "/d/k8s-use-infra",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Service Anomaly Investigation",
+      "url": "/d/k8s-service-anomaly",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ DEAD LETTERS — Immediately actionable: messages that will never be retried",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 1,
+      "title": "Dead Letter Total — notification",
+      "description": "Dead-lettered outbox rows for the notification worker (email/SMS/push). Non-zero = at least one booking confirmation or ticket notification was permanently failed. Investigate audit_logs WHERE action='outbox.dead_letter' AND metadata->>'worker_kind'='notification'.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "max(cets_outbox_dead_letter_total{worker_kind=\"notification\"}) or vector(0)",
+          "legendFormat": "notification DLQ",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      }
+    },
+    {
+      "id": 2,
+      "title": "Dead Letter Total — projection",
+      "description": "Dead-lettered rows for the projection worker (reporting read model). Non-zero = some reporting views are stale and will not self-heal. Investigate audit_logs for 'outbox.dead_letter' with worker_kind='projection'.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "max(cets_outbox_dead_letter_total{worker_kind=\"projection\"}) or vector(0)",
+          "legendFormat": "projection DLQ",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      }
+    },
+    {
+      "id": 3,
+      "title": "Dead Letter Total — compensation",
+      "description": "Dead-lettered rows for the compensation worker. Non-zero = expired reservations may not have been cleaned up, consuming capacity that should be free.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "max(cets_outbox_dead_letter_total{worker_kind=\"compensation\"}) or vector(0)",
+          "legendFormat": "compensation DLQ",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      }
+    },
+    {
+      "id": 4,
+      "title": "Dead Letter Total — export",
+      "description": "Dead-lettered rows for the export worker. Non-zero = at least one report export permanently failed. Users will see a 'failed' export status with no file.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "max(cets_outbox_dead_letter_total{worker_kind=\"export\"}) or vector(0)",
+          "legendFormat": "export DLQ",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ QUEUE DEPTH & LAG — How far behind is each worker?",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "id": 5,
+      "title": "Pending Outbox Rows by Worker Kind",
+      "description": "Number of outbox rows waiting to be processed, by worker kind and status. 'pending' = waiting for a worker to pick up. 'processing' = currently being handled. Growing 'pending' with stable 'processing' means the workers can't keep up. Sudden drop to zero then spike means workers restarted.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (worker_kind, status) (cets_outbox_pending_total{status=\"pending\"})",
+          "legendFormat": "pending {{worker_kind}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (worker_kind, status) (cets_outbox_pending_total{status=\"processing\"})",
+          "legendFormat": "processing {{worker_kind}}",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      }
+    },
+    {
+      "id": 6,
+      "title": "Oldest Lag by Worker Kind",
+      "description": "Age of the oldest pending outbox row per worker kind. Alert threshold is 300 seconds (5 minutes). A row that has been waiting for a long time may be stuck because the worker is not running, the downstream system is unreachable, or the worker is processing a long-running item ahead in the queue.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max by (worker_kind) (cets_outbox_oldest_lag_seconds{status=\"pending\"})",
+          "legendFormat": "{{worker_kind}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ FAILURES & RETRIES — Why are messages failing?",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "id": 7,
+      "title": "Worker Retry Rate by Kind × Reason",
+      "description": "Rate of retry events per worker kind and reason. 'retryable_failure' = transient failure, will retry. 'invalid_payload' = bad message schema, will dead-letter after max_attempts. 'retry_exhausted' = ran out of attempts, will dead-letter. 'unknown_schema_version' = schema mismatch between producer and consumer versions.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (worker_kind, reason) (rate(cets_worker_retry_total[5m]))",
+          "legendFormat": "{{worker_kind}} / {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "id": 8,
+      "title": "Dead Letter Rate by Worker Kind",
+      "description": "Rate of new dead-letter events. A sustained rate means something is permanently failing. Cross-reference with retry reasons — if reason=retryable_failure is also rising, the downstream system is unavailable and retries are being exhausted.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (worker_kind) (rate(cets_worker_deadletter_total[5m]))",
+          "legendFormat": "{{worker_kind}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      }
+    },
+    {
+      "id": 9,
+      "title": "Outbox Retry Count (pending rows)",
+      "description": "Current retry count on still-pending outbox rows. Rows with high retry counts are stuck — they've been attempted multiple times but not dead-lettered yet. Check what event_type and worker_kind combination is accumulating retries.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max by (worker_kind, event_type) (cets_outbox_retry_count{status=\"pending\"})",
+          "legendFormat": "{{worker_kind}} {{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      }
+    },
+    {
+      "id": 10,
+      "title": "Outbox Lease Held Duration",
+      "description": "Age of the oldest held lease per worker kind. A lease that has been held for longer than the lease TTL (60s by default) means the worker took the item but has not completed or released it — could be a hung goroutine or extremely slow downstream. Items with expired leases are eventually re-queued.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max by (worker_kind) (cets_outbox_lease_held_seconds{status=\"processing\"})",
+          "legendFormat": "{{worker_kind}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      }
+    },
+    {
+      "collapsed": false,
+      "id": 103,
+      "title": "▶ LAG DISTRIBUTION — End-to-end event delivery latency histogram",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      }
+    },
+    {
+      "id": 11,
+      "title": "Outbox Lag P95 by Worker Kind",
+      "description": "P95 end-to-end lag from when an outbox row was created to when it was successfully published, per worker kind. This measures the actual delivery latency users experience (time from booking confirmed to email sent, for example). P95 > 60s means slow delivery under normal conditions.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (worker_kind, le) (rate(cets_outbox_lag_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{worker_kind}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (worker_kind, le) (rate(cets_outbox_lag_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{worker_kind}}",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      }
+    }
+  ]
+}

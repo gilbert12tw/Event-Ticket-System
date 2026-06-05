@@ -94,6 +94,11 @@ func disabledPressureSnapshots(eventIDs []string) map[string]PressureSnapshot {
 	return snapshots
 }
 
+// RedisOperationObserver records Redis script call metrics (operation, result, duration).
+type RedisOperationObserver interface {
+	ObserveRedisOperation(operation string, result string, duration time.Duration)
+}
+
 // ErrUnavailable is returned when the gate is configured to fail closed and
 // Redis is unreachable, times out, or returns misconfigured.
 var ErrUnavailable = errors.New("reservation gate unavailable")

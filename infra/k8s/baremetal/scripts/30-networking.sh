@@ -89,6 +89,15 @@ controller:
   config:
     use-forwarded-headers: "true"
     compute-full-forwarded-for: "true"
+    enable-opentelemetry: "true"
+    opentelemetry-operation-name: "HTTP \$request_method \$service_name \$uri"
+    opentelemetry-trust-incoming-span: "true"
+    otlp-collector-host: "alloy.observability.svc.cluster.local"
+    otlp-collector-port: "4317"
+    otel-service-name: "ingress-nginx"
+    otel-sampler: "AlwaysOn"
+    otel-sampler-ratio: "1.0"
+    otel-sampler-parent-based: "true"
     server-snippet: |
       add_header X-CETS-Gateway-Replica \$hostname always;
 EOF

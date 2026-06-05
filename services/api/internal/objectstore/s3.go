@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"event-ticket-system/internal/observability"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,6 +35,12 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	if err != nil {
 		return err
 	}
+	ctx, span := observability.StartDependencySpan(ctx, observability.DependencySpanConfig{
+		System:      "s3",
+		ServiceName: "minio",
+		Operation:   "put",
+	})
+	defer func() { observability.EndDependencySpan(span, err) }()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -54,12 +61,14 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 	if err != nil {
 		return err
 	}
+	observability.SetDependencyHTTPStatus(span, response.StatusCode)
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
 		return nil
 	}
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-	return fmt.Errorf("object storage put failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	err = fmt.Errorf("object storage put failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	return err
 }
 
 func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error) {
@@ -67,6 +76,12 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 	if err != nil {
 		return false, err
 	}
+	ctx, span := observability.StartDependencySpan(ctx, observability.DependencySpanConfig{
+		System:      "s3",
+		ServiceName: "minio",
+		Operation:   "head",
+	})
+	defer func() { observability.EndDependencySpan(span, err) }()
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint.String(), nil)
 	if err != nil {
 		return false, err
@@ -82,6 +97,7 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 	if err != nil {
 		return false, err
 	}
+	observability.SetDependencyHTTPStatus(span, response.StatusCode)
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNotFound {
 		return false, nil
@@ -90,7 +106,8 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 		return true, nil
 	}
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-	return false, fmt.Errorf("object storage head failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	err = fmt.Errorf("object storage head failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	return false, err
 }
 
 func (s S3CompatibleStore) Get(ctx context.Context, key string) ([]byte, string, error) {
@@ -98,6 +115,12 @@ func (s S3CompatibleStore) Get(ctx context.Context, key string) ([]byte, string,
 	if err != nil {
 		return nil, "", err
 	}
+	ctx, span := observability.StartDependencySpan(ctx, observability.DependencySpanConfig{
+		System:      "s3",
+		ServiceName: "minio",
+		Operation:   "get",
+	})
+	defer func() { observability.EndDependencySpan(span, err) }()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return nil, "", err
@@ -113,13 +136,16 @@ func (s S3CompatibleStore) Get(ctx context.Context, key string) ([]byte, string,
 	if err != nil {
 		return nil, "", err
 	}
+	observability.SetDependencyHTTPStatus(span, response.StatusCode)
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
-		body, err := io.ReadAll(response.Body)
+		var body []byte
+		body, err = io.ReadAll(response.Body)
 		return body, response.Header.Get("Content-Type"), err
 	}
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-	return nil, "", fmt.Errorf("object storage get failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	err = fmt.Errorf("object storage get failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	return nil, "", err
 }
 
 func (s S3CompatibleStore) requestParts(key string) (*url.URL, string, string, time.Time, error) {

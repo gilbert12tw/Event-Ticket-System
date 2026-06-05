@@ -5,34 +5,45 @@
   "tags": ["cets", "phase3", "compose-ha", "lgtm"],
   "refresh": "15s",
   "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      { "allValue": ".*", "current": { "selected": false, "text": "All", "value": ".*" }, "datasource": { "type": "prometheus", "uid": "Prometheus" }, "definition": "label_values(cets_build_info, service)", "includeAll": true, "label": "service", "multi": false, "name": "service", "query": "label_values(cets_build_info, service)", "refresh": 1, "sort": 1, "type": "query" },
+      { "allValue": ".*", "current": { "selected": false, "text": "All", "value": ".*" }, "datasource": { "type": "prometheus", "uid": "Prometheus" }, "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)", "includeAll": true, "label": "replica", "multi": false, "name": "replica", "query": "label_values(cets_build_info{service=~\"$service\"}, replica)", "refresh": 2, "sort": 1, "type": "query" }
+    ]
+  },
   "panels": [
     {
       "id": 1,
-      "title": "HTTP Rate by Route",
+      "title": "RED Rate by Service and Route",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
       "targets": [
-        { "expr": "sum by (route, method) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{method}} {{route}}" }
+        { "expr": "sum by (service, route) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{service}} {{route}}" }
       ],
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 }
     },
     {
       "id": 2,
-      "title": "HTTP Error Ratio",
+      "title": "RED 5xx Error Ratio by Service",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
       "targets": [
-        { "expr": "sum(rate(cets_http_requests_total{status_class=~\"4xx|5xx\"}[1m])) / sum(rate(cets_http_requests_total[1m]))", "legendFormat": "errors" }
+        { "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
       ],
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 }
     },
     {
       "id": 3,
-      "title": "HTTP P99 Duration",
+      "title": "RED Duration Quantiles by Service",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
-        { "expr": "histogram_quantile(0.99, sum by (le, route, method) (rate(cets_http_request_seconds_bucket[1m])))", "legendFormat": "p99 {{method}} {{route}}" }
+        { "expr": "histogram_quantile(0.50, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p50 {{service}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p95 {{service}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p99 {{service}}" }
       ],
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 }
     },
@@ -51,10 +62,34 @@
       "title": "Backend RED by Replica",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
       "targets": [
-        { "expr": "sum by (instance, status_class) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{instance}} {{status_class}}" }
+        { "expr": "sum by (service, replica, route, status) (rate(cets_http_requests_total{service=~\"$service\",replica=~\"$replica\"}[1m]))", "legendFormat": "{{service}} {{replica}} {{route}} {{status}}" },
+        { "expr": "sum by (service, replica, route, status) (rate(cets_http_requests_total{service=~\"$service\",replica=~\"$replica\",status_class=\"5xx\"}[1m]))", "legendFormat": "5xx {{service}} {{replica}} {{route}} {{status}}" }
       ],
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 14 }
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 }
+    },
+    {
+      "id": 15,
+      "title": "RED Status Codes Last 5m",
+      "type": "table",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum by (service, route, status) (increase(cets_http_requests_total[5m]))", "format": "table", "instant": true, "legendFormat": "{{service}} {{route}} {{status}}" }
+      ],
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 }
+    },
+    {
+      "id": 16,
+      "title": "Drilldown Latency by Route",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\",replica=~\"$replica\"}[5m])))", "legendFormat": "p50 {{route}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\",replica=~\"$replica\"}[5m])))", "legendFormat": "p95 {{route}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 }
     },
     {
       "id": 5,
@@ -64,7 +99,7 @@
       "targets": [
         { "expr": "cets_outbox_oldest_lag_seconds", "legendFormat": "{{worker_kind}} {{event_type}} {{status}}" }
       ],
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 }
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 }
     },
     {
       "id": 6,
@@ -74,7 +109,7 @@
       "targets": [
         { "queryType": "serviceMap" }
       ],
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 }
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 22 }
     },
     {
       "id": 7,
@@ -85,7 +120,17 @@
         { "expr": "sum by (client, server) (rate(traces_service_graph_request_total[5m]))", "legendFormat": "{{client}} -> {{server}}" },
         { "expr": "sum by (service_name, span_name) (rate(traces_spanmetrics_calls_total[5m]))", "legendFormat": "{{service_name}} {{span_name}}" }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 }
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 22 }
+    },
+    {
+      "id": 8,
+      "title": "Trace-Correlated Logs",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [
+        { "expr": "{service_name=~\"backend-.*|worker-.*\"} |= \"otel_trace_id\"" }
+      ],
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 22 }
     },
     {
       "id": 11,
@@ -127,16 +172,6 @@
         { "expr": "label_replace(max by (job) (cets_db_lock_waiting_sessions{job=\"cets-backend\"}), \"instance\", \"global-postgres\", \"job\", \".*\")", "legendFormat": "{{instance}}" }
       ],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 }
-    },
-    {
-      "id": 8,
-      "title": "Trace-Correlated Logs",
-      "type": "logs",
-      "datasource": { "type": "loki", "uid": "Loki" },
-      "targets": [
-        { "expr": "{service_name=~\"backend-.*|worker-.*\"} |= \"otel_trace_id\"" }
-      ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 }
     },
     {
       "id": 9,

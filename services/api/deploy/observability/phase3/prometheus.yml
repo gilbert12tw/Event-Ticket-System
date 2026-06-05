@@ -32,3 +32,38 @@ scrape_configs:
         labels:
           service: prometheus
           phase: phase3-compose
+
+  - job_name: cets-node-exporter
+    static_configs:
+      - targets:
+          - node-exporter:9100
+        labels:
+          service: node-exporter
+          phase: phase3-compose
+
+  - job_name: cets-cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080
+        labels:
+          service: cadvisor
+          phase: phase3-compose
+
+  - job_name: cets-blackbox
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://edge-lb:8080/healthz
+          - http://edge-lb:8080/readyz
+        labels:
+          service: blackbox
+          phase: phase3-compose
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

@@ -108,6 +108,45 @@ Grafana/LGTM investigation path: RED metrics, Tempo trace, Loki logs for the
 same trace ID, Pyroscope CPU profile samples, and service graph data involving
 `cets-backend`.
 
+To expose both the ticket app and Grafana through Cloudflare Access, set
+`CETS_PUBLIC_HOSTNAME` and `GRAFANA_PUBLIC_HOSTNAME` in `.env.baremetal.local`,
+then run `41-cloudflare-preflight.sh`, `APPLY=true 40-cloudflare.sh`, and
+`APPLY=true 50-deploy-cets.sh`. The single Tunnel routes the app hostname to
+ingress-nginx and the Grafana hostname to
+`kube-prometheus-stack-grafana.observability.svc.cluster.local:80`.
+Set `CLOUDFLARE_ACCESS_ENABLED=false` only when both hostnames should be public
+without Cloudflare Access login; Grafana's own login page will then be exposed
+to the internet.
+
+For a demo-only public ticket app with mock profile selection, set
+`CETS_APP_ENV=demo` in `.env.baremetal.local` and rerun
+`APPLY=true infra/k8s/baremetal/scripts/50-deploy-cets.sh`. Leave the default
+`CETS_APP_ENV=baremetal` for deployments that must require real provider
+claims.
+
+The deployment also provisions the `Cets` Grafana folder through the
+kube-prometheus-stack dashboard sidecar. The folder contains separate
+dashboards for `CETS Metrics RED`, `CETS Metrics USE`, `CETS Logs`,
+`CETS Traces`, and `CETS Profiles`. To inspect them locally:
+
+```sh
+kubectl -n observability port-forward svc/kube-prometheus-stack-grafana 3000:80
+kubectl -n observability get secret kube-prometheus-stack-grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+Open `http://127.0.0.1:3000`, sign in as `admin`, then open the `Cets` folder.
+Treat `66-verify-observability.sh` as the data-level acceptance check when
+dashboard panels are empty after a quiet traffic window. The `CETS Traces`
+dashboard separates Tempo-derived service graph data from K8s deployment
+topology. Current routing sends UI/static routes (`/`) from ingress-nginx to
+frontend, while API/health/ready routes (`/api`, `/healthz`, `/readyz`) go
+directly from ingress-nginx to backend. ingress-nginx emits spans, but its
+OpenTelemetry module may not emit backend proxy client spans, so Tempo may show
+`user -> ingress-nginx` and `user -> cets-backend` instead of an
+`ingress-nginx -> cets-backend` edge. The frontend node remains topology-only
+until a future instrumented frontend or gateway emits spans.
+
 For a full automated audit, use:
 
 ```sh

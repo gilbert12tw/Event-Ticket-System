@@ -25,13 +25,20 @@ Edit `infra/k8s/baremetal/.env.baremetal.local` and set:
 
 ```sh
 CETS_PUBLIC_HOSTNAME=<real hostname>
+GRAFANA_PUBLIC_HOSTNAME=<grafana hostname>
 CLOUDFLARE_API_TOKEN=<token>
 CLOUDFLARE_ACCOUNT_ID=<account id>
 CLOUDFLARE_ZONE_ID=<zone id>
 CLOUDFLARE_ZONE_NAME=<zone name>
+CLOUDFLARE_ACCESS_ENABLED=true
 CLOUDFLARE_ACCESS_ALLOWED_EMAILS=<approved email 1>,<approved email 2>
 CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS=<device posture rule id>
 ```
+
+Set `CLOUDFLARE_ACCESS_ENABLED=false` only when the app and Grafana should be
+reachable by anyone on the public internet. In that mode, Terraform creates the
+Tunnel and DNS records but skips Cloudflare Access applications and policies.
+Grafana still has its own login, but its public login page is exposed.
 
 Do not commit this file.
 
@@ -49,7 +56,9 @@ Expected result:
 - `cloudflared` has 3 ready replicas in namespace `cets`.
 - Unauthenticated `curl` gets a Cloudflare Access challenge or deny response.
 - Your approved WARP-enrolled browser can open `https://$CETS_PUBLIC_HOSTNAME`.
+- Your approved WARP-enrolled browser can open `https://$GRAFANA_PUBLIC_HOSTNAME`.
 - `https://$CETS_PUBLIC_HOSTNAME/healthz` reaches the app after approval.
+- `https://$GRAFANA_PUBLIC_HOSTNAME/api/health` reaches Grafana after approval.
 
 ## Add An Approved Device
 

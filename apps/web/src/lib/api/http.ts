@@ -102,7 +102,7 @@ export async function api<T>(
       envelope,
     );
     if (!response.ok) {
-      throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
+      throw new ApiError(response.status, envelope);
     }
     return envelope.data;
   } catch (error) {
@@ -157,7 +157,7 @@ export async function postForm<T>(path: string, body: FormData) {
     envelope,
   );
   if (!response.ok) {
-    throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
+    throw new ApiError(response.status, envelope);
   }
   return envelope.data;
 }

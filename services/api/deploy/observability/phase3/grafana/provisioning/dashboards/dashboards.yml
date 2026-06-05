@@ -3,7 +3,7 @@ apiVersion: 1
 providers:
   - name: CETS Phase 3 Compose
     orgId: 1
-    folder: Corporate Event Ticketing
+    folder: Event-Ticket-System
     type: file
     disableDeletion: false
     editable: true

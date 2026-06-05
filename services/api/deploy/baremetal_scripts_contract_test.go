@@ -104,6 +104,20 @@ func TestBaremetalManifestsExposeCapacityReplicaHeaders(t *testing.T) {
 	assert.Contains(t, app, `add_header Content-Type text/plain;`)
 }
 
+func TestBaremetalAppEnvCanEnableDemoMockProfiles(t *testing.T) {
+	app := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "deploy-cets", "app.sh"))
+	envExample := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", ".env.example"))
+	initLocalEnv := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "05-init-local-env.sh"))
+	readme := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "README.md"))
+
+	assert.Contains(t, app, `APP_ENV: "${CETS_APP_ENV:-baremetal}"`)
+	assert.NotContains(t, app, `APP_ENV: "baremetal"`)
+	assert.Contains(t, envExample, "CETS_APP_ENV=baremetal")
+	assert.Contains(t, initLocalEnv, "CETS_APP_ENV=${CETS_APP_ENV:-baremetal}")
+	assert.Contains(t, readme, "CETS_APP_ENV=demo")
+	assert.Contains(t, readme, "mock profile selection")
+}
+
 func TestBaremetalPostgresFailoverWritesReport(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
