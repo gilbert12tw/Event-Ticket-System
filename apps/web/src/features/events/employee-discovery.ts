@@ -134,11 +134,22 @@ export function employeeDiscoverySummary(
   events: EmployeeCalendarEvent[],
   discovery: EmployeeDiscoveryState,
 ) {
-  const scope = view === "day" ? "這天" : view === "month" ? "本月" : "本週";
+  const scope = employeeDiscoveryScope(view);
   const count = events.length;
   return discoveryIsActive(discovery)
     ? `${scope}符合 ${count} 場`
     : `${scope}有 ${count} 場活動`;
+}
+
+function employeeDiscoveryScope(view: EmployeeCalendarViewMode) {
+  switch (view) {
+    case "day":
+      return "這天";
+    case "month":
+      return "本月";
+    default:
+      return "本週";
+  }
 }
 
 export function discoveryIsActive(discovery: EmployeeDiscoveryState) {

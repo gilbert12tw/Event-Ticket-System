@@ -30,37 +30,41 @@ func resetDemoDB(cfg config.Config, logger *slog.Logger) error {
 	defer closeRedisClient(logger, redisClient)
 
 	return withDatabase(cfg, cfg.ValidateDatabase, func(ctx context.Context, pool *pgxpool.Pool) error {
-		if err := postgres.Migrate(ctx, pool); err != nil {
-			return err
-		}
-		if err := redisClient.Ping(ctx).Err(); err != nil {
-			return fmt.Errorf("redis ping failed for reset-demo-db: %w", err)
-		}
-		if err := truncateAppData(ctx, pool); err != nil {
-			return err
-		}
-		if err := postgres.Migrate(ctx, pool); err != nil {
-			return err
-		}
-		deletedKeys, err := clearRedisAppKeys(ctx, redisClient)
-		if err != nil {
-			return err
-		}
-		service := newTicketingService(pool, cfg, logger)
-		if err := service.SeedDemoData(ctx); err != nil {
-			return err
-		}
-		seed, err := service.SeedDemoEventTickets(ctx)
-		if err != nil {
-			return err
-		}
-		logger.Info("demo database reset complete",
-			"redis_keys_deleted", deletedKeys,
-			"today_event_id", seed.TodayEventID,
-			"future_event_id", seed.FutureEventID,
-		)
-		return nil
+		return resetDemoData(ctx, pool, redisClient, cfg, logger)
 	})
+}
+
+func resetDemoData(ctx context.Context, pool *pgxpool.Pool, redisClient *redis.Client, cfg config.Config, logger *slog.Logger) error {
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		return err
+	}
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("redis ping failed for reset-demo-db: %w", err)
+	}
+	if err := truncateAppData(ctx, pool); err != nil {
+		return err
+	}
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		return err
+	}
+	deletedKeys, err := clearRedisAppKeys(ctx, redisClient)
+	if err != nil {
+		return err
+	}
+	service := newTicketingService(pool, cfg, logger)
+	if err := service.SeedDemoData(ctx); err != nil {
+		return err
+	}
+	seed, err := service.SeedDemoEventTickets(ctx)
+	if err != nil {
+		return err
+	}
+	logger.Info("demo database reset complete",
+		"redis_keys_deleted", deletedKeys,
+		"today_event_id", seed.TodayEventID,
+		"future_event_id", seed.FutureEventID,
+	)
+	return nil
 }
 
 func newResetRedisClient(redisURL string) (*redis.Client, error) {
