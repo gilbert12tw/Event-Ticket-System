@@ -63,6 +63,8 @@ type Config struct {
 	NoShowGraceHours                int
 	ReportStaleThresholdSeconds     int
 	ReportUnavailableTimeoutSeconds int
+	RebuildDryRun                   bool
+	RebuildSampleValidate           bool
 	RateLimitEnabled                bool
 	BookingRateLimitPerActor        int
 	BookingRateLimitPerEvent        int
@@ -130,6 +132,8 @@ func Load() Config {
 		NoShowGraceHours:                parsePositiveIntEnv("NO_SHOW_GRACE_HOURS", "24", &loadErrors),
 		ReportStaleThresholdSeconds:     parsePositiveIntEnv("REPORT_STALE_THRESHOLD_SECONDS", "60", &loadErrors),
 		ReportUnavailableTimeoutSeconds: parsePositiveIntEnv("REPORT_UNAVAILABLE_TIMEOUT_SECONDS", "180", &loadErrors),
+		RebuildDryRun:                   parseBoolEnv("REBUILD_DRY_RUN", "false", &loadErrors),
+		RebuildSampleValidate:           parseBoolEnv("REBUILD_SAMPLE_VALIDATE", "true", &loadErrors),
 		RateLimitEnabled:                parseBoolEnv("RATE_LIMIT_ENABLED", "false", &loadErrors),
 		BookingRateLimitPerActor:        parseNonNegativeIntEnv("BOOKING_RATE_LIMIT_RPS_PER_ACTOR", "0", &loadErrors),
 		BookingRateLimitPerEvent:        parseNonNegativeIntEnv("BOOKING_RATE_LIMIT_RPS_PER_EVENT", "0", &loadErrors),
