@@ -20,7 +20,13 @@ metrics_generator:
     remote_write:
       - url: http://prometheus:9090/api/v1/write
   processor:
-    service_graphs: {}
+    service_graphs:
+      peer_attributes:
+        - peer.service
+        - server.address
+        - db.system
+      enable_virtual_node_label: true
+      max_items: 50000
     span_metrics: {}
 
 storage:

@@ -158,6 +158,12 @@ func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 		return
 	}
 
+	if len(aggregates) == 0 {
+		writeEmptyOutboxMetrics(w)
+		writeOutboxLagHistogramMetrics(ctx, w, db)
+		return
+	}
+
 	for _, aggregate := range sortedOutboxMetricAggregates(aggregates) {
 		labels := fmt.Sprintf(`event_type="%s",worker_kind="%s",status="%s"`,
 			escapeLabel(aggregate.Key.EventType), escapeLabel(aggregate.Key.WorkerKind), escapeLabel(aggregate.Key.Status))
@@ -171,6 +177,15 @@ func writeOutboxMetrics(ctx context.Context, w io.Writer, db SQLMetricsDB) {
 		}
 	}
 	writeOutboxLagHistogramMetrics(ctx, w, db)
+}
+
+func writeEmptyOutboxMetrics(w io.Writer) {
+	labels := `event_type="none",worker_kind="none",status="empty"`
+	writeFormat(w, "cets_outbox_pending_total{%s} 0\n", labels)
+	writeFormat(w, "cets_outbox_oldest_lag_seconds{%s} 0\n", labels)
+	writeFormat(w, "cets_outbox_retry_count{%s} 0\n", labels)
+	writeFormat(w, "cets_outbox_lease_held_seconds{%s} 0\n", labels)
+	writeLine(w, `cets_outbox_dead_letter_total{event_type="none",worker_kind="none"} 0`)
 }
 
 func safeOutboxMetricEventType(eventType string) string {

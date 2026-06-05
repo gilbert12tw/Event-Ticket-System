@@ -7,7 +7,13 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // newTestGate returns a RedisGate connected to the URL in REDIS_URL. Tests
@@ -42,6 +48,40 @@ func uniqueEventID(t *testing.T) string {
 	id, err := newReservationID()
 	require.NoError(t, err)
 	return "evt_" + id
+}
+
+func TestTraceRedisScriptUsesServiceGraphAttributes(t *testing.T) {
+	exporter, shutdown := installReservationTraceExporter(t)
+	defer shutdown()
+
+	result, err := traceRedisScript(context.Background(), "reserve", nil, func(context.Context) (interface{}, error) {
+		return "ok", nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result)
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "redis.reserve", spans[0].Name)
+	assert.Contains(t, spans[0].Attributes, attribute.String("peer.service", "redis"))
+	assert.Contains(t, spans[0].Attributes, attribute.String("server.address", "redis"))
+	for _, attr := range spans[0].Attributes {
+		value := attr.Value.AsString()
+		assert.NotContains(t, value, "idempotency")
+		assert.NotContains(t, value, "email@example.test")
+		assert.NotContains(t, value, "token")
+	}
+}
+
+func installReservationTraceExporter(t *testing.T) (*tracetest.InMemoryExporter, func()) {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(provider)
+	return exporter, func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(noop.NewTracerProvider())
+	}
 }
 
 func TestRedisGateReserveGrantsThenExhausts(t *testing.T) {

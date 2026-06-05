@@ -17,9 +17,11 @@ import (
 func upsertEventSummary(
 	ctx context.Context,
 	tx pgx.Tx,
-	summary eventSummaryUpsert,
+	eventID string,
+	counts eventSummaryRow,
+	outboxID string,
 ) error {
-	breakdownJSON, err := json.Marshal(summary.DepartmentBreakdown)
+	breakdownJSON, err := json.Marshal(counts.DepartmentBreakdown)
 	if err != nil {
 		return fmt.Errorf("projection: marshal department_breakdown: %w", err)
 	}
@@ -52,12 +54,12 @@ func upsertEventSummary(
 				WHEN excluded.last_event_offset > reporting_event_summary.last_event_offset
 				THEN now()
 				ELSE reporting_event_summary.updated_at END`,
-		summary.EventID,
-		max(summary.ConfirmedCount, 0),
-		max(summary.CancelledCount, 0),
-		max(summary.WaitlistCount, 0),
+		eventID,
+		max(counts.ConfirmedCount, 0),
+		max(counts.CancelledCount, 0),
+		max(counts.WaitlistCount, 0),
 		string(breakdownJSON),
-		summary.OutboxID,
+		outboxID,
 	)
 	return err
 }

@@ -50,3 +50,18 @@ func TestParseHelpersUseSafeFallbackWhenFallbackIsMalformed(t *testing.T) {
 	assert.Equal(t, 0, nonNegative)
 	assert.Len(t, loadErrors, 2)
 }
+
+func TestLoadRuntimeObservabilityReplicaIDUsesExplicitValueThenHostname(t *testing.T) {
+	t.Setenv("CETS_REPLICA_ID", "backend-2")
+	t.Setenv("HOSTNAME", "pod-hostname")
+
+	cfg := Load()
+
+	assert.Equal(t, "backend-2", cfg.CETSReplicaID)
+
+	t.Setenv("CETS_REPLICA_ID", "")
+
+	cfg = Load()
+
+	assert.Equal(t, "pod-hostname", cfg.CETSReplicaID)
+}

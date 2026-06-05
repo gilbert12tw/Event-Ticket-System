@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 41,
+  "uid": "ets-red-traffic",
+  "title": "ETS 02 — RED Traffic Drilldown",
+  "description": "Backend engineer HTTP layer view. Use when Golden Signals shows an error or latency anomaly. Set $replica to isolate a specific backend instance. The route×replica table shows exactly which instance is generating errors — use this to pick the right replica filter before jumping to Service Anomaly. RED = Rate (requests/s) + Errors (5xx ratio) + Duration (latency percentiles).",
+  "tags": ["cets", "ets", "red", "http"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "Golden Signals", "url": "/d/ets-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/ets-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ RATE — How much traffic is each route handling?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "Request Rate by Route (filtered)",
+      "description": "Requests per second per route, filtered by $service and $replica. Uneven distribution across replicas for the same route points to load-balancer skew or a stuck instance.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[1m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Request Rate by Replica",
+      "description": "Rate per replica regardless of route. If one replica handles significantly more traffic than others, the load balancer is not distributing evenly.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[1m]))",
+          "legendFormat": "{{replica}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ ERRORS — Which route and replica is generating 5xx?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 3,
+      "title": "5xx Error Ratio by Route (filtered)",
+      "description": "Fraction of requests returning 5xx per route. A route that stays elevated is a problem path — jump to Service Anomaly with that route name in mind.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\", status_class=\"5xx\"}[5m])) / clamp_min(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m])), 0.001)",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 }
+    },
+    {
+      "id": 4,
+      "title": "5xx Error Ratio by Replica",
+      "description": "5xx fraction per replica. If only one replica has errors, the problem is instance-specific (bad deploy, OOM, DB connection). Set $replica to that value, then open Service Anomaly.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (replica) (rate(cets_http_requests_total{service=~\"$service\", status_class=\"5xx\"}[5m])) / clamp_min(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m])), 0.001)",
+          "legendFormat": "{{replica}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 }
+    },
+    {
+      "id": 5,
+      "title": "5xx Count Last 5 min — Route × Replica × Status",
+      "description": "Cumulative 5xx counts in the current window, broken down by route, replica, and exact status code. Sort by Count descending. The replica column tells you which backend instance is responsible. Click a row to open Service Anomaly for deeper investigation.",
+      "type": "table",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "custom.width", "value": 80 }] }
+        ]
+      },
+      "options": {
+        "sortBy": [{ "desc": true, "displayName": "Count" }]
+      },
+      "targets": [
+        {
+          "expr": "sum by (route, replica, status) (increase(cets_http_requests_total{status_class=\"5xx\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "renameByName": { "Value": "Count" } } }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ DURATION — Where is latency coming from?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }
+    },
+    {
+      "id": 6,
+      "title": "Latency P50 / P95 / P99 by Route (filtered)",
+      "description": "Latency percentiles per route. P99 > P95 >> P50 means a small number of requests are very slow — a sign of lock contention, retry storms, or a single slow query. Jump to Booking & Redis to see which booking stage is slow.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\", replica=~\"$replica\"}[5m])))",
+          "legendFormat": "p50 {{route}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\", replica=~\"$replica\"}[5m])))",
+          "legendFormat": "p95 {{route}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\", replica=~\"$replica\"}[5m])))",
+          "legendFormat": "p99 {{route}}",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 }
+    },
+    {
+      "id": 7,
+      "title": "Latency P99 by Replica",
+      "description": "P99 latency per replica. If one replica is consistently slower, it may have a longer DB queue, an GC pause, or be under more load. Check USE Infrastructure for that replica's CPU and memory.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, replica) (rate(cets_http_request_seconds_bucket{service=~\"$service\"}[5m])))",
+          "legendFormat": "p99 {{replica}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 }
+    },
+    {
+      "id": 8,
+      "title": "Status Code Distribution Last 5 min",
+      "description": "Full status code breakdown including 2xx, 3xx, 4xx, 5xx. 4xx spike = client errors (bad auth, validation). 5xx spike = server fault. Large 4xx volume on booking routes may mean rate limiting is dropping requests.",
+      "type": "table",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "sortBy": [{ "desc": true, "displayName": "Count" }]
+      },
+      "targets": [
+        {
+          "expr": "sum by (route, status, status_class) (increase(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "renameByName": { "Value": "Count" } } }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 35 }
+    }
+  ]
+}

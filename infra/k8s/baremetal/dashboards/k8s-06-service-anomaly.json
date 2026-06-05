@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 41,
+  "uid": "k8s-service-anomaly",
+  "title": "ETS 06 — Service Anomaly Investigation",
+  "description": "Incident commander full investigation view for Kubernetes. Follow the five steps in order: STEP 1 DETECT: Which route and replica is generating 500s? STEP 2 BOOKING DEPS: Is the failure in Redis gate, DB lock, or a booking stage? STEP 3 TRACE: Use the Traces panel to find a failing trace. Click it to open the waterfall view, then click 'Node Graph' to see ingress→backend→postgres with per-pod identity. STEP 4 LOGS: Recent error logs from backend and worker pods (Loki namespace=cets labels). Click otel_trace_id to jump to Tempo. Ingress error logs (502/503/504) from ingress-nginx are also available for upstream errors. STEP 5 PROFILE: CPU profile activity from Pyroscope. From a trace, click 'Profiles for this span' for a flamegraph.",
+  "tags": ["cets", "k8s", "incident", "traces", "service-anomaly", "investigation"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "Golden Signals", "url": "/d/k8s-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "RED Traffic Drilldown", "url": "/d/k8s-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/k8s-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "USE Infrastructure", "url": "/d/k8s-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/k8s-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ STEP 1 — DETECT: Which route and replica is generating 500s?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "5xx Error Rate by Route × Replica",
+      "description": "5xx request rate broken down by route and replica. Each series is labelled 'route [replica]' — a single replica generating all errors while others are healthy = instance-specific fault (bad deploy, OOM, DB connection). Set $replica to narrow all other panels.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (route, replica) (rate(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[1m]))", "legendFormat": "{{route}}  [{{replica}}]", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "5xx Total Last 5 min",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m]))", "legendFormat": "5xx", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 }
+    },
+    {
+      "id": 3,
+      "title": "P99 Latency Last 5 min",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 2 }] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "histogram_quantile(0.99, sum by (le) (rate(cets_http_request_seconds_bucket{service=~\"$service\", replica=~\"$replica\"}[5m])))", "legendFormat": "p99", "refId": "A" }],
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 5 }
+    },
+    {
+      "id": 4,
+      "title": "5xx Count — Route × Replica × Status (last 5 min)",
+      "description": "Exact 5xx counts sorted desc. The 'replica' column tells you which pod is responsible. Use this to set $replica.",
+      "type": "table",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [{ "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "custom.width", "value": 80 }] }] },
+      "options": { "sortBy": [{ "desc": true, "displayName": "Count" }] },
+      "targets": [
+        { "expr": "sum by (service, replica, route, status) (increase(cets_http_requests_total{service=~\"$service\",replica=~\"$replica\",status_class=\"5xx\"}[5m]))", "format": "table", "instant": true, "refId": "A" }
+      ],
+      "transformations": [{ "id": "organize", "options": { "renameByName": { "Value": "Count" } } }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ STEP 2 — BOOKING DEPS: Redis gate, DB lock, or booking stage?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "id": 5,
+      "title": "Booking Stage Error Rate by Stage",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (stage) (rate(cets_booking_stage_seconds_count{outcome=\"error\"}[5m]))", "legendFormat": "{{stage}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 }
+    },
+    {
+      "id": 6,
+      "title": "Redis Gate Errors by Operation × Outage Mode",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (outcome, outage_mode) (rate(cets_reservation_attempt_total{outcome=\"error\"}[5m]))", "legendFormat": "{{outcome}} mode={{outage_mode}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 }
+    },
+    {
+      "id": 7,
+      "title": "DB Lock Waiting Sessions",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }, "custom": { "thresholdsStyle": { "mode": "line" } } }, "overrides": [] },
+      "targets": [{ "expr": "max by (job) (cets_db_lock_waiting_sessions{job=\"cets-backend\"})", "legendFormat": "lock waiters", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ STEP 3 — TRACE: Find the failing request. Use Node Graph for per-pod identity.",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }
+    },
+    {
+      "id": 15,
+      "title": "Service Graph Request Rate (Tempo-Derived Only)",
+      "description": "Request rates and span metrics derived from traces by Tempo's metrics generator. These are Tempo-derived spans, NOT the K8s deployment topology. The node graph below shows only services that actually appeared in traces. Edges: client→server call direction. Use this to spot which service pair has rising error rates before drilling into individual traces.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (client, server) (rate(traces_service_graph_request_total[5m]))", "legendFormat": "{{client}} → {{server}}", "refId": "A" },
+        { "expr": "sum by (service_name, span_name) (rate(traces_spanmetrics_calls_total[5m]))", "legendFormat": "{{service_name}} {{span_name}}", "refId": "B" }
+      ],
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 27 }
+    },
+    {
+      "id": 8,
+      "title": "Service Dependency Graph (Tempo Service Map)",
+      "description": "Visual topology of service calls. A red edge = errors on that path. Click 'Node Graph' inside an individual trace to see the per-pod service.instance.id label.",
+      "type": "nodeGraph",
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "queryType": "serviceMap", "refId": "A" }],
+      "gridPos": { "h": 14, "w": 12, "x": 0, "y": 34 }
+    },
+    {
+      "id": 9,
+      "title": "Recent Error Traces (click → waterfall + Node Graph)",
+      "description": "Traces from cets-* services where status=error. Click a trace to open the waterfall in Tempo. In the trace detail, click 'Node Graph' to see ingress→backend→postgres with service.instance.id showing the exact Kubernetes pod. Use 'Logs for this trace' → Loki. Use 'Profiles for this span' → Pyroscope.",
+      "type": "traces",
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [
+        { "queryType": "traceql", "query": "{resource.service.name=~\"cets-.*\" && status=error}", "limit": 20, "tableType": "traces", "refId": "A" },
+        { "queryType": "traceql", "query": "{resource.service.name=~\"cets-.*\"}", "limit": 10, "tableType": "traces", "refId": "B" }
+      ],
+      "gridPos": { "h": 14, "w": 12, "x": 12, "y": 27 }
+    },
+    {
+      "collapsed": false,
+      "id": 103,
+      "title": "▶ STEP 4 — LOGS: Structured error logs correlated by otel_trace_id",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 }
+    },
+    {
+      "id": 10,
+      "title": "Backend Error Logs (namespace=cets, level=error)",
+      "description": "Structured JSON logs from backend and worker pods filtered to level=error. The otel_trace_id field is a clickable link to Tempo. The 'pod' Loki label shows which Kubernetes pod logged the error.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{namespace=\"cets\", app=~\"backend|worker\"} | json | level =~ `(?i)error`", "maxLines": 200, "refId": "A" }],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 42 }
+    },
+    {
+      "id": 11,
+      "title": "Ingress Error Logs (ingress-nginx 502/503/504)",
+      "description": "Ingress-nginx access logs filtered to upstream error codes (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout). These indicate backend pods are unhealthy or slow at the load-balancer level. Correlate timing with the backend error logs above.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |= `502` or {namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |= `503` or {namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |= `504`", "maxLines": 100, "refId": "A" }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 52 }
+    },
+    {
+      "id": 12,
+      "title": "Trace-Correlated Backend Logs",
+      "description": "Backend log lines that include otel_trace_id — requests that were actively traced. Use to find logs for a specific trace found in Tempo.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{namespace=\"cets\", app=~\"backend|worker\"} |= `otel_trace_id` | json | __error__ = ``", "maxLines": 100, "refId": "A" }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 60 }
+    },
+    {
+      "collapsed": false,
+      "id": 104,
+      "title": "▶ STEP 5 — PROFILE: CPU hotspot per service",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 68 }
+    },
+    {
+      "id": 13,
+      "title": "CPU Profile Activity by Service (Pyroscope)",
+      "description": "CPU nanoseconds consumed over time per cets-* service. Non-zero confirms profiler is running. From a trace, click 'Profiles for this span' to open a CPU flamegraph scoped to that request's exact time window.",
+      "type": "timeseries",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "Pyroscope" },
+      "targets": [{ "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "queryType": "metrics", "refId": "A", "legendFormat": "{{service_name}}" }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 69 }
+    }
+  ]
+}

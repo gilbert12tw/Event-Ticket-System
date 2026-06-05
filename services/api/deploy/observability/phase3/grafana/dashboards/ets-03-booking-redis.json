@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 41,
+  "uid": "ets-booking-redis",
+  "title": "ETS 03 — Booking & Redis Pressure",
+  "description": "排查 Booking 熱路徑與 Redis 閘道壓力 (Booking hot-path and Redis gate health). Use when booking error rate or booking P99 latency rises above baseline. Row 1 shows which booking stage is slow or failing: preadmission (Redis gate) → idempotency_lock → event_lock → capacity → commit. Row 2 shows Redis gate health: reserve latency spike with outage_mode=degrade means Redis is slow but bookings continue degraded; outage_mode=fail means Redis is actively rejecting bookings. Row 3 shows capacity outcomes: rising 'exhausted' is a legitimate capacity hit, not a bug. Row 4 shows rate limiting: actor-scoped drops mean a specific user is hammering bookings.",
+  "tags": ["cets", "ets", "booking", "redis", "hot-path"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "Golden Signals", "url": "/d/ets-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "RED Traffic Drilldown", "url": "/d/ets-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ BOOKING STAGES — Which stage in the booking hot-path is slow or failing?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "Booking Stage P95 Latency",
+      "description": "P95 latency per booking stage. Stages in order: preadmission (Redis gate) → begin_tx → idempotency_lock → event_lock → validate → duplicate_lookup → capacity → create_response → commit. The slowest stage is the bottleneck. If 'preadmission' is slow, check Redis gate panels below. If 'commit' is slow, check DB pool/lock.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (stage, le) (rate(cets_booking_stage_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{stage}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Booking Stage Error Rate by Stage",
+      "description": "Rate of booking stage observations with outcome=error per stage. A rise on 'capacity' means event is full or Redis gate erroring. A rise on 'commit' means a DB transaction is failing. Jump to Service Anomaly and find a trace for the failing stage.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (stage, outcome) (rate(cets_booking_stage_seconds_count{outcome=\"error\"}[5m]))",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ REDIS GATE — Is Redis the cause? Reserve/commit latency and outage mode.",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 3,
+      "title": "Pre-Admission P95 by Operation × Outage Mode",
+      "description": "P95 latency for Redis gate operations (reserve/release/commit), labelled by outage_mode. outage_mode=none means Redis is healthy. outage_mode=degrade means Redis is slow but the booking continues. outage_mode=fail means Redis returned an error and the booking was rejected.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (outcome, outage_mode, capacity_type, le) (rate(cets_booking_preadmission_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{outcome}} mode={{outage_mode}} cap={{capacity_type}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 }
+    },
+    {
+      "id": 4,
+      "title": "Reservation Attempt Outcomes",
+      "description": "Rate of reservation gate outcomes. 'confirmed' = pre-admission granted. 'waitlisted' = over capacity, put on waitlist. 'exhausted' = event full. 'error' = Redis error. A spike in 'error' with outage_mode=fail means Redis is the culprit for booking failures.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (outcome, capacity_type, outage_mode) (rate(cets_reservation_attempt_total[5m]))",
+          "legendFormat": "{{outcome}} cap={{capacity_type}} mode={{outage_mode}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ RATE LIMITING — Is booking being throttled?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }
+    },
+    {
+      "id": 5,
+      "title": "Rate Limit Drop Rate by Scope",
+      "description": "Rate of booking requests dropped by the rate limiter. scope=actor means a specific employee is being throttled (per-employee-per-event limit). scope=event means global event booking rate is being capped. High actor drops suggest a retry storm from one client. High event drops suggest the event is extremely popular.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (scope) (rate(cets_rate_limit_drop_total[5m]))",
+          "legendFormat": "{{scope}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 }
+    },
+    {
+      "id": 6,
+      "title": "Pre-Admission by Capacity Type",
+      "description": "Pre-admission outcomes split by capacity_type. 'limited' events have a fixed seat count and will exhaust. 'unlimited' events bypass capacity checks. If 'limited' exhausted rate is rising, the event is sold out — not a bug. If 'unlimited' events are erroring, there is a Redis or DB issue.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (outcome, capacity_type) (rate(cets_reservation_attempt_total[5m]))",
+          "legendFormat": "{{outcome}} {{capacity_type}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 }
+    },
+    {
+      "collapsed": false,
+      "id": 103,
+      "title": "▶ COMPENSATION — Are failed/expired reservations being cleaned up?",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }
+    },
+    {
+      "id": 7,
+      "title": "Reservation Compensation Actions",
+      "description": "Rate of reservation compensation sweep actions. 'released' = expired reservation cleaned up successfully. 'missing_pending' = reservation row not found. 'error' = compensation failed. High 'error' rate means stale reservations are accumulating and seat capacity may appear consumed when it should be free.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (action, result) (rate(cets_reservation_compensation_total[5m]))",
+          "legendFormat": "{{action}} → {{result}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }
+    },
+    {
+      "id": 8,
+      "title": "Reservation Counter Drift Guard",
+      "description": "Results of the drift-guard pass that corrects Redis counter divergence from PostgreSQL. 'unchanged' = counters match. 'capped' = Redis was overcounting and was corrected. 'no_counter' = event not found in Redis. Persistent 'capped' results mean Redis is diverging from Postgres truth.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(cets_reservation_counter_drift_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
+    },
+    {
+      "collapsed": false,
+      "id": 200,
+      "title": "▶ Redis Script Call Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 9,
+      "title": "Redis Operation Rate by Operation × Result",
+      "description": "Rate of individual Redis Lua script calls (reserve, commit, release). Rising 'error' or 'timeout' results indicate Redis health degradation at the operation level.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (operation, result) (rate(cets_redis_operation_total[5m]))",
+          "legendFormat": "{{operation}} [{{result}}]",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 }
+    },
+    {
+      "id": 10,
+      "title": "Redis Operation P95 Latency by Operation",
+      "description": "P95 latency of each Redis script call type. Spikes here directly explain booking preadmission latency. Normal: <20ms. Warning: >50ms. Critical: >150ms (operation timeout).",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(cets_redis_operation_seconds_bucket[5m])))",
+          "legendFormat": "{{operation}} p95",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 }
+    }
+  ]
+}

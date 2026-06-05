@@ -1,323 +1,160 @@
 {
-  "annotations": {
-    "list": []
-  },
+  "annotations": { "list": [] },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "links": [],
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 0
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
       "id": 1,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [
-        {
-          "expr": "sum by (route, method) (rate(cets_http_requests_total[1m]))",
-          "legendFormat": "{{method}} {{route}}"
-        }
+        { "expr": "sum by (service, route) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{service}} {{route}}" }
       ],
-      "title": "HTTP Rate",
+      "title": "RED Rate by Service and Route",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 0
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
       "id": 2,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [
-        {
-          "expr": "sum(rate(cets_http_requests_total{status_class=~\"4xx|5xx\"}[1m])) / sum(rate(cets_http_requests_total[1m]))",
-          "legendFormat": "error ratio"
-        }
+        { "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
       ],
-      "title": "HTTP Error Ratio",
+      "title": "RED 5xx Error Ratio by Service",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
       "id": 3,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [
-        {
-          "expr": "histogram_quantile(0.99, sum by (le, route, method) (rate(cets_http_request_seconds_bucket[1m])))",
-          "legendFormat": "p99 {{method}} {{route}}"
-        }
+        { "expr": "histogram_quantile(0.50, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p50 {{service}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p95 {{service}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p99 {{service}}" }
       ],
-      "title": "HTTP Duration P99",
+      "title": "RED Duration Quantiles by Service",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 8
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
       "id": 4,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
       "targets": [
-        {
-          "expr": "cets_db_pool_conns",
-          "legendFormat": "{{state}}"
-        }
+        { "expr": "sum by (service, route, status) (increase(cets_http_requests_total[5m]))", "format": "table", "instant": true, "legendFormat": "{{service}} {{route}} {{status}}" }
       ],
-      "title": "DB Pool Connections",
+      "title": "RED Status Codes Last 5m",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 5,
+      "targets": [
+        { "expr": "sum by (route, status) (rate(cets_http_requests_total{service=~\"$service\",replica=~\"$replica\"}[1m]))", "legendFormat": "{{route}} {{status}}" }
+      ],
+      "title": "Drilldown Traffic by Route and Status",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 8
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 6,
       "targets": [
-        {
-          "expr": "cets_outbox_oldest_lag_seconds",
-          "legendFormat": "{{event_type}} {{status}}"
-        }
+        { "expr": "sum by (service, replica, route, status) (rate(cets_http_requests_total{service=~\"$service\",replica=~\"$replica\",status_class=\"5xx\"}[1m]))", "legendFormat": "{{service}} {{replica}} {{route}} {{status}}" }
+      ],
+      "title": "Drilldown 5xx Rate by Replica",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "id": 7,
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\",replica=~\"$replica\"}[5m])))", "legendFormat": "p50 {{route}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, route) (rate(cets_http_request_seconds_bucket{service=~\"$service\",replica=~\"$replica\"}[5m])))", "legendFormat": "p95 {{route}}" }
+      ],
+      "title": "Drilldown Latency by Route",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "id": 8,
+      "targets": [
+        { "expr": "cets_db_pool_conns", "legendFormat": "{{state}}" },
+        { "expr": "cets_db_lock_waiting_sessions", "legendFormat": "lock waits" }
+      ],
+      "title": "DB Pool Connections and Lock Waits",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "id": 9,
+      "targets": [
+        { "expr": "cets_outbox_oldest_lag_seconds", "legendFormat": "{{event_type}} {{status}}" }
       ],
       "title": "Outbox Oldest Lag",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 8
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "id": 10,
       "targets": [
-        {
-          "expr": "cets_db_lock_waiting_sessions",
-          "legendFormat": "lock waits"
-        }
-      ],
-      "title": "DB Lock Waiting Sessions",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 16
-      },
-      "id": 7,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "expr": "probe_success{probe_scope=\"blackbox\"}",
-          "legendFormat": "{{instance}}"
-        }
+        { "expr": "probe_success{probe_scope=\"blackbox\"}", "legendFormat": "{{instance}}" }
       ],
       "title": "Black-box Probe Success",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 16
-      },
-      "id": 8,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "id": 11,
       "targets": [
-        {
-          "expr": "probe_duration_seconds{probe_scope=\"blackbox\"}",
-          "legendFormat": "{{instance}}"
-        }
+        { "expr": "probe_duration_seconds{probe_scope=\"blackbox\"}", "legendFormat": "{{instance}}" }
       ],
       "title": "Black-box Probe Duration",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "id": 12,
+      "targets": [
+        { "expr": "cets_build_info", "format": "table", "instant": true, "legendFormat": "{{service}} {{replica}}" }
+      ],
+      "title": "Observed Service Replicas",
+      "type": "table"
     }
   ],
   "refresh": "15s",
   "schemaVersion": 41,
-  "tags": [
-    "cets",
-    "observability",
-    "cor-40"
-  ],
+  "tags": ["cets", "observability", "cor-40"],
   "templating": {
-    "list": []
+    "list": [
+      { "allValue": ".*", "current": { "selected": false, "text": "All", "value": ".*" }, "datasource": { "type": "prometheus", "uid": "Prometheus" }, "definition": "label_values(cets_build_info, service)", "includeAll": true, "label": "service", "multi": false, "name": "service", "query": "label_values(cets_build_info, service)", "refresh": 1, "sort": 1, "type": "query" },
+      { "allValue": ".*", "current": { "selected": false, "text": "All", "value": ".*" }, "datasource": { "type": "prometheus", "uid": "Prometheus" }, "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)", "includeAll": true, "label": "replica", "multi": false, "name": "replica", "query": "label_values(cets_build_info{service=~\"$service\"}, replica)", "refresh": 2, "sort": 1, "type": "query" }
+    ]
   },
-  "time": {
-    "from": "now-15m",
-    "to": "now"
-  },
+  "time": { "from": "now-15m", "to": "now" },
   "timezone": "browser",
   "title": "CETS Observability",
   "uid": "cets-observability",

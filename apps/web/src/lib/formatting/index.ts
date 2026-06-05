@@ -69,7 +69,7 @@ export function editFormFromEvent(event: EventSummary) {
     ends_at: dateToLocalInput(event.ends_at || event.starts_at),
     registration_start: dateToLocalInput(event.registration_start),
     registration_close: dateToLocalInput(event.registration_close),
-    capacity_type: capacityType as "limited" | "unlimited",
+    capacity_type: capacityType,
     capacity: capacityType === "unlimited" ? "" : String(event.capacity ?? 1),
     category: event.category || "",
     tags: (event.tags || []).join(", "),

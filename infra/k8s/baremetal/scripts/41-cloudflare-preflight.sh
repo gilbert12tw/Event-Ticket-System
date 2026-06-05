@@ -13,7 +13,14 @@ require_env CLOUDFLARE_API_TOKEN
 require_env CLOUDFLARE_ACCOUNT_ID
 require_env CLOUDFLARE_ZONE_ID
 require_env CLOUDFLARE_ZONE_NAME
-require_env CLOUDFLARE_ACCESS_ALLOWED_EMAILS
+CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
+case "$CLOUDFLARE_ACCESS_ENABLED" in
+  true|false) ;;
+  *) die "CLOUDFLARE_ACCESS_ENABLED must be true or false" ;;
+esac
+if [ "$CLOUDFLARE_ACCESS_ENABLED" != "false" ]; then
+  require_env CLOUDFLARE_ACCESS_ALLOWED_EMAILS
+fi
 
 [ "$CETS_PUBLIC_HOSTNAME" != "tickets.example.com" ] || die "set CETS_PUBLIC_HOSTNAME to the real Cloudflare hostname"
 [ "$CLOUDFLARE_ZONE_NAME" != "example.com" ] || die "set CLOUDFLARE_ZONE_NAME to the real Cloudflare zone"
@@ -33,17 +40,27 @@ case "$CETS_PUBLIC_HOSTNAME" in
   *."$CLOUDFLARE_ZONE_NAME"|"$CLOUDFLARE_ZONE_NAME") ;;
   *) die "$CETS_PUBLIC_HOSTNAME is not under zone $CLOUDFLARE_ZONE_NAME" ;;
 esac
-
-log "checking Cloudflare Access allow-list inputs"
-email_count=$(printf '%s' "$CLOUDFLARE_ACCESS_ALLOWED_EMAILS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | length')
-if [ -n "${CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS:-}" ]; then
-  posture_count=$(printf '%s' "$CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | length')
-else
-  posture_count=0
+if [ -n "${GRAFANA_PUBLIC_HOSTNAME:-}" ]; then
+  case "$GRAFANA_PUBLIC_HOSTNAME" in
+    *."$CLOUDFLARE_ZONE_NAME"|"$CLOUDFLARE_ZONE_NAME") ;;
+    *) die "$GRAFANA_PUBLIC_HOSTNAME is not under zone $CLOUDFLARE_ZONE_NAME" ;;
+  esac
 fi
-[ "$email_count" -gt 0 ] || die "CLOUDFLARE_ACCESS_ALLOWED_EMAILS must include at least one approved identity"
-if [ "$posture_count" -eq 0 ]; then
-  log "CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS is empty; Terraform will create a WARP-required posture rule"
+
+if [ "$CLOUDFLARE_ACCESS_ENABLED" = "false" ]; then
+  log "Cloudflare Access is disabled; public hostnames will not require Access login"
+else
+  log "checking Cloudflare Access allow-list inputs"
+  email_count=$(printf '%s\n' "$CLOUDFLARE_ACCESS_ALLOWED_EMAILS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | length')
+  if [ -n "${CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS:-}" ]; then
+    posture_count=$(printf '%s\n' "$CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | length')
+  else
+    posture_count=0
+  fi
+  [ "$email_count" -gt 0 ] || die "CLOUDFLARE_ACCESS_ALLOWED_EMAILS must include at least one approved identity"
+  if [ "$posture_count" -eq 0 ]; then
+    log "CLOUDFLARE_ACCESS_DEVICE_POSTURE_RULE_IDS is empty; Terraform will create a WARP-required posture rule"
+  fi
 fi
 
 log "Cloudflare preflight completed"

@@ -30,7 +30,7 @@ export function initialSteps(): StepMap {
   return Object.fromEntries(
     demoSteps.map(([id]) => [
       id,
-      { state: "pending" as StepState, hint: "待執行" },
+      { state: "pending" satisfies StepState, hint: "待執行" },
     ]),
   ) as StepMap;
 }

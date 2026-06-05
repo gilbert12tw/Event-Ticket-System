@@ -38,6 +38,7 @@ func TestQueryTracerUsesBoundedOperationSpan(t *testing.T) {
 	assert.Contains(t, spans[0].Attributes, attribute.String("db.operation", "select"))
 	assert.Contains(t, spans[0].Attributes, attribute.String("cets.db.statement_class", "select"))
 	assert.Contains(t, spans[0].Attributes, attribute.String("cets.db.command_tag", "select"))
+	assert.Contains(t, spans[0].Attributes, attribute.String("peer.service", "postgres"))
 	assert.Contains(t, spans[0].Attributes, attribute.String("server.address", "postgres"))
 	assert.Contains(t, spans[0].Attributes, attribute.Int("server.port", 5432))
 	assert.Contains(t, spans[0].Attributes, attribute.String("db.namespace", "cets"))
@@ -91,6 +92,8 @@ func TestQueryTracerOmitsEmptyDependencyAttributes(t *testing.T) {
 	spans := exporter.GetSpans()
 	require.Len(t, spans, 1)
 	assert.NotContains(t, spans[0].Attributes, attribute.String("server.address", ""))
+	assert.Contains(t, spans[0].Attributes, attribute.String("peer.service", "postgres"))
+	assert.Contains(t, spans[0].Attributes, attribute.String("server.address", "postgres"))
 	assert.NotContains(t, spans[0].Attributes, attribute.Int("server.port", 0))
 	assert.NotContains(t, spans[0].Attributes, attribute.String("db.namespace", ""))
 }

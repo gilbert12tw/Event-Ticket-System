@@ -71,7 +71,10 @@ func serveWithDatabase(ctx context.Context, cfg config.Config, logger *slog.Logg
 	}
 	defer closeRedisClient(logger, rateLimitClient)
 
-	metrics := observability.NewRegistry()
+	metrics := observability.NewRegistryWithIdentity(cfg.OTelServiceName, cfg.CETSReplicaID)
+	if rg, ok := gate.(*reservation.RedisGate); ok {
+		rg.WithMetrics(metrics)
+	}
 	ticketingService := newTicketingService(pool, cfg, logger).
 		WithReservationGate(gate, []byte(cfg.BookingReservationHashSecret)).
 		WithReservationOutageMode(cfg.ReservationOutageMode).
