@@ -16,7 +16,13 @@ export type CalendarExportArtifact = {
 
 export type CalendarExportEvent = Pick<
   EventSummary,
-  "description" | "event_id" | "event_site" | "location" | "starts_at" | "title"
+  | "description"
+  | "ends_at"
+  | "event_id"
+  | "event_site"
+  | "location"
+  | "starts_at"
+  | "title"
 >;
 
 export function canAddToCalendar(event: EventSummary, ticket?: Ticket) {
@@ -30,7 +36,11 @@ export function employeeCalendarExport(
   now: Date = new Date(),
 ): CalendarExportArtifact {
   const startsAt = parseDate(event.starts_at);
-  const endsAt = new Date(startsAt.getTime() + defaultDurationMs);
+  const parsedEndsAt = parseDate(event.ends_at);
+  const endsAt =
+    parsedEndsAt.getTime() > startsAt.getTime()
+      ? parsedEndsAt
+      : new Date(startsAt.getTime() + defaultDurationMs);
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",

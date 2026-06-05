@@ -23,6 +23,7 @@ describe("employee calendar export", () => {
     const artifact = employeeCalendarExport(
       eventFixture({
         description: "下午茶, 分享;跨部門\\交流\n請準時到場",
+        ends_at: "2026-06-04T16:42:00+08:00",
         event_id: "evt-secret-raw",
         location: "台北總部 12F; Lounge",
         starts_at: "2026-06-04T13:42:00+08:00",
@@ -37,7 +38,7 @@ describe("employee calendar export", () => {
     expect(artifact.content).toContain("VERSION:2.0\r\n");
     expect(artifact.content).toContain("BEGIN:VEVENT\r\n");
     expect(artifact.content).toContain("DTSTART:20260604T054200Z\r\n");
-    expect(artifact.content).toContain("DTEND:20260604T074200Z\r\n");
+    expect(artifact.content).toContain("DTEND:20260604T084200Z\r\n");
     expect(artifact.content).toContain("DTSTAMP:20260531T160000Z\r\n");
     expect(artifact.content).toContain("SUMMARY:今天員工交流午茶\r\n");
     expect(artifact.content).toContain(

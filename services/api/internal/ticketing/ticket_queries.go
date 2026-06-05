@@ -34,7 +34,7 @@ func (s *Service) createTicketTx(ctx context.Context, tx pgx.Tx, reg Registratio
 	tokenHash := s.signer.HashToken(token)
 	qrPayload := token
 	expiresAt := issuedAt.Add(30 * 24 * time.Hour)
-	_ = tx.QueryRow(ctx, `SELECT starts_at + interval '24 hours' FROM events WHERE event_id = $1`, reg.EventID).Scan(&expiresAt)
+	_ = tx.QueryRow(ctx, `SELECT ends_at FROM events WHERE event_id = $1`, reg.EventID).Scan(&expiresAt)
 	_, err = tx.Exec(ctx, `INSERT INTO tickets
 		(ticket_id, registration_id, event_id, employee_id, status, sequence_number, signed_token_hash, signed_token, qr_payload, expires_at, issued_at)
 		VALUES ($1,$2,$3,$4,'active',1,$5,$6,$7,$8,$9)`,

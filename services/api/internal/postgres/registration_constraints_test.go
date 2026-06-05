@@ -58,7 +58,7 @@ func seedRegistrationConstraintFixture(ctx context.Context, pool *pgxpool.Pool) 
 		return err
 	}
 	_, err := pool.Exec(ctx, `INSERT INTO events
-			(event_id, title, starts_at, registration_start, registration_close, capacity_type, capacity, status, created_by)
-		VALUES ('evt_reg_unique', 'Registration Unique', now() + interval '7 days', now(), now() + interval '1 day', 'limited', 10, 'published', 'admin-1')`)
+			(event_id, title, starts_at, ends_at, registration_start, registration_close, capacity_type, capacity, status, created_by)
+		VALUES ('evt_reg_unique', 'Registration Unique', now() + interval '7 days', now() + interval '7 days' + interval '2 hours', now(), now() + interval '1 day', 'limited', 10, 'published', 'admin-1')`)
 	return err
 }

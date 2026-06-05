@@ -76,6 +76,22 @@ describe("employee ticket surface", () => {
     ]);
   });
 
+  it("groups ticket dates by the employee calendar timezone", () => {
+    const groups = groupEmployeeTicketsByDate(
+      [
+        ticket({
+          event_starts_at: "2026-06-04T17:00:00Z",
+          ticket_id: "taipei-today",
+        }),
+      ],
+      new Date("2026-06-04T16:30:00Z"),
+    );
+
+    expect(groups.map((group) => [group.dateKey, group.label])).toEqual([
+      ["2026-06-05", "今天"],
+    ]);
+  });
+
   it("hides companion count unless it changes entry planning", () => {
     expect(shouldShowCompanionCount(ticket({ family_count: 0 }))).toBe(false);
     expect(shouldShowCompanionCount(ticket({ family_count: 2 }))).toBe(true);

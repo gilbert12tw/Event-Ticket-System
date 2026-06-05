@@ -64,6 +64,9 @@ func (s *Service) prepareCreateEventInput(req CreateEventRequest) (createEventIn
 	if !req.RegistrationStart.Before(req.RegistrationClose) {
 		return createEventInput{}, badRequest("registration_start must be before registration_close")
 	}
+	if !req.StartsAt.Before(req.EndsAt) {
+		return createEventInput{}, badRequest("starts_at must be before ends_at")
+	}
 	if err := validateAllocationModeForCapacity(allocationMode, capacityType); err != nil {
 		return createEventInput{}, err
 	}
@@ -80,6 +83,7 @@ func (s *Service) prepareCreateEventInput(req CreateEventRequest) (createEventIn
 			EventCity:         eventCityOrFallback(req.EventCity, req.Location),
 			EventSite:         eventSiteOrFallback(req.EventSite, req.Location),
 			StartsAt:          req.StartsAt,
+			EndsAt:            req.EndsAt,
 			RegistrationStart: req.RegistrationStart,
 			RegistrationClose: req.RegistrationClose,
 			CapacityType:      capacityType,
@@ -112,6 +116,9 @@ func defaultCreateEventRequest(req CreateEventRequest, now time.Time) CreateEven
 	if req.StartsAt.IsZero() {
 		req.StartsAt = now.Add(7 * 24 * time.Hour)
 	}
+	if req.EndsAt.IsZero() {
+		req.EndsAt = req.StartsAt.Add(24 * time.Hour)
+	}
 	if req.RegistrationStart.IsZero() {
 		req.RegistrationStart = now.Add(-time.Hour)
 	}
@@ -140,10 +147,10 @@ func newCreateEventIDs() (string, string, string, error) {
 func (s *Service) insertCreatedEventTx(ctx context.Context, tx pgx.Tx, actor Actor, input createEventInput) error {
 	event := input.event
 	_, err := tx.Exec(ctx, `INSERT INTO events
-		(event_id, title, description, location, event_city, event_site, starts_at, registration_start, registration_close,
+		(event_id, title, description, location, event_city, event_site, starts_at, ends_at, registration_start, registration_close,
 		 capacity_type, capacity, allows_family, status, allocation_mode, category, tags, entry_method, visibility, version, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,1,$19)`,
-		event.EventID, event.Title, event.Description, event.Location, event.EventCity, event.EventSite, event.StartsAt, event.RegistrationStart, event.RegistrationClose,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,1,$20)`,
+		event.EventID, event.Title, event.Description, event.Location, event.EventCity, event.EventSite, event.StartsAt, event.EndsAt, event.RegistrationStart, event.RegistrationClose,
 		event.CapacityType, event.Capacity, event.AllowsFamily, event.Status, event.AllocationMode, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility, actor.ID)
 	if err != nil {
 		return err
@@ -198,7 +205,7 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 func (s *Service) loadEventSummaries(ctx context.Context, query EventListQuery) ([]EventSummary, error) {
 	where, args := eventListWhere(query)
 	rows, err := s.db.Query(ctx, `SELECT
-				e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
+				e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.ends_at, e.registration_start, e.registration_close,
 				e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
 				COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
 			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
@@ -261,7 +268,7 @@ func (s *Service) GetEventSummary(ctx context.Context, actor Actor, eventID stri
 
 func (s *Service) loadEventSummary(ctx context.Context, eventID string) (EventSummary, error) {
 	row := s.db.QueryRow(ctx, `SELECT
-			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
+			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.ends_at, e.registration_start, e.registration_close,
 			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
 			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
 			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
@@ -289,7 +296,7 @@ func scanEventSummaryRow(row eventSummaryScanner) (EventSummary, error) {
 	var tags string
 	var capacity pgtype.Int4
 	if err := row.Scan(
-		&summary.EventID, &summary.Title, &summary.Description, &summary.Location, &summary.EventCity, &summary.EventSite, &summary.StartsAt, &summary.RegistrationStart, &summary.RegistrationClose,
+		&summary.EventID, &summary.Title, &summary.Description, &summary.Location, &summary.EventCity, &summary.EventSite, &summary.StartsAt, &summary.EndsAt, &summary.RegistrationStart, &summary.RegistrationClose,
 		&summary.CapacityType, &capacity, &summary.AllowsFamily, &summary.Status, &summary.AllocationMode, &summary.Category, &tags, &summary.EntryMethod, &summary.Visibility, &summary.Version,
 		&summary.ArchivedAt, &summary.CreatedBy, &summary.CreatedAt, &summary.UpdatedAt,
 		&summary.Rule.RuleID, &summary.Rule.EventID, &summary.Rule.Department, &summary.Rule.Site, &summary.Rule.MinGrade, &summary.Rule.EmploymentStatus, &summary.Rule.Version,

@@ -39,6 +39,7 @@ const checkinEvent: EventSummary = {
   description: "",
   location: "Taipei HQ",
   starts_at: "2026-05-16T10:00:00Z",
+  ends_at: "2026-05-16T12:00:00Z",
   registration_start: "2026-05-01T10:00:00Z",
   registration_close: "2026-05-15T10:00:00Z",
   capacity_type: "limited",
@@ -257,6 +258,60 @@ describe("CheckinPage", () => {
       "",
     );
     expect(controls.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits QR detections with the latest selected event after events load", async () => {
+    mockReports.mockResolvedValue([]);
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-qr",
+      ticket_id: "tkt-qr",
+      event_id: "evt-live",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-05-16T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
+    let resolveEvents: (events: EventSummary[]) => void = () => {};
+    mockListAdminEvents.mockReturnValue(
+      new Promise<EventSummary[]>((resolve) => {
+        resolveEvents = resolve;
+      }),
+    );
+    const controls = { stop: vi.fn() };
+    let scanCallback: (result?: { getText: () => string }) => void = () => {};
+    zxingMocks.decodeFromConstraints.mockImplementation(
+      async (_constraints, _video, callback) => {
+        scanCallback = callback;
+        return controls;
+      },
+    );
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+    await act(async () => {
+      resolveEvents([checkinEvent]);
+    });
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
+
+    await act(async () => {
+      scanCallback({ getText: () => "late-loaded-token" });
+    });
+
+    await waitFor(() =>
+      expect(mockCheckIn).toHaveBeenCalledWith(
+        "late-loaded-token",
+        "gate-1",
+        "evt-live",
+        "",
+      ),
+    );
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue(
+      "late-loaded-token",
+    );
   });
 
   it("opens the camera without depending on BarcodeDetector support", async () => {

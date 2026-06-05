@@ -92,8 +92,8 @@ func (s *Service) rejectInvalidCheckinBeforeRedeemTx(ctx context.Context, tx pgx
 	if ticket.Status != TicketActive {
 		return s.rejectInactiveTicketTx(ctx, tx, actor, req, ticket)
 	}
-	if !isCheckinOnEventDay(ticket.EventStartsAt, s.now()) {
-		return s.rejectCheckinTicketTx(ctx, tx, actor, newCheckinTicketRejection(req, ticket, checkinNotEventDayReason, "", "ticket cannot be checked in outside event day", conflict("ticket cannot be checked in outside event day")))
+	if !isCheckinAfterEventStart(ticket.EventStartsAt, s.now()) {
+		return s.rejectCheckinTicketTx(ctx, tx, actor, newCheckinTicketRejection(req, ticket, checkinNotStartedReason, "", "ticket cannot be checked in before event start", conflict("ticket cannot be checked in before event start")))
 	}
 	if !ticket.ExpiresAt.IsZero() && s.now().After(ticket.ExpiresAt) {
 		return s.rejectExpiredTicketTx(ctx, tx, actor, req, ticket)

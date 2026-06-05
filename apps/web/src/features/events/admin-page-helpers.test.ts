@@ -24,6 +24,7 @@ describe("admin page helpers", () => {
     expect(body).toEqual(
       expect.objectContaining({
         title: "Team Lunch",
+        ends_at: expect.any(String),
         capacity: null,
         allows_family: true,
         tags: ["food", "taipei"],
@@ -53,6 +54,7 @@ describe("admin page helpers", () => {
       expect.objectContaining({
         title: "Town Hall",
         description: "Quarterly update",
+        ends_at: expect.any(String),
         capacity: 32,
         allows_family: false,
         tags: ["company", "update"],
@@ -83,6 +85,7 @@ describe("admin page helpers", () => {
     expect(
       windowReady(
         "2026-06-10T10:00:00Z",
+        "2026-06-10T12:00:00Z",
         "2026-06-01T10:00:00Z",
         "2026-06-05T10:00:00Z",
       ),
@@ -90,7 +93,16 @@ describe("admin page helpers", () => {
     expect(
       windowReady(
         "2026-06-10T10:00:00Z",
+        "2026-06-10T12:00:00Z",
         "2026-06-06T10:00:00Z",
+        "2026-06-05T10:00:00Z",
+      ),
+    ).toBe(false);
+    expect(
+      windowReady(
+        "2026-06-10T10:00:00Z",
+        "2026-06-10T10:00:00Z",
+        "2026-06-01T10:00:00Z",
         "2026-06-05T10:00:00Z",
       ),
     ).toBe(false);

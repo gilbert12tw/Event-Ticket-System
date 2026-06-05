@@ -1,12 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  bookEvent,
-  eventPosterBlob,
-  listEvents,
-  listTickets,
-} from "@/lib/api";
+import { bookEvent, eventPosterBlob, listEvents, listTickets } from "@/lib/api";
 import { claims, eventFixture } from "@/test/event-fixtures";
 import { EmployeeEventsPage } from "./employee-pages";
 
@@ -77,13 +72,12 @@ describe("EmployeeEventsPage discovery controls", () => {
     expect(
       await screen.findByRole("region", { name: "活動搜尋與篩選" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("searchbox", { name: "搜尋活動" }),
-    ).toHaveAttribute("placeholder", "搜尋活動、地點或標籤…");
+    expect(screen.getByRole("searchbox", { name: "搜尋活動" })).toHaveAttribute(
+      "placeholder",
+      "搜尋活動、地點或標籤…",
+    );
     expect(screen.getAllByRole("searchbox")).toHaveLength(1);
-    expect(
-      screen.getByRole("group", { name: "活動狀態" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "活動狀態" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "地點" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "名額" })).toBeInTheDocument();
     expect(screen.getByText("本週有 1 場活動")).toBeInTheDocument();
@@ -138,9 +132,9 @@ describe("EmployeeEventsPage discovery controls", () => {
 
     renderEmployeeEventsPage();
 
-    expect(
-      (await screen.findAllByText("開放報名活動")).length,
-    ).toBeGreaterThan(0);
+    expect((await screen.findAllByText("開放報名活動")).length).toBeGreaterThan(
+      0,
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "已報名" }));
 
@@ -162,9 +156,9 @@ describe("EmployeeEventsPage discovery controls", () => {
 
     renderEmployeeEventsPage();
 
-    expect(
-      (await screen.findAllByText("可復原活動")).length,
-    ).toBeGreaterThan(0);
+    expect((await screen.findAllByText("可復原活動")).length).toBeGreaterThan(
+      0,
+    );
 
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜尋活動" }),

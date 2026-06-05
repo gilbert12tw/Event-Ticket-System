@@ -20,6 +20,9 @@ var resetRedisPrefixes = []string{
 }
 
 func resetDemoDB(cfg config.Config, logger *slog.Logger) error {
+	if strings.EqualFold(strings.TrimSpace(cfg.AppEnv), "production") {
+		return errors.New("reset-demo-db is disabled when APP_ENV=production")
+	}
 	redisClient, err := newResetRedisClient(cfg.RedisURL)
 	if err != nil {
 		return err

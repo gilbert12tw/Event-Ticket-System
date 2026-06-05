@@ -10,15 +10,30 @@ import {
 describe("current event selection", () => {
   const now = new Date("2026-05-20T12:00:00Z");
 
-  it("treats the 24 hours after starts_at as the current event window", () => {
+  it("uses ends_at as the current event window", () => {
     expect(
-      isCurrentEvent(event({ starts_at: "2026-05-20T10:00:00Z" }), now),
+      isCurrentEvent(
+        event({
+          starts_at: "2026-05-20T10:00:00Z",
+          ends_at: "2026-05-20T14:00:00Z",
+        }),
+        now,
+      ),
     ).toBe(true);
     expect(
       isCurrentEvent(event({ starts_at: "2026-05-21T10:00:00Z" }), now),
     ).toBe(false);
     expect(
       isCurrentEvent(event({ starts_at: "2026-05-19T10:00:00Z" }), now),
+    ).toBe(false);
+    expect(
+      isCurrentEvent(
+        event({
+          starts_at: "2026-05-20T10:00:00Z",
+          ends_at: "2026-05-20T11:00:00Z",
+        }),
+        now,
+      ),
     ).toBe(false);
   });
 
@@ -81,12 +96,17 @@ describe("current event selection", () => {
 });
 
 function event(overrides: Partial<EventSummary> = {}): EventSummary {
+  const startsAt = overrides.starts_at ?? "2026-05-20T10:00:00Z";
+  const endsAt =
+    overrides.ends_at ??
+    new Date(new Date(startsAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
   return {
     event_id: "evt-1",
     title: "Live Event",
     description: "",
     location: "Taipei HQ",
-    starts_at: "2026-05-20T10:00:00Z",
+    starts_at: startsAt,
+    ends_at: endsAt,
     registration_start: "2026-05-01T10:00:00Z",
     registration_close: "2026-05-19T10:00:00Z",
     capacity_type: "limited",

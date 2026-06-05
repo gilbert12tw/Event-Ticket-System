@@ -5,6 +5,13 @@ import {
   type CalendarExportArtifact,
   employeeCalendarExport,
 } from "@/features/events/employee-calendar-export";
+import {
+  addEmployeeCalendarDays,
+  employeeCalendarWeekdayLabel,
+  formatEmployeeCalendarMonthDay,
+  localDateKey,
+  parseEmployeeCalendarDateKey,
+} from "@/features/events/employee-calendar-date";
 import { ticketEntryReadinessView } from "./ticket-readiness";
 
 export type EmployeeTicketSurfaceState = {
@@ -51,7 +58,7 @@ export function employeeTicketSurfaceState(
       actionLabel: "查看票券",
       canAddToCalendar: true,
       canShowQr: false,
-      copy: "活動當天再開啟票券出示 QR code。",
+      copy: "活動開始後再開啟票券出示 QR code。",
       kind: "upcoming",
       label: "即將到來",
       tone: "info",
@@ -87,7 +94,7 @@ export function groupEmployeeTicketsByDate(
   for (const ticket of [...tickets].sort((left, right) =>
     compareTickets(left, right, now),
   )) {
-    const dateKey = localTicketDateKey(ticketDate(ticket));
+    const dateKey = localDateKey(ticketDate(ticket));
     groups.set(dateKey, [...(groups.get(dateKey) ?? []), ticket]);
   }
   return [...groups.entries()].map(([dateKey, groupTickets]) => ({
@@ -104,6 +111,7 @@ export function shouldShowCompanionCount(ticket: Ticket) {
 export function ticketCalendarExport(ticket: Ticket): CalendarExportArtifact {
   return employeeCalendarExport({
     description: "公司活動",
+    ends_at: ticket.expires_at || ticket.event_starts_at || ticket.issued_at,
     event_id: ticket.event_id,
     event_site: ticket.event_location || "",
     location: ticket.event_location || "",
@@ -146,22 +154,10 @@ function ticketDate(ticket: Ticket) {
 }
 
 function ticketDateLabel(dateKey: string, now: Date) {
-  const todayKey = localTicketDateKey(now);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
+  const todayKey = localDateKey(now);
+  const tomorrow = addEmployeeCalendarDays(now, 1);
   if (dateKey === todayKey) return "今天";
-  if (dateKey === localTicketDateKey(tomorrow)) return "明天";
-  return new Intl.DateTimeFormat("zh-TW", {
-    month: "numeric",
-    day: "numeric",
-    weekday: "short",
-  }).format(new Date(`${dateKey}T00:00:00`));
-}
-
-function localTicketDateKey(date: Date) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
+  if (dateKey === localDateKey(tomorrow)) return "明天";
+  const date = parseEmployeeCalendarDateKey(dateKey, now);
+  return `${formatEmployeeCalendarMonthDay(date)} ${employeeCalendarWeekdayLabel(date)}`;
 }

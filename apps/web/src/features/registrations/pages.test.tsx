@@ -38,6 +38,7 @@ const event: EventSummary = {
   description: "Company gathering",
   location: "Taipei HQ",
   starts_at: "2026-06-01T10:00:00Z",
+  ends_at: "2026-06-01T12:00:00Z",
   registration_start: "2026-05-01T00:00:00Z",
   registration_close: "2026-05-25T00:00:00Z",
   capacity_type: "limited",

@@ -304,6 +304,18 @@ func TestResetDemoDBRejectsInvalidRedisURLBeforeDatabaseConnect(t *testing.T) {
 	require.NotContains(t, err.Error(), "invalid database URL")
 }
 
+func TestResetDemoDBRejectsProductionBeforeBackingServiceAccess(t *testing.T) {
+	cfg := validCommandConfig()
+	cfg.AppEnv = "production"
+	cfg.RedisURL = "://invalid"
+
+	err := resetDemoDB(cfg, testLogger())
+
+	require.ErrorContains(t, err, "reset-demo-db is disabled when APP_ENV=production")
+	require.NotContains(t, err.Error(), "invalid REDIS_URL")
+	require.NotContains(t, err.Error(), "invalid database URL")
+}
+
 func TestNewTicketingServiceBuildsService(t *testing.T) {
 	service := newTicketingService(nil, validCommandConfig(), nil)
 

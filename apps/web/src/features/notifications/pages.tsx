@@ -70,9 +70,7 @@ export function UserNotificationsPage() {
     }
   }
 
-  useEffect(() => {
-    void refresh();
-  }, []);
+  useEffect(() => void refresh(), []);
 
   const notificationRows = [
     ...events

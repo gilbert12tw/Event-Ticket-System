@@ -293,11 +293,8 @@ function displayState(
 
 function eventIsCurrent(event: EventSummary, now: Date) {
   const startsAt = parseDate(event.starts_at).getTime();
-  return (
-    startsAt > 0 &&
-    startsAt <= now.getTime() &&
-    now.getTime() < startsAt + dayMs
-  );
+  const endsAt = parseDate(event.ends_at).getTime() || startsAt + dayMs;
+  return startsAt > 0 && startsAt <= now.getTime() && now.getTime() < endsAt;
 }
 
 function parseDate(value?: string) {

@@ -3,14 +3,15 @@ import type { EventSummary } from "@/lib/api";
 const currentEventWindowMs = 24 * 60 * 60 * 1000;
 
 export function isCurrentEvent(
-  event: Pick<EventSummary, "starts_at" | "status">,
+  event: Pick<EventSummary, "ends_at" | "starts_at" | "status">,
   now: Date = new Date(),
 ) {
   if (event.status === "draft" || event.status === "archived") return false;
   const startsAt = parseTime(event.starts_at);
   if (startsAt === 0) return false;
+  const endsAt = parseTime(event.ends_at) || startsAt + currentEventWindowMs;
   const nowTime = now.getTime();
-  return startsAt <= nowTime && nowTime < startsAt + currentEventWindowMs;
+  return startsAt <= nowTime && nowTime < endsAt;
 }
 
 export function selectCurrentEvent(

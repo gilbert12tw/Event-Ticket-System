@@ -1,8 +1,4 @@
-import {
-  Field,
-  SegmentedFilter,
-  SelectField,
-} from "@/components/shared";
+import { Field, SegmentedFilter, SelectField } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import type { Option } from "@/lib/ui/options";

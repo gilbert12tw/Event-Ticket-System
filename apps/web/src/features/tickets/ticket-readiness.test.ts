@@ -38,6 +38,18 @@ describe("ticket readiness", () => {
     expect(readiness.kind).toBe("expired");
   });
 
+  it("keeps late-night tickets entry-ready after local midnight until expiry", () => {
+    const readiness = ticketEntryReadinessView(
+      ticket({
+        event_starts_at: "2026-06-04T23:00:00+08:00",
+        expires_at: "2026-06-05T23:00:00+08:00",
+      }),
+      new Date("2026-06-05T00:30:00+08:00"),
+    );
+
+    expect(readiness.kind).toBe("entry-ready");
+  });
+
   it("selects the latest entry-ready ticket without exposing raw token text", () => {
     vi.setSystemTime(new Date("2026-05-20T12:00:00Z"));
     const selected = selectCurrentTicket([

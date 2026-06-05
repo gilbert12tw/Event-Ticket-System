@@ -102,4 +102,37 @@ describe("CheckinResult", () => {
       screen.getAllByText("票券簽章內容與票券資料不一致。").length,
     ).toBeGreaterThan(0);
   });
+
+  it("renders event-not-started recovery copy without raw fallback text", () => {
+    const result: CheckinResponse = {
+      checkin_id: "",
+      ticket_id: "T-early",
+      event_id: "EVT-1",
+      event_title: "台北家庭電影夜",
+      employee_id: "E1001",
+      status: "rejected",
+      reason_code: "event_not_started",
+      scanned_at: "2026-05-06T09:30:00Z",
+      conflict_reason: "event_not_started",
+      rejection_message: "ticket cannot be checked in before event start",
+      duplicate: false,
+      holder: {
+        display_name: "Ariel Chen",
+        department: "Engineering",
+        city: "Taipei",
+      },
+      family_count: 0,
+    };
+
+    render(<CheckinResult result={result} />);
+
+    expect(
+      screen.getByText(
+        "活動尚未開始，請於活動開始時間後再驗票，或轉交主辦人工確認。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("活動尚未開始，請於活動開始時間後再驗票。").length,
+    ).toBeGreaterThan(0);
+  });
 });

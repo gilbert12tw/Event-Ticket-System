@@ -176,7 +176,7 @@ export function EmployeeEventDetailHero({
   const state = employeeEventDisplayState(event, undefined, now);
   const deadline = registrationDeadlineView(event, now);
   const meta = eventMeta(event);
-  const date = eventDateDetail(event.starts_at);
+  const date = eventDateDetail(event.starts_at, event.ends_at);
   const location = siteLabel(event.location || event.event_site);
   return (
     <section className="employee-event-detail-hero">
@@ -311,33 +311,40 @@ function eventDescription(event: EventSummary) {
 }
 
 function eventMeta(event: EventSummary) {
-  return `${formatDate(event.starts_at)} · ${siteLabel(
+  return `${formatDate(event.starts_at)} 至 ${formatDate(event.ends_at)} · ${siteLabel(
     event.location || event.event_site,
   )}`;
 }
 
-function eventDateDetail(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+function eventDateDetail(startsAtValue: string, endsAtValue: string) {
+  const startsAt = new Date(startsAtValue);
+  const endsAt = new Date(endsAtValue);
+  if (Number.isNaN(startsAt.getTime())) {
     return {
-      dateLabel: value || "時間待公布",
+      dateLabel: startsAtValue || "時間待公布",
       dayLabel: "--",
       monthLabel: "日期",
       timeLabel: "",
     };
   }
+  const endTime = Number.isNaN(endsAt.getTime())
+    ? ""
+    : ` 至 ${endsAt.toLocaleTimeString("zh-TW", {
+        hour: "numeric",
+        minute: "2-digit",
+      })}`;
   return {
-    dateLabel: date.toLocaleDateString("zh-TW", {
+    dateLabel: startsAt.toLocaleDateString("zh-TW", {
       month: "long",
       day: "numeric",
       weekday: "long",
     }),
-    dayLabel: date.toLocaleDateString("zh-TW", { day: "2-digit" }),
-    monthLabel: date.toLocaleDateString("zh-TW", { month: "short" }),
-    timeLabel: `${date.toLocaleTimeString("zh-TW", {
+    dayLabel: startsAt.toLocaleDateString("zh-TW", { day: "2-digit" }),
+    monthLabel: startsAt.toLocaleDateString("zh-TW", { month: "short" }),
+    timeLabel: `${startsAt.toLocaleTimeString("zh-TW", {
       hour: "numeric",
       minute: "2-digit",
-    })} 開始`,
+    })}${endTime}`,
   };
 }
 

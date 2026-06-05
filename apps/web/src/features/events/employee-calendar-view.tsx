@@ -308,8 +308,9 @@ function EmployeeCalendarEventBlock({
   const href = primaryHref(calendarEvent);
   return (
     <a
-      aria-label={`開啟活動：${event.title}，${eventTime(
+      aria-label={`開啟活動：${event.title}，${eventTimeRange(
         event.starts_at,
+        event.ends_at,
       )}，${siteLabel(event.location || event.event_site)}，${state.label}`}
       className="employee-calendar-event-block"
       href={href}
@@ -317,7 +318,7 @@ function EmployeeCalendarEventBlock({
         runClientNavigation(clickEvent, () => navigate(href))
       }
     >
-      <time>{eventTime(event.starts_at)}</time>
+      <time>{eventTimeRange(event.starts_at, event.ends_at)}</time>
       <strong>{event.title}</strong>
       <span>{siteLabel(event.location || event.event_site)}</span>
       <span className="employee-calendar-event-badges">
@@ -336,8 +337,17 @@ function primaryHref({ event, state, ticket }: EmployeeCalendarEvent) {
   return `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`;
 }
 
+function eventTimeRange(startsAt: string, endsAt: string) {
+  const start = eventTime(startsAt);
+  const end = eventTime(endsAt);
+  if (!start || !end) return start || end || "時間待公布";
+  return `${start} 至 ${end}`;
+}
+
 function eventTime(value: string) {
-  return new Date(value).toLocaleTimeString("zh-TW", {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("zh-TW", {
     hour: "2-digit",
     minute: "2-digit",
   });

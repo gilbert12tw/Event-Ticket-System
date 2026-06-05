@@ -127,6 +127,7 @@ export function useDemoRunbook({
         event_city: "Taipei",
         event_site: "Taipei HQ",
         starts_at: futureISO(4),
+        ends_at: futureISO(6),
         registration_start: futureISO(-1),
         registration_close: futureISO(1),
         capacity_type: "limited",

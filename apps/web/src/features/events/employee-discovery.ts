@@ -6,7 +6,11 @@ import {
 } from "./employee-calendar-planner";
 import { employeeEventDisplayState } from "./employee-calendar";
 
-export type EmployeeDiscoveryStatus = "all" | "bookable" | "registered" | "waitlisted";
+export type EmployeeDiscoveryStatus =
+  | "all"
+  | "bookable"
+  | "registered"
+  | "waitlisted";
 export type EmployeeDiscoveryCapacity = "all" | CapacityType;
 
 export type EmployeeDiscoveryState = {
@@ -75,7 +79,10 @@ export function filterEmployeeDiscoveryEvents(
 ) {
   const query = normalizeSearch(discovery.q);
   return events.filter((event) => {
-    if (discovery.capacity !== "all" && event.capacity_type !== discovery.capacity) {
+    if (
+      discovery.capacity !== "all" &&
+      event.capacity_type !== discovery.capacity
+    ) {
       return false;
     }
     if (discovery.city !== "all" && event.event_city !== discovery.city) {
@@ -107,9 +114,13 @@ export function employeeDiscoveryCityOptions(
   selectedCity: string,
 ): Option[] {
   const cities = Array.from(
-    new Set(events.map((event) => event.event_city).filter(Boolean)),
+    new Set(events.map((event) => event.event_city).filter(isPresentString)),
   ).sort((left, right) => left.localeCompare(right, "zh-TW"));
-  if (selectedCity !== "all" && selectedCity && !cities.includes(selectedCity)) {
+  if (
+    selectedCity !== "all" &&
+    selectedCity &&
+    !cities.includes(selectedCity)
+  ) {
     cities.push(selectedCity);
   }
   return [
@@ -167,4 +178,8 @@ function eventSearchText(event: EventSummary) {
 
 function normalizeSearch(value: string) {
   return value.trim().toLocaleLowerCase();
+}
+
+function isPresentString(value: string | undefined): value is string {
+  return Boolean(value);
 }

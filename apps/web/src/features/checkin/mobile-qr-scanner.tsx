@@ -19,8 +19,13 @@ export function MobileQrScanner({
   const [message, setMessage] = useState("");
   const controlsRef = useRef<IScannerControls | null>(null);
   const mountedRef = useRef(false);
+  const onDetectedRef = useRef(onTokenDetected);
   const scannerActiveRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    onDetectedRef.current = onTokenDetected;
+  }, [onTokenDetected]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -54,7 +59,7 @@ export function MobileQrScanner({
           if (!scannerActiveRef.current || !result) return;
           const token = result.getText().trim();
           if (!token) return;
-          onTokenDetected(token);
+          onDetectedRef.current(token);
           setState("done");
           setMessage("已讀取 QR code，系統會自動送出驗票。");
           stopCamera(false);

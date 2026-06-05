@@ -21,10 +21,15 @@ import {
 const now = new Date("2026-06-04T10:00:00+08:00");
 
 function event(overrides: Parameters<typeof eventFixture>[0] = {}) {
+  const startsAt = overrides.starts_at ?? "2026-06-04T14:00:00+08:00";
+  const endsAt =
+    overrides.ends_at ??
+    new Date(new Date(startsAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
   return eventFixture({
     registration_start: "2026-05-01T00:00:00+08:00",
     registration_close: "2026-06-30T23:59:00+08:00",
-    starts_at: "2026-06-04T14:00:00+08:00",
+    starts_at: startsAt,
+    ends_at: endsAt,
     ...overrides,
   });
 }
@@ -141,11 +146,24 @@ describe("employee calendar helpers", () => {
           current_user_ticket: ticket("ticketed"),
           event_id: "ticketed",
           starts_at: "2026-06-04T08:00:00+08:00",
+          ends_at: "2026-06-04T12:00:00+08:00",
         }),
         undefined,
         now,
       ),
     ).toMatchObject({ kind: "entry-ready", label: "可入場" });
+    expect(
+      employeeEventDisplayState(
+        event({
+          current_user_ticket: ticket("ended"),
+          event_id: "ended",
+          starts_at: "2026-06-04T08:00:00+08:00",
+          ends_at: "2026-06-04T09:00:00+08:00",
+        }),
+        undefined,
+        now,
+      ),
+    ).toMatchObject({ kind: "registered", label: "已報名" });
     expect(
       employeeEventDisplayState(event({ eligible: false }), undefined, now),
     ).toMatchObject({ showInMain: false, label: "目前不能報名" });

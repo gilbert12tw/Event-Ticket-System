@@ -19,6 +19,7 @@ export function createBody(
     event_city: form.event_city.trim() || undefined,
     event_site: form.event_site.trim() || undefined,
     starts_at: toISO(form.starts_at),
+    ends_at: toISO(form.ends_at),
     registration_start: toISO(form.registration_start),
     registration_close: toISO(form.registration_close),
     capacity_type: form.capacity_type,
@@ -49,6 +50,7 @@ export function updateBody(
     event_city: editForm.event_city.trim() || undefined,
     event_site: editForm.event_site.trim() || undefined,
     starts_at: toISO(editForm.starts_at),
+    ends_at: toISO(editForm.ends_at),
     registration_start: toISO(editForm.registration_start),
     registration_close: toISO(editForm.registration_close),
     capacity_type: editForm.capacity_type,
@@ -77,14 +79,21 @@ export function initialTab(
   return "list";
 }
 
-export function windowReady(starts: string, start: string, close: string) {
+export function windowReady(
+  starts: string,
+  ends: string,
+  start: string,
+  close: string,
+) {
   const startsAt = new Date(starts);
+  const endsAt = new Date(ends);
   const registrationStart = new Date(start);
   const registrationClose = new Date(close);
   return (
-    [startsAt, registrationStart, registrationClose].every(
+    [startsAt, endsAt, registrationStart, registrationClose].every(
       (date) => !Number.isNaN(date.getTime()),
     ) &&
+    startsAt < endsAt &&
     registrationStart <= registrationClose &&
     registrationClose <= startsAt
   );

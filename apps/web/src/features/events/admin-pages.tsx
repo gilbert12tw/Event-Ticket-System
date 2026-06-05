@@ -96,11 +96,13 @@ export function AdminEventsPage() {
     (Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0);
   const createWindowReady = windowReady(
     form.starts_at,
+    form.ends_at,
     form.registration_start,
     form.registration_close,
   );
   const editWindowReady = windowReady(
     editForm.starts_at,
+    editForm.ends_at,
     editForm.registration_start,
     editForm.registration_close,
   );
