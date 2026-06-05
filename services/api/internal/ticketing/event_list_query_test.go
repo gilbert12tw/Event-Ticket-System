@@ -60,13 +60,14 @@ func TestListEventsAppliesOpenAPIFilters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{early.EventID, later.EventID}, eventIDs(rows))
 
-	closedRows, err := service.ListEvents(ctx, employee, "", EventListQuery{
-		City:   "Taipei",
-		Status: EventStatusClosed,
-	})
-
-	require.NoError(t, err)
-	assert.Equal(t, []string{closed.EventID}, eventIDs(closedRows))
+	for _, status := range []string{EventStatusDraft, EventStatusClosed, EventStatusCancelled, EventStatusArchived} {
+		_, err := service.ListEvents(ctx, employee, "", EventListQuery{
+			City:   "Taipei",
+			Status: status,
+		})
+		require.Error(t, err, "status %s", status)
+		assert.Equal(t, 400, ErrorStatus(err), "status %s", status)
+	}
 
 	_, err = service.ListEvents(ctx, employee, "", EventListQuery{Status: "retired"})
 	require.Error(t, err)

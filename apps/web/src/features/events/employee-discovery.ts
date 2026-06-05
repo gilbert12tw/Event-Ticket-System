@@ -3,9 +3,11 @@ import type { Option } from "@/lib/ui/options";
 import {
   type EmployeeCalendarViewMode,
   type EmployeeCalendarEvent,
+  registrationDeadlineView,
 } from "./employee-calendar-planner";
 import { employeeEventDisplayState } from "./employee-calendar";
 
+export type EmployeeExploreMode = "calendar" | "list";
 export type EmployeeDiscoveryStatus =
   | "all"
   | "bookable"
@@ -55,14 +57,27 @@ export function parseEmployeeDiscoveryQuery(
   };
 }
 
+export function parseEmployeeExploreMode(
+  searchParams: URLSearchParams | string,
+): EmployeeExploreMode {
+  const params =
+    typeof searchParams === "string"
+      ? new URLSearchParams(searchParams)
+      : searchParams;
+  return params.get("mode") === "list" ? "list" : "calendar";
+}
+
 export function employeeEventsPath(
   view: EmployeeCalendarViewMode,
   dateKey: string,
   discovery: EmployeeDiscoveryState,
+  mode: EmployeeExploreMode = "calendar",
 ) {
   const params = new URLSearchParams();
+  if (mode === "list") params.set("mode", "list");
   params.set("view", view);
   params.set("date", dateKey);
+  if (mode !== "list") return `/user/events?${params.toString()}`;
   const query = discovery.q.trim();
   if (query) params.set("q", query);
   if (discovery.capacity !== "all") params.set("capacity", discovery.capacity);
@@ -77,36 +92,54 @@ export function filterEmployeeDiscoveryEvents(
   discovery: EmployeeDiscoveryState,
   now: Date,
 ) {
+  return selectEmployeeDiscoveryEventRows(events, tickets, discovery, now).map(
+    ({ event }) => event,
+  );
+}
+
+export function selectEmployeeDiscoveryEventRows(
+  events: EventSummary[],
+  tickets: Ticket[],
+  discovery: EmployeeDiscoveryState,
+  now: Date,
+): EmployeeCalendarEvent[] {
   const query = normalizeSearch(discovery.q);
-  return events.filter((event) => {
-    if (
-      discovery.capacity !== "all" &&
-      event.capacity_type !== discovery.capacity
-    ) {
-      return false;
-    }
-    if (discovery.city !== "all" && event.event_city !== discovery.city) {
-      return false;
-    }
-    if (query && !eventSearchText(event).includes(query)) {
-      return false;
-    }
-    if (discovery.status === "all") {
-      return true;
-    }
-    const state = employeeEventDisplayState(
-      event,
-      tickets.find((ticket) => ticket.event_id === event.event_id),
-      now,
-    );
-    if (discovery.status === "bookable") {
-      return state.kind === "bookable";
-    }
-    if (discovery.status === "registered") {
-      return state.kind === "registered" || state.kind === "entry-ready";
-    }
-    return state.kind === "waitlisted" || state.kind === "waitlist-available";
-  });
+  return events
+    .map((event) => {
+      const ticket = tickets.find((row) => row.event_id === event.event_id);
+      return {
+        event,
+        ticket,
+        state: employeeEventDisplayState(event, ticket, now),
+        deadline: registrationDeadlineView(event, now),
+      };
+    })
+    .filter(({ event, state }) => {
+      if (!state.showInMain) return false;
+      if (
+        discovery.capacity !== "all" &&
+        event.capacity_type !== discovery.capacity
+      ) {
+        return false;
+      }
+      if (discovery.city !== "all" && event.event_city !== discovery.city) {
+        return false;
+      }
+      if (query && !eventSearchText(event).includes(query)) {
+        return false;
+      }
+      if (discovery.status === "all") {
+        return true;
+      }
+      if (discovery.status === "bookable") {
+        return state.kind === "bookable";
+      }
+      if (discovery.status === "registered") {
+        return state.kind === "registered" || state.kind === "entry-ready";
+      }
+      return state.kind === "waitlisted" || state.kind === "waitlist-available";
+    })
+    .sort(discoveryEventSort);
 }
 
 export function employeeDiscoveryCityOptions(
@@ -139,6 +172,15 @@ export function employeeDiscoverySummary(
   return discoveryIsActive(discovery)
     ? `${scope}符合 ${count} 場`
     : `${scope}有 ${count} 場活動`;
+}
+
+export function employeeDiscoveryListSummary(
+  events: EmployeeCalendarEvent[],
+  discovery: EmployeeDiscoveryState,
+) {
+  return discoveryIsActive(discovery)
+    ? `符合 ${events.length} 場活動`
+    : `共有 ${events.length} 場活動`;
 }
 
 function employeeDiscoveryScope(view: EmployeeCalendarViewMode) {
@@ -189,6 +231,17 @@ function eventSearchText(event: EventSummary) {
 
 function normalizeSearch(value: string) {
   return value.trim().toLocaleLowerCase();
+}
+
+function discoveryEventSort(
+  left: EmployeeCalendarEvent,
+  right: EmployeeCalendarEvent,
+) {
+  const startDelta =
+    new Date(left.event.starts_at).getTime() -
+    new Date(right.event.starts_at).getTime();
+  if (startDelta !== 0) return startDelta;
+  return left.event.title.localeCompare(right.event.title, "zh-TW");
 }
 
 function isPresentString(value: string | undefined): value is string {

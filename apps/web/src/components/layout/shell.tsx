@@ -183,7 +183,7 @@ function MobileTopBar({
         </span>
         <div>
           <span className="eyebrow">{activeRoute.eyebrow}</span>
-          <h1>{activeRoute.label}</h1>
+          <span className="mobile-topbar-heading">{activeRoute.label}</span>
         </div>
       </div>
       <Sheet>

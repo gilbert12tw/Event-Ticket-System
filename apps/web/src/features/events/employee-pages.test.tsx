@@ -143,9 +143,19 @@ describe("EmployeeEventsPage", () => {
     expect(
       screen.getByRole("link", { name: "報名活動：不限量活動" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "重新整理活動" }),
-    ).toHaveAttribute("data-size", "icon");
+    expect(screen.getByRole("tab", { name: "日曆" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "活動列表" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "更新" })).toHaveAttribute(
+      "data-size",
+      "sm",
+    );
+    expect(screen.queryByRole("searchbox", { name: "搜尋活動" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "重新整理" }),
     ).not.toBeInTheDocument();
@@ -161,7 +171,7 @@ describe("EmployeeEventsPage", () => {
       "data-size",
       "icon-sm",
     );
-    expect(screen.queryByText("活動列表")).not.toBeInTheDocument();
+    expect(screen.getByText("活動列表")).toBeInTheDocument();
     expect(
       screen.queryByRole("tab", { name: /可報名/ }),
     ).not.toBeInTheDocument();

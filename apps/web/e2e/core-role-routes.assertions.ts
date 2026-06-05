@@ -252,6 +252,37 @@ export async function expectPrimaryCtaTreatment(locator: Locator) {
   );
 }
 
+export async function expectElementAboveMobileTabbar(
+  page: Page,
+  selector: string,
+) {
+  const overlap = await page.evaluate((targetSelector) => {
+    const target = document.querySelector<HTMLElement>(targetSelector);
+    const tabbar = document.querySelector<HTMLElement>(".mobile-tabbar");
+    if (!target || !tabbar) return null;
+    const targetBounds = target.getBoundingClientRect();
+    const tabbarBounds = tabbar.getBoundingClientRect();
+    if (
+      targetBounds.width <= 0 ||
+      targetBounds.height <= 0 ||
+      tabbarBounds.width <= 0 ||
+      tabbarBounds.height <= 0 ||
+      globalThis.getComputedStyle(tabbar).display === "none"
+    ) {
+      return null;
+    }
+    return {
+      targetBottom: Math.round(targetBounds.bottom),
+      tabbarTop: Math.round(tabbarBounds.top),
+    };
+  }, selector);
+  if (overlap === null) return;
+  expect(
+    overlap.targetBottom,
+    `${selector} stays above the mobile tab bar`,
+  ).toBeLessThanOrEqual(overlap.tabbarTop);
+}
+
 export async function expectNotificationControlsCompact(page: Page) {
   const filterMetrics = await page.evaluate(() =>
     Array.from(

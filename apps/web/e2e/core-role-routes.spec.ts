@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  expectElementAboveMobileTabbar,
   expectNoHorizontalOverflow,
   expectNotificationControlsCompact,
   expectPrimaryCtaTreatment,
@@ -156,23 +157,49 @@ test("employee event discovery search stays compact and keyboard accessible", as
     title: "技術訓練工作坊",
   };
 
-  await openRoute(page, "E1001", "/user/events?view=week&date=2026-06-04", {
-    events: [lunchEvent, otherEvent],
-  });
+  await openRoute(
+    page,
+    "E1001",
+    "/user/events?mode=list&view=week&date=2026-06-04",
+    {
+      events: [lunchEvent, otherEvent],
+    },
+  );
 
   const search = page.getByRole("searchbox", { name: "搜尋活動" });
   await expect(search).toBeVisible();
+  await expect(page.getByRole("tab", { name: "活動列表" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await search.focus();
   await expect(search).toBeFocused();
   await search.fill("午餐");
 
   await expect(page).toHaveURL(/q=%E5%8D%88%E9%A4%90/);
-  await expect(page.getByText("本週符合 1 場")).toBeVisible();
+  await expect(page.getByText("符合 1 場活動")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "報名活動：企業午餐交流" }),
   ).toBeVisible();
   await expect(page.getByText("技術訓練工作坊")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /清除/ })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("employee calendar tab stays date-first without search controls", async ({
+  page,
+}) => {
+  await openRoute(page, "E1001", "/user/events?view=week&date=2026-06-04");
+
+  await expect(page.getByRole("tab", { name: "日曆" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByLabel("週行事曆")).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "搜尋活動" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("button", { name: "更新" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 
@@ -224,6 +251,28 @@ test("employee ticket detail missing state is recoverable", async ({
   await expect(page.getByText("找不到票券。")).toBeVisible();
   await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "返回我的票券" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { exact: true, name: "回我的票券" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "瀏覽活動" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新整理" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("mobile check-in result stays clear of bottom navigation", async ({
+  page,
+}) => {
+  if ((page.viewportSize()?.width ?? 0) > 900) return;
+
+  await openRoute(page, "staff-1", "/admin/checkin");
+  await page.getByLabel("掃描或貼上票券簽章碼").fill("mocked-token");
+  await page.getByRole("button", { name: "送出驗票" }).click();
+
+  await expect(page.getByRole("heading", { name: "驗票成功" })).toBeVisible();
+  await expectElementAboveMobileTabbar(
+    page,
+    ".checkin-result-panel.has-result",
+  );
   await expectNoHorizontalOverflow(page);
 });
 

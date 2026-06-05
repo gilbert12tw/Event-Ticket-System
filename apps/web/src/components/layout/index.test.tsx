@@ -120,6 +120,9 @@ describe("layout components", () => {
     );
 
     expect(screen.getByRole("button", { name: "Debug" })).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("heading", { level: 1, name: "活動探索" }),
+    ).toHaveLength(1);
     expect(container).not.toHaveTextContent("E1001");
     expect(container).toHaveTextContent("員工");
   });

@@ -45,6 +45,7 @@ export type IconName =
   | "scan"
   | "send"
   | "settings"
+  | "sliders"
   | "ticket"
   | "trash"
   | "users"

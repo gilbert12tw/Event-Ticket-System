@@ -78,6 +78,20 @@ func TestListEventsHandlerPassesOpenAPIFilters(t *testing.T) {
 	assert.Equal(t, ticketing.EventStatusPublished, service.listEventsQuery[0].Status)
 }
 
+func TestListEventsHandlerRejectsNonPublishedStatus(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testTicketingRouter(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?status=closed", nil)
+	authorizeRequest(t, req, ticketing.RoleEmployee)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Empty(t, service.listEventsActor.ID)
+	assertEnvelope(t, rec.Body.String(), `"success":false`, `"error":"status must be published"`)
+}
+
 func TestEventHandlersDecodeOpenAPIEventFields(t *testing.T) {
 	service := &fakeTicketingService{}
 	router := testTicketingRouter(service)

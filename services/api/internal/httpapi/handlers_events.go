@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
 	"event-ticket-system/internal/ticketing"
 )
@@ -78,16 +79,25 @@ func handleListEvents(service TicketingService) http.HandlerFunc {
 		if rejectCallerEmployeeIDQuery(w, r) {
 			return
 		}
-		result, err := service.ListEvents(r.Context(), actorFromRequest(r), "", eventListQueryFromRequest(r))
+		query, ok := eventListQueryFromRequest(w, r)
+		if !ok {
+			return
+		}
+		result, err := service.ListEvents(r.Context(), actorFromRequest(r), "", query)
 		writeServiceResult(w, http.StatusOK, result, err)
 	}
 }
 
-func eventListQueryFromRequest(r *http.Request) ticketing.EventListQuery {
+func eventListQueryFromRequest(w http.ResponseWriter, r *http.Request) (ticketing.EventListQuery, bool) {
 	params := r.URL.Query()
+	status := strings.TrimSpace(params.Get("status"))
+	if status != "" && status != ticketing.EventStatusPublished {
+		writeError(w, http.StatusBadRequest, "status must be published")
+		return ticketing.EventListQuery{}, false
+	}
 	return ticketing.EventListQuery{
 		CapacityType: params.Get("capacity_type"),
 		City:         params.Get("city"),
-		Status:       params.Get("status"),
-	}
+		Status:       status,
+	}, true
 }

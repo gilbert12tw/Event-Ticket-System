@@ -205,7 +205,9 @@ export function CheckinPage() {
           </div>
         </Card>
         <Card
-          className="panel checkin-result-panel"
+          className={`panel checkin-result-panel${
+            result || message ? " has-result" : ""
+          }`}
           ref={resultRef}
           role="region"
           aria-labelledby="checkin-result-title"

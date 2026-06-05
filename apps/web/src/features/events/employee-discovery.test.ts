@@ -7,6 +7,7 @@ import {
   employeeEventsPath,
   filterEmployeeDiscoveryEvents,
   parseEmployeeDiscoveryQuery,
+  parseEmployeeExploreMode,
 } from "./employee-discovery";
 
 const now = new Date("2026-06-04T10:00:00+08:00");
@@ -53,8 +54,13 @@ describe("employee discovery filters", () => {
       city: "Hsinchu",
       status: "registered",
     });
+    expect(parseEmployeeExploreMode("?mode=list")).toBe("list");
+    expect(parseEmployeeExploreMode("?mode=calendar")).toBe("calendar");
     expect(employeeEventsPath("month", "2026-06-04", discovery)).toBe(
-      "/user/events?view=month&date=2026-06-04&q=yoga&capacity=limited&city=Hsinchu&status=registered",
+      "/user/events?view=month&date=2026-06-04",
+    );
+    expect(employeeEventsPath("month", "2026-06-04", discovery, "list")).toBe(
+      "/user/events?mode=list&view=month&date=2026-06-04&q=yoga&capacity=limited&city=Hsinchu&status=registered",
     );
     expect(
       employeeEventsPath("week", "2026-06-04", defaultEmployeeDiscoveryState),

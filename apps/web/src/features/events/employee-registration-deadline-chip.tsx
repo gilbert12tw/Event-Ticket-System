@@ -11,7 +11,6 @@ export function EmployeeRegistrationDeadlineChip({
       data-deadline-kind={deadline.kind}
     >
       <StatusBadge tone={deadline.tone}>{deadline.label}</StatusBadge>
-      <small>{deadline.detail}</small>
     </span>
   );
 }

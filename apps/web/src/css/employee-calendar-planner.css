@@ -201,10 +201,6 @@
   min-width: 0;
 }
 
-.employee-calendar-event-badges .employee-deadline-chip small {
-  display: none;
-}
-
 .employee-calendar-empty-inline {
   display: grid;
   min-height: 44px;
@@ -290,11 +286,6 @@
   gap: 4px;
   align-items: center;
   min-width: 0;
-}
-
-.employee-deadline-chip small {
-  color: var(--muted);
-  font-size: 0.72rem;
 }
 
 .employee-add-calendar-button {
@@ -431,10 +422,6 @@
 
   .employee-calendar-title h2 {
     font-size: 0.92rem;
-  }
-
-  .employee-event-card-badges .employee-deadline-chip small {
-    flex-basis: 100%;
   }
 
   .employee-detail-calendar-action {

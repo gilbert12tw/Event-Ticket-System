@@ -60,7 +60,7 @@ describe("EmployeeEventsPage discovery controls", () => {
     globalThis.history.replaceState(
       {},
       "",
-      `/user/events?view=week&date=${testTodayKey}`,
+      `/user/events?mode=list&view=week&date=${testTodayKey}`,
     );
   });
 
@@ -69,18 +69,28 @@ describe("EmployeeEventsPage discovery controls", () => {
 
     renderEmployeeEventsPage();
 
-    expect(
-      await screen.findByRole("region", { name: "活動搜尋與篩選" }),
-    ).toBeInTheDocument();
+    const discovery = await screen.findByRole("region", {
+      name: "活動搜尋與篩選",
+    });
+    expect(screen.getByRole("tab", { name: "活動列表" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByRole("region", { name: "活動行事曆" })).toBeNull();
+    expect(discovery).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "搜尋活動" })).toHaveAttribute(
       "placeholder",
       "搜尋活動、地點或標籤…",
     );
     expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "篩選" })).toHaveAttribute(
+      "aria-controls",
+      "employee-discovery-filters",
+    );
     expect(screen.getByRole("group", { name: "活動狀態" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "地點" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "名額" })).toBeInTheDocument();
-    expect(screen.getByText("本週有 1 場活動")).toBeInTheDocument();
+    expect(screen.getByText("共有 1 場活動")).toBeInTheDocument();
     expect(screen.queryByText("進階搜尋")).not.toBeInTheDocument();
   });
 
@@ -113,7 +123,7 @@ describe("EmployeeEventsPage discovery controls", () => {
     );
     expect(screen.queryByText("午餐講座")).not.toBeInTheDocument();
     expect(screen.getAllByText("瑜伽放鬆課").length).toBeGreaterThan(0);
-    expect(screen.getByText("本週符合 1 場")).toBeInTheDocument();
+    expect(screen.getByText("符合 1 場活動")).toBeInTheDocument();
   });
 
   it("filters registered events with a status chip while preserving date state", async () => {
@@ -140,6 +150,7 @@ describe("EmployeeEventsPage discovery controls", () => {
 
     await waitFor(() => {
       const params = new URLSearchParams(globalThis.location.search);
+      expect(params.get("mode")).toBe("list");
       expect(params.get("status")).toBe("registered");
       expect(params.get("view")).toBe("week");
       expect(params.get("date")).toBe(testTodayKey);
@@ -165,8 +176,8 @@ describe("EmployeeEventsPage discovery controls", () => {
       "不存在",
     );
 
-    expect(await screen.findByText("這天沒有活動")).toBeInTheDocument();
-    expect(screen.getByText("本週符合 0 場")).toBeInTheDocument();
+    expect(await screen.findByText("找不到符合條件的活動")).toBeInTheDocument();
+    expect(screen.getByText("符合 0 場活動")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /清除/ }));
 

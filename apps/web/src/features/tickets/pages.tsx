@@ -163,7 +163,16 @@ export function EmployeeTicketsPage({
               </a>
             </Button>
           </div>
-          {detailMessage && <Alert tone="warn">{detailMessage}</Alert>}
+          {detailMessage && (
+            <div className="ticket-detail-recovery">
+              <Alert tone="warn">{detailMessage}</Alert>
+              <MissingTicketActions
+                loading={detailLoading}
+                onRefresh={() => void refreshDetail()}
+                onReturn={returnToList}
+              />
+            </div>
+          )}
           {detailLoading && <SkeletonRows rows={3} />}
           {!detailLoading && detailTicket && (
             <EmployeeTicketPass
@@ -172,10 +181,17 @@ export function EmployeeTicketsPage({
             />
           )}
           {!detailLoading && !detailTicket && !detailMessage && (
-            <EmptyState
-              title="找不到票券"
-              action="請返回我的票券清單，或稍後重新整理。"
-            />
+            <div className="ticket-detail-recovery">
+              <EmptyState
+                title="找不到票券"
+                action="回到票券清單，或先瀏覽活動確認是否已完成報名。"
+              />
+              <MissingTicketActions
+                loading={detailLoading}
+                onRefresh={() => void refreshDetail()}
+                onReturn={returnToList}
+              />
+            </div>
           )}
         </Card>
       </section>
@@ -239,6 +255,40 @@ export function EmployeeTicketsPage({
 
 function ticketIDFromLocation() {
   return new URLSearchParams(globalThis.location.search).get("ticket_id") || "";
+}
+
+function MissingTicketActions({
+  loading,
+  onRefresh,
+  onReturn,
+}: Readonly<{
+  loading: boolean;
+  onRefresh: () => void;
+  onReturn: () => void;
+}>) {
+  return (
+    <div className="ticket-detail-recovery-actions">
+      <Button asChild>
+        <a
+          href="/user/tickets"
+          onClick={(event) => runClientNavigation(event, onReturn)}
+        >
+          <Icon name="ticket" />
+          回我的票券
+        </a>
+      </Button>
+      <BrowseEventsAction />
+      <Button
+        disabled={loading}
+        type="button"
+        variant="outline"
+        onClick={onRefresh}
+      >
+        <Icon name="refresh" />
+        重新整理
+      </Button>
+    </div>
+  );
 }
 
 function BrowseEventsAction() {

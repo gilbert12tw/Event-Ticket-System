@@ -116,6 +116,16 @@ describe("EmployeeTicketsPage", () => {
     expect(
       screen.getByRole("link", { name: "返回我的票券" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "回我的票券" })).toHaveAttribute(
+      "href",
+      "/user/tickets",
+    );
+    expect(screen.getByRole("link", { name: "瀏覽活動" })).toHaveAttribute(
+      "href",
+      "/user/events",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "重新整理" }));
+    expect(mockGetTicket).toHaveBeenCalledTimes(2);
   });
 
   it("shows a recoverable error for forbidden ticket detail without fallback", async () => {
@@ -136,6 +146,14 @@ describe("EmployeeTicketsPage", () => {
     expect(
       screen.getByRole("link", { name: "返回我的票券" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "回我的票券" })).toHaveAttribute(
+      "href",
+      "/user/tickets",
+    );
+    expect(screen.getByRole("link", { name: "瀏覽活動" })).toHaveAttribute(
+      "href",
+      "/user/events",
+    );
   });
 
   it("rejects mismatched ticket detail responses without showing a QR", async () => {

@@ -21,6 +21,9 @@ func normalizeEventListQuery(query EventListQuery) (EventListQuery, error) {
 	if !eventStatusAllowed(query.Status) {
 		return EventListQuery{}, badRequest("status is invalid")
 	}
+	if query.Status != EventStatusPublished {
+		return EventListQuery{}, badRequest("status must be published")
+	}
 	return query, nil
 }
 
