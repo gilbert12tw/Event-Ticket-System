@@ -1,8 +1,4 @@
 @media (max-width: 900px) {
-  .workspace[data-route="admin-checkin"] .checkin-form {
-    order: -1;
-  }
-
   .login-panel {
     grid-template-columns: 1fr;
   }

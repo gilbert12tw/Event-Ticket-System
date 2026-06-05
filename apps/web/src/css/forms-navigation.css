@@ -360,6 +360,36 @@
   min-width: 0;
 }
 
+@media (max-width: 620px) {
+  .focused-tabs .admin-event-tabs-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .focused-tabs .admin-event-tabs-list[data-slot="tabs-list"] {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .focused-tabs .admin-event-tabs-list > [data-slot="tabs-trigger"] {
+    flex: 0 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 42px;
+    padding-inline: 8px;
+    white-space: normal !important;
+    text-align: center;
+    line-height: 1.2;
+  }
+}
+
 .segmented-filter {
   display: inline-flex;
   flex-wrap: wrap;

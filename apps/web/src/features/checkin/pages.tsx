@@ -167,14 +167,15 @@ export function CheckinPage() {
 
   return (
     <section className="content-grid checkin-workspace">
-      <Card asChild className="panel span-6 checkin-form">
-        <form
-          aria-busy={busy}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
+      <form
+        className="span-12 checkin-form"
+        aria-busy={busy}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <Card className="panel checkin-scan-panel">
           <div className="section-heading">
             <div>
               <h2>線上驗票</h2>
@@ -202,6 +203,34 @@ export function CheckinPage() {
               </span>
             )}
           </div>
+        </Card>
+        <Card
+          className="panel checkin-result-panel"
+          ref={resultRef}
+          role="region"
+          aria-labelledby="checkin-result-title"
+          aria-live="polite"
+          tabIndex={-1}
+        >
+          <h2 id="checkin-result-title">驗票結果</h2>
+          <div className="kpi-row">
+            <Kpi label="活動" value={selectedEvent?.title || "未選擇"} />
+            <Kpi label="裝置" value={deviceID || "未設定"} />
+          </div>
+          {message && (
+            <Alert tone={message.includes("已核銷") ? "warn" : "fail"}>
+              {message}
+            </Alert>
+          )}
+          {!result && !message && (
+            <EmptyState
+              title="等待掃描"
+              action="掃描或貼上票券簽章碼後送出，結果會在此顯示。"
+            />
+          )}
+          {result && <CheckinResult result={result} />}
+        </Card>
+        <Card className="panel checkin-controls-panel">
           <Field
             autoComplete="off"
             label="掃描或貼上票券簽章碼"
@@ -278,34 +307,8 @@ export function CheckinPage() {
             <Icon name="scan" />
             {busy ? "驗票中" : "送出驗票"}
           </Button>
-        </form>
-      </Card>
-      <Card
-        className="panel span-6"
-        ref={resultRef}
-        role="region"
-        aria-labelledby="checkin-result-title"
-        aria-live="polite"
-        tabIndex={-1}
-      >
-        <h2 id="checkin-result-title">驗票結果</h2>
-        <div className="kpi-row">
-          <Kpi label="活動" value={selectedEvent?.title || "未選擇"} />
-          <Kpi label="裝置" value={deviceID || "未設定"} />
-        </div>
-        {message && (
-          <Alert tone={message.includes("已核銷") ? "warn" : "fail"}>
-            {message}
-          </Alert>
-        )}
-        {!result && !message && (
-          <EmptyState
-            title="等待掃描"
-            action="掃描或貼上票券簽章碼後送出，結果會在此顯示。"
-          />
-        )}
-        {result && <CheckinResult result={result} />}
-      </Card>
+        </Card>
+      </form>
     </section>
   );
 }

@@ -333,8 +333,12 @@ export function NotificationDeliveryPage() {
           mobileCards={filteredDeliveries.map((row) => (
             <article className="mobile-summary-card" key={row.delivery_id}>
               <div>
-                <h3 className="mono-cell">{row.delivery_id}</h3>
-                <p className="table-muted">{row.outbox_id}</p>
+                <h3 className="mono-cell" title={row.delivery_id}>
+                  投遞 {compactIdentifier(row.delivery_id)}
+                </h3>
+                <p className="table-muted" title={row.outbox_id}>
+                  批次 {compactIdentifier(row.outbox_id)}
+                </p>
               </div>
               <DeliveryStatusBadge status={row.status} />
               <MetaList
@@ -436,6 +440,11 @@ function DeliveryRetryAction({
 
 function deliveryError(row: NotificationDelivery) {
   return row.last_error ? localizedMessage(row.last_error) : "—";
+}
+
+function compactIdentifier(value: string) {
+  if (value.length <= 22) return value;
+  return `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
 function RetryDeliveryDialog({

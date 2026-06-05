@@ -211,7 +211,26 @@
 
 .checkin-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.checkin-scan-panel,
+.checkin-controls-panel,
+.checkin-result-panel {
+  display: grid;
   gap: 12px;
+}
+
+.checkin-scan-panel,
+.checkin-controls-panel {
+  grid-column: 1;
+}
+
+.checkin-result-panel {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .mobile-qr-scanner {
@@ -356,17 +375,28 @@
 }
 
 @media (max-width: 640px) {
-  .checkin-workspace {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .checkin-workspace > [aria-labelledby="checkin-result-title"] {
-    order: -1;
-  }
-
   .checkin-form {
+    grid-template-columns: minmax(0, 1fr);
     gap: 14px;
+  }
+
+  .checkin-scan-panel,
+  .checkin-controls-panel,
+  .checkin-result-panel {
+    grid-column: 1;
+  }
+
+  .checkin-scan-panel {
+    order: 1;
+  }
+
+  .checkin-result-panel {
+    order: 2;
+    grid-row: auto;
+  }
+
+  .checkin-controls-panel {
+    order: 3;
   }
 
   .checkin-workspace [data-slot="button"] {
@@ -390,11 +420,15 @@
   }
 
   .mobile-qr-preview {
-    min-height: 220px;
+    min-height: 160px;
   }
 
   .mobile-qr-preview video {
-    min-height: 220px;
+    min-height: 160px;
+  }
+
+  .checkin-scan-panel .helper-strip[aria-label="目前驗票活動"] .table-muted {
+    display: none;
   }
 
   .ticket-row {

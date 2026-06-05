@@ -332,12 +332,12 @@ export function AdminEventsPage() {
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as AdminEventTab)}
       >
-        <div className="section-heading">
+        <div className="section-heading admin-event-tabs-heading">
           <div>
             <h2>活動設定工作區</h2>
             <p>每個分頁只服務一個任務，重要分頁會保存在網址查詢參數。</p>
           </div>
-          <TabsList>
+          <TabsList className="admin-event-tabs-list">
             <TabsTrigger value="list">活動清單</TabsTrigger>
             <TabsTrigger value="create">建立活動</TabsTrigger>
             <TabsTrigger value="edit">編輯活動</TabsTrigger>
