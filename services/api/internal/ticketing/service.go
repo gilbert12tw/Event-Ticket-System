@@ -1,6 +1,7 @@
 package ticketing
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"event-ticket-system/internal/ratelimit"
 	"event-ticket-system/internal/reservation"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,6 +29,10 @@ type Service struct {
 	bookingLimiter            ratelimit.Limiter
 	rateLimitSecret           []byte
 	bookingContentionStrategy string
+
+	// rebuildConfirmedCounter is a test seam for PH2-43 rebuild spot-check
+	// validation. When nil the real OLTP reader (confirmedCountForEvent) is used.
+	rebuildConfirmedCounter func(context.Context, pgx.Tx, string) (int, error)
 }
 
 func NewService(db *pgxpool.Pool, signer Signer, logger *slog.Logger) *Service {
