@@ -18,6 +18,10 @@ import (
 )
 
 var httpBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+
+// projectionBuckets covers the projection freshness SLA: p95 < 60 s, max < 180 s.
+// These must not be shared with httpBuckets whose max finite bucket is 10 s.
+var projectionBuckets = []float64{1, 5, 15, 30, 60, 120, 180}
 var allowedOutboxMetricEventTypes = buildAllowedOutboxMetricEventTypes()
 
 const outboxScrapeErrorMetric = "cets_metrics_scrape_errors_total{collector=\"outbox\"} 1"
@@ -72,11 +76,12 @@ type histogram struct {
 }
 
 type Registry struct {
-	mu          sync.Mutex
-	http        map[httpKey]*histogram
-	booking     map[bookingStageKey]*histogram
-	reservation map[reservationKey]*histogram
-	projection  *histogram // single histogram for projection lag
+	mu             sync.Mutex
+	http           map[httpKey]*histogram
+	booking        map[bookingStageKey]*histogram
+	reservation    map[reservationKey]*histogram
+	projection     *histogram // lag histogram; uses projectionBuckets
+	processedTotal uint64     // all processed projection events, including skips
 }
 
 func NewRegistry() *Registry {
@@ -84,7 +89,7 @@ func NewRegistry() *Registry {
 		http:        map[httpKey]*histogram{},
 		booking:     map[bookingStageKey]*histogram{},
 		reservation: map[reservationKey]*histogram{},
-		projection:  &histogram{Buckets: make([]uint64, len(httpBuckets))},
+		projection:  &histogram{Buckets: make([]uint64, len(projectionBuckets))},
 	}
 }
 
@@ -167,9 +172,25 @@ func (r *Registry) ObserveProjectionLag(duration time.Duration) {
 	if r == nil {
 		return
 	}
+	if duration < 0 {
+		duration = 0
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	observeDuration(r.projection, duration.Seconds())
+	observeProjectionDuration(r.projection, duration.Seconds())
+}
+
+// IncrementProjectionProcessed records that one projection outbox event was
+// fully handled (including decode-failed and unknown-inner-type skips).
+// It must be called for every event that exits the projection pipeline,
+// independently of whether lag is observed.
+func (r *Registry) IncrementProjectionProcessed() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.processedTotal++
 }
 
 type ProjectionMetricsSnapshot struct {
@@ -189,12 +210,24 @@ func (r *Registry) ProjectionSnapshot() ProjectionMetricsSnapshot {
 		LagBuckets: append([]uint64(nil), r.projection.Buckets...),
 		LagCount:   r.projection.Count,
 		LagSum:     r.projection.Sum,
-		Processed:  r.projection.Count, // events processed is same as lag count
+		Processed:  r.processedTotal,
 	}
 }
 
 func observeDuration(h *histogram, seconds float64) {
 	for i, bucket := range httpBuckets {
+		if seconds <= bucket {
+			h.Buckets[i]++
+		}
+	}
+	h.Count++
+	h.Sum += seconds
+}
+
+// observeProjectionDuration records a lag sample using projectionBuckets
+// (1 s … 180 s) instead of the HTTP-oriented httpBuckets (max 10 s).
+func observeProjectionDuration(h *histogram, seconds float64) {
+	for i, bucket := range projectionBuckets {
 		if seconds <= bucket {
 			h.Buckets[i]++
 		}
@@ -359,7 +392,7 @@ func buildAllowedOutboxMetricEventTypes() map[string]struct{} {
 func (r *Registry) writeProjectionMetrics(w io.Writer) {
 	writeLine(w, "# HELP cets_projection_worker_lag_seconds Projection worker lag in seconds.")
 	writeLine(w, "# TYPE cets_projection_worker_lag_seconds histogram")
-	writeLine(w, "# HELP cets_projection_worker_events_processed_total Projection worker processed events.")
+	writeLine(w, "# HELP cets_projection_worker_events_processed_total Projection worker processed events (all outcomes including skips).")
 	writeLine(w, "# TYPE cets_projection_worker_events_processed_total counter")
 
 	r.mu.Lock()
@@ -368,10 +401,11 @@ func (r *Registry) writeProjectionMetrics(w io.Writer) {
 		Count:   r.projection.Count,
 		Sum:     r.projection.Sum,
 	}
+	processed := r.processedTotal
 	r.mu.Unlock()
 
-	writeFormat(w, "cets_projection_worker_events_processed_total %d\n", h.Count)
-	for i, bucket := range httpBuckets {
+	writeFormat(w, "cets_projection_worker_events_processed_total %d\n", processed)
+	for i, bucket := range projectionBuckets {
 		writeFormat(w, "cets_projection_worker_lag_seconds_bucket{le=%q} %d\n", formatBucket(bucket), h.Buckets[i])
 	}
 	writeFormat(w, "cets_projection_worker_lag_seconds_bucket{le=\"+Inf\"} %d\n", h.Count)

@@ -3,6 +3,7 @@ package ticketing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -34,6 +35,9 @@ func (s *Service) processClaimedProjectionOutbox(
 	proj, ok := decodeProjectionEvent(claim)
 	if !ok {
 		s.logProjectionSkip(ctx, claim, "decode_failed")
+		if s != nil && s.metrics != nil {
+			s.metrics.IncrementProjectionProcessed()
+		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	}
 
@@ -41,12 +45,23 @@ func (s *Service) processClaimedProjectionOutbox(
 		var rawEventType string
 		err := tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1`, proj.TriggerEventID).Scan(&rawEventType)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// Trigger row already published or GC'd — skip gracefully.
+				s.logProjectionSkip(ctx, claim, "trigger_event_gc")
+				if s != nil && s.metrics != nil {
+					s.metrics.IncrementProjectionProcessed()
+				}
+				return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+			}
 			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
 		proj.InnerType = normalizeProjectionTriggerType(rawEventType)
 		if proj.InnerType == "" {
 			s.logProjectionSkip(ctx, claim, "decode_failed")
+			if s != nil && s.metrics != nil {
+				s.metrics.IncrementProjectionProcessed()
+			}
 			return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 		}
 	}
@@ -60,6 +75,7 @@ func (s *Service) processClaimedProjectionOutbox(
 		}
 		if s != nil && s.metrics != nil {
 			s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
+			s.metrics.IncrementProjectionProcessed()
 		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	case projectionInnerTypeBookingConfirmed,
@@ -69,6 +85,9 @@ func (s *Service) processClaimedProjectionOutbox(
 		// handled below
 	default:
 		s.logProjectionSkip(ctx, claim, "unknown_inner_type:"+proj.InnerType)
+		if s != nil && s.metrics != nil {
+			s.metrics.IncrementProjectionProcessed()
+		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	}
 
@@ -99,6 +118,7 @@ func (s *Service) processClaimedProjectionOutbox(
 
 	if s != nil && s.metrics != nil {
 		s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
+		s.metrics.IncrementProjectionProcessed()
 	}
 	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 }
