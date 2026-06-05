@@ -48,12 +48,17 @@ func seedRegistration(t *testing.T, s *Service, ctx context.Context, regID, even
 	require.NoError(t, err)
 }
 
-// seedRegistrations inserts n registrations of a status for one employee/event.
-func seedRegistrations(t *testing.T, s *Service, ctx context.Context, eventID, employeeID, status string, n int) {
+// seedRegN inserts n registrations of `status` into eventID, each under its own
+// freshly-created employee in `department`. A distinct employee per row keeps
+// the registrations_unique_active_employee partial index (one non-cancelled
+// registration per event+employee) satisfied.
+func seedRegN(t *testing.T, s *Service, ctx context.Context, eventID, department, status string, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
-		seedRegistration(t, s, ctx, fmt.Sprintf("reg_%s_%s_%s_%d", eventID, employeeID, status, i),
-			eventID, employeeID, status)
+		emp := fmt.Sprintf("emp_%s_%s_%s_%d", eventID, department, status, i)
+		seedRebuildEmployee(t, s, ctx, emp, department)
+		seedRegistration(t, s, ctx, fmt.Sprintf("reg_%s_%s_%s_%d", eventID, department, status, i),
+			eventID, emp, status)
 	}
 }
 
@@ -85,12 +90,11 @@ func TestRebuildProjection_FreshBuild(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
 	seedRebuildEvent(t, service, ctx, "evtB")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 5)
-	seedRegistrations(t, service, ctx, "evtA", "E1", "cancelled", 2)
-	seedRegistrations(t, service, ctx, "evtB", "E1", "waitlisted", 3)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 5)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "cancelled", 2)
+	seedRegN(t, service, ctx, "evtB", "Engineering", "waitlisted", 3)
 
 	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
@@ -111,9 +115,8 @@ func TestRebuildProjection_Idempotent(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 4)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 4)
 
 	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
@@ -140,9 +143,8 @@ func TestRebuildProjection_TruncatesStaleRows(t *testing.T) {
 		INSERT INTO reporting_event_summary (event_id, confirmed_count) VALUES ('old_event', 9)`)
 	require.NoError(t, err)
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 1)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 1)
 
 	_, err = service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
@@ -188,9 +190,8 @@ func TestRebuildProjection_ValidationPassesOnCorrectData(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 3)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 3)
 
 	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{SampleValidate: true})
 	require.NoError(t, err)
@@ -209,9 +210,8 @@ func TestRebuildProjection_ValidationFailsAndRollsBack(t *testing.T) {
 		INSERT INTO reporting_event_summary (event_id, confirmed_count) VALUES ('preexisting', 7)`)
 	require.NoError(t, err)
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 2)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 2)
 
 	// Force the OLTP side of validation to disagree with the inserted row.
 	service.rebuildConfirmedCounter = func(context.Context, pgx.Tx, string) (int, error) {
@@ -233,9 +233,8 @@ func TestRebuildProjection_DryRunDoesNotWrite(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 2)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 2)
 
 	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{DryRun: true})
 	require.NoError(t, err)
@@ -279,10 +278,9 @@ func TestRebuildProjection_CountsNeverNegative(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	seedRebuildEmployee(t, service, ctx, "E1", "Engineering")
 	seedRebuildEvent(t, service, ctx, "evtA")
-	seedRegistrations(t, service, ctx, "evtA", "E1", "confirmed", 1)
-	seedRegistrations(t, service, ctx, "evtA", "E1", "cancelled", 4)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "confirmed", 1)
+	seedRegN(t, service, ctx, "evtA", "Engineering", "cancelled", 4)
 
 	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
