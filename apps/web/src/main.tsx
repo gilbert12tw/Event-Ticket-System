@@ -11,6 +11,7 @@ import "./css/forms-navigation.css";
 import "./css/events.css";
 import "./css/employee-events.css";
 import "./css/employee-calendar-planner.css";
+import "./css/employee-discovery.css";
 import "./css/employee-tickets.css";
 import "./css/status-data.css";
 import "./css/ops.css";

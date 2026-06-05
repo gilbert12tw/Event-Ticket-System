@@ -3,6 +3,7 @@ package ticketing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -167,12 +168,20 @@ func (s *Service) insertCreatedEventTx(ctx context.Context, tx pgx.Tx, actor Act
 	return insertAudit(ctx, tx, newAuditRecord(input.auditID, actor, "event.created", "event", event.EventID, map[string]interface{}{"capacity_type": event.CapacityType, "capacity": event.Capacity, "allows_family": event.AllowsFamily, "allocation_mode": event.AllocationMode, "status": event.Status}))
 }
 
-func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string) ([]EventSummary, error) {
+func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string, queries ...EventListQuery) ([]EventSummary, error) {
 	employeeID, err := authorizeEmployeeRead(actor, employeeID)
 	if err != nil {
 		return nil, err
 	}
-	summaries, err := s.loadPublishedEventSummaries(ctx)
+	query := EventListQuery{}
+	if len(queries) > 0 {
+		query = queries[0]
+	}
+	query, err = normalizeEventListQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := s.loadEventSummaries(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -186,11 +195,12 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 	return summaries, nil
 }
 
-func (s *Service) loadPublishedEventSummaries(ctx context.Context) ([]EventSummary, error) {
+func (s *Service) loadEventSummaries(ctx context.Context, query EventListQuery) ([]EventSummary, error) {
+	where, args := eventListWhere(query)
 	rows, err := s.db.Query(ctx, `SELECT
-			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
-			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
-			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
+				e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.registration_start, e.registration_close,
+				e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
+				COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
 			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
 			COALESCE(counts.confirmed_count, 0), COALESCE(counts.waitlist_count, 0)
 		FROM events e
@@ -199,11 +209,11 @@ func (s *Service) loadPublishedEventSummaries(ctx context.Context) ([]EventSumma
 			SELECT event_id,
 				count(*) FILTER (WHERE status = 'confirmed') AS confirmed_count,
 				count(*) FILTER (WHERE status = 'waitlisted') AS waitlist_count
-			FROM registrations
-			GROUP BY event_id
-		) counts ON counts.event_id = e.event_id
-		WHERE e.status = 'published'
-		ORDER BY e.starts_at ASC, e.created_at DESC`)
+				FROM registrations
+				GROUP BY event_id
+			) counts ON counts.event_id = e.event_id
+			WHERE `+where+`
+			ORDER BY e.starts_at ASC, e.created_at DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +228,20 @@ func (s *Service) loadPublishedEventSummaries(ctx context.Context) ([]EventSumma
 		summaries = append(summaries, summary)
 	}
 	return summaries, rows.Err()
+}
+
+func eventListWhere(query EventListQuery) (string, []interface{}) {
+	parts := []string{"e.status = $1"}
+	args := []interface{}{query.Status}
+	if query.CapacityType != "" {
+		args = append(args, query.CapacityType)
+		parts = append(parts, fmt.Sprintf("e.capacity_type = $%d", len(args)))
+	}
+	if query.City != "" {
+		args = append(args, query.City)
+		parts = append(parts, fmt.Sprintf("e.event_city = $%d", len(args)))
+	}
+	return strings.Join(parts, " AND "), args
 }
 
 func (s *Service) GetEventSummary(ctx context.Context, actor Actor, eventID string, employeeID string) (EventSummary, error) {

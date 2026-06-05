@@ -46,7 +46,7 @@ describe("EmployeeTicketsPage", () => {
       ticketFixture({ ticket_id: "T-4", status: "revoked" }),
       ticketFixture({
         ticket_id: "T-5",
-        event_starts_at: "2099-05-19T10:00:00Z",
+        event_starts_at: relativeTicketIso(48),
       }),
     ]);
 
@@ -319,13 +319,17 @@ function ticketFixture(overrides: Partial<Ticket> = {}): Ticket {
     employee_id: "E1001",
     status: "active",
     signed_token: "signed-token",
-    issued_at: "2026-05-06T10:00:00Z",
-    expires_at: "2099-12-31T23:59:59Z",
+    issued_at: relativeTicketIso(-2),
+    expires_at: relativeTicketIso(8),
     event_title: "台北家庭電影夜",
     event_location: "Taipei HQ",
-    event_starts_at: "2026-06-04T00:00:00Z",
+    event_starts_at: relativeTicketIso(-1),
     employee_name: "Ariel Chen",
     non_transferable: true,
     ...overrides,
   };
+}
+
+function relativeTicketIso(hours: number) {
+  return new Date(Date.now() + hours * 60 * 60_000).toISOString();
 }

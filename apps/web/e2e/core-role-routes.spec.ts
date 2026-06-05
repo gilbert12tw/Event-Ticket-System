@@ -138,6 +138,44 @@ test("employee booking CTAs keep primary visual treatment", async ({
   await expectNoHorizontalOverflow(page);
 });
 
+test("employee event discovery search stays compact and keyboard accessible", async ({
+  page,
+}) => {
+  const lunchEvent: EventFixture = {
+    ...sampleEvent,
+    current_user_status: undefined,
+    current_user_ticket: undefined,
+    event_id: "evt-search-lunch",
+    registration_close: "2099-01-09T23:00:00Z",
+    title: "企業午餐交流",
+  };
+  const otherEvent: EventFixture = {
+    ...lunchEvent,
+    event_id: "evt-search-training",
+    tags: ["training"],
+    title: "技術訓練工作坊",
+  };
+
+  await openRoute(page, "E1001", "/user/events?view=week&date=2026-06-04", {
+    events: [lunchEvent, otherEvent],
+  });
+
+  const search = page.getByRole("searchbox", { name: "搜尋活動" });
+  await expect(search).toBeVisible();
+  await search.focus();
+  await expect(search).toBeFocused();
+  await search.fill("午餐");
+
+  await expect(page).toHaveURL(/q=%E5%8D%88%E9%A4%90/);
+  await expect(page.getByText("本週符合 1 場")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "報名活動：企業午餐交流" }),
+  ).toBeVisible();
+  await expect(page.getByText("技術訓練工作坊")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /清除/ })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("employee event agenda keeps a single desktop card at reusable width", async ({
   page,
 }) => {

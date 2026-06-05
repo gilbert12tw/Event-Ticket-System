@@ -220,6 +220,20 @@ describe("api client", () => {
     expect(fetchCall(0).path).toBe("/api/v1/events");
   });
 
+  it("passes event list filters as canonical query parameters", async () => {
+    await mockCall([], () =>
+      listEvents({
+        capacity_type: "limited",
+        city: "Hsinchu",
+        status: "published",
+      }),
+    );
+
+    expect(fetchCall(0).path).toBe(
+      "/api/v1/events?capacity_type=limited&city=Hsinchu&status=published",
+    );
+  });
+
   it("uses canonical own-data endpoints without caller-supplied employee_id", async () => {
     await mockCall([], listEvents);
     await mockCall({ event_id: "evt/1" }, () => getEvent("evt/1"));

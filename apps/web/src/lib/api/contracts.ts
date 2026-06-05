@@ -177,6 +177,12 @@ export type EventSummary = EventMutableFields & {
   no_show_cooldown?: NoShowCooldown;
 };
 
+export type EventListFilters = {
+  capacity_type?: CapacityType;
+  city?: string;
+  status?: string;
+};
+
 export type EventAsset = {
   asset_id: string;
   event_id: string;

@@ -5,6 +5,10 @@ function session<const Role extends string>(id: string, role: Role) {
   };
 }
 
+function relativeTicketIso(hours: number) {
+  return new Date(Date.now() + hours * 60 * 60_000).toISOString();
+}
+
 export const sessions = {
   E1001: session("E1001", "employee"),
   "admin-1": session("admin-1", "activity_admin"),
@@ -22,11 +26,11 @@ export const sampleTickets = [
     event_id: "evt-cets-001",
     employee_id: "E1001",
     status: "active",
-    issued_at: "2026-01-02T09:00:00Z",
-    expires_at: "2099-12-31T23:59:59Z",
+    issued_at: relativeTicketIso(-2),
+    expires_at: relativeTicketIso(8),
     event_title: "第一階段企業午餐日",
     event_location: "台北總部多功能廳",
-    event_starts_at: "2026-06-04T00:00:00Z",
+    event_starts_at: relativeTicketIso(-1),
     employee_name: "陳雅莉",
     qr_payload: "mocked-qr-token",
     signed_token: "mocked-token",

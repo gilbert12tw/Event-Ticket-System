@@ -11,7 +11,6 @@ import { Card } from "@/components/ui/card";
 import { localDateKey } from "./employee-calendar";
 import {
   calendarRangeForView,
-  employeeCalendarPath,
   groupEmployeeCalendarEventsByDay,
   parseEmployeeCalendarQuery,
   selectEmployeeCalendarEvents,
@@ -19,6 +18,15 @@ import {
   type EmployeeCalendarViewMode,
 } from "./employee-calendar-planner";
 import { EmployeeCalendarView } from "./employee-calendar-view";
+import { EmployeeDiscoveryControls } from "./employee-discovery-controls";
+import {
+  employeeDiscoveryCityOptions,
+  employeeDiscoverySummary,
+  employeeEventsPath,
+  filterEmployeeDiscoveryEvents,
+  parseEmployeeDiscoveryQuery,
+  type EmployeeDiscoveryState,
+} from "./employee-discovery";
 
 export function EmployeeEventsPage({
   claims,
@@ -32,6 +40,9 @@ export function EmployeeEventsPage({
   const [calendarState, setCalendarState] = useState(() =>
     parseEmployeeCalendarQuery(globalThis.location.search, initialNow),
   );
+  const [discoveryState, setDiscoveryState] = useState(() =>
+    parseEmployeeDiscoveryQuery(globalThis.location.search),
+  );
 
   const principalID = claims.employee_id;
   const now = useMemo(
@@ -42,9 +53,14 @@ export function EmployeeEventsPage({
     () => calendarRangeForView(calendarState.view, calendarState.date, now),
     [calendarState.date, calendarState.view, now],
   );
+  const visibleEvents = useMemo(
+    () => filterEmployeeDiscoveryEvents(events, tickets, discoveryState, now),
+    [discoveryState, events, now, tickets],
+  );
   const calendarEvents = useMemo(
-    () => selectEmployeeCalendarEvents(events, tickets, calendarRange, now),
-    [calendarRange, events, now, tickets],
+    () =>
+      selectEmployeeCalendarEvents(visibleEvents, tickets, calendarRange, now),
+    [calendarRange, now, tickets, visibleEvents],
   );
   const calendarGroups = useMemo(
     () => groupEmployeeCalendarEventsByDay(calendarEvents, calendarRange),
@@ -57,6 +73,19 @@ export function EmployeeEventsPage({
           localDateKey(new Date(event.starts_at)) === calendarState.dateKey,
       ),
     [calendarEvents, calendarState.dateKey],
+  );
+  const cityOptions = useMemo(
+    () => employeeDiscoveryCityOptions(events, discoveryState.city),
+    [discoveryState.city, events],
+  );
+  const discoverySummary = useMemo(
+    () =>
+      employeeDiscoverySummary(
+        calendarState.view,
+        calendarEvents,
+        discoveryState,
+      ),
+    [calendarEvents, calendarState.view, discoveryState],
   );
   async function refresh() {
     setLoading(true);
@@ -80,8 +109,12 @@ export function EmployeeEventsPage({
   }, [principalID]);
 
   useEffect(() => {
-    const syncFromLocation = () =>
+    const syncFromLocation = () => {
       setCalendarState(parseEmployeeCalendarQuery(globalThis.location.search));
+      setDiscoveryState(
+        parseEmployeeDiscoveryQuery(globalThis.location.search),
+      );
+    };
     globalThis.addEventListener("popstate", syncFromLocation);
     return () => globalThis.removeEventListener("popstate", syncFromLocation);
   }, []);
@@ -89,7 +122,14 @@ export function EmployeeEventsPage({
   function applyCalendarState(view: EmployeeCalendarViewMode, date: Date) {
     const dateKey = localDateKey(date);
     setCalendarState({ view, date, dateKey });
-    navigate(employeeCalendarPath(view, dateKey));
+    navigate(employeeEventsPath(view, dateKey, discoveryState));
+  }
+
+  function applyDiscoveryState(next: EmployeeDiscoveryState) {
+    setDiscoveryState(next);
+    navigate(
+      employeeEventsPath(calendarState.view, calendarState.dateKey, next),
+    );
   }
 
   function selectDate(dateKey: string) {
@@ -118,28 +158,36 @@ export function EmployeeEventsPage({
         {loading ? (
           <SkeletonRows rows={3} />
         ) : (
-          <EmployeeCalendarView
-            groups={calendarGroups}
-            now={now}
-            range={calendarRange}
-            selectedDateKey={calendarState.dateKey}
-            selectedEvents={selectedEvents}
-            onMove={(direction) =>
-              applyCalendarState(
-                calendarState.view,
-                shiftCalendarDate(
+          <>
+            <EmployeeDiscoveryControls
+              cityOptions={cityOptions}
+              discovery={discoveryState}
+              summary={discoverySummary}
+              onChange={applyDiscoveryState}
+            />
+            <EmployeeCalendarView
+              groups={calendarGroups}
+              now={now}
+              range={calendarRange}
+              selectedDateKey={calendarState.dateKey}
+              selectedEvents={selectedEvents}
+              onMove={(direction) =>
+                applyCalendarState(
                   calendarState.view,
-                  calendarState.date,
-                  direction,
-                ),
-              )
-            }
-            onSelectDate={selectDate}
-            onToday={() => applyCalendarState(calendarState.view, now)}
-            onViewChange={(view) =>
-              applyCalendarState(view, calendarState.date)
-            }
-          />
+                  shiftCalendarDate(
+                    calendarState.view,
+                    calendarState.date,
+                    direction,
+                  ),
+                )
+              }
+              onSelectDate={selectDate}
+              onToday={() => applyCalendarState(calendarState.view, now)}
+              onViewChange={(view) =>
+                applyCalendarState(view, calendarState.date)
+              }
+            />
+          </>
         )}
       </Card>
     </section>

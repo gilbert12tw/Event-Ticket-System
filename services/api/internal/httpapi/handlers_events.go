@@ -78,7 +78,16 @@ func handleListEvents(service TicketingService) http.HandlerFunc {
 		if rejectCallerEmployeeIDQuery(w, r) {
 			return
 		}
-		result, err := service.ListEvents(r.Context(), actorFromRequest(r), "")
+		result, err := service.ListEvents(r.Context(), actorFromRequest(r), "", eventListQueryFromRequest(r))
 		writeServiceResult(w, http.StatusOK, result, err)
+	}
+}
+
+func eventListQueryFromRequest(r *http.Request) ticketing.EventListQuery {
+	params := r.URL.Query()
+	return ticketing.EventListQuery{
+		CapacityType: params.Get("capacity_type"),
+		City:         params.Get("city"),
+		Status:       params.Get("status"),
 	}
 }
