@@ -31,6 +31,8 @@ export type IconName =
   | "copy"
   | "database"
   | "download"
+  | "eye"
+  | "eyeOff"
   | "logout"
   | "play"
   | "plus"

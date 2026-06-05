@@ -329,6 +329,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DE
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_filter ON audit_logs(action, entity_type, entity_id, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_audit_logs_rate_limited_event_recent
+	ON audit_logs(created_at DESC, (metadata->>'event_id'))
+	WHERE action = 'booking.rate_limited' AND metadata ? 'event_id';
+
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(publish_status, available_at);
 
 CREATE INDEX IF NOT EXISTS idx_outbox_published_lag ON outbox_events(event_type, published_at, created_at)

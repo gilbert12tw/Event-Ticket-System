@@ -158,6 +158,26 @@ describe("EmployeeTicketsPage", () => {
     expect(screen.queryByText("qr-secret")).not.toBeInTheDocument();
   });
 
+  it("reveals and copies the signature code on demand", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    window.history.replaceState({}, "", "/user/tickets?ticket_id=T-1");
+    mockGetTicket.mockResolvedValue(ticketFixture({ qr_payload: "qr-secret" }));
+
+    render(<EmployeeTicketsPage claims={claims} />);
+
+    expect(await screen.findByLabelText("票券二維碼")).toBeInTheDocument();
+    expect(screen.queryByText("qr-secret")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "顯示" }));
+    expect(screen.getByText("qr-secret")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "複製" }));
+    expect(writeText).toHaveBeenCalledWith("qr-secret");
+
+    vi.unstubAllGlobals();
+  });
+
   it("shows revoked reason only in metadata, not duplicated in status copy", async () => {
     window.history.replaceState({}, "", "/user/tickets?ticket_id=T-revoked");
     mockGetTicket.mockResolvedValue(
