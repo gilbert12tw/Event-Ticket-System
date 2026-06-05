@@ -84,6 +84,20 @@ func TestPhase3ComposeOverlayDeclaresWorkerKindIsolation(t *testing.T) {
 		"Phase 3 workers must stay kind-scoped when the isolation overlay is enabled")
 }
 
+func TestPhase3NginxOTelImageRunsAsNonRoot(t *testing.T) {
+	dockerfile := readText(t, filepath.Join("nginx", "Dockerfile.otel"))
+
+	for _, fragment := range []string{
+		"mkdir -p /run/nginx /var/cache/nginx /var/lib/nginx/tmp /var/log/nginx",
+		"touch /run/nginx.pid",
+		"chown -R nginx:nginx /run/nginx /run/nginx.pid /var/cache/nginx /var/lib/nginx /var/log/nginx",
+		"USER nginx",
+		"EXPOSE 8080",
+	} {
+		assert.Contains(t, dockerfile, fragment)
+	}
+}
+
 func TestPhase3ComposeLGTMDeclaresFourSignalsAndNodeGraph(t *testing.T) {
 	compose := readText(t, composePhase3HAFile)
 	observability := readFilesUnder(t, "observability/phase3")
