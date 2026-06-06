@@ -1,6 +1,6 @@
 # Bare-Metal Kubernetes HA Deployment
 
-This track deploys Event Ticket System Phase 3 on three internal VMs without AWS.
+This track deploys Event Ticket System Phase 3 on three internal VMs.
 It is designed to be reproducible from scripts and to keep public HTTPS access
 behind Cloudflare Tunnel and Cloudflare Access.
 
