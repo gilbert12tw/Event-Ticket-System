@@ -85,14 +85,7 @@ export async function api<T>(
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
     });
-    const contentType = response.headers.get("Content-Type") || "";
-    const envelope = contentType.includes("application/json")
-      ? ((await response.json()) as ApiEnvelope<T>)
-      : ({
-          success: false,
-          data: null as T,
-          error: await response.text(),
-        } satisfies ApiEnvelope<T>);
+    const envelope = await readEnvelope<T>(response);
 
     logApi(
       `${method} ${path}`,
@@ -118,6 +111,30 @@ export async function apiList<T>(path: string, options: RequestOptions = {}) {
   return (await api<T[] | null>(path, options)) ?? [];
 }
 
+export async function readEnvelope<T>(
+  response: Response,
+): Promise<ApiEnvelope<T>> {
+  const contentType = response.headers.get("Content-Type") || "";
+  return contentType.includes("application/json")
+    ? ((await response.json()) as ApiEnvelope<T>)
+    : ({
+        success: false,
+        data: null as T,
+        error: await response.text(),
+      } satisfies ApiEnvelope<T>);
+}
+
+export function buildQuerySuffix(params: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    const trimmed = String(value).trim();
+    if (trimmed !== "") search.set(key, trimmed);
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
 export function encoded(value: string) {
   return encodeURIComponent(value);
 }
@@ -141,14 +158,7 @@ export async function postForm<T>(path: string, body: FormData) {
     headers: authHeaders(),
     body,
   });
-  const contentType = response.headers.get("Content-Type") || "";
-  const envelope = contentType.includes("application/json")
-    ? ((await response.json()) as ApiEnvelope<T>)
-    : ({
-        success: false,
-        data: null as T,
-        error: await response.text(),
-      } satisfies ApiEnvelope<T>);
+  const envelope = await readEnvelope<T>(response);
   logApi(
     `POST ${path}`,
     response.status,
