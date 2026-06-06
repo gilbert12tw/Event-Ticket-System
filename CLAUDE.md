@@ -9,7 +9,6 @@ This file is the concise entry point for coding agents and developers working in
 - Product and design context: see `docs/PRODUCT.md` and `docs/DESIGN.md`.
 - Documentation map: start with `docs/INDEX.md`.
 - Specs: use `docs/specs/` for task-specific acceptance criteria.
-- Completed or superseded workstream notes live in `docs/archive/`; do not treat them as current scope without cross-checking active docs.
 - Backend directory refactors: start from `docs/specs/backend-directory-architecture.md`.
 - If architecture or implementation strategy changes, update the relevant docs before changing code.
 
@@ -79,7 +78,3 @@ Use task-relevant checks. At minimum, documentation-only changes need `git diff 
 - Relevant Go, frontend, integration, and failure tests
 - Logs do not contain full PII or secrets
 - Phase 1 docs do not claim microservices, Kafka, Kubernetes, or cross-region HA are complete
-
-## Codex Rules Note
-
-OpenAI Codex `.codex/rules/*.rules` files are for sandbox escalation and command prefix policy. Do not place architecture, clean-code, workflow, or product guidance there.

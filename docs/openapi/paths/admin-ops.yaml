@@ -8,7 +8,7 @@
       - hr_admin
       - system_admin
     summary: Read capacity-pressure snapshot for hot events.
-    description: "Derived snapshot per event of confirmed/waitlist counts, remaining capacity, active reservation telemetry, rate-limit drop rate, and idempotency replay rate. Read-only; not authoritative for booking commit. Source: docs/specs/phase2-ws3-registration-hot-path.md §6."
+    description: "Derived snapshot per event of confirmed/waitlist counts, remaining capacity, active reservation telemetry, rate-limit drop rate, and idempotency replay rate. Read-only; not authoritative for booking commit. Source: docs/specs/evolution-boundaries.md."
     responses:
       "200":
         description: Capacity-pressure snapshot.
@@ -29,7 +29,7 @@
       - hr_admin
       - system_admin
     summary: Read per-worker-kind queue health.
-    description: "Per-kind pending, in-flight, dead-letter, and p95 age. Consumed by ops UI. Source: docs/specs/phase2-ws4-async-notification.md §6."
+    description: "Per-kind pending, in-flight, dead-letter, and p95 age. Consumed by ops UI. Source: docs/specs/evolution-boundaries.md."
     responses:
       "200":
         description: Queue health feed.
@@ -91,7 +91,7 @@
       - hr_admin
       - system_admin
     summary: Read reporting projection freshness.
-    description: "Per-projection last_applied, lag_seconds, degraded, rebuild_in_progress signals. Source: docs/specs/phase2-ws5-reporting-ops.md §6."
+    description: "Per-projection last_applied, lag_seconds, degraded, rebuild_in_progress signals. Source: docs/specs/evolution-boundaries.md."
     responses:
       "200":
         description: Reporting freshness.

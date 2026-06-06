@@ -1,39 +1,50 @@
 # Product
 
-## Register
+## Purpose
 
-product
+The Corporate Event Ticketing System lets internal employees find eligible
+events, book seats or join waitlists, receive signed electronic tickets, and
+check in once at the venue. Activity admins manage events and eligibility, while
+HR/system admins review participation reports and audit records.
 
 ## Users
 
-Corporate employees use the system to find eligible internal events, book available seats, join waitlists, and present electronic tickets at the venue. Activity admins configure events, capacity, booking windows, and eligibility rules. Check-in staff redeem signed ticket tokens during live entry. HR and system admins inspect participation reports and audit records without unnecessary personal data exposure.
+- Employees browse eligible events, book, cancel during the allowed window, and
+  present tickets.
+- Activity admins create events, publish schedules, manage eligibility, handle
+  waitlists, and review notifications.
+- Check-in staff redeem signed tickets online or through bounded offline sync.
+- HR/system admins inspect aggregate reports, exports, and audit logs without
+  exposing unnecessary personal data.
 
-The primary usage context is an internal operations workflow on office laptops, with check-in staff also using tablets or laptops at an event entrance. Users need clear status, predictable controls, and fast confidence in whether an action succeeded.
+## Core Journeys
 
-## Product Purpose
+- Event setup: create or update event details, capacity, registration window,
+  eligibility rules, and publication state.
+- Booking: recheck eligibility and event state during final booking, prevent
+  oversell, and return confirmed or waitlisted status.
+- Ticketing and check-in: issue employee-bound signed tickets and allow exactly
+  one successful redemption.
+- Operations: process notifications, export aggregate reports, and preserve
+  immutable audit trails for sensitive actions.
 
-The Corporate Event Ticketing System demonstrates the Phase 1 ticketing flow for a modular monolith: event creation, eligibility, booking, waitlist, signed tickets, one-time check-in, reporting, and audit. Success means each role can complete its workflow without manual database edits, while the UI makes correctness boundaries visible: eligibility rechecks, capacity, token redaction, duplicate scan protection, and auditability.
+## Product Boundaries
 
-## Brand Personality
-
-Precise, calm, trustworthy.
-
-The interface should feel like a mature internal operations product: focused, dense enough for repeated work, and visually controlled. It should earn confidence through hierarchy and behavior, not decoration.
-
-## Anti-references
-
-Avoid pale grey card piles where every surface has the same weight and the user's next action is unclear. Avoid marketing-page composition, oversized slogans, decorative hero art, and feature-explainer blocks. Avoid dark neon command-center styling, gratuitous animation, glassmorphism, and visual effects that make an internal tool feel less credible.
+- The product consumes external provider claims; local/demo auth helpers are not
+  product login/logout flows.
+- PostgreSQL is the final source of truth. Redis, projections, and queues must
+  not authorize committed booking, ticket, check-in, or audit state.
+- Phase 1 does not require microservices, Kafka, service mesh, cross-region HA,
+  external payments, or managed cloud services.
 
 ## Design Principles
 
-- Make operational truth visible: show eligibility, capacity, ticket state, check-in result, and audit metadata where decisions happen.
-- Preserve role clarity: employee, activity admin, check-in staff, and HR surfaces share one product system while keeping their workflows distinct.
-- Keep discovery and entry separate: `/user/events` is for finding and scheduling activities, while usable ticket QR codes appear only in `/user/tickets`, ticket detail, and check-in flows.
-- Prefer scan-first check-in: scanning a QR code submits the online check-in immediately with duplicate/invalid feedback and a manual token fallback for low-frequency recovery.
-- Prioritize task confidence: every mutating action needs a clear disabled, loading, success, warning, or error state.
-- Keep sensitive data quiet: signed tokens and session details stay redacted in ordinary UI and API activity.
-- Use density with discipline: tables, forms, and runbooks should scan quickly without collapsing into visual sameness.
-
-## Accessibility & Inclusion
-
-Target WCAG AA for contrast, focus visibility, keyboard operation, reduced motion support, and responsive layouts. Verify 375px, 768px, 1024px, and 1440px viewports. Color must always be paired with readable text labels for eligibility, booking, ticket, warning, error, duplicate scan, and audit states.
+- Make operational truth visible: eligibility, capacity, ticket state, check-in
+  result, and audit metadata appear where decisions happen.
+- Preserve role clarity across employee, admin, check-in, and HR workflows.
+- Use clear loading, success, warning, error, and denied states for every
+  mutating action.
+- Keep sensitive data quiet: signed tokens, provider tokens, and full PII stay
+  redacted in ordinary UI, logs, and API activity.
+- Target WCAG AA with visible focus, keyboard operation, reduced motion support,
+  and responsive layouts at 375px, 768px, 1024px, and 1440px.
