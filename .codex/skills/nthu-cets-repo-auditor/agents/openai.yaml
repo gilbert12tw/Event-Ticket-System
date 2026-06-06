@@ -1,4 +1,0 @@
-interface:
-  display_name: "NTHU CETS Repo Auditor"
-  short_description: "Strict final-project repo audit"
-  default_prompt: "Use $nthu-cets-repo-auditor to audit this repo against the NTHU final report rubric."

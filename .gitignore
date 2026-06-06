@@ -20,6 +20,7 @@ infra/aws/self-managed-k8s/generated/
 
 # Local agent tooling
 .agents/skills/
+.codex/
 .claude/skills
 skills-lock.json
 

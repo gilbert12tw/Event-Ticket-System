@@ -63,9 +63,11 @@ fi
 
 cat "$changed_file"
 
-if grep -Eq '^(goal\.md|note\.md)$' "$changed_file"; then
-  echo "goal.md and note.md are local agent notes and must not be included in PR or push diffs." >&2
-  exit 1
+if grep -Eq '^((goal|note)\.md|\.codex/)' "$changed_file"; then
+  if [[ -e goal.md || -e note.md || -d .codex ]]; then
+    echo "goal.md, note.md, and .codex/ are local agent artifacts and must not be present in PR or push diffs." >&2
+    exit 1
+  fi
 fi
 
 full=$force_full
