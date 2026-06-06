@@ -2,20 +2,18 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: cets-migrate
+  labels:
+    app.kubernetes.io/part-of: cets
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "-1"
-  labels:
-    app.kubernetes.io/part-of: cets
+    argocd.argoproj.io/sync-wave: "1"
 spec:
-  ttlSecondsAfterFinished: 600
   backoffLimit: 3
   template:
-    metadata:
-      labels:
-        app: cets-migrate
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       restartPolicy: Never
       containers:
         - name: migrate

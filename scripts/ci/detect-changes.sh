@@ -18,7 +18,7 @@ if [[ "$preset_changed_files" == "true" ]]; then
   :
 elif [[ "$event_name" == "release" || "$ref" == refs/tags/v* ]]; then
   release_full=true
-elif [[ "$event_name" == "workflow_dispatch" ]]; then
+elif [[ "$event_name" == "workflow_dispatch" || "$event_name" == "workflow_call" ]]; then
   :
 else
   if [[ "$event_name" == "pull_request" ]]; then
@@ -99,7 +99,7 @@ run_phase3_compose="${INPUT_RUN_PHASE3_COMPOSE:-false}"
 
 if [[ "$release_full" == "true" ]]; then
   full=true
-elif [[ "$event_name" == "workflow_dispatch" ]]; then
+elif [[ "$event_name" == "workflow_dispatch" || "$event_name" == "workflow_call" ]]; then
   if [[ "$run_full_ci" == "true" ]]; then
     full=true
   else
@@ -127,6 +127,8 @@ if [[ "$full" == "false" ]]; then
   grep -Eq '^(services/api/.*\.go|services/api/go\.(mod|sum)|go\.work(\.sum)?$)' "$changed_file" && backend_test=true
   grep -Eq '^(docs/openapi\.yaml$|docs/openapi/|scripts/.*openapi.*)' "$changed_file" && openapi=true
   grep -Eq '^(services/api/deploy/|services/api/Dockerfile$|scripts/compose/)' "$changed_file" && compose=true
+  grep -Eq '^infra/k8s/baremetal/' "$changed_file" && compose=true
+  grep -Eq '^infra/k8s/baremetal/' "$changed_file" && phase3=true
   grep -Eq '^(docs/specs/phase3-|docs/reports/phase3-)' "$changed_file" && phase3=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' "$changed_file" && frontend_static=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$)' "$changed_file" && frontend_unit=true

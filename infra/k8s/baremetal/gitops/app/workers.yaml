@@ -14,6 +14,8 @@ spec:
       labels:
         app: worker-notification
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: worker
           image: cets-api:v0.0.1
@@ -21,11 +23,15 @@ spec:
           args: ["worker"]
           env:
             - name: WORKER_KINDS
-              value: "notification"
+              value: notification
             - name: OTEL_SERVICE_NAME
-              value: "cets-worker-notification"
+              value: cets-worker-notification
+            - name: CETS_REPLICA_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: PYROSCOPE_APPLICATION_NAME
-              value: "cets-worker-notification"
+              value: cets-worker-notification
           envFrom:
             - configMapRef:
                 name: cets-config
@@ -48,6 +54,8 @@ spec:
       labels:
         app: worker-projection
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: worker
           image: cets-api:v0.0.1
@@ -55,11 +63,15 @@ spec:
           args: ["worker"]
           env:
             - name: WORKER_KINDS
-              value: "projection"
+              value: projection
             - name: OTEL_SERVICE_NAME
-              value: "cets-worker-projection"
+              value: cets-worker-projection
+            - name: CETS_REPLICA_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: PYROSCOPE_APPLICATION_NAME
-              value: "cets-worker-projection"
+              value: cets-worker-projection
           envFrom:
             - configMapRef:
                 name: cets-config
@@ -82,6 +94,8 @@ spec:
       labels:
         app: worker-compensation
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: worker
           image: cets-api:v0.0.1
@@ -89,11 +103,15 @@ spec:
           args: ["worker"]
           env:
             - name: WORKER_KINDS
-              value: "compensation"
+              value: compensation
             - name: OTEL_SERVICE_NAME
-              value: "cets-worker-compensation"
+              value: cets-worker-compensation
+            - name: CETS_REPLICA_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: PYROSCOPE_APPLICATION_NAME
-              value: "cets-worker-compensation"
+              value: cets-worker-compensation
           envFrom:
             - configMapRef:
                 name: cets-config
@@ -116,6 +134,8 @@ spec:
       labels:
         app: worker-export
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: worker
           image: cets-api:v0.0.1
@@ -123,11 +143,15 @@ spec:
           args: ["worker"]
           env:
             - name: WORKER_KINDS
-              value: "export"
+              value: export
             - name: OTEL_SERVICE_NAME
-              value: "cets-worker-export"
+              value: cets-worker-export
+            - name: CETS_REPLICA_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: PYROSCOPE_APPLICATION_NAME
-              value: "cets-worker-export"
+              value: cets-worker-export
           envFrom:
             - configMapRef:
                 name: cets-config

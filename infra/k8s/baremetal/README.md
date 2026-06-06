@@ -51,6 +51,7 @@ infra/k8s/baremetal/scripts/41-cloudflare-preflight.sh
 APPLY=true infra/k8s/baremetal/scripts/40-cloudflare.sh
 APPLY=true infra/k8s/baremetal/scripts/45-build-images.sh
 APPLY=true infra/k8s/baremetal/scripts/50-deploy-cets.sh
+APPLY=true infra/k8s/baremetal/scripts/80-bootstrap-argocd.sh
 infra/k8s/baremetal/scripts/60-verify.sh
 infra/k8s/baremetal/scripts/61-verify-k8s-ha.sh
 infra/k8s/baremetal/scripts/62-verify-cloudflare.sh
@@ -74,6 +75,44 @@ default it imports `cets-api:<git-hash>` and `cets-frontend:<git-hash>` into
 the cluster nodes. To push to a registry instead, set
 `CETS_API_IMAGE_REPOSITORY`, `CETS_FRONTEND_IMAGE_REPOSITORY`, and
 `CETS_PUSH_IMAGES=true` in `.env.baremetal.local`.
+
+## Argo CD Continuous Deployment
+
+The accepted CD path is GitOps on the `release/baremetal` branch. Argo CD watches
+`infra/k8s/baremetal/gitops/app`, syncs automatically, prunes removed resources,
+and self-heals drift. The GitOps tree contains only non-secret config and
+references cluster-managed Secrets.
+
+Before enabling Argo CD, keep `.env.baremetal.local` local-only and add GHCR pull
+credentials:
+
+```sh
+GHCR_USERNAME=<github-user-or-bot>
+GHCR_TOKEN=<token-with-read:packages>
+```
+
+Then bootstrap Argo CD and cluster-managed Secrets:
+
+```sh
+APPLY=true infra/k8s/baremetal/scripts/80-bootstrap-argocd.sh
+infra/k8s/baremetal/scripts/82-verify-release-gitops.sh
+kubectl -n argocd get applications
+```
+
+Run the bootstrap after the first successful `release/baremetal` CD promotion,
+or manually push the image tags referenced by `gitops/app/kustomization.yaml`
+to GHCR first. Argo CD has automated sync enabled, so missing GHCR tags will
+surface as image pull failures.
+
+The GitHub Actions workflow `.github/workflows/baremetal-cd.yml` runs on pushes
+to `release/baremetal`. It calls the full CI workflow, including live gates,
+builds and pushes only the affected GHCR images, updates
+`gitops/app/kustomization.yaml` to the release commit hash, and commits that
+GitOps image promotion back to `release/baremetal`. The follow-up image-tag-only
+commit is ignored by the workflow loop guard; Argo CD performs the rollout.
+
+Use `46-update-images-and-rollout.sh` only as a guarded manual/break-glass path
+when GitOps is intentionally bypassed.
 
 ## Capacity Benchmark
 

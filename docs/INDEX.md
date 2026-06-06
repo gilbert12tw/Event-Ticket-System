@@ -9,6 +9,7 @@ Use this page as the first stop when deciding which document is current.
 - `docs/PRODUCT.md` - product scope and business flows.
 - `docs/DESIGN.md` - UI design system and product interaction direction.
 - `docs/diagrams/` - Mermaid deployment architecture and ERD diagrams.
+- `infra/k8s/baremetal/README.md` - bare-metal Kubernetes, Cloudflare, and Argo CD deployment workflow.
 - `docs/openapi.yaml` and `docs/openapi/` - public API contract.
 - `docs/ci-self-hosted-runner.md` - opt-in self-hosted GitHub Actions runner setup for billing or quota blocks.
 
@@ -28,7 +29,6 @@ Use this page as the first stop when deciding which document is current.
 - `docs/specs/phase2-ws4-async-notification.md` - async notification, outbox, and worker isolation.
 - `docs/specs/phase2-ws5-reporting-ops.md` - reporting read model and ops controls.
 - `docs/specs/phase3-local-ha-compose-lgtm.md` - current Phase 3 local HA Compose and LGTM simulation contract.
-- `docs/specs/aws-self-managed-k8s.md` - separate AWS EC2 kubeadm deployment experiment with budget guardrails and release-branch Argo CD rollout.
 
 ## Rules And Principles
 

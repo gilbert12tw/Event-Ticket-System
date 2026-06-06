@@ -599,26 +599,25 @@ failover、disaster recovery 或 multi-region active-active 已完成。
 | Microservices | 目前不拆 full microservices；只有 same-binary worker kind isolation。若 process-first scaling 無法滿足獨立 bottleneck、故障隔離、ownership 或 release cadence，再用新 spec 拆服務。 |
 | Release strategy | DB migration backward compatible、feature flag、rollback procedure；production multi-AZ、rolling deploy、container platform 與 DB failover 需後續獨立 spec 驗證。 |
 
-### 15.3 AWS Self-Managed Kubernetes Experiment
+### 15.3 Bare-Metal Kubernetes GitOps CD
 
-`infra/aws/self-managed-k8s/` 是獨立的 AWS production experiment，用 EC2 + kubeadm +
-CloudFormation 驗證 self-managed Kubernetes，不使用 EKS。它不取代 Phase 3 local Compose
-simulation，也不把 Kubernetes 改成 Phase 1 或 Phase 2 必交付項目。
+`infra/k8s/baremetal/` 是目前唯一的 Kubernetes deployment track。它部署現有 Go modular
+monolith、React frontend、same-binary worker kinds、CloudNativePG、Redis、MinIO、
+Mailhog、ingress-nginx、observability stack 與 Cloudflare Tunnel；它不把系統切成
+microservices，worker 仍透過 `WORKER_KINDS` 做 process-first scaling。
 
-此 track 預設採 budget-first：`NODE_COUNT=1` 是省成本展示模式；`NODE_COUNT=3` 才是
-stacked etcd / control-plane HA 模式；`NODE_COUNT=2` 會被拒絕。付費帳戶預設以
-3 台 16 GiB On-Demand EC2 做兩週成本可控的多節點驗證；Spot 只作為明確接受中斷風險時的
-成本選項。Cloudflare Tunnel 是 app public ingress 的最低成本路徑，AWS app NLB 只在
-explicit opt-in 時建立。成本防線由 deploy 前 cost plan、AWS Budget/SNS/Lambda cleanup
-與 hourly TTL cleanup 組成。規格詳見
-`docs/specs/aws-self-managed-k8s.md`。
+CD 採 release branch GitOps：Argo CD `Application` 追蹤 `release/baremetal` 的
+`infra/k8s/baremetal/gitops/app`，啟用 automated sync、prune 與 self-heal。GitOps
+manifest 只包含非機密 ConfigMap、workload、service、ingress、job 與 Secret references；
+`cets-runtime-env`、`cets-app-secrets`、`cloudflared-token`、`ghcr-pull` 由
+`.env.baremetal.local` 透過 guarded bootstrap script 建到 cluster，不 commit plaintext
+Secrets。
 
-此 AWS track 的 CD 採 release branch GitOps：Argo CD `Application` 預設追
-`release/aws-self-managed-k8s` 的 `infra/aws/self-managed-k8s/gitops/app`，操作者手動
-更新 image tag、commit、打 `v0.0.1` 這類 semver tag，再 push branch 與 tag；release
-branch HEAD 必須有同名 tag 才通過驗證。預設 Application 不開 automated sync，待 branch
-protection / release checks 設好後才啟用自動 rollout。GitHub workflow 只做非破壞性的
-release manifest 驗證，不直接部署 AWS 或呼叫 Argo CD sync API。
+GitHub Actions 的 baremetal CD workflow 在 `release/baremetal` push 後先跑完整 CI 與 live
+gate，成功後才依變更範圍 build/push GHCR images。backend 與所有 workers 使用
+`ghcr.io/gilbert12tw/event-ticket-system/cets-api:<git-sha>`；frontend 使用
+`ghcr.io/gilbert12tw/event-ticket-system/cets-frontend:<git-sha>`。workflow 只提交
+`gitops/app/kustomization.yaml` 的 image tag promotion，Argo CD 負責實際 rollout。
 
 ---
 
