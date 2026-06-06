@@ -4,4 +4,4 @@ metadata:
   name: cets
   labels:
     app.kubernetes.io/part-of: cets
-    cets.io/track: aws-self-managed-k8s
+    cets.io/track: baremetal

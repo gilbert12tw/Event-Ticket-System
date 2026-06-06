@@ -4,10 +4,12 @@ metadata:
   name: cets
   labels:
     app.kubernetes.io/part-of: cets
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
   ingressClassName: nginx
   rules:
-    - host: tickets.example.com
+    - host: tickets.sky-lab.uk
       http:
         paths:
           - path: /api
@@ -17,14 +19,14 @@ spec:
                 name: backend
                 port:
                   number: 8080
-          - path: /readyz
+          - path: /healthz
             pathType: Exact
             backend:
               service:
                 name: backend
                 port:
                   number: 8080
-          - path: /healthz
+          - path: /readyz
             pathType: Exact
             backend:
               service:

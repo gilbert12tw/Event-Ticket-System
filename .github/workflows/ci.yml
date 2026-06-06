@@ -29,6 +29,7 @@ on:
       - "go.work"
       - "go.work.sum"
       - "goal.md"
+      - "infra/k8s/baremetal/**"
       - "k6/**"
       - "note.md"
       - "package.json"
@@ -71,6 +72,7 @@ on:
       - "go.work"
       - "go.work.sum"
       - "goal.md"
+      - "infra/k8s/baremetal/**"
       - "k6/**"
       - "note.md"
       - "package.json"
@@ -87,6 +89,33 @@ on:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      run_full_ci:
+        description: Run the complete release gate
+        required: false
+        type: boolean
+        default: false
+      run_live_playwright:
+        description: Run Compose-backed live Playwright checks
+        required: false
+        type: boolean
+        default: false
+      run_k6_smoke:
+        description: Run the k6 smoke profile
+        required: false
+        type: boolean
+        default: false
+      run_k6_release:
+        description: Run the k6 release profile
+        required: false
+        type: boolean
+        default: false
+      k6_release_duration:
+        description: k6 release profile duration for manual runs
+        required: false
+        type: string
+        default: 10s
+  workflow_call:
     inputs:
       run_full_ci:
         description: Run the complete release gate
