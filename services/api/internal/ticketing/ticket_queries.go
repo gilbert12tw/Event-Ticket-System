@@ -15,6 +15,13 @@ const (
 	checkinTicketSelectColumns = `t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
 		COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
 		ev.title, e.full_name, e.department, e.site`
+	ticketWithEventSelectColumns = `t.ticket_id, t.registration_id, t.event_id, t.employee_id, t.status, t.sequence_number,
+		COALESCE(t.expires_at, t.issued_at + interval '24 hours'), t.revoked_reason, t.issued_at, r.family_count,
+		e.title, e.location, e.starts_at, emp.full_name, emp.department, emp.site`
+	ticketWithEventFrom = `FROM tickets t
+		JOIN events e ON e.event_id = t.event_id
+		JOIN registrations r ON r.registration_id = t.registration_id
+		JOIN employees emp ON emp.employee_id = t.employee_id`
 )
 
 type ticketQuerier interface {
@@ -115,6 +122,15 @@ func findTicketByIDTx(ctx context.Context, tx pgx.Tx, ticketID string, lock bool
 
 func scanTicketRow(row pgx.Row, ticket *Ticket) error {
 	err := row.Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EmployeeName, &ticket.Department, &ticket.City)
+	if err != nil {
+		return err
+	}
+	ticket.NonTransferable = true
+	return nil
+}
+
+func scanTicketWithEventRow(row pgx.Row, ticket *Ticket) error {
+	err := row.Scan(&ticket.TicketID, &ticket.RegistrationID, &ticket.EventID, &ticket.EmployeeID, &ticket.Status, &ticket.SequenceNumber, &ticket.ExpiresAt, &ticket.RevokedReason, &ticket.IssuedAt, &ticket.FamilyCount, &ticket.EventTitle, &ticket.EventLocation, &ticket.EventStartsAt, &ticket.EmployeeName, &ticket.Department, &ticket.City)
 	if err != nil {
 		return err
 	}
