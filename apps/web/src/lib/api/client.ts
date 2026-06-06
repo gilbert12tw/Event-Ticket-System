@@ -1,5 +1,4 @@
 import type {
-  ApiEnvelope,
   AdminHROptions,
   AuditLog,
   AuditLogFilters,
@@ -42,12 +41,14 @@ import {
   api,
   apiList,
   authHeaders,
+  buildQuerySuffix,
   encoded,
   eventPath,
   headersFor,
   logApi,
   post,
   postForm,
+  readEnvelope,
   setProviderToken,
 } from "./http";
 import type { OpsDashboard } from "./ops-contracts";
@@ -293,10 +294,7 @@ export function revokeTicket(ticketID: string, reason: string) {
 }
 
 export function offlineCheckinPackage(eventID: string, deviceID: string) {
-  const params = new URLSearchParams();
-  if (deviceID.trim()) params.set("device_id", deviceID.trim());
-  const query = params.toString();
-  const querySuffix = query ? `?${query}` : "";
+  const querySuffix = buildQuerySuffix({ device_id: deviceID });
   return api<OfflineCheckinPackage>(
     `/api/v1/checkins/events/${encoded(eventID)}/offline-package${querySuffix}`,
   );
@@ -383,7 +381,7 @@ async function fetchBlobResource(
     return null;
   }
   if (!response.ok) {
-    const envelope = await blobErrorEnvelope(response);
+    const envelope = await readEnvelope<unknown>(response);
     logApi(label, response.status, false, null, envelope);
     throw new ApiError(response.status, envelope);
   }
@@ -395,32 +393,13 @@ async function fetchBlobResource(
   return blob;
 }
 
-async function blobErrorEnvelope(
-  response: Response,
-): Promise<ApiEnvelope<unknown>> {
-  const contentType = response.headers.get("Content-Type") || "";
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as ApiEnvelope<unknown>;
-  }
-  return {
-    success: false,
-    data: null,
-    error: await response.text(),
-  };
-}
-
 export const getOpsDashboard = () =>
   api<OpsDashboard>("/api/v1/admin/ops/dashboard");
 
 export function auditLogs(filters: AuditLogFilters = {}) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && String(value).trim() !== "")
-      params.set(key, String(value).trim());
-  }
-  const query = params.toString();
-  const querySuffix = query ? `?${query}` : "";
-  return apiList<AuditLog>(`/api/v1/admin/audit-logs${querySuffix}`);
+  return apiList<AuditLog>(
+    `/api/v1/admin/audit-logs${buildQuerySuffix(filters)}`,
+  );
 }
 
 export const readiness = (path: "/healthz" | "/readyz") =>
