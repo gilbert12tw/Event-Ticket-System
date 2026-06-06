@@ -166,6 +166,54 @@ describe("employee discovery filters", () => {
     ).toEqual(["waitlisted", "waitlist-available"]);
   });
 
+  it("keeps cancelled and registration-closed recovery rows only in the all list", () => {
+    const events = [
+      event({ event_id: "bookable", starts_at: "2026-06-04T11:00:00+08:00" }),
+      event({
+        current_user_status: "cancelled",
+        event_id: "cancelled",
+        starts_at: "2026-06-04T12:00:00+08:00",
+      }),
+      event({
+        event_id: "closed",
+        registration_close: "2026-06-03T18:00:00+08:00",
+        starts_at: "2026-06-04T13:00:00+08:00",
+      }),
+      event({
+        eligibility: {
+          can_book: false,
+          eligible: false,
+          event_id: "ineligible",
+          no_show_cooldown: { active: false },
+          reasons: ["department does not match"],
+          warnings: [],
+        },
+        event_id: "ineligible",
+        starts_at: "2026-06-04T14:00:00+08:00",
+      }),
+      event({
+        event_id: "draft",
+        starts_at: "2026-06-04T15:00:00+08:00",
+        status: "draft",
+      }),
+    ];
+
+    const search = (status = defaultEmployeeDiscoveryState.status) =>
+      ids(
+        filterEmployeeDiscoveryEvents(
+          events,
+          [],
+          { ...defaultEmployeeDiscoveryState, status },
+          now,
+        ),
+      );
+
+    expect(search()).toEqual(["bookable", "cancelled", "closed"]);
+    expect(search("bookable")).toEqual(["bookable"]);
+    expect(search("registered")).toEqual([]);
+    expect(search("waitlisted")).toEqual([]);
+  });
+
   it("treats an empty keyword as a reset and keeps selected city recoverable", () => {
     const events = [
       event({ event_city: "Taipei", event_id: "taipei" }),

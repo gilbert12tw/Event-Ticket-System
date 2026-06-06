@@ -115,7 +115,7 @@ export function selectEmployeeDiscoveryEventRows(
       };
     })
     .filter(({ event, state }) => {
-      if (!state.showInMain) return false;
+      if (!isVisibleDiscoveryRow(event, state, discovery.status)) return false;
       if (
         discovery.capacity !== "all" &&
         event.capacity_type !== discovery.capacity
@@ -231,6 +231,19 @@ function eventSearchText(event: EventSummary) {
 
 function normalizeSearch(value: string) {
   return value.trim().toLocaleLowerCase();
+}
+
+function isVisibleDiscoveryRow(
+  event: EventSummary,
+  state: EmployeeCalendarEvent["state"],
+  status: EmployeeDiscoveryStatus,
+) {
+  if (status !== "all") return state.showInMain;
+  return (
+    state.showInMain ||
+    event.current_user_status === "cancelled" ||
+    state.kind === "closed"
+  );
 }
 
 function discoveryEventSort(
