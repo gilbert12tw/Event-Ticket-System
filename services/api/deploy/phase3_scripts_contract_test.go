@@ -90,7 +90,7 @@ func TestPhase3ComposeScriptsDeclareDeployVerifyAndDrillContracts(t *testing.T) 
 		"capture_service_graph_baseline",
 		"cets-backend outbound dependency service graph counter before load",
 		"Prometheus service graph baseline could not be read",
-		"Prometheus did not return service graph metrics for cets-backend outbound dependency edges",
+		"Prometheus service graph counter did not increase for cets-backend outbound dependency edges",
 		"pyroscope/render",
 		"otel_trace_id",
 		"TEMPO_TRACE_ID",

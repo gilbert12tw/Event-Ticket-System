@@ -4,7 +4,7 @@ check_service_graph() {
     backend_dependency_response=$(prom_query "$SERVICE_GRAPH_BACKEND_DEPENDENCY_QUERY" 2>/dev/null || true)
     backend_dependency_value=$(printf '%s\n' "$backend_dependency_response" | json_scalar_value)
     if [ -n "$backend_dependency_value" ] &&
-      awk -v value="$backend_dependency_value" 'BEGIN { exit(value > 0 ? 0 : 1) }'; then
+      awk -v before="$SERVICE_GRAPH_BACKEND_DEPENDENCY_BASELINE" -v after="$backend_dependency_value" 'BEGIN { exit(after > before ? 0 : 1) }'; then
       prom_query 'sum by (client,server) (increase(traces_service_graph_request_total[15m]))' >"$SERVICE_GRAPH_EVIDENCE"
       {
         printf '# cets-backend outbound dependency service graph counter before load\n%s\n' "$SERVICE_GRAPH_BACKEND_DEPENDENCY_BASELINE"
@@ -15,10 +15,9 @@ check_service_graph() {
       } >"$SERVICE_GRAPH_BACKEND_DEPENDENCY_EVIDENCE"
       return
     fi
-    http_get "$EDGE_URL/readyz"
     sleep 5
   done
-  die "Prometheus did not return service graph metrics for cets-backend outbound dependency edges"
+  die "Prometheus service graph counter did not increase for cets-backend outbound dependency edges"
 }
 
 capture_service_graph_baseline() {
