@@ -9,6 +9,7 @@ import (
 
 	"event-ticket-system/internal/postgres"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -86,7 +87,8 @@ func redisClientForTest(t *testing.T, redisURL string) *redis.Client {
 func assertTableCount(t *testing.T, pool *pgxpool.Pool, table string, want int) {
 	t.Helper()
 	var got int
-	require.NoError(t, pool.QueryRow(context.Background(), "SELECT count(*) FROM "+table).Scan(&got))
+	query := "SELECT count(*) FROM " + pgx.Identifier{table}.Sanitize()
+	require.NoError(t, pool.QueryRow(context.Background(), query).Scan(&got))
 	assert.Equal(t, want, got, "row count for %s", table)
 }
 

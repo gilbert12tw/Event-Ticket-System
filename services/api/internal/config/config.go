@@ -184,7 +184,7 @@ func (c Config) ValidateForServe() error {
 	if err := c.validateRuntimeObservability(); err != nil {
 		return err
 	}
-	if c.isProduction() {
+	if c.IsProduction() {
 		if err := c.validateProductionAuth(); err != nil {
 			return err
 		}
@@ -289,7 +289,7 @@ func (c Config) validateWorkerMailer() error {
 }
 
 func (c Config) validateProductionWorker() error {
-	if !c.isProduction() {
+	if !c.IsProduction() {
 		return nil
 	}
 	if err := validateProductionSecret("TOKEN_SIGNING_SECRET", c.TokenSigningSecret, localTokenSecret, demoTokenSecret); err != nil {
@@ -298,7 +298,8 @@ func (c Config) validateProductionWorker() error {
 	return c.validateProductionBackingServices()
 }
 
-func (c Config) isProduction() bool {
+// IsProduction reports whether APP_ENV selects the production profile.
+func (c Config) IsProduction() bool {
 	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "production")
 }
 

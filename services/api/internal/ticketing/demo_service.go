@@ -42,9 +42,8 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 }
 
 func (s *Service) SeedDemoEventTickets(ctx context.Context) (DemoEventTicketSeed, error) {
-	localNow := s.now().In(checkinBusinessLocation())
-	todayStarts := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 12, 0, 0, 0, checkinBusinessLocation()).UTC()
-	futureStarts := todayStarts.AddDate(0, 0, 1)
+	todayStarts := demoTodayCheckinStart(s.now())
+	futureStarts := demoNextCheckinStart(todayStarts)
 
 	todayEvent, todayTicket, err := s.seedDemoEventTicket(ctx, "Demo Check-in Today", "demo-today-booking", todayStarts)
 	if err != nil {
@@ -97,4 +96,13 @@ func (s *Service) seedDemoEventTicket(ctx context.Context, title string, idempot
 		return EventSummary{}, Ticket{}, conflict("demo booking did not issue a ticket")
 	}
 	return event, *booking.Ticket, nil
+}
+
+func demoTodayCheckinStart(now time.Time) time.Time {
+	localNow := now.In(checkinBusinessLocation())
+	return time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, checkinBusinessLocation()).UTC()
+}
+
+func demoNextCheckinStart(todayStarts time.Time) time.Time {
+	return todayStarts.In(checkinBusinessLocation()).AddDate(0, 0, 1).UTC()
 }

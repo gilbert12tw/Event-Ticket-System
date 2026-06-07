@@ -14,13 +14,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var resetRedisPrefixes = []string{
-	"cets:v1:resv:",
-	"cets:v1:rate:booking:",
-}
-
 func resetDemoDB(cfg config.Config, logger *slog.Logger) error {
-	if strings.EqualFold(strings.TrimSpace(cfg.AppEnv), "production") {
+	if cfg.IsProduction() {
 		return errors.New("reset-demo-db is disabled when APP_ENV=production")
 	}
 	redisClient, err := newResetRedisClient(cfg.RedisURL)
@@ -35,29 +30,32 @@ func resetDemoDB(cfg config.Config, logger *slog.Logger) error {
 }
 
 func resetDemoData(ctx context.Context, pool *pgxpool.Pool, redisClient *redis.Client, cfg config.Config, logger *slog.Logger) error {
+	// Ensure the schema exists before truncating.
 	if err := postgres.Migrate(ctx, pool); err != nil {
-		return err
+		return fmt.Errorf("reset-demo-db: migrate schema: %w", err)
 	}
 	if err := redisClient.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("redis ping failed for reset-demo-db: %w", err)
+		return fmt.Errorf("reset-demo-db: redis ping failed: %w", err)
 	}
 	if err := truncateAppData(ctx, pool); err != nil {
-		return err
+		return fmt.Errorf("reset-demo-db: truncate app data: %w", err)
 	}
+	// TRUNCATE removes migration-seeded baseline rows (e.g.
+	// reporting_projection_offsets); re-run migrations to restore them.
 	if err := postgres.Migrate(ctx, pool); err != nil {
-		return err
+		return fmt.Errorf("reset-demo-db: restore baseline rows: %w", err)
 	}
 	deletedKeys, err := clearRedisAppKeys(ctx, redisClient)
 	if err != nil {
-		return err
+		return fmt.Errorf("reset-demo-db: clear redis keys: %w", err)
 	}
 	service := newTicketingService(pool, cfg, logger)
 	if err := service.SeedDemoData(ctx); err != nil {
-		return err
+		return fmt.Errorf("reset-demo-db: seed demo data: %w", err)
 	}
 	seed, err := service.SeedDemoEventTickets(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("reset-demo-db: seed demo event tickets: %w", err)
 	}
 	logger.Info("demo database reset complete",
 		"redis_keys_deleted", deletedKeys,
@@ -112,6 +110,10 @@ func truncateAppData(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 func clearRedisAppKeys(ctx context.Context, client *redis.Client) (int64, error) {
+	resetRedisPrefixes := []string{
+		"cets:v1:resv:",
+		"cets:v1:rate:booking:",
+	}
 	var deleted int64
 	for _, prefix := range resetRedisPrefixes {
 		iter := client.Scan(ctx, 0, prefix+"*", 100).Iterator()
