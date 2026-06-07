@@ -47,6 +47,18 @@ func TestPrepareCreateEventInputValidationAndDefaults(t *testing.T) {
 			},
 			want: "registration_start must be before registration_close",
 		},
+		{
+			name: "event end must follow start",
+			req: CreateEventRequest{
+				Title:             "Bad Event Window",
+				Capacity:          1,
+				StartsAt:          now.Add(3 * time.Hour),
+				EndsAt:            now.Add(3 * time.Hour),
+				RegistrationStart: now,
+				RegistrationClose: now.Add(time.Hour),
+			},
+			want: "starts_at must be before ends_at",
+		},
 	}
 
 	for _, tt := range tests {
@@ -81,6 +93,7 @@ func TestPrepareCreateEventInputValidationAndDefaults(t *testing.T) {
 	require.NotNil(t, input.event.Capacity)
 	assert.Equal(t, 5, *input.event.Capacity)
 	assert.Equal(t, now.Add(7*24*time.Hour), input.event.StartsAt)
+	assert.Equal(t, input.event.StartsAt.Add(24*time.Hour), input.event.EndsAt)
 	assert.Equal(t, now.Add(-time.Hour), input.event.RegistrationStart)
 	assert.Equal(t, input.event.StartsAt.Add(-time.Hour), input.event.RegistrationClose)
 }

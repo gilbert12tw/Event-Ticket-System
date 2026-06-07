@@ -196,6 +196,19 @@ Resources:
         - Key: CetsCleanupGroup
           Value: !Ref StackPrefix
 
+  CleanupFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${StackPrefix}-cleanup'
+      RetentionInDays: 14
+      Tags:
+        - Key: Project
+          Value: cets
+        - Key: Track
+          Value: aws-self-managed-k8s
+        - Key: CetsCleanupGroup
+          Value: !Ref StackPrefix
+
   CleanupLambdaSubscription:
     Type: AWS::SNS::Subscription
     Properties:

@@ -40,21 +40,11 @@ func TestServiceRejectsEventAndClaimsMismatchCheckinTokens(t *testing.T) {
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Mismatch Check-in",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	event, err := service.CreateEvent(ctx, admin, checkinReadyEventRequest(service, "Mismatch Check-in", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherEvent, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Other Mismatch Check-in",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	otherEvent, err := service.CreateEvent(ctx, admin, checkinReadyEventRequest(service, "Other Mismatch Check-in", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,12 +89,7 @@ func TestServicePersistsHolderMismatchRejectionWithoutRedeeming(t *testing.T) {
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
 	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Holder Mismatch",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	event, err := service.CreateEvent(ctx, admin, checkinReadyEventRequest(service, "Holder Mismatch", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,12 +149,7 @@ func TestCheckinTransferRejectionAuditOmitsFreeTextDetail(t *testing.T) {
 	require.NoError(t, service.SeedDemoData(ctx))
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Transfer Rejection",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	event, err := service.CreateEvent(ctx, admin, checkinReadyEventRequest(service, "Transfer Rejection", 1))
 	require.NoError(t, err)
 	tx, err := service.db.Begin(ctx)
 	require.NoError(t, err)
@@ -203,12 +183,7 @@ func TestServiceExpiresTicketDuringCheckin(t *testing.T) {
 	}
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Expired Ticket Check-in",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	event, err := service.CreateEvent(ctx, admin, checkinReadyEventRequest(service, "Expired Ticket Check-in", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,12 +224,7 @@ func TestServiceRejectsRevokedTicketDuringCheckin(t *testing.T) {
 	}
 
 	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
-	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
-		Title:    "Revoked Ticket Check-in",
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
-	})
+	event, err := service.CreateEvent(ctx, admin, checkinReadyEventRequest(service, "Revoked Ticket Check-in", 1))
 	if err != nil {
 		t.Fatal(err)
 	}

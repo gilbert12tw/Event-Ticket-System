@@ -33,6 +33,7 @@ func TestAWSSelfManagedK8sTrackDeclaresRequiredAssets(t *testing.T) {
 		"50-build-and-deploy-cets.sh",
 		"60-verify.sh",
 		"70-failure-drill.sh",
+		"72-reset-demo-db.sh",
 		"80-prepare-release-gitops.sh",
 		"82-verify-release-gitops.sh",
 		"90-pause-cluster.sh",

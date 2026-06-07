@@ -21,8 +21,8 @@ func TestLotteryRunsKeepSingleCompletedEventDatabaseGuard(t *testing.T) {
 	assert.Contains(t, indexDefinition, "WHERE (status = 'completed'")
 
 	_, err := pool.Exec(ctx, `INSERT INTO events
-		(event_id, title, starts_at, registration_start, registration_close, capacity_type, capacity, allows_family, status, allocation_mode, created_by)
-		VALUES ('evt_lottery_guard', 'Lottery Guard', now() + interval '7 days', now() - interval '1 day', now() - interval '1 hour', 'limited', 2, false, 'published', 'lottery', 'admin-1')`)
+		(event_id, title, starts_at, ends_at, registration_start, registration_close, capacity_type, capacity, allows_family, status, allocation_mode, created_by)
+		VALUES ('evt_lottery_guard', 'Lottery Guard', now() + interval '7 days', now() + interval '7 days' + interval '2 hours', now() - interval '1 day', now() - interval '1 hour', 'limited', 2, false, 'published', 'lottery', 'admin-1')`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO lottery_runs (run_id, event_id, seed, status, created_by)
 		VALUES ('lottery_guard_a', 'evt_lottery_guard', 'seed-a', 'completed', 'admin-1')`)

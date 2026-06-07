@@ -8,7 +8,7 @@ Required Phase 1 backing services:
 
 - PostgreSQL: source of truth for bookings, tickets, check-in records, and audit logs.
 - Redis: reservation gate, idempotency keys, and short-TTL cache. Redis is not the final transaction truth.
-- MinIO: local object storage for report export artifacts in Phase 1 production. Event images, attachments, and ticket files require a separate asset spec before they become production scope.
+- MinIO: local object storage for report export artifacts and admin-managed event posters in Phase 1 production. Event attachments and ticket files require a separate asset spec before they become production scope.
 - Mailhog: local mock email provider to prevent accidental real email delivery.
 
 `services/api/deploy/.env.example` contains committable example settings. `services/api/deploy/.env` is local override state and must not be committed. If a local port conflicts, override it with environment variables instead of hardcoding ports in code.

@@ -128,11 +128,22 @@ export function buildQuerySuffix(params: Record<string, unknown>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
-    const trimmed = String(value).trim();
-    if (trimmed !== "") search.set(key, trimmed);
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      const trimmed = queryValue(item).trim();
+      if (trimmed !== "") search.append(key, trimmed);
+    }
   }
   const query = search.toString();
   return query ? `?${query}` : "";
+}
+
+function queryValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value.toString();
+  }
+  return JSON.stringify(value);
 }
 
 export function encoded(value: string) {

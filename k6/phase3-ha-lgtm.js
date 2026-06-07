@@ -224,7 +224,7 @@ function providerTokenFor(actorId) {
 function envelopeData(response, label, fallback = null) {
   try {
     const payload = response.json();
-    check(payload, { [`${label} envelope success`]: (body) => body && body.success === true });
+    check(payload, { [`${label} envelope success`]: (body) => body?.success === true });
     return payload.data || fallback;
   } catch {
     check(response, { [`${label} json envelope parsed`]: () => false });

@@ -32,6 +32,7 @@ import {
   type AdminEditForm,
   type AdminEventTab,
 } from "./admin-event-crud-types";
+import { AdminEventPosterField } from "./admin-event-poster-field";
 export { AdminEventEligibilityTab } from "./admin-event-eligibility-tab";
 export { AdminEventStatusTab } from "./admin-event-status-tab";
 
@@ -151,11 +152,13 @@ export function AdminEventCreateTab({
   capacityReady,
   form,
   message,
+  posterFile,
   previewEmployees,
   publishChecks,
   zeroAudiencePublishBlocked,
   windowReady,
   onFormChange,
+  onPosterSelect,
   onReset,
   onSeed,
   onSubmit,
@@ -167,11 +170,13 @@ export function AdminEventCreateTab({
   capacityReady: boolean;
   form: AdminCreateForm;
   message: string;
+  posterFile: File | null;
   previewEmployees: EmployeeProfile[];
   publishChecks: { label: string; ok: boolean }[];
   zeroAudiencePublishBlocked: boolean;
   windowReady: boolean;
   onFormChange: (next: AdminCreateForm) => void;
+  onPosterSelect: (file: File | null) => void;
   onReset: () => void;
   onSeed: () => void;
   onSubmit: FormSubmitHandler;
@@ -246,6 +251,14 @@ export function AdminEventCreateTab({
           onChange={(tags) => onFormChange({ ...form, tags })}
         />
       </fieldset>
+      <AdminEventPosterField
+        busy={busy}
+        helper="尚未選擇海報；建立活動後若未上傳，員工端會顯示預設彩色封面。"
+        posterFile={posterFile}
+        status={posterFile ? "建立活動後會上傳此海報。" : ""}
+        title={form.title}
+        onPosterSelect={onPosterSelect}
+      />
       <ReadinessMessage
         tone={previewEmployees.length > 0 ? "ok" : "warn"}
         label={previewEmployees.length > 0 ? "資格命中" : "0 人符合"}
@@ -281,19 +294,27 @@ export function AdminEventCreateTab({
 export function AdminEventEditTab({
   busy,
   editForm,
+  posterFile,
+  posterStatus,
+  posterVersion,
   selectedEvent,
   eventSiteOptions,
   windowReady,
   onEditFormChange,
+  onPosterClear,
   onPosterUpload,
   onSave,
 }: Readonly<{
   busy: boolean;
   editForm: AdminEditForm;
+  posterFile: File | null;
+  posterStatus?: string;
+  posterVersion?: number;
   selectedEvent?: EventSummary;
   eventSiteOptions: Option[];
   windowReady: boolean;
   onEditFormChange: (next: AdminEditForm) => void;
+  onPosterClear: () => void;
   onPosterUpload: (file: File) => void;
   onSave: FormSubmitHandler;
 }>) {
@@ -345,23 +366,22 @@ export function AdminEventEditTab({
           onChange={(tags) => onEditFormChange({ ...editForm, tags })}
         />
       </fieldset>
-      <fieldset className="form-section full">
-        <legend>活動海報</legend>
-        <label className="field">
-          <span>活動海報</span>
-          <input
-            accept="image/jpeg,image/png,image/webp"
-            disabled={busy}
-            type="file"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              if (file) onPosterUpload(file);
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
-        <p className="form-hint">JPG、PNG、WebP，最多 5MB。</p>
-      </fieldset>
+      <AdminEventPosterField
+        busy={busy}
+        event={selectedEvent}
+        helper="顯示目前後端海報；若未上傳則使用預設彩色封面。"
+        posterFile={posterFile}
+        posterVersion={posterVersion}
+        status={posterStatus}
+        title={editForm.title || selectedEvent.title}
+        onPosterSelect={(file) => {
+          if (file) {
+            onPosterUpload(file);
+            return;
+          }
+          onPosterClear();
+        }}
+      />
       <div className="form-actions full">
         <Button type="submit" disabled={busy || !windowReady}>
           <Icon name="save" />

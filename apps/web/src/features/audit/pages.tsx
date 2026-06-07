@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { navigate } from "@/app/routes";
 import { auditLogs, type AuditLog, type AuditLogFilters } from "@/lib/api";
 import { errorMessage, normalizeAuditFilters } from "@/lib/formatting";
 import {
@@ -15,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { runClientNavigation } from "@/lib/navigation";
 import {
   auditActionView,
   auditActionOptions,
@@ -30,6 +32,7 @@ import {
   readAuditUrlState,
   replaceAuditUrl,
 } from "./url-state";
+import { auditTargetPath, sortAuditRowsByAttention } from "./audit-priority";
 
 type AuditPreset = "all" | "conflicts" | "event" | "ticket" | "checkin";
 const auditPresets = [
@@ -81,8 +84,8 @@ export function AdminAuditPage() {
     void refresh();
   }, []);
 
-  const presetRows = auditRows.filter((row) =>
-    auditPresetMatches(row, activePreset),
+  const presetRows = sortAuditRowsByAttention(
+    auditRows.filter((row) => auditPresetMatches(row, activePreset)),
   );
   const selected =
     presetRows.find((row) => row.audit_id === selectedID) ?? presetRows[0];
@@ -305,6 +308,10 @@ export function AdminAuditPage() {
                   </span>,
                 ],
                 [
+                  "相關入口",
+                  <AuditTargetLink key="audit-target" row={selected} />,
+                ],
+                [
                   "稽核中繼資料，敏感值已由系統遮蔽",
                   <AuditMetadata key="metadata" metadata={selected.metadata} />,
                   undefined,
@@ -323,6 +330,19 @@ function auditPresetMatches(row: AuditLog, preset: AuditPreset) {
   if (preset === "all") return true;
   if (preset === "conflicts") return row.action.includes("conflict");
   return row.entity_type === preset;
+}
+
+function AuditTargetLink({ row }: Readonly<{ row: AuditLog }>) {
+  const href = auditTargetPath(row);
+  if (!href) return <span className="table-muted">沒有可用入口</span>;
+  return (
+    <a
+      href={href}
+      onClick={(event) => runClientNavigation(event, () => navigate(href))}
+    >
+      開啟相關頁面
+    </a>
+  );
 }
 
 function AuditMetadata({ metadata }: Readonly<{ metadata: string }>) {

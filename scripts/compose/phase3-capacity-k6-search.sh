@@ -1,7 +1,7 @@
 run_k6_candidate() {
   rps=$1
   out="$ARTIFACT_DIR/k6-$RUN_ID-rps-$rps.json"
-  log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL"
+  log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL" >&2
   docker run --rm --network host \
     -v "$ROOT_DIR/k6:/k6:ro" \
     -v "$ARTIFACT_DIR:/artifacts" \
@@ -20,7 +20,7 @@ run_k6_candidate() {
 candidate_passes() {
   rps=$1
   if run_k6_candidate "$rps"; then
-    write_replica_spread "$rps"
+    write_replica_spread "$rps" >&2
     printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-pass-rps.txt"
     printf '%s\n' "$rps" >"$ARTIFACT_DIR/last-pass-rps-$RUN_ID.txt"
     return 0

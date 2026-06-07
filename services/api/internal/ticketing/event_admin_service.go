@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -62,16 +63,21 @@ func (s *Service) UpdateEvent(ctx context.Context, actor Actor, eventID string, 
 	}
 	event.Version++
 
-	_, err = tx.Exec(ctx, `UPDATE events SET title = $1, description = $2, location = $3, starts_at = $4,
-			registration_start = $5, registration_close = $6, capacity_type = $7, capacity = $8, allows_family = $9,
-			allocation_mode = $10, event_city = $11, event_site = $12, category = $13, tags = $14, entry_method = $15, visibility = $16,
-			version = $17, updated_at = now()
-		WHERE event_id = $18`,
-		event.Title, event.Description, event.Location, event.StartsAt, event.RegistrationStart, event.RegistrationClose, event.CapacityType,
+	_, err = tx.Exec(ctx, `UPDATE events SET title = $1, description = $2, location = $3, starts_at = $4, ends_at = $5,
+			registration_start = $6, registration_close = $7, capacity_type = $8, capacity = $9, allows_family = $10,
+			allocation_mode = $11, event_city = $12, event_site = $13, category = $14, tags = $15, entry_method = $16, visibility = $17,
+			version = $18, updated_at = now()
+		WHERE event_id = $19`,
+		event.Title, event.Description, event.Location, event.StartsAt, event.EndsAt, event.RegistrationStart, event.RegistrationClose, event.CapacityType,
 		event.Capacity, event.AllowsFamily, event.AllocationMode, event.EventCity, event.EventSite, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility,
 		event.Version, eventID)
 	if err != nil {
 		return EventSummary{}, err
+	}
+	if req.EndsAt != nil {
+		if err := updateActiveTicketExpiryTx(ctx, tx, eventID, event.EndsAt); err != nil {
+			return EventSummary{}, err
+		}
 	}
 	if err := s.insertEventVersionTx(ctx, tx, actor, event, "event updated"); err != nil {
 		return EventSummary{}, err
@@ -96,6 +102,9 @@ func (s *Service) applyEventUpdateRequest(ctx context.Context, tx pgx.Tx, event 
 	applyEventScheduleUpdate(event, req)
 	if !event.RegistrationStart.Before(event.RegistrationClose) {
 		return badRequest("registration_start must be before registration_close")
+	}
+	if !event.StartsAt.Before(event.EndsAt) {
+		return badRequest("starts_at must be before ends_at")
 	}
 	if err := s.applyEventCapacityUpdate(ctx, tx, event, req); err != nil {
 		return err
@@ -141,12 +150,20 @@ func applyEventScheduleUpdate(event *Event, req UpdateEventRequest) {
 	if req.StartsAt != nil {
 		event.StartsAt = *req.StartsAt
 	}
+	if req.EndsAt != nil {
+		event.EndsAt = *req.EndsAt
+	}
 	if req.RegistrationStart != nil {
 		event.RegistrationStart = *req.RegistrationStart
 	}
 	if req.RegistrationClose != nil {
 		event.RegistrationClose = *req.RegistrationClose
 	}
+}
+
+func updateActiveTicketExpiryTx(ctx context.Context, tx pgx.Tx, eventID string, endsAt time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE tickets SET expires_at = $1 WHERE event_id = $2 AND status = 'active'`, endsAt, eventID)
+	return err
 }
 
 func (s *Service) applyEventCapacityUpdate(ctx context.Context, tx pgx.Tx, event *Event, req UpdateEventRequest) error {
@@ -295,6 +312,7 @@ func (s *Service) DuplicateEvent(ctx context.Context, actor Actor, eventID strin
 		EventCity:         source.EventCity,
 		EventSite:         source.EventSite,
 		StartsAt:          source.StartsAt,
+		EndsAt:            source.EndsAt,
 		RegistrationStart: source.RegistrationStart,
 		RegistrationClose: source.RegistrationClose,
 		CapacityType:      source.CapacityType,

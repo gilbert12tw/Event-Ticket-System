@@ -12,12 +12,12 @@ import (
 )
 
 func TestPhase3CapacityReportRecordsRPSSearchParameters(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
-	preflight := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-preflight.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
+	preflight := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityPreflight))
 	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-report.sh"))
 
 	for _, fragment := range []string{
-		"phase3-capacity-preflight.sh",
+		phase3CapacityPreflight,
 		`. "$ROOT_DIR/scripts/compose/phase3-capacity-preflight.sh"`,
 		"START_RPS=${CETS_PHASE3_CAPACITY_START_RPS:-50}",
 		"STEP_RPS=${CETS_PHASE3_CAPACITY_STEP_RPS:-50}",
@@ -49,8 +49,8 @@ func TestPhase3CapacityReportRecordsRPSSearchParameters(t *testing.T) {
 }
 
 func TestPhase3CapacityReportLinksOptionalLGTMVerifyReport(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
-	preflight := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-preflight.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
+	preflight := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityPreflight))
 	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-report.sh"))
 
 	for _, fragment := range []string{
@@ -101,7 +101,7 @@ func TestPhase3CapacityRejectsIncompleteLGTMVerifyReportBeforeDocker(t *testing.
 		"| Tempo trace evidence | `/tmp/tempo-trace.json` |",
 	}, "\n")), 0o600))
 
-	script := filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh")
+	script := filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"CETS_PHASE3_CAPACITY_VERIFY_REPORT="+verifyReport,
@@ -137,7 +137,7 @@ func TestPhase3CapacityRejectsInvalidInputsBeforeDocker(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			script := filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh")
+			script := filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript)
 			cmd := exec.Command("bash", script)
 			cmd.Env = append(os.Environ(), tc.env)
 			output, err := cmd.CombinedOutput()

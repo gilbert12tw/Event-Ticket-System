@@ -248,7 +248,7 @@ function employeeId(index) {
 function envelopeData(response, label) {
   try {
     const payload = response.json();
-    check(payload, { [`${label} envelope success`]: (body) => body && body.success === true });
+    check(payload, { [`${label} envelope success`]: (body) => body?.success === true });
     return payload.data || null;
   } catch {
     check(response, { [`${label} json envelope parsed`]: () => false });

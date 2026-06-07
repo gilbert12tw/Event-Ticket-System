@@ -73,6 +73,60 @@ describe("layout components", () => {
     expect(screen.queryByLabelText("切換工作區")).not.toBeInTheDocument();
   });
 
+  it("keeps employee workspace debug available without exposing employee IDs", () => {
+    const activeRoute = routes.find((route) => route.key === "user-events");
+    const session: AuthSession = {
+      actor: {
+        id: "E1001",
+        role: "employee",
+      },
+      claims: {
+        employee_id: "E1001",
+        display_name: "Ariel Chen",
+        role_claims: ["employee"],
+        mapped_roles: ["employee"],
+        department: "Engineering",
+        site: "Taipei HQ",
+        city: "Taipei",
+        grade: 6,
+        employment_status: "active",
+        claims_status: "complete",
+      },
+      expires_at: "2026-05-17T12:00:00Z",
+      source: "provider",
+    };
+
+    if (!activeRoute) throw new Error("missing user events route");
+
+    const { container } = render(
+      <AuthenticatedShell
+        activeRoute={activeRoute}
+        activeWorkspace="user"
+        apiLog={[]}
+        debugChromeAvailable
+        debugChromeEnabled
+        health="ok"
+        mockProfilesEnabled
+        navRoutes={[activeRoute]}
+        onClearApiLog={vi.fn()}
+        onSwitchProfile={vi.fn()}
+        onToggleDebugChrome={vi.fn()}
+        ready="ok"
+        safeRoute="user-events"
+        session={session}
+      >
+        <div>Events content</div>
+      </AuthenticatedShell>,
+    );
+
+    expect(screen.getByRole("button", { name: "Debug" })).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("heading", { level: 1, name: "活動探索" }),
+    ).toHaveLength(1);
+    expect(container).not.toHaveTextContent("E1001");
+    expect(container).toHaveTextContent("員工");
+  });
+
   it("shows request and response bodies when an API activity entry expands", async () => {
     const entry: ApiLogEntry = {
       id: "log-1",

@@ -19,8 +19,13 @@ export function MobileQrScanner({
   const [message, setMessage] = useState("");
   const controlsRef = useRef<IScannerControls | null>(null);
   const mountedRef = useRef(false);
+  const onDetectedRef = useRef(onTokenDetected);
   const scannerActiveRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    onDetectedRef.current = onTokenDetected;
+  }, [onTokenDetected]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -54,9 +59,9 @@ export function MobileQrScanner({
           if (!scannerActiveRef.current || !result) return;
           const token = result.getText().trim();
           if (!token) return;
-          onTokenDetected(token);
+          onDetectedRef.current(token);
           setState("done");
-          setMessage("已讀取 QR code，可以送出驗票。");
+          setMessage("已讀取 QR code，系統會自動送出驗票。");
           stopCamera(false);
         },
       );
@@ -66,7 +71,7 @@ export function MobileQrScanner({
       }
       controlsRef.current = controls;
       setState("scanning");
-      setMessage("相機已開啟，請將 QR code 對準畫面中央。");
+      setMessage("相機已開啟，請將 QR code 對準掃描框。");
     } catch {
       const wasActive = scannerActiveRef.current;
       stopCamera();
@@ -113,6 +118,7 @@ export function MobileQrScanner({
       </div>
       <div className="mobile-qr-preview" data-state={state}>
         <video ref={videoRef} muted playsInline aria-label="QR code 相機預覽" />
+        <div className="qr-scan-frame" aria-hidden="true" />
         {state !== "scanning" && state !== "starting" && (
           <span>相機預覽會在開始掃描後顯示</span>
         )}

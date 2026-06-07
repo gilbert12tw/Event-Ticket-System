@@ -29,6 +29,7 @@ function event(overrides: Partial<EventSummary> = {}): EventSummary {
     event_city: "Taipei",
     event_site: "Taipei",
     starts_at: "2026-06-10T10:00:00Z",
+    ends_at: "2026-06-10T12:00:00Z",
     registration_start: "2026-06-01T10:00:00Z",
     registration_close: "2026-06-05T10:00:00Z",
     capacity_type: "limited",
@@ -105,6 +106,7 @@ describe("admin event CRUD helpers", () => {
         registration_start: expectedLocalInput(systemTime, 0),
         registration_close: expectedLocalInput(systemTime, 48),
         starts_at: expectedLocalInput(systemTime, 72),
+        ends_at: expectedLocalInput(systemTime, 74),
       }),
     );
     expect(applySchedulePreset(base, "next-week")).toEqual(
@@ -112,6 +114,7 @@ describe("admin event CRUD helpers", () => {
         registration_start: expectedLocalInput(systemTime, 24 * 7),
         registration_close: expectedLocalInput(systemTime, 24 * 11),
         starts_at: expectedLocalInput(systemTime, 24 * 14),
+        ends_at: expectedLocalInput(systemTime, 24 * 14 + 2),
       }),
     );
   });

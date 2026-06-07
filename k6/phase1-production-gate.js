@@ -202,7 +202,7 @@ function providerTokenFor(actorId) {
 function envelopeData(response, label, fallback = null) {
   try {
     const payload = response.json();
-    check(payload, { [`${label} envelope success`]: (body) => body && body.success === true });
+    check(payload, { [`${label} envelope success`]: (body) => body?.success === true });
     return payload.data || fallback;
   } catch {
     check(response, { [`${label} json envelope parsed`]: () => false });
@@ -229,7 +229,7 @@ function waitForReportExport(exportId) {
 }
 
 function requireValue(value, label) {
-  const ok = check(value, { [label]: (candidate) => Boolean(candidate) });
+  const ok = check(value, { [label]: Boolean });
   if (!ok) {
     exec.test.abort(label);
   }
@@ -249,13 +249,13 @@ async function loginInBrowser(page, principalId) {
 
 async function expectRoute(page, path, heading) {
   await page.evaluate((nextPath) => {
-    window.history.pushState({}, "", nextPath);
-    window.dispatchEvent(new Event("popstate"));
+    globalThis.history.pushState({}, "", nextPath);
+    globalThis.dispatchEvent(new Event("popstate"));
   }, path);
   await page.waitForLoadState("networkidle");
   const text = await page.locator(`//*[contains(., "${heading}")]`).first().textContent();
-  check(text, { [`browser route ${path} visible`]: (value) => Boolean(value && value.includes(heading)) });
-  const overflow = await page.evaluate(() => Math.ceil(document.documentElement.scrollWidth - window.innerWidth));
+  check(text, { [`browser route ${path} visible`]: (value) => value?.includes(heading) === true });
+  const overflow = await page.evaluate(() => Math.ceil(document.documentElement.scrollWidth - globalThis.innerWidth));
   check(overflow, { [`browser route ${path} no horizontal overflow`]: (value) => value <= 1 });
 }
 

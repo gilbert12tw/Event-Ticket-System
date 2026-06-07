@@ -12,7 +12,7 @@ import (
 )
 
 func TestPhase3SonarResultWrapperDeclaresEvidenceContract(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-sonar-result.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3SonarResultScript))
 	qualityScript := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-quality.sh"))
 
 	for _, fragment := range []string{
@@ -44,16 +44,16 @@ func TestPhase3SonarResultWrapperDeclaresEvidenceContract(t *testing.T) {
 
 func TestPhase3SonarResultWrapperPreservesScannerTaskURLQuery(t *testing.T) {
 	dir := t.TempDir()
-	resultReport := filepath.Join(dir, "sonar-result.md")
-	taskFile := filepath.Join(dir, "scannerwork", "report-task.txt")
+	resultReport := filepath.Join(dir, sonarResultReportFile)
+	taskFile := filepath.Join(dir, "scannerwork", sonarTaskFile)
 	fakeBin := writePhase3SonarResultFakeTools(t, dir)
 
 	output, err := runPhase3SonarResult(t, fakeBin,
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+resultReport,
-		"CETS_PHASE3_SONAR_TASK_FILE="+taskFile,
-		"CETS_PHASE3_SONAR_WAIT_SECONDS=0",
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarResultReportEnv+resultReport,
+		sonarTaskFileEnv+taskFile,
+		sonarWaitDisabledEnv,
 	)
 
 	require.NoError(t, err, output)
@@ -63,16 +63,16 @@ func TestPhase3SonarResultWrapperPreservesScannerTaskURLQuery(t *testing.T) {
 
 func TestPhase3SonarResultWrapperWritesPassedResultReport(t *testing.T) {
 	dir := t.TempDir()
-	resultReport := filepath.Join(dir, "sonar-result.md")
-	taskFile := filepath.Join(dir, "scannerwork", "report-task.txt")
+	resultReport := filepath.Join(dir, sonarResultReportFile)
+	taskFile := filepath.Join(dir, "scannerwork", sonarTaskFile)
 	fakeBin := writePhase3SonarResultFakeTools(t, dir)
 
 	output, err := runPhase3SonarResult(t, fakeBin,
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+resultReport,
-		"CETS_PHASE3_SONAR_TASK_FILE="+taskFile,
-		"CETS_PHASE3_SONAR_WAIT_SECONDS=0",
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarResultReportEnv+resultReport,
+		sonarTaskFileEnv+taskFile,
+		sonarWaitDisabledEnv,
 	)
 
 	require.NoError(t, err, output)
@@ -82,75 +82,75 @@ func TestPhase3SonarResultWrapperWritesPassedResultReport(t *testing.T) {
 	assert.Contains(t, result, "| Issues | `0` |")
 	assert.Contains(t, result, "| Problems | `0` |")
 	assert.Contains(t, result, "| Security problems | `0` |")
-	assert.NotContains(t, output, "phase3-secret-token")
-	assert.NotContains(t, result, "phase3-secret-token")
+	assert.NotContains(t, output, sonarTokenValue)
+	assert.NotContains(t, result, sonarTokenValue)
 }
 
 func TestPhase3SonarResultWrapperRejectsFailedQualityGate(t *testing.T) {
 	dir := t.TempDir()
-	resultReport := filepath.Join(dir, "sonar-result.md")
-	taskFile := filepath.Join(dir, "scannerwork", "report-task.txt")
+	resultReport := filepath.Join(dir, sonarResultReportFile)
+	taskFile := filepath.Join(dir, "scannerwork", sonarTaskFile)
 	fakeBin := writePhase3SonarResultFakeTools(t, dir)
 
 	output, err := runPhase3SonarResult(t, fakeBin,
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+resultReport,
-		"CETS_PHASE3_SONAR_TASK_FILE="+taskFile,
-		"CETS_PHASE3_SONAR_WAIT_SECONDS=0",
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarResultReportEnv+resultReport,
+		sonarTaskFileEnv+taskFile,
+		sonarWaitDisabledEnv,
 		"CETS_FAKE_SONAR_QUALITY_STATUS=ERROR",
 	)
 
 	require.Error(t, err)
 	assert.Contains(t, output, "Sonar quality gate must be passed, got: ERROR")
 	assert.Contains(t, readText(t, resultReport), "| Quality Gate Status | `ERROR` |")
-	assert.NotContains(t, output, "phase3-secret-token")
+	assert.NotContains(t, output, sonarTokenValue)
 }
 
 func TestPhase3SonarResultWrapperRejectsNonZeroIssueTotals(t *testing.T) {
 	dir := t.TempDir()
-	resultReport := filepath.Join(dir, "sonar-result.md")
-	taskFile := filepath.Join(dir, "scannerwork", "report-task.txt")
+	resultReport := filepath.Join(dir, sonarResultReportFile)
+	taskFile := filepath.Join(dir, "scannerwork", sonarTaskFile)
 	fakeBin := writePhase3SonarResultFakeTools(t, dir)
 
 	output, err := runPhase3SonarResult(t, fakeBin,
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+resultReport,
-		"CETS_PHASE3_SONAR_TASK_FILE="+taskFile,
-		"CETS_PHASE3_SONAR_WAIT_SECONDS=0",
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarResultReportEnv+resultReport,
+		sonarTaskFileEnv+taskFile,
+		sonarWaitDisabledEnv,
 		"CETS_FAKE_SONAR_HOTSPOTS=2",
 	)
 
 	require.Error(t, err)
 	assert.Contains(t, output, "Sonar security problems must be 0, got: 2")
 	assert.Contains(t, readText(t, resultReport), "| Security problems | `2` |")
-	assert.NotContains(t, output, "phase3-secret-token")
+	assert.NotContains(t, output, sonarTokenValue)
 }
 
 func TestPhase3SonarResultWrapperRejectsMissingScannerTaskFile(t *testing.T) {
 	dir := t.TempDir()
-	resultReport := filepath.Join(dir, "sonar-result.md")
-	taskFile := filepath.Join(dir, "scannerwork", "report-task.txt")
+	resultReport := filepath.Join(dir, sonarResultReportFile)
+	taskFile := filepath.Join(dir, "scannerwork", sonarTaskFile)
 	fakeBin := writePhase3SonarResultFakeTools(t, dir)
 
 	output, err := runPhase3SonarResult(t, fakeBin,
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+resultReport,
-		"CETS_PHASE3_SONAR_TASK_FILE="+taskFile,
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarResultReportEnv+resultReport,
+		sonarTaskFileEnv+taskFile,
 		"CETS_FAKE_SONAR_SKIP_TASK_FILE=true",
 	)
 
 	require.Error(t, err)
 	assert.Contains(t, output, "scanner task file does not exist or is empty")
 	assert.NoFileExists(t, resultReport)
-	assert.NotContains(t, output, "phase3-secret-token")
+	assert.NotContains(t, output, sonarTokenValue)
 }
 
 func runPhase3SonarResult(t *testing.T, fakeBin string, env ...string) (string, error) {
 	t.Helper()
-	script := filepath.Join("..", "..", "..", "scripts", "compose", "phase3-sonar-result.sh")
+	script := filepath.Join("..", "..", "..", "scripts", "compose", phase3SonarResultScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cmd.Env = append(cmd.Env, env...)
@@ -232,7 +232,7 @@ esac
 }
 
 func TestPhase3SonarResultWrapperUsesProjectKeyForIssueQueries(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-sonar-result.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3SonarResultScript))
 
 	for _, fragment := range []string{
 		`--data-urlencode "componentKeys=$project_key"`,

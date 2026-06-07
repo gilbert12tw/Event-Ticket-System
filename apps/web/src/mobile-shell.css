@@ -124,7 +124,8 @@
     gap: 1px;
   }
 
-  .mobile-topbar-title h1 {
+  .mobile-topbar-heading {
+    display: block;
     overflow: hidden;
     color: var(--ink);
     font-size: 1.06rem;
@@ -237,6 +238,20 @@
     min-height: 44px !important;
     height: auto !important;
     white-space: normal;
+  }
+
+  .workspace[data-route="user-events"]
+    .employee-events-actions
+    > [data-slot="button"] {
+    width: auto;
+    min-width: 3.75rem;
+    white-space: nowrap;
+  }
+
+  .workspace .employee-calendar-header > [data-slot="button"] {
+    width: 44px;
+    min-width: 44px;
+    flex: 0 0 44px;
   }
 
   .workspace [data-slot="select-value"] {

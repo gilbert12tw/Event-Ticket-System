@@ -84,6 +84,7 @@ export function AuthenticatedShell({
       />
       <MobileTopBar
         activeRoute={activeRoute}
+        activeWorkspace={activeWorkspace}
         apiLog={apiLog}
         debugChromeAvailable={debugChromeAvailable}
         debugChromeEnabled={debugChromeEnabled}
@@ -147,6 +148,7 @@ function DesktopSidebar({
 
 function MobileTopBar({
   activeRoute,
+  activeWorkspace,
   apiLog,
   debugChromeAvailable,
   debugChromeEnabled,
@@ -159,6 +161,7 @@ function MobileTopBar({
   session,
 }: Readonly<{
   activeRoute: NavItem;
+  activeWorkspace: WorkspaceKey;
   apiLog: ApiLogEntry[];
   debugChromeAvailable: boolean;
   debugChromeEnabled: boolean;
@@ -171,6 +174,7 @@ function MobileTopBar({
   session: AuthSession;
 }>) {
   const displayName = session.claims.display_name || session.actor.id;
+  const userWorkspace = activeWorkspace === "user";
   return (
     <header className="mobile-topbar">
       <div className="mobile-topbar-title">
@@ -179,7 +183,7 @@ function MobileTopBar({
         </span>
         <div>
           <span className="eyebrow">{activeRoute.eyebrow}</span>
-          <h1>{activeRoute.label}</h1>
+          <span className="mobile-topbar-heading">{activeRoute.label}</span>
         </div>
       </div>
       <Sheet>
@@ -198,13 +202,17 @@ function MobileTopBar({
           <SheetHeader>
             <SheetTitle>工作區工具</SheetTitle>
             <SheetDescription>
-              身分、Debug、服務狀態與介接紀錄。
+              {userWorkspace && !debugChromeAvailable
+                ? "目前登入身份。"
+                : "身分、Debug、服務狀態與介接紀錄。"}
             </SheetDescription>
           </SheetHeader>
           <div className="mobile-identity-card" aria-label="目前登入身份">
             <strong>{displayName}</strong>
             <span>
-              {session.actor.id} · {roleLabel(session.actor.role)}
+              {userWorkspace
+                ? roleLabel(session.actor.role)
+                : `${session.actor.id} · ${roleLabel(session.actor.role)}`}
             </span>
           </div>
           {debugChromeAvailable && (

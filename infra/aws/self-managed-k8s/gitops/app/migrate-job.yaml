@@ -19,7 +19,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["migrate"]
           envFrom:

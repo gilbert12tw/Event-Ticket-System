@@ -39,7 +39,7 @@ func TestPhase3RunScriptWiresGatedEvidencePaths(t *testing.T) {
 		"step_status=${statuses[0]}",
 		"tee_status=${statuses[1]}",
 		"trap finalize EXIT",
-		"required Phase 3 script is missing or not executable",
+		missingPhase3ScriptError,
 	} {
 		assert.Contains(t, script, fragment)
 	}
@@ -49,13 +49,13 @@ func TestPhase3RunScriptExecutesStepsAndWritesRunReport(t *testing.T) {
 	dir := t.TempDir()
 	scriptDir := filepath.Join(dir, "scripts")
 	artifactDir := filepath.Join(dir, "artifacts")
-	runReport := filepath.Join(dir, "run-report.md")
+	runReport := filepath.Join(dir, phase3RunReport)
 	writePhase3RunFakeScripts(t, scriptDir, fakeRunOptions{})
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=mock-run",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
-		"CETS_PHASE3_RUN_REPORT="+runReport,
+		phase3ArtifactDirEnv+artifactDir,
+		phase3RunReportEnv+runReport,
 	)
 
 	require.NoError(t, err, output)
@@ -69,7 +69,7 @@ func TestPhase3RunScriptExecutesStepsAndWritesRunReport(t *testing.T) {
 
 	assert.Contains(t, output, "completed quality gate")
 	assert.Contains(t, report, "| Status | `passed` |")
-	assert.Contains(t, report, "| Run log | `"+runLog+"` |")
+	assert.Contains(t, report, runLogRowPrefix+runLog+"` |")
 	assert.Contains(t, report, "| Verify report | `"+verifyReport+"` |")
 	assert.Contains(t, report, "| Recovery drill report | `"+drillReport+"` |")
 	assert.Contains(t, report, "| Capacity report | `"+capacityReport+"` |")
@@ -99,21 +99,21 @@ func TestPhase3RunScriptReportsPreflightFailure(t *testing.T) {
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=missing-script",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
+		phase3ArtifactDirEnv+artifactDir,
 	)
 
 	require.Error(t, err)
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)
 	assert.Equal(t, 1, exitErr.ExitCode())
-	assert.Contains(t, output, "required Phase 3 script is missing or not executable")
+	assert.Contains(t, output, missingPhase3ScriptError)
 	report := readText(t, filepath.Join(artifactDir, "phase3-run-report-missing-script.md"))
-	assert.Contains(t, report, "| Status | `failed` |")
+	assert.Contains(t, report, statusFailedRow)
 	assert.Contains(t, report, "| Failed step | `preflight` |")
-	assert.Contains(t, report, "| Exit code | `1` |")
+	assert.Contains(t, report, exitCodeOneRow)
 	runLogPath := filepath.Join(artifactDir, "phase3-run-steps-missing-script.log")
-	assert.Contains(t, report, "| Run log | `"+runLogPath+"` |")
-	assert.Contains(t, readText(t, runLogPath), "required Phase 3 script is missing or not executable")
+	assert.Contains(t, report, runLogRowPrefix+runLogPath+"` |")
+	assert.Contains(t, readText(t, runLogPath), missingPhase3ScriptError)
 }
 
 func TestPhase3RunScriptReportsArtifactSetupFailure(t *testing.T) {
@@ -128,8 +128,8 @@ func TestPhase3RunScriptReportsArtifactSetupFailure(t *testing.T) {
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=setup-failed",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
-		"CETS_PHASE3_RUN_REPORT="+reportPath,
+		phase3ArtifactDirEnv+artifactDir,
+		phase3RunReportEnv+reportPath,
 		"CETS_PHASE3_RUN_LOG="+runLogPath,
 	)
 
@@ -139,10 +139,10 @@ func TestPhase3RunScriptReportsArtifactSetupFailure(t *testing.T) {
 	assert.Equal(t, 1, exitErr.ExitCode())
 	assert.Contains(t, output, "mkdir")
 	report := readText(t, reportPath)
-	assert.Contains(t, report, "| Status | `failed` |")
+	assert.Contains(t, report, statusFailedRow)
 	assert.Contains(t, report, "| Failed step | `artifact setup` |")
-	assert.Contains(t, report, "| Exit code | `1` |")
-	assert.Contains(t, report, "| Run log | `"+runLogPath+"` |")
+	assert.Contains(t, report, exitCodeOneRow)
+	assert.Contains(t, report, runLogRowPrefix+runLogPath+"` |")
 }
 
 func TestPhase3RunScriptFailsWhenLinkedReportIsMissing(t *testing.T) {
@@ -153,16 +153,16 @@ func TestPhase3RunScriptFailsWhenLinkedReportIsMissing(t *testing.T) {
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=missing-report",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
+		phase3ArtifactDirEnv+artifactDir,
 	)
 
 	require.Error(t, err)
 	assert.Contains(t, output, "Phase 3 capacity report was not written or is empty")
 	report := readText(t, filepath.Join(artifactDir, "phase3-run-report-missing-report.md"))
-	assert.Contains(t, report, "| Status | `failed` |")
+	assert.Contains(t, report, statusFailedRow)
 	assert.Contains(t, report, "| Failed step | `capacity report verification` |")
-	assert.Contains(t, report, "| Exit code | `1` |")
-	assert.Contains(t, report, "| Run log | `"+filepath.Join(artifactDir, "phase3-run-steps-missing-report.log")+"` |")
+	assert.Contains(t, report, exitCodeOneRow)
+	assert.Contains(t, report, runLogRowPrefix+filepath.Join(artifactDir, "phase3-run-steps-missing-report.log")+"` |")
 }
 
 func TestPhase3RunScriptFailsWhenSonarResultReportIsMissing(t *testing.T) {
@@ -173,16 +173,16 @@ func TestPhase3RunScriptFailsWhenSonarResultReportIsMissing(t *testing.T) {
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=missing-sonar",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
+		phase3ArtifactDirEnv+artifactDir,
 	)
 
 	require.Error(t, err)
 	assert.Contains(t, output, "Phase 3 Sonar result report was not written or is empty")
 	report := readText(t, filepath.Join(artifactDir, "phase3-run-report-missing-sonar.md"))
-	assert.Contains(t, report, "| Status | `failed` |")
+	assert.Contains(t, report, statusFailedRow)
 	assert.Contains(t, report, "| Failed step | `Sonar result report verification` |")
-	assert.Contains(t, report, "| Exit code | `1` |")
-	assert.Contains(t, report, "| Run log | `"+filepath.Join(artifactDir, "phase3-run-steps-missing-sonar.log")+"` |")
+	assert.Contains(t, report, exitCodeOneRow)
+	assert.Contains(t, report, runLogRowPrefix+filepath.Join(artifactDir, "phase3-run-steps-missing-sonar.log")+"` |")
 }
 
 func TestPhase3RunScriptPreservesStepFailureExitCode(t *testing.T) {
@@ -193,7 +193,7 @@ func TestPhase3RunScriptPreservesStepFailureExitCode(t *testing.T) {
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=quality-failed",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
+		phase3ArtifactDirEnv+artifactDir,
 	)
 
 	require.Error(t, err)
@@ -202,7 +202,7 @@ func TestPhase3RunScriptPreservesStepFailureExitCode(t *testing.T) {
 	assert.Equal(t, 42, exitErr.ExitCode())
 	assert.Contains(t, output, "starting quality gate")
 	report := readText(t, filepath.Join(artifactDir, "phase3-run-report-quality-failed.md"))
-	assert.Contains(t, report, "| Status | `failed` |")
+	assert.Contains(t, report, statusFailedRow)
 	assert.Contains(t, report, "| Failed step | `quality gate` |")
 	assert.Contains(t, report, "| Exit code | `42` |")
 	runLog := readText(t, filepath.Join(artifactDir, "phase3-run-steps-quality-failed.log"))
@@ -224,7 +224,7 @@ exit 9
 	output, err := runPhase3Run(t, scriptDir,
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"CETS_PHASE3_RUN_ID=tee-failed",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
+		phase3ArtifactDirEnv+artifactDir,
 	)
 
 	require.Error(t, err)
@@ -233,23 +233,23 @@ exit 9
 	assert.Equal(t, 9, exitErr.ExitCode())
 	assert.Contains(t, output, "starting deploy")
 	report := readText(t, filepath.Join(artifactDir, "phase3-run-report-tee-failed.md"))
-	assert.Contains(t, report, "| Status | `failed` |")
+	assert.Contains(t, report, statusFailedRow)
 	assert.Contains(t, report, "| Failed step | `deploy` |")
 	assert.Contains(t, report, "| Exit code | `9` |")
-	assert.Contains(t, report, "| Run log | `"+filepath.Join(artifactDir, "phase3-run-steps-tee-failed.log")+"` |")
+	assert.Contains(t, report, runLogRowPrefix+filepath.Join(artifactDir, "phase3-run-steps-tee-failed.log")+"` |")
 }
 
 func TestPhase3RunScriptCanSkipRecoveryDrill(t *testing.T) {
 	dir := t.TempDir()
 	scriptDir := filepath.Join(dir, "scripts")
 	artifactDir := filepath.Join(dir, "artifacts")
-	runReport := filepath.Join(dir, "run-report.md")
+	runReport := filepath.Join(dir, phase3RunReport)
 	writePhase3RunFakeScripts(t, scriptDir, fakeRunOptions{})
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=no-drill",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
-		"CETS_PHASE3_RUN_REPORT="+runReport,
+		phase3ArtifactDirEnv+artifactDir,
+		phase3RunReportEnv+runReport,
 		"CETS_PHASE3_RUN_INCLUDE_DRILL=false",
 	)
 
@@ -263,14 +263,14 @@ func TestPhase3RunScriptDoesNotRequireDrillScriptWhenSkipped(t *testing.T) {
 	dir := t.TempDir()
 	scriptDir := filepath.Join(dir, "scripts")
 	artifactDir := filepath.Join(dir, "artifacts")
-	runReport := filepath.Join(dir, "run-report.md")
+	runReport := filepath.Join(dir, phase3RunReport)
 	writePhase3RunFakeScripts(t, scriptDir, fakeRunOptions{})
 	require.NoError(t, os.Remove(filepath.Join(scriptDir, "phase3-drill.sh")))
 
 	output, err := runPhase3Run(t, scriptDir,
 		"CETS_PHASE3_RUN_ID=no-drill-script",
-		"CETS_PHASE3_RUN_ARTIFACT_DIR="+artifactDir,
-		"CETS_PHASE3_RUN_REPORT="+runReport,
+		phase3ArtifactDirEnv+artifactDir,
+		phase3RunReportEnv+runReport,
 		"CETS_PHASE3_RUN_INCLUDE_DRILL=false",
 	)
 

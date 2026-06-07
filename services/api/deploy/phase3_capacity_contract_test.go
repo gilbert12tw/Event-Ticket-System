@@ -88,8 +88,8 @@ func TestPhase3K6LoadScriptDeclaresDistributionAndErrorContracts(t *testing.T) {
 		"REPLICA_SPREAD_CHECK=",
 		"REPLICA_SPREAD_FILE=",
 		"phase3-${PROFILE}-replica-spread.txt",
-		"phase3-header-replicas.awk",
-		"phase3-replica-spread-check.awk",
+		phase3HeaderReplicasAwk,
+		phase3ReplicaSpreadAwk,
 		`rm -f "$REPLICA_SPREAD_FILE"`,
 		`spread_tmp="$REPLICA_SPREAD_FILE.tmp.$$"`,
 		"K6_PHASE3_REPLICA_SAMPLES",
@@ -130,19 +130,19 @@ func TestK8sErrorRateDemoScriptDeclaresExpectedErrorContract(t *testing.T) {
 }
 
 func TestPhase3CapacityScriptRequiresDistinctReplicaSpread(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
 	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-replica-evidence.sh"))
-	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-report.sh"))
-	checker := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-replica-spread-check.awk"))
+	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityReport))
+	checker := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3ReplicaSpreadAwk))
 
 	for _, fragment := range []string{
 		"CETS_PHASE3_CAPACITY_REPLICA_SAMPLES",
-		"phase3-capacity-report.sh",
+		phase3CapacityReport,
 		`. "$ROOT_DIR/scripts/compose/phase3-capacity-report.sh"`,
 		"phase3-capacity-replica-evidence.sh",
 		`. "$ROOT_DIR/scripts/compose/phase3-capacity-replica-evidence.sh"`,
-		"phase3-header-replicas.awk",
-		"phase3-replica-spread-check.awk",
+		phase3HeaderReplicasAwk,
+		phase3ReplicaSpreadAwk,
 	} {
 		assert.Contains(t, script, fragment)
 	}
@@ -168,6 +168,8 @@ func TestPhase3CapacityScriptRequiresDistinctReplicaSpread(t *testing.T) {
 	for _, fragment := range []string{
 		"Replica spread summary",
 		"## Replica Spread",
+		`local k6_summary="$ARTIFACT_DIR/k6-$RUN_ID-rps-$best_rps.json"`,
+		`jq -r --arg target_rps "$best_rps" -f "$K6_REPORT_FILTER" "$k6_summary"`,
 		`[ -s "$replica_spread" ] || write_replica_spread "$best_rps"`,
 		`require_replica_spread_summary "$replica_spread"`,
 		`print_replica_spread "$replica_spread"`,
@@ -185,7 +187,7 @@ func TestPhase3CapacityScriptRequiresDistinctReplicaSpread(t *testing.T) {
 }
 
 func TestPhase3CapacityK6SearchHelpersAreSourced(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
 	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-k6-search.sh"))
 
 	assert.Contains(t, script, "phase3-capacity-k6-search.sh")
@@ -194,7 +196,8 @@ func TestPhase3CapacityK6SearchHelpersAreSourced(t *testing.T) {
 	assert.Contains(t, helper, "candidate_passes() {")
 	assert.Contains(t, helper, "find_max_rps() {")
 	assert.Contains(t, helper, `"$K6_IMAGE" run --summary-export`)
-	assert.Contains(t, helper, `write_replica_spread "$rps"`)
+	assert.Contains(t, helper, `log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL" >&2`)
+	assert.Contains(t, helper, `write_replica_spread "$rps" >&2`)
 	assert.Contains(t, helper, `last-pass-rps-$RUN_ID.txt`)
 	assert.Contains(t, helper, `last-fail-rps-$RUN_ID.txt`)
 	assert.Contains(t, helper, `while [ "$current" -le "$MAX_RPS" ]; do`)
@@ -206,7 +209,7 @@ func TestPhase3CapacityK6SearchHelpersAreSourced(t *testing.T) {
 
 func TestPhase3HeaderReplicaCounterCountsDistinctValues(t *testing.T) {
 	requireCommand(t, "awk")
-	filterPath := filepath.Join("..", "..", "..", "scripts", "compose", "phase3-header-replicas.awk")
+	filterPath := filepath.Join("..", "..", "..", "scripts", "compose", phase3HeaderReplicasAwk)
 	headers := strings.Join([]string{
 		"X-CETS-Gateway-Replica: gateway-1",
 		"X-CETS-Gateway-Replica: gateway-2",
@@ -224,7 +227,7 @@ func TestPhase3HeaderReplicaCounterCountsDistinctValues(t *testing.T) {
 
 func TestPhase3ReplicaSpreadSummaryCheck(t *testing.T) {
 	requireCommand(t, "awk")
-	filterPath := filepath.Join("..", "..", "..", "scripts", "compose", "phase3-replica-spread-check.awk")
+	filterPath := filepath.Join("..", "..", "..", "scripts", "compose", phase3ReplicaSpreadAwk)
 	passing := strings.Join([]string{
 		"gateway|3",
 		"frontend|3",
@@ -271,9 +274,9 @@ func TestPhase3CapacityReportPrometheusVectorFormatting(t *testing.T) {
 }
 
 func TestPhase3CapacityPrometheusEvidenceHelpersAreSourced(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
 	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-prometheus-evidence.sh"))
-	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-report.sh"))
+	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityReport))
 
 	assert.Contains(t, script, "phase3-capacity-prometheus-evidence.sh")
 	assert.Contains(t, script, `. "$ROOT_DIR/scripts/compose/phase3-capacity-prometheus-evidence.sh"`)
@@ -290,11 +293,11 @@ func TestPhase3CapacityPrometheusEvidenceHelpersAreSourced(t *testing.T) {
 }
 
 func TestPhase3CapacityCorrectnessEvidenceHelpersAreSourced(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
-	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-correctness-evidence.sh"))
-	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-report.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
+	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityEvidence))
+	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityReport))
 
-	assert.Contains(t, script, "phase3-capacity-correctness-evidence.sh")
+	assert.Contains(t, script, phase3CapacityEvidence)
 	assert.Contains(t, script, `. "$ROOT_DIR/scripts/compose/phase3-capacity-correctness-evidence.sh"`)
 	assert.Contains(t, helper, "write_correctness_summary() {")
 	assert.Contains(t, helper, "require_post_load_correctness() {")
@@ -361,13 +364,13 @@ func TestPhase3CapacityPostLoadCorrectnessCheck(t *testing.T) {
 }
 
 func TestPhase3CapacityCorrectnessSummarySQLIsWired(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity.sh"))
-	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-correctness-evidence.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityScript))
+	helper := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityEvidence))
 	sql := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-correctness-summary.sql"))
-	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-capacity-report.sh"))
+	report := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3CapacityReport))
 
 	assert.Contains(t, script, "CORRECTNESS_SUMMARY_SQL=")
-	assert.Contains(t, script, "phase3-capacity-correctness-evidence.sh")
+	assert.Contains(t, script, phase3CapacityEvidence)
 	assert.Contains(t, helper, `psql_with_event_title "$event_title" "$CORRECTNESS_SUMMARY_SQL"`)
 	assert.Contains(t, script, `-v event_title="$EVENT_TITLE"`)
 	assert.Contains(t, sql, "WHERE title = :'event_title'")

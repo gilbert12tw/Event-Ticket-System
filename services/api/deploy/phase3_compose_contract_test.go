@@ -12,10 +12,10 @@ import (
 )
 
 func TestPhase3ComposeOverlayDeclaresLocalHATopology(t *testing.T) {
-	compose := readText(t, "compose.phase3-ha.yaml")
+	compose := readText(t, composePhase3HAFile)
 	nginx := readFilesUnder(t, "nginx/phase3")
 	webNginx := readText(t, filepath.Join("..", "..", "..", "apps", "web", "nginx.phase3.conf"))
-	envExample := readText(t, ".env.example")
+	envExample := readText(t, envExampleFile)
 	combined := compose + "\n" + nginx + "\n" + webNginx + "\n" + envExample
 
 	for _, fragment := range []string{
@@ -43,15 +43,18 @@ func TestPhase3ComposeOverlayDeclaresLocalHATopology(t *testing.T) {
 		`profiles: ["phase1-default"]`,
 		`profiles: ["combined-worker"]`,
 		"resolver 127.0.0.11 valid=5s ipv6=off;",
-		"server gateway-1:8080 max_fails=1 fail_timeout=5s;",
-		"server gateway-2:8080 max_fails=1 fail_timeout=5s;",
-		"server gateway-3:8080 max_fails=1 fail_timeout=5s;",
-		"server frontend-1:8080 max_fails=1 fail_timeout=5s;",
-		"server frontend-2:8080 max_fails=1 fail_timeout=5s;",
-		"server frontend-3:8080 max_fails=1 fail_timeout=5s;",
-		"server backend-1:8080 max_fails=1 fail_timeout=5s;",
-		"server backend-2:8080 max_fails=1 fail_timeout=5s;",
-		"server backend-3:8080 max_fails=1 fail_timeout=5s;",
+		"zone cets_gateways 64k;",
+		"server gateway-1:8080 resolve max_fails=1 fail_timeout=5s;",
+		"server gateway-2:8080 resolve max_fails=1 fail_timeout=5s;",
+		"server gateway-3:8080 resolve max_fails=1 fail_timeout=5s;",
+		"zone cets_frontends 64k;",
+		"server frontend-1:8080 resolve max_fails=1 fail_timeout=5s;",
+		"server frontend-2:8080 resolve max_fails=1 fail_timeout=5s;",
+		"server frontend-3:8080 resolve max_fails=1 fail_timeout=5s;",
+		"zone cets_backends 64k;",
+		"server backend-1:8080 resolve max_fails=1 fail_timeout=5s;",
+		"server backend-2:8080 resolve max_fails=1 fail_timeout=5s;",
+		"server backend-3:8080 resolve max_fails=1 fail_timeout=5s;",
 		"server backend-lb:8080 resolve max_fails=1 fail_timeout=5s;",
 		"proxy_pass http://cets_backend_lb",
 		"proxy_pass http://cets_frontend_lb",
@@ -73,7 +76,7 @@ func TestPhase3ComposeOverlayDeclaresLocalHATopology(t *testing.T) {
 }
 
 func TestPhase3ComposeOverlayDeclaresWorkerKindIsolation(t *testing.T) {
-	compose := readText(t, "compose.phase3-ha.yaml")
+	compose := readText(t, composePhase3HAFile)
 
 	for _, kind := range []string{"notification", "projection", "compensation", "export"} {
 		assert.Contains(t, compose, "worker-"+kind+":")
@@ -84,8 +87,22 @@ func TestPhase3ComposeOverlayDeclaresWorkerKindIsolation(t *testing.T) {
 		"Phase 3 workers must stay kind-scoped when the isolation overlay is enabled")
 }
 
+func TestPhase3NginxOTelImageRunsAsNonRoot(t *testing.T) {
+	dockerfile := readText(t, filepath.Join("nginx", "Dockerfile.otel"))
+
+	for _, fragment := range []string{
+		"mkdir -p /run/nginx /var/cache/nginx /var/lib/nginx/tmp /var/log/nginx",
+		"touch /run/nginx.pid",
+		"chown -R nginx:nginx /run/nginx /run/nginx.pid /var/cache/nginx /var/lib/nginx /var/log/nginx",
+		"USER nginx",
+		"EXPOSE 8080",
+	} {
+		assert.Contains(t, dockerfile, fragment)
+	}
+}
+
 func TestPhase3ComposeLGTMDeclaresFourSignalsAndNodeGraph(t *testing.T) {
-	compose := readText(t, "compose.phase3-ha.yaml")
+	compose := readText(t, composePhase3HAFile)
 	observability := readFilesUnder(t, "observability/phase3")
 	combined := compose + "\n" + observability
 
@@ -136,7 +153,7 @@ func TestPhase3ComposeLGTMDeclaresFourSignalsAndNodeGraph(t *testing.T) {
 
 func TestPhase3ComposeLGTMRedactsSensitiveTelemetry(t *testing.T) {
 	alloy := strings.ToLower(readText(t, "observability/phase3/alloy.alloy"))
-	compose := strings.ToLower(readText(t, "compose.phase3-ha.yaml"))
+	compose := strings.ToLower(readText(t, composePhase3HAFile))
 	combined := alloy + "\n" + compose
 
 	for _, fragment := range []string{

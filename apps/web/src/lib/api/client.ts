@@ -13,6 +13,7 @@ import type {
   EligibilityDecision,
   EligibilityImpactReview,
   EventAsset,
+  EventListFilters,
   EligibilityPreviewRequest,
   EligibilityPreviewResponse,
   EventSummary,
@@ -141,7 +142,15 @@ export async function eventPosterBlob(eventID: string) {
 export const listAdminEvents = () =>
   apiList<EventSummary>("/api/v1/admin/events");
 
-export const listEvents = () => apiList<EventSummary>("/api/v1/events");
+export function listEvents(filters: EventListFilters = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  const querySuffix = query ? `?${query}` : "";
+  return apiList<EventSummary>(`/api/v1/events${querySuffix}`);
+}
 
 export function getEvent(eventID: string) {
   return api<EventSummary>(eventPath(eventID));

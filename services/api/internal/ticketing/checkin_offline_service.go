@@ -19,6 +19,7 @@ const (
 	offlineConflictExpired        = "ticket_expired"
 	offlineConflictInvalidToken   = "invalid_ticket_token"
 	offlineConflictNotActive      = "ticket_not_active"
+	offlineConflictNotStarted     = checkinNotStartedReason
 	offlineConflictNotFound       = "ticket_not_found"
 	offlineConflictRedeemed       = "ticket_already_redeemed"
 )
@@ -275,6 +276,11 @@ func (s *Service) applyOfflineTicketScanTx(ctx context.Context, tx pgx.Tx, actor
 		result.Status = offlineScanStatusConflict
 		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictNotActive
+		return result, offlineScanStatusConflict, nil
+	} else if !isCheckinAfterEventStart(ticket.EventStartsAt, scan.ScannedAt) {
+		result.Status = offlineScanStatusConflict
+		result.ReasonCode = "offline_conflict"
+		result.ConflictReason = offlineConflictNotStarted
 		return result, offlineScanStatusConflict, nil
 	} else if !ticket.ExpiresAt.IsZero() && s.now().After(ticket.ExpiresAt) {
 		result.Status = offlineScanStatusConflict

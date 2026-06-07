@@ -79,3 +79,7 @@ Use task-relevant checks. At minimum, documentation-only changes need `git diff 
 - Relevant Go, frontend, integration, and failure tests
 - Logs do not contain full PII or secrets
 - Phase 1 docs do not claim microservices, Kafka, Kubernetes, or cross-region HA are complete
+
+## Codex Rules Note
+
+OpenAI Codex `.codex/rules/*.rules` files are for sandbox escalation and command prefix policy. Do not place architecture, clean-code, workflow, or product guidance there.

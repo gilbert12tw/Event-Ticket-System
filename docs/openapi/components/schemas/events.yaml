@@ -85,6 +85,7 @@ EventSummary:
     - event_id
     - title
     - starts_at
+    - ends_at
     - registration_start
     - registration_close
     - event_city
@@ -107,6 +108,10 @@ EventSummary:
     starts_at:
       type: string
       format: date-time
+    ends_at:
+      type: string
+      format: date-time
+      description: Event end time. Check-in remains valid until this time unless the ticket is otherwise revoked or redeemed.
     registration_start:
       type: string
       format: date-time
@@ -216,6 +221,7 @@ CreateEventRequest:
         - string
         - "null"
       format: date-time
+      description: Event end time. If omitted, the backend defaults to 24 hours after starts_at for legacy clients.
     registration_start:
       type: string
       format: date-time
@@ -272,6 +278,7 @@ UpdateEventRequest:
         - string
         - "null"
       format: date-time
+      description: Event end time; updating it also updates active ticket expiry for the event.
     registration_start:
       type: string
       format: date-time

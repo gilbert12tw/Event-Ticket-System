@@ -14,15 +14,15 @@ import (
 func TestBaremetalVerifyAllKeepsFailureDrillStateless(t *testing.T) {
 	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "99-verify-all.sh"))
 
-	assert.Contains(t, script, `env BAREMETAL_DRILL_NODE_DRAIN=false "$SCRIPT_DIR/70-failure-drill.sh"`)
+	assert.Contains(t, script, `env BAREMETAL_DRILL_NODE_DRAIN=false "$SCRIPT_DIR/`+failureDrillScript+`"`)
 	assert.Contains(t, script, `RUN_POSTGRES_FAILOVER=${RUN_POSTGRES_FAILOVER:-false}`)
-	assert.Contains(t, script, `env BAREMETAL_PG_FAILOVER_PREFLIGHT_ONLY=true "$SCRIPT_DIR/71-verify-postgres-failover.sh"`)
+	assert.Contains(t, script, `env BAREMETAL_PG_FAILOVER_PREFLIGHT_ONLY=true "$SCRIPT_DIR/`+postgresFailoverScript+`"`)
 	assert.Contains(t, script, `set RUN_POSTGRES_FAILOVER=true to execute it after an approved disruption window`)
-	assert.NotContains(t, script, `run_check "stateless workload and node failure drill" "$SCRIPT_DIR/70-failure-drill.sh"`)
+	assert.NotContains(t, script, `run_check "stateless workload and node failure drill" "$SCRIPT_DIR/`+failureDrillScript+`"`)
 }
 
 func TestBaremetalFailureDrillWritesReportAndCleanupTrap(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript))
 
 	for _, fragment := range []string{
 		"BAREMETAL_DRILL_ARTIFACT_DIR",
@@ -53,7 +53,7 @@ func TestBaremetalFailureDrillWritesReportAndCleanupTrap(t *testing.T) {
 func TestBaremetalFailureDrillPreflightOnlyBlocksDatabaseNodeDrainWithoutPodDelete(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
@@ -69,15 +69,15 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_DRILL_ARTIFACT_DIR="+artifactDir,
+		baremetalDrillArtifact+artifactDir,
 		"BAREMETAL_DRILL_RUN_ID=mock-db-drain-preflight",
 		"BAREMETAL_DRILL_PREFLIGHT_ONLY=true",
-		"TARGET_NODE=work2",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		targetNodeWork2Env,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	err := cmd.Run()
 	require.Error(t, err)
@@ -85,19 +85,19 @@ exit 0
 	report := readText(t, filepath.Join(artifactDir, "baremetal-failure-drill-report-mock-db-drain-preflight.md"))
 	events := readText(t, filepath.Join(artifactDir, "baremetal-failure-drill-events-mock-db-drain-preflight.txt"))
 	kubectlCalls := readText(t, kubectlLog)
-	assert.Contains(t, report, "| Status | `blocked` |")
+	assert.Contains(t, report, statusBlockedRow)
 	assert.Contains(t, report, "| Preflight only | `true` |")
 	assert.Contains(t, report, "| Database pods on target | `cets-postgres-3` |")
 	assert.Contains(t, events, "work2|node_drain_blocked_database_pods")
 	assert.NotContains(t, kubectlCalls, "delete pod")
-	assert.NotContains(t, kubectlCalls, "cordon work2")
-	assert.NotContains(t, kubectlCalls, "drain work2")
+	assert.NotContains(t, kubectlCalls, cordonWork2Command)
+	assert.NotContains(t, kubectlCalls, drainWork2Command)
 }
 
 func TestBaremetalFailureDrillPreflightOnlyPassesWithoutNodeDrain(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
@@ -112,15 +112,15 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_DRILL_ARTIFACT_DIR="+artifactDir,
+		baremetalDrillArtifact+artifactDir,
 		"BAREMETAL_DRILL_RUN_ID=mock-drain-preflight-pass",
 		"BAREMETAL_DRILL_PREFLIGHT_ONLY=true",
 		"TARGET_NODE=work4",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	require.NoError(t, cmd.Run())
 
@@ -139,7 +139,7 @@ func TestBaremetalFailureDrillFailureReportUncordonsNode(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
 	curlCount := filepath.Join(t.TempDir(), "curl-count")
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
@@ -161,15 +161,15 @@ if [ "$count" -ge 2 ]; then exit 22; fi
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_DRILL_ARTIFACT_DIR="+artifactDir,
+		baremetalDrillArtifact+artifactDir,
 		"BAREMETAL_DRILL_RUN_ID=mock-fail",
 		"TARGET_NODE=work3",
 		"FAKE_CURL_COUNT="+curlCount,
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	err := cmd.Run()
 	require.Error(t, err)
@@ -183,7 +183,7 @@ exit 0
 	assert.Contains(t, report, "| Status | `failed` |")
 	assert.Contains(t, events, "work3|cordoned")
 	assert.Contains(t, events, "work3|drained")
-	assert.Contains(t, events, "drill|failed")
+	assert.Contains(t, events, drillFailedEvent)
 	assert.Contains(t, events, "work3|cleanup_uncordon_attempted")
 	assert.Contains(t, events, "work3|cleanup_uncordon_succeeded")
 	assert.Contains(t, kubectlCalls, "uncordon work3")
@@ -193,7 +193,7 @@ func TestBaremetalFailureDrillDrainFailureRetriesUncordon(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
 	stateDir := t.TempDir()
-	kubectlLog := filepath.Join(stateDir, "kubectl.log")
+	kubectlLog := filepath.Join(stateDir, kubectlLogFile)
 	uncordonCount := filepath.Join(stateDir, "uncordon-count")
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
@@ -219,14 +219,14 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_DRILL_ARTIFACT_DIR="+artifactDir,
+		baremetalDrillArtifact+artifactDir,
 		"BAREMETAL_DRILL_RUN_ID=mock-drain-fail",
 		"TARGET_NODE=work3",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		fakeKubectlLogEnv+kubectlLog,
 		"FAKE_UNCORDON_COUNT="+uncordonCount,
 	)
 	err := cmd.Run()
@@ -241,7 +241,7 @@ exit 0
 	assert.Contains(t, report, "| Status | `failed` |")
 	assert.Contains(t, events, "work3|cordoned")
 	assert.Contains(t, events, "work3|drain_failed_uncordon_failed")
-	assert.Contains(t, events, "drill|failed")
+	assert.Contains(t, events, drillFailedEvent)
 	assert.Contains(t, events, "work3|cleanup_uncordon_attempted")
 	assert.Contains(t, events, "work3|cleanup_uncordon_succeeded")
 	assert.Equal(t, 2, strings.Count(kubectlCalls, "uncordon work3"))
@@ -250,7 +250,7 @@ exit 0
 func TestBaremetalFailureDrillBlocksDatabaseNodeDrainWithoutOptIn(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
@@ -267,14 +267,14 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_DRILL_ARTIFACT_DIR="+artifactDir,
+		baremetalDrillArtifact+artifactDir,
 		"BAREMETAL_DRILL_RUN_ID=mock-db-drain-blocked",
-		"TARGET_NODE=work2",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		targetNodeWork2Env,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	err := cmd.Run()
 	require.Error(t, err)
@@ -285,21 +285,21 @@ exit 0
 	report := readText(t, filepath.Join(artifactDir, "baremetal-failure-drill-report-mock-db-drain-blocked.md"))
 	events := readText(t, filepath.Join(artifactDir, "baremetal-failure-drill-events-mock-db-drain-blocked.txt"))
 	kubectlCalls := readText(t, kubectlLog)
-	assert.Contains(t, report, "| Status | `blocked` |")
+	assert.Contains(t, report, statusBlockedRow)
 	assert.Contains(t, report, "| Node drain requested | `true` |")
 	assert.Contains(t, report, "| Database node drain allowed | `false` |")
 	assert.Contains(t, report, "| Database pods on target | `cets-postgres-3` |")
 	assert.Contains(t, report, "database pods on target node require BAREMETAL_DRILL_DATABASE_NODE_DRAIN=true")
 	assert.Contains(t, events, "work2|node_drain_blocked_database_pods")
-	assert.Contains(t, events, "drill|failed")
-	assert.NotContains(t, kubectlCalls, "cordon work2")
-	assert.NotContains(t, kubectlCalls, "drain work2")
+	assert.Contains(t, events, drillFailedEvent)
+	assert.NotContains(t, kubectlCalls, cordonWork2Command)
+	assert.NotContains(t, kubectlCalls, drainWork2Command)
 }
 
 func TestBaremetalFailureDrillBlocksDatabaseLookupFailureBeforeDrain(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
@@ -316,14 +316,14 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "70-failure-drill.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", failureDrillScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_DRILL_ARTIFACT_DIR="+artifactDir,
+		baremetalDrillArtifact+artifactDir,
 		"BAREMETAL_DRILL_RUN_ID=mock-db-lookup-fail",
-		"TARGET_NODE=work2",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		targetNodeWork2Env,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	err := cmd.Run()
 	require.Error(t, err)
@@ -334,10 +334,10 @@ exit 0
 	report := readText(t, filepath.Join(artifactDir, "baremetal-failure-drill-report-mock-db-lookup-fail.md"))
 	events := readText(t, filepath.Join(artifactDir, "baremetal-failure-drill-events-mock-db-lookup-fail.txt"))
 	kubectlCalls := readText(t, kubectlLog)
-	assert.Contains(t, report, "| Status | `blocked` |")
+	assert.Contains(t, report, statusBlockedRow)
 	assert.Contains(t, report, "could not inspect CloudNativePG pods on target node before drain")
 	assert.Contains(t, events, "work2|node_drain_blocked_database_lookup_failed")
-	assert.Contains(t, events, "drill|failed")
-	assert.NotContains(t, kubectlCalls, "cordon work2")
-	assert.NotContains(t, kubectlCalls, "drain work2")
+	assert.Contains(t, events, drillFailedEvent)
+	assert.NotContains(t, kubectlCalls, cordonWork2Command)
+	assert.NotContains(t, kubectlCalls, drainWork2Command)
 }

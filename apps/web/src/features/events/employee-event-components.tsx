@@ -78,7 +78,7 @@ export function EmployeeEventCard({
   return (
     <EventListItem
       title={event.title}
-      meta={`${formatDate(event.starts_at)} · ${siteLabel(
+      meta={`${formatDate(event.starts_at)} 至 ${formatDate(event.ends_at)} · ${siteLabel(
         event.location || event.event_site,
       )}`}
       description={
@@ -115,6 +115,7 @@ export function EmployeeEventCard({
           {!canRunPrimary && <BlockedEventAction event={event} />}
           <Button asChild size="sm" variant="ghost">
             <a
+              aria-label={`查看活動詳情：${event.title}`}
               href={detailHref}
               onClick={(clickEvent) =>
                 runClientNavigation(clickEvent, () => navigate(detailHref))
@@ -301,6 +302,7 @@ function eventSummaryRows(
   rows.push(
     ["地點", siteLabel(event.location || event.event_site)],
     ["開始時間", formatDate(event.starts_at)],
+    ["結束時間", formatDate(event.ends_at)],
     ["報名開始", formatDate(event.registration_start)],
     ["報名截止", formatDate(event.registration_close)],
     [

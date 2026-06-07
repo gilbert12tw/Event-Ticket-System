@@ -2,7 +2,11 @@ FROM alpine:3.21
 RUN wget -qO /etc/apk/keys/nginx_signing.rsa.pub https://nginx.org/keys/nginx_signing.rsa.pub \
     && echo "https://nginx.org/packages/mainline/alpine/v3.21/main" >> /etc/apk/repositories \
     && apk add --no-cache nginx nginx-module-otel \
+    && mkdir -p /run/nginx /var/cache/nginx /var/lib/nginx/tmp /var/log/nginx \
+    && touch /run/nginx.pid \
+    && chown -R nginx:nginx /run/nginx /run/nginx.pid /var/cache/nginx /var/lib/nginx /var/log/nginx \
     && rm -rf /var/cache/apk/*
+USER nginx
 EXPOSE 8080
 STOPSIGNAL SIGQUIT
 CMD ["nginx", "-g", "daemon off;"]

@@ -20,12 +20,15 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 
 	required := []string{
 		"CREATE TABLE IF NOT EXISTS events",
+		"ends_at TIMESTAMPTZ NOT NULL",
+		"events_time_window_check",
 		"capacity_type TEXT NOT NULL DEFAULT 'limited'",
 		"capacity INTEGER",
 		"allows_family BOOLEAN NOT NULL DEFAULT false",
 		"events_capacity_rules_check",
 		"CREATE TABLE IF NOT EXISTS event_versions",
 		"event_versions_capacity_rules_check",
+		"event_versions_time_window_check",
 		"CREATE TABLE IF NOT EXISTS event_assets",
 		"CREATE TABLE IF NOT EXISTS eligibility_rules",
 		"CREATE TABLE IF NOT EXISTS eligibility_rule_versions",
@@ -80,6 +83,8 @@ func TestSchemaIncludesTicketingCorrectnessConstraints(t *testing.T) {
 		"package_signature TEXT NOT NULL DEFAULT ''",
 		"CREATE TABLE IF NOT EXISTS report_exports",
 		"ALTER TABLE events ALTER COLUMN capacity DROP NOT NULL",
+		"ALTER TABLE events ADD COLUMN IF NOT EXISTS ends_at",
+		"UPDATE events SET ends_at = starts_at + interval '24 hours' WHERE ends_at IS NULL",
 		"ALTER TABLE events ADD CONSTRAINT events_capacity_rules_check",
 		"family_count INTEGER NOT NULL DEFAULT 0",
 		"registrations_family_count_check",
@@ -191,11 +196,13 @@ func TestMigrateAddsCapacityTypeColumnsToExistingEvents(t *testing.T) {
 	require.NoError(t, Migrate(ctx, pool))
 
 	var capacityType string
+	var endsAt time.Time
 	var capacity int
 	var allowsFamily bool
-	require.NoError(t, pool.QueryRow(ctx, `SELECT capacity_type, capacity, allows_family FROM events WHERE event_id = 'evt_legacy'`).
-		Scan(&capacityType, &capacity, &allowsFamily))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT capacity_type, ends_at, capacity, allows_family FROM events WHERE event_id = 'evt_legacy'`).
+		Scan(&capacityType, &endsAt, &capacity, &allowsFamily))
 	assert.Equal(t, "limited", capacityType)
+	assert.False(t, endsAt.IsZero())
 	assert.Equal(t, 25, capacity)
 	assert.False(t, allowsFamily)
 }
@@ -254,8 +261,8 @@ func TestEventCapacityConstraintsAcceptUnlimitedAndRejectInvalidRows(t *testing.
 
 	insertEvent := func(eventID string, capacityType string, capacity interface{}, allowsFamily bool) error {
 		_, err := pool.Exec(ctx, `INSERT INTO events
-			(event_id, title, starts_at, registration_start, registration_close, capacity_type, capacity, allows_family, status, created_by)
-			VALUES ($1, 'Capacity Test', now() + interval '7 days', now(), now() + interval '1 day', $2, $3, $4, 'published', 'admin-1')`,
+			(event_id, title, starts_at, ends_at, registration_start, registration_close, capacity_type, capacity, allows_family, status, created_by)
+			VALUES ($1, 'Capacity Test', now() + interval '7 days', now() + interval '7 days' + interval '2 hours', now(), now() + interval '1 day', $2, $3, $4, 'published', 'admin-1')`,
 			eventID, capacityType, capacity, allowsFamily)
 		return err
 	}
