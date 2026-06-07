@@ -4,6 +4,14 @@ tempo_trace_ids() {
   jq -r -f "$TEMPO_TRACE_IDS_FILTER" | awk '!seen[$0]++'
 }
 
+tempo_search_start() {
+  printf '%s' "$(($(date -u +%s) - ${CETS_PHASE3_TEMPO_SEARCH_LOOKBACK_SECONDS:-900}))"
+}
+
+tempo_search_end() {
+  printf '%s' "$(($(date -u +%s) + 60))"
+}
+
 tempo_trace_has_backend_route() {
   jq -e '
     (.batches // .resourceSpans // [])
@@ -73,7 +81,12 @@ tempo_trace_has_backend_error() {
 check_trace_ingest() {
   log "checking Tempo trace ingest"
   for _ in $(seq 1 24); do
-    traces=$(curl -fsS "$TEMPO_URL/api/search?tags=service.name%3Dcets-backend&limit=20" 2>/dev/null || true)
+    traces=$(curl -fsS --get \
+      --data-urlencode "tags=service.name=cets-backend cets.booking.stage=event_lock" \
+      --data-urlencode "limit=${CETS_PHASE3_TEMPO_HOT_PATH_LIMIT:-50}" \
+      --data-urlencode "start=$(tempo_search_start)" \
+      --data-urlencode "end=$(tempo_search_end)" \
+      "$TEMPO_URL/api/search" 2>/dev/null || true)
     for trace_id in $(printf '%s\n' "$traces" | tempo_trace_ids); do
       trace_detail=$(curl -fsS "$TEMPO_URL/api/traces/$trace_id" 2>/dev/null || true)
       if printf '%s\n' "$trace_detail" | tempo_trace_has_backend_route; then

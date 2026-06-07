@@ -168,6 +168,8 @@ func TestPhase3CapacityScriptRequiresDistinctReplicaSpread(t *testing.T) {
 	for _, fragment := range []string{
 		"Replica spread summary",
 		"## Replica Spread",
+		`local k6_summary="$ARTIFACT_DIR/k6-$RUN_ID-rps-$best_rps.json"`,
+		`jq -r --arg target_rps "$best_rps" -f "$K6_REPORT_FILTER" "$k6_summary"`,
 		`[ -s "$replica_spread" ] || write_replica_spread "$best_rps"`,
 		`require_replica_spread_summary "$replica_spread"`,
 		`print_replica_spread "$replica_spread"`,
@@ -194,7 +196,8 @@ func TestPhase3CapacityK6SearchHelpersAreSourced(t *testing.T) {
 	assert.Contains(t, helper, "candidate_passes() {")
 	assert.Contains(t, helper, "find_max_rps() {")
 	assert.Contains(t, helper, `"$K6_IMAGE" run --summary-export`)
-	assert.Contains(t, helper, `write_replica_spread "$rps"`)
+	assert.Contains(t, helper, `log "running k6 candidate rps=$rps duration=$DURATION base=$BASE_URL" >&2`)
+	assert.Contains(t, helper, `write_replica_spread "$rps" >&2`)
 	assert.Contains(t, helper, `last-pass-rps-$RUN_ID.txt`)
 	assert.Contains(t, helper, `last-fail-rps-$RUN_ID.txt`)
 	assert.Contains(t, helper, `while [ "$current" -le "$MAX_RPS" ]; do`)

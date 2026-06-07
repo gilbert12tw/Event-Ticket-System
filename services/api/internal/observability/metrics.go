@@ -205,6 +205,7 @@ func (r *Registry) WritePrometheus(ctx context.Context, w io.Writer, db any) {
 	r.writeBookingMetrics(w)
 	r.writeReservationMetrics(w)
 	r.writeRedisOperationMetrics(w)
+	r.writeRuntimeResourceMetrics(w)
 	writePoolMetrics(w, db)
 	writeSQLMetrics(ctx, w, db)
 }

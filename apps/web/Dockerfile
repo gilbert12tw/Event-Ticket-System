@@ -20,7 +20,17 @@ RUN wget -qO /etc/apk/keys/nginx_signing.rsa.pub https://nginx.org/keys/nginx_si
 COPY apps/web/nginx-otel-main.conf /etc/nginx/nginx.conf
 COPY apps/web/nginx.phase3.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /src/services/api/internal/httpapi/static /usr/share/nginx/html
-RUN chown -R nginx:nginx /etc/nginx/conf.d /usr/share/nginx/html /var/cache/nginx /var/log/nginx /var/run
+RUN mkdir -p /run/nginx /var/lib/nginx/tmp \
+    && touch /run/nginx.pid \
+    && chown -R nginx:nginx \
+        /etc/nginx/conf.d \
+        /usr/share/nginx/html \
+        /run/nginx \
+        /run/nginx.pid \
+        /var/cache/nginx \
+        /var/lib/nginx \
+        /var/log/nginx \
+        /var/run
 USER nginx
 EXPOSE 8080
 STOPSIGNAL SIGQUIT

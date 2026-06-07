@@ -145,7 +145,8 @@ func TestPhase3VerifyCapturesServiceGraphBaselineBeforeK6Load(t *testing.T) {
 	assert.Contains(t, script, `. "$ROOT_DIR/scripts/compose/phase3-verify-service-graph-evidence.sh"`)
 	assert.Contains(t, serviceGraph, "capture_service_graph_baseline() {")
 	assert.Contains(t, serviceGraph, "check_service_graph() {")
-	assert.Contains(t, serviceGraph, `prom_query "$SERVICE_GRAPH_INBOUND_QUERY"`)
+	assert.Contains(t, serviceGraph, `prom_query "$SERVICE_GRAPH_BACKEND_DEPENDENCY_QUERY"`)
+	assert.NotContains(t, serviceGraph, "SERVICE_GRAPH_INBOUND_QUERY")
 	assert.NotContains(t, script, "\ncheck_service_graph() {")
 	assert.NotContains(t, script, "\ncapture_service_graph_baseline() {")
 
