@@ -430,7 +430,9 @@ async function expectDeliveryEntry(
 }
 
 function compactRecordID(value: string) {
-  return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+  // Must match compactIdentifier() in features/notifications/pages.tsx so the
+  // live assertion searches for the same truncated text the UI renders.
+  return value.length <= 22 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
 async function expectNotificationEntry(

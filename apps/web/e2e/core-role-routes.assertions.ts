@@ -140,7 +140,7 @@ export async function expectNoHorizontalOverflow(page: Page) {
 
   const apiOverlaps = await page.evaluate(() => {
     const api = document.querySelector<HTMLElement>(".api-panel.collapsed");
-    if (api?.offsetParent === null || api === null) return [];
+    if (!api || api.offsetParent === null) return [];
     const apiBounds = api.getBoundingClientRect();
     const intersects = (target: DOMRect, source: DOMRect) =>
       target.left < source.right - 1 &&

@@ -134,6 +134,7 @@ async function resetDemoDB() {
       "admin",
       "run",
       "--rm",
+      "--no-deps",
       "db-reset",
     ],
     {

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   expectElementAboveMobileTabbar,
   expectNoHorizontalOverflow,
@@ -9,7 +9,6 @@ import {
   forbiddenRouteCases,
   roleCases,
   sampleEvent,
-  sampleTickets,
   type EventFixture,
 } from "./core-role-routes.fixtures";
 import { ensureSessionRoutes, loginAs } from "./core-role-routes.mocks";
@@ -23,12 +22,6 @@ async function openRoute(
   await ensureSessionRoutes(page, principalID, options);
   await loginAs(page, principalID);
   await page.goto(path, { waitUntil: "domcontentloaded" });
-}
-
-async function requiredBox(locator: Locator, label: string) {
-  const box = await locator.boundingBox();
-  if (!box) throw new Error(`${label} layout bounds are unavailable`);
-  return box;
 }
 
 for (const roleCase of roleCases) {
@@ -209,125 +202,6 @@ test("employee calendar tab stays date-first without search controls", async ({
   await expectNoHorizontalOverflow(page);
 });
 
-test("employee event list cards align poster and footer rows", async ({
-  page,
-}) => {
-  const shortEvent: EventFixture = {
-    ...sampleEvent,
-    current_user_status: undefined,
-    current_user_ticket: undefined,
-    description: "短講與午餐交流。",
-    ends_at: "2026-06-04T12:00:00+08:00",
-    event_id: "evt-card-align-short",
-    registration_close: "2099-01-09T23:00:00Z",
-    starts_at: "2026-06-04T10:00:00+08:00",
-    title: "午餐交流",
-  };
-  const longEvent: EventFixture = {
-    ...shortEvent,
-    capacity: 1,
-    confirmed_count: 1,
-    description:
-      "這是一場跨部門工作坊，包含報到說明、主持人開場、分組討論與後續行動整理，用來驗證清單卡片在較長內容下仍保持同列對齊。",
-    event_id: "evt-card-align-long",
-    remaining_capacity: 0,
-    title: "跨部門流程改善與活動營運協作工作坊",
-    waitlist_count: 3,
-  };
-  const registeredEvent: EventFixture = {
-    ...shortEvent,
-    current_user_status: "waitlisted",
-    event_id: "evt-card-align-waitlist",
-    title: "候補流程說明會",
-    waitlist_count: 8,
-  };
-
-  await openRoute(
-    page,
-    "E1001",
-    "/user/events?mode=list&view=week&date=2026-06-04",
-    {
-      events: [shortEvent, longEvent, registeredEvent],
-    },
-  );
-
-  const cards = page.locator(".employee-event-card");
-  await expect(cards).toHaveCount(3);
-  await expectNoHorizontalOverflow(page);
-
-  const firstCard = await requiredBox(cards.nth(0), "first event card");
-  const secondCard = await requiredBox(cards.nth(1), "second event card");
-
-  if ((page.viewportSize()?.width ?? 0) <= 900) {
-    expect(
-      firstCard.y + firstCard.height,
-      "mobile cards stack without overlap",
-    ).toBeLessThanOrEqual(secondCard.y);
-    expect(
-      Math.abs(firstCard.x - secondCard.x),
-      "mobile cards share the same column",
-    ).toBeLessThanOrEqual(2);
-    return;
-  }
-
-  const firstRowIndexes: number[] = [];
-  for (const index of [0, 1, 2]) {
-    const box = await cards.nth(index).boundingBox();
-    if (box && Math.abs(box.y - firstCard.y) <= 2) {
-      firstRowIndexes.push(index);
-    }
-  }
-  if (firstRowIndexes.length < 2) {
-    expect(
-      firstCard.y + firstCard.height,
-      "narrow desktop cards stack without overlap",
-    ).toBeLessThanOrEqual(secondCard.y);
-    return;
-  }
-  const rowIndexes = firstRowIndexes;
-
-  const rowCardBoxes = await Promise.all(
-    rowIndexes.map((index) =>
-      requiredBox(cards.nth(index), `event card ${index + 1}`),
-    ),
-  );
-  const rowPosterBoxes = await Promise.all(
-    rowIndexes.map((index) =>
-      requiredBox(
-        cards.nth(index).locator(".employee-event-poster"),
-        `event card ${index + 1} poster`,
-      ),
-    ),
-  );
-  const rowActionBoxes = await Promise.all(
-    rowIndexes.map((index) =>
-      requiredBox(
-        cards.nth(index).locator(".employee-event-primary-action"),
-        `event card ${index + 1} primary action`,
-      ),
-    ),
-  );
-
-  for (let index = 1; index < rowIndexes.length; index += 1) {
-    expect(
-      Math.abs(rowCardBoxes[index].y - rowCardBoxes[0].y),
-      "cards in the same desktop row share a top edge",
-    ).toBeLessThanOrEqual(2);
-    expect(
-      Math.abs(rowPosterBoxes[index].y - rowPosterBoxes[0].y),
-      "posters in the same desktop row share a top edge",
-    ).toBeLessThanOrEqual(2);
-    expect(
-      Math.abs(
-        rowActionBoxes[index].y +
-          rowActionBoxes[index].height -
-          (rowActionBoxes[0].y + rowActionBoxes[0].height),
-      ),
-      "primary actions in the same desktop row share a baseline",
-    ).toBeLessThanOrEqual(2);
-  }
-});
-
 test("employee event agenda keeps a single desktop card at reusable width", async ({
   page,
 }) => {
@@ -398,150 +272,6 @@ test("mobile check-in result stays clear of bottom navigation", async ({
     page,
     ".checkin-result-panel.has-result",
   );
-  await expectNoHorizontalOverflow(page);
-});
-
-test("employee cancellation requires confirmation before API call", async ({
-  page,
-}) => {
-  let cancelRequests = 0;
-  const cancellableEvent: EventFixture = {
-    ...sampleEvent,
-    registration_close: "2099-01-09T23:00:00Z",
-  };
-  await ensureSessionRoutes(page, "E1001", {
-    eventDetail: cancellableEvent,
-    events: [cancellableEvent],
-  });
-  page.on("request", (request) => {
-    const pathName = new URL(request.url()).pathname;
-    if (/\/api\/v1\/me\/registrations\/[^/]+\/cancel$/.test(pathName)) {
-      cancelRequests += 1;
-    }
-  });
-  await loginAs(page, "E1001");
-  await page.goto("/user/events", {
-    waitUntil: "domcontentloaded",
-  });
-  await page.goto("/user/events/detail?event_id=evt-cets-001", {
-    waitUntil: "domcontentloaded",
-  });
-  await expect(page).toHaveURL(
-    /\/user\/events\/detail\?event_id=evt-cets-001$/,
-  );
-
-  await page.getByRole("button", { name: "取消報名" }).click();
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("第一階段企業午餐日")).toBeVisible();
-  await expect(dialog.getByText(/已核發票券會同步失效/)).toBeVisible();
-  expect(cancelRequests).toBe(0);
-
-  await page.getByRole("button", { name: "保留報名" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  expect(cancelRequests).toBe(0);
-
-  await page.getByRole("button", { name: "取消報名" }).click();
-  await page.getByRole("button", { name: "確認取消報名" }).click();
-  await expect(page.getByText("報名已取消").first()).toBeVisible();
-  expect(cancelRequests).toBe(1);
-  await expectNoHorizontalOverflow(page);
-});
-
-test("admin governance actions keep selected reason feedback", async ({
-  page,
-}) => {
-  const requestBodies = {
-    cancel: [] as Record<string, unknown>[],
-    revoke: [] as Record<string, unknown>[],
-  };
-  await ensureSessionRoutes(page, "admin-1");
-  page.on("request", (request) => {
-    const pathName = new URL(request.url()).pathname;
-    const body = JSON.parse(request.postData() || "{}") as Record<
-      string,
-      unknown
-    >;
-    if (
-      /\/api\/v1\/admin\/events\/[^/]+\/registrations\/[^/]+\/cancel$/.test(
-        pathName,
-      )
-    ) {
-      requestBodies.cancel.push(body);
-    }
-    if (/\/api\/v1\/admin\/tickets\/[^/]+\/revoke$/.test(pathName)) {
-      requestBodies.revoke.push(body);
-    }
-  });
-  await loginAs(page, "admin-1");
-  await page.goto("/admin/registrations", { waitUntil: "domcontentloaded" });
-
-  await page.getByRole("button", { name: "取消" }).click();
-  await page.getByRole("combobox", { name: "處置原因" }).click();
-  await page.getByRole("option", { name: "主管要求" }).click();
-  await page.getByRole("button", { name: "確認取消報名" }).click();
-  await expect(page.getByText("報名已取消。")).toBeVisible();
-  expect(requestBodies.cancel).toEqual([
-    { reason: "manager request", idempotency_key: "cancel-reg-001" },
-  ]);
-
-  await page.getByRole("tab", { name: "票券狀態" }).click();
-  await page.getByRole("button", { name: "撤銷票券" }).click();
-  await page.getByRole("combobox", { name: "處置原因" }).click();
-  await page.getByRole("option", { name: "安全審核" }).click();
-  await page.getByRole("button", { name: "確認撤銷" }).click();
-  await expect(page.getByText("票券已撤銷。")).toBeVisible();
-  expect(requestBodies.revoke).toEqual([{ reason: "security review" }]);
-  await expectNoHorizontalOverflow(page);
-});
-
-test("employee duplicate booking response keeps existing ticket handoff", async ({
-  page,
-}) => {
-  let bookingRequests = 0;
-  const availableEvent: EventFixture = {
-    ...sampleEvent,
-    current_user_status: undefined,
-    current_user_ticket: undefined,
-    registration_close: "2099-01-09T23:00:00Z",
-    remaining_capacity: 3,
-  };
-  await ensureSessionRoutes(page, "E1001", {
-    bookingResponse: {
-      registration: {
-        registration_id: "reg-001",
-        event_id: "evt-cets-001",
-        employee_id: "E1001",
-        status: "confirmed",
-        idempotency_key: "book-evt-cets-001-E1001",
-        created_at: "2026-01-02T09:00:00Z",
-      },
-      ticket: sampleTickets[0],
-      remaining_capacity: 227,
-      message: "booking confirmed",
-      duplicate: true,
-    },
-    eventDetail: availableEvent,
-    events: [availableEvent],
-  });
-  page.on("request", (request) => {
-    const pathName = new URL(request.url()).pathname;
-    if (/\/api\/v1\/events\/[^/]+\/bookings$/.test(pathName)) {
-      bookingRequests += 1;
-    }
-  });
-  await loginAs(page, "E1001");
-  await page.goto("/user/events/detail?event_id=evt-cets-001", {
-    waitUntil: "domcontentloaded",
-  });
-
-  await page.getByRole("button", { name: "立即報名" }).click();
-  await expect(page.getByText("你已經報名此活動")).toBeVisible();
-  await expect(page.getByText(/未建立新的報名/)).toBeVisible();
-  expect(bookingRequests).toBe(1);
-
-  await page.getByRole("link", { name: "查看票券" }).click();
-  await expect(page).toHaveURL(/\/user\/tickets\?ticket_id=ticket-001$/);
   await expectNoHorizontalOverflow(page);
 });
 

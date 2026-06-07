@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
+
+// Coverage instrumentation slows renders enough that the 1000ms default for
+// findBy/waitFor occasionally times out. Raise it well below the Vitest test
+// timeout so async queries stay stable under load without masking real hangs.
+configure({ asyncUtilTimeout: 5000 });
 
 if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false;
