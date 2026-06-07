@@ -353,40 +353,40 @@ func createPublishedEvent(t *testing.T, service *Service, ctx context.Context, r
 	return event
 }
 
-func newIntegrationServiceWithLogger(t *testing.T, logger *slog.Logger) (*Service, func()) {
-	t.Helper()
+func newIntegrationServiceWithLogger(tb testing.TB, logger *slog.Logger) (*Service, func()) {
+	tb.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
+		tb.Skip("TEST_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, cleanup := newTicketingTestPool(t, ctx, databaseURL)
+	pool, cleanup := newTicketingTestPool(tb, ctx, databaseURL)
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		cleanup()
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 	service := NewService(pool, NewSigner(fmt.Sprintf("secret-%d", time.Now().UnixNano())), logger)
 	return service, cleanup
 }
 
-func newTicketingTestPool(t *testing.T, ctx context.Context, databaseURL string) (*pgxpool.Pool, func()) {
-	t.Helper()
+func newTicketingTestPool(tb testing.TB, ctx context.Context, databaseURL string) (*pgxpool.Pool, func()) {
+	tb.Helper()
 
 	adminPool, err := postgres.Connect(ctx, databaseURL)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	schema := fmt.Sprintf("ticketing_test_%d", time.Now().UnixNano())
 	quotedSchema := pgx.Identifier{schema}.Sanitize()
 	if _, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", quotedSchema)); err != nil {
 		adminPool.Close()
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		adminPool.Close()
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 	if cfg.ConnConfig.RuntimeParams == nil {
 		cfg.ConnConfig.RuntimeParams = map[string]string{}
@@ -395,12 +395,12 @@ func newTicketingTestPool(t *testing.T, ctx context.Context, databaseURL string)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		adminPool.Close()
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		adminPool.Close()
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 
 	return pool, func() {
