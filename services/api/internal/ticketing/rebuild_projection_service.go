@@ -35,16 +35,24 @@ type RebuildResult struct {
 //
 // Steps (all in one tx; any failure rolls back to the pre-rebuild state):
 //  1. aggregate counts + confirmed-only department breakdown from OLTP
-//  2. (dry-run stops here, writing nothing)
-//  3. clear (DELETE) + reinsert reporting_event_summary
-//  4. reset reporting_projection_offsets watermark to MAX(outbox_id)
-//  5. optional spot-check validation against OLTP (mismatch → rollback)
+//  2. read the rebuild watermark MAX(outbox_id) in the same snapshot
+//  3. (dry-run stops here, writing nothing)
+//  4. clear (DELETE) + reinsert reporting_event_summary, stamping the watermark
+//     into each row's last_event_offset
+//  5. reset reporting_projection_offsets watermark to MAX(outbox_id)
+//  6. optional spot-check validation against OLTP (mismatch → rollback)
+//
+// The transaction runs at REPEATABLE READ so the OLTP aggregate and the
+// watermark read observe one consistent snapshot. Without it a booking that
+// commits between the two reads would be aggregated by neither the rebuild
+// (snapshot too early) nor the worker (its outbox event sits at/below the
+// watermark and is suppressed), permanently dropping the registration.
 func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts RebuildOptions) (RebuildResult, error) {
 	if err := requireRole(actor, RoleSystemAdmin); err != nil {
 		return RebuildResult{}, err
 	}
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return RebuildResult{}, err
 	}
@@ -53,6 +61,11 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 	aggregated, err := aggregateFromOLTP(ctx, tx)
 	if err != nil {
 		return RebuildResult{}, fmt.Errorf("rebuild: aggregate from OLTP: %w", err)
+	}
+
+	offset, err := maxOutboxID(ctx, tx)
+	if err != nil {
+		return RebuildResult{}, fmt.Errorf("rebuild: read max outbox id: %w", err)
 	}
 
 	if opts.DryRun {
@@ -64,15 +77,11 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		return RebuildResult{}, fmt.Errorf("rebuild: clear summary: %w", err)
 	}
 	for _, row := range aggregated {
-		if err := insertRebuiltEventSummary(ctx, tx, row); err != nil {
+		if err := insertRebuiltEventSummary(ctx, tx, row, offset); err != nil {
 			return RebuildResult{}, fmt.Errorf("rebuild: insert %s: %w", row.EventID, err)
 		}
 	}
 
-	offset, err := maxOutboxID(ctx, tx)
-	if err != nil {
-		return RebuildResult{}, fmt.Errorf("rebuild: read max outbox id: %w", err)
-	}
 	if err := resetProjectionOffset(ctx, tx, projectionProjectionName, offset); err != nil {
 		return RebuildResult{}, fmt.Errorf("rebuild: reset offset: %w", err)
 	}

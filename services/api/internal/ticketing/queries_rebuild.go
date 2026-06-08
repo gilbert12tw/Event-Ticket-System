@@ -83,16 +83,21 @@ func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, err
 	return out, rows.Err()
 }
 
-// insertRebuiltEventSummary writes one aggregated row. last_event_offset is the
-// lowest sentinel `""` so any future outbox event (id > `""`) still applies via
-// the worker's offset guard; total_capacity is left at its column default.
-func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummaryRow) error {
+// insertRebuiltEventSummary writes one aggregated row. last_event_offset is set
+// to the rebuild watermark (MAX(outbox_id) at snapshot time), NOT the empty
+// sentinel: the projection worker claims outbox rows by publish_status, not by
+// the offset, so any still-pending event would otherwise re-apply on top of the
+// already-correct OLTP counts. Stamping the watermark makes the worker's guard
+// (excluded.last_event_offset > row.last_event_offset) suppress every event at
+// or below the watermark, and apply only genuinely newer events. total_capacity
+// is left at its column default.
+func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummaryRow, offset string) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO reporting_event_summary
 			(event_id, confirmed_count, cancelled_count, waitlist_count,
 			 department_breakdown, last_event_offset, updated_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, '', now())`,
-		row.EventID, row.ConfirmedCount, row.CancelledCount, row.WaitlistCount, row.BreakdownJSON)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, now())`,
+		row.EventID, row.ConfirmedCount, row.CancelledCount, row.WaitlistCount, row.BreakdownJSON, offset)
 	return err
 }
 

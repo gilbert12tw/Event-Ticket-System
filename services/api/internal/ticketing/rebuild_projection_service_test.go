@@ -335,6 +335,39 @@ func TestRebuildProjection_WritesAuditLog(t *testing.T) {
 	assert.NotContains(t, audits[0], "ENG1")
 }
 
+// Regression (HIGH): a rebuild performed while a matching projection outbox
+// event is still pending must not double-count once the worker drains that
+// event. The rebuild already counts the confirmed registration from OLTP, and
+// the worker claims outbox rows by publish_status (not by the offset), so the
+// pending booking.confirmed event would re-increment confirmed_count unless the
+// rebuilt row's last_event_offset is the watermark that suppresses it.
+func TestRebuildProjection_PendingOutboxNotDoubleCounted(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	seedRebuildEmployee(t, service, ctx, "ENG1", "Engineering")
+	seedRebuildEvent(t, service, ctx, "evtA")
+	seedRegistration(t, service, ctx, "r1", "evtA", "ENG1", "confirmed")
+	// The booking's projection event is committed atomically with the
+	// registration but has not yet been drained by the worker.
+	insertProjectionOutbox(t, service, ctx, "ob-1", "evtA", projectionInnerTypeBookingConfirmed, "Engineering")
+
+	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 1, readSummary(t, service, ctx, "evtA").ConfirmedCount)
+
+	// Draining the still-pending event must be a no-op: it is at/below the
+	// rebuild watermark, so the worker's offset guard suppresses it.
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	row := readSummary(t, service, ctx, "evtA")
+	assert.Equal(t, 1, row.ConfirmedCount, "pending outbox event must not double-count after rebuild")
+	assert.Equal(t, 1, row.DepartmentBreakdown["Engineering"])
+}
+
 // AC-7: a non-admin actor is rejected before any work happens.
 func TestRebuildProjection_RequiresSystemAdmin(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
