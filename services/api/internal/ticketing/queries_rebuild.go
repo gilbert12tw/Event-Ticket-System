@@ -26,10 +26,13 @@ type rebuildSummaryRow struct {
 	BreakdownJSON  []byte
 }
 
-// truncateEventSummary clears reporting_event_summary inside the rebuild
-// transaction so a rollback restores the pre-rebuild state.
-func truncateEventSummary(ctx context.Context, tx pgx.Tx) error {
-	_, err := tx.Exec(ctx, `TRUNCATE reporting_event_summary`)
+// clearEventSummary clears reporting_event_summary inside the rebuild
+// transaction so a rollback restores the pre-rebuild state. DELETE (not
+// TRUNCATE) is used deliberately: the table holds one tiny row per event, and
+// DELETE takes only a ROW EXCLUSIVE lock, so concurrent reporting reads and the
+// projection worker are not blocked by an ACCESS EXCLUSIVE lock.
+func clearEventSummary(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, `DELETE FROM reporting_event_summary`)
 	return err
 }
 
@@ -81,7 +84,7 @@ func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, err
 }
 
 // insertRebuiltEventSummary writes one aggregated row. last_event_offset is the
-// lowest sentinel (”) so any future outbox event (id > ”) still applies via
+// lowest sentinel `""` so any future outbox event (id > `""`) still applies via
 // the worker's offset guard; total_capacity is left at its column default.
 func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummaryRow) error {
 	_, err := tx.Exec(ctx, `
@@ -93,8 +96,8 @@ func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummar
 	return err
 }
 
-// maxOutboxID returns the lexicographic max outbox_id, or ” when the outbox is
-// empty. Used to reset the projection watermark after a full rebuild.
+// maxOutboxID returns the lexicographic max outbox_id, or `""` when the outbox
+// is empty. Used to reset the projection watermark after a full rebuild.
 func maxOutboxID(ctx context.Context, tx pgx.Tx) (string, error) {
 	var maxID string
 	err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(outbox_id), '') FROM outbox_events`).Scan(&maxID)

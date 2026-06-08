@@ -36,7 +36,7 @@ type RebuildResult struct {
 // Steps (all in one tx; any failure rolls back to the pre-rebuild state):
 //  1. aggregate counts + confirmed-only department breakdown from OLTP
 //  2. (dry-run stops here, writing nothing)
-//  3. TRUNCATE + reinsert reporting_event_summary
+//  3. clear (DELETE) + reinsert reporting_event_summary
 //  4. reset reporting_projection_offsets watermark to MAX(outbox_id)
 //  5. optional spot-check validation against OLTP (mismatch → rollback)
 func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts RebuildOptions) (RebuildResult, error) {
@@ -60,8 +60,8 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		return RebuildResult{RowsInserted: len(aggregated), DryRun: true}, nil
 	}
 
-	if err := truncateEventSummary(ctx, tx); err != nil {
-		return RebuildResult{}, fmt.Errorf("rebuild: truncate: %w", err)
+	if err := clearEventSummary(ctx, tx); err != nil {
+		return RebuildResult{}, fmt.Errorf("rebuild: clear summary: %w", err)
 	}
 	for _, row := range aggregated {
 		if err := insertRebuiltEventSummary(ctx, tx, row); err != nil {
@@ -75,6 +75,23 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 	}
 	if err := resetProjectionOffset(ctx, tx, projectionProjectionName, offset); err != nil {
 		return RebuildResult{}, fmt.Errorf("rebuild: reset offset: %w", err)
+	}
+
+	// Record the rebuild as a sensitive admin action in the same tx so the audit
+	// entry commits atomically with the projection rewrite. Metadata holds only
+	// counts/offset/flags — never employee PII.
+	auditID, err := newID("aud")
+	if err != nil {
+		return RebuildResult{}, err
+	}
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor,
+		"projection.rebuilt", "reporting_projection", projectionProjectionName,
+		map[string]interface{}{
+			"rows_inserted":   len(aggregated),
+			"offset_reset_to": offset,
+			"sample_validate": opts.SampleValidate,
+		})); err != nil {
+		return RebuildResult{}, fmt.Errorf("rebuild: audit: %w", err)
 	}
 
 	if opts.SampleValidate {

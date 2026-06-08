@@ -84,6 +84,24 @@ func summaryRowExists(t *testing.T, s *Service, ctx context.Context, eventID str
 	return exists
 }
 
+// rebuildAuditRows returns the metadata JSON of every projection.rebuilt audit
+// entry, in insertion order, for asserting on the sensitive-action audit trail.
+func rebuildAuditRows(t *testing.T, s *Service, ctx context.Context) []string {
+	t.Helper()
+	rows, err := s.db.Query(ctx,
+		`SELECT metadata::text FROM audit_logs WHERE action = 'projection.rebuilt' ORDER BY created_at`)
+	require.NoError(t, err)
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var meta string
+		require.NoError(t, rows.Scan(&meta))
+		out = append(out, meta)
+	}
+	require.NoError(t, rows.Err())
+	return out
+}
+
 // Test 1 + 3: fresh rebuild from empty projection populates counts from OLTP.
 func TestRebuildProjection_FreshBuild(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
@@ -289,6 +307,32 @@ func TestRebuildProjection_CountsNeverNegative(t *testing.T) {
 	assert.GreaterOrEqual(t, row.ConfirmedCount, 0)
 	assert.GreaterOrEqual(t, row.CancelledCount, 0)
 	assert.GreaterOrEqual(t, row.WaitlistCount, 0)
+}
+
+// A committed rebuild writes one projection.rebuilt audit entry (sensitive
+// action) whose metadata carries counts/flags but no employee PII; a dry-run
+// writes nothing.
+func TestRebuildProjection_WritesAuditLog(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	seedRebuildEmployee(t, service, ctx, "ENG1", "Engineering")
+	seedRebuildEvent(t, service, ctx, "evtA")
+	seedRegistration(t, service, ctx, "r1", "evtA", "ENG1", "confirmed")
+
+	// Dry-run must not write an audit entry.
+	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{DryRun: true})
+	require.NoError(t, err)
+	assert.Empty(t, rebuildAuditRows(t, service, ctx))
+
+	// Committed rebuild writes exactly one entry with non-PII metadata.
+	_, err = service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+	require.NoError(t, err)
+	audits := rebuildAuditRows(t, service, ctx)
+	require.Len(t, audits, 1)
+	assert.Contains(t, audits[0], "rows_inserted")
+	assert.NotContains(t, audits[0], "ENG1")
 }
 
 // AC-7: a non-admin actor is rejected before any work happens.

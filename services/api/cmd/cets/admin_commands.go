@@ -98,7 +98,10 @@ func adminCmd(cfg config.Config, logger *slog.Logger, args []string) error {
 // rebuildProjection rebuilds reporting_event_summary from PostgreSQL OLTP truth.
 // Behaviour is controlled by REBUILD_DRY_RUN and REBUILD_SAMPLE_VALIDATE env config.
 func rebuildProjection(cfg config.Config, logger *slog.Logger) error {
-	settings := config.LoadRebuildSettings()
+	settings, err := config.LoadRebuildSettings()
+	if err != nil {
+		return err
+	}
 	return withDatabase(cfg, cfg.ValidateDatabase, func(ctx context.Context, pool *pgxpool.Pool) error {
 		service := newTicketingService(pool, cfg, logger)
 		actor := ticketing.Actor{ID: "rebuild-projection", Role: ticketing.RoleSystemAdmin}
