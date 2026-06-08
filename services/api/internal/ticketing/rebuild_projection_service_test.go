@@ -20,9 +20,10 @@ var systemAdmin = Actor{ID: "rebuild-test", Role: RoleSystemAdmin}
 func seedRebuildEvent(t *testing.T, s *Service, ctx context.Context, eventID string) {
 	t.Helper()
 	_, err := s.db.Exec(ctx, `
-		INSERT INTO events (event_id, title, starts_at, registration_start, registration_close,
+		INSERT INTO events (event_id, title, starts_at, ends_at, registration_start, registration_close,
 		                    capacity_type, capacity, status, created_by)
-		VALUES ($1, $1, now()+interval '7 days', now()-interval '1 day', now()+interval '6 days',
+		VALUES ($1, $1, now()+interval '7 days', now()+interval '7 days'+interval '2 hours',
+		        now()-interval '1 day', now()+interval '6 days',
 		        'limited', 1000, 'published', 'admin-1')
 		ON CONFLICT (event_id) DO NOTHING`, eventID)
 	require.NoError(t, err)
