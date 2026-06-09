@@ -35,11 +35,12 @@ type RebuildResult struct {
 //
 // Steps (all in one tx; any failure rolls back to the pre-rebuild state):
 //  1. aggregate counts + confirmed-only department breakdown from OLTP
-//  2. read the rebuild watermark MAX(outbox_id) in the same snapshot
+//  2. read the rebuild watermark (composite projectionOffsetKey of the newest
+//     outbox event) in the same snapshot
 //  3. (dry-run stops here, writing nothing)
 //  4. clear (DELETE) + reinsert reporting_event_summary, stamping the watermark
 //     into each row's last_event_offset
-//  5. reset reporting_projection_offsets watermark to MAX(outbox_id)
+//  5. reset reporting_projection_offsets watermark to the same composite offset
 //  6. optional spot-check validation against OLTP (mismatch → rollback)
 //
 // The transaction runs at REPEATABLE READ so the OLTP aggregate and the
@@ -63,9 +64,9 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		return RebuildResult{}, fmt.Errorf("rebuild: aggregate from OLTP: %w", err)
 	}
 
-	offset, err := maxOutboxID(ctx, tx)
+	offset, err := rebuildWatermark(ctx, tx)
 	if err != nil {
-		return RebuildResult{}, fmt.Errorf("rebuild: read max outbox id: %w", err)
+		return RebuildResult{}, fmt.Errorf("rebuild: read watermark: %w", err)
 	}
 
 	if opts.DryRun {

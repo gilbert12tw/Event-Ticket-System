@@ -2,6 +2,8 @@ package ticketing
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -84,13 +86,16 @@ func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, err
 }
 
 // insertRebuiltEventSummary writes one aggregated row. last_event_offset is set
-// to the rebuild watermark (MAX(outbox_id) at snapshot time), NOT the empty
-// sentinel: the projection worker claims outbox rows by publish_status, not by
-// the offset, so any still-pending event would otherwise re-apply on top of the
-// already-correct OLTP counts. Stamping the watermark makes the worker's guard
+// to the rebuild watermark (the composite projectionOffsetKey of the newest
+// outbox event at snapshot time), NOT the empty sentinel: the projection worker
+// claims outbox rows by publish_status, not by the offset, so any still-pending
+// event would otherwise re-apply on top of the already-correct OLTP counts.
+// Stamping the watermark makes the worker's guard
 // (excluded.last_event_offset > row.last_event_offset) suppress every event at
-// or below the watermark, and apply only genuinely newer events. total_capacity
-// is left at its column default.
+// or below the watermark, and apply only genuinely newer events. The watermark
+// MUST use the same composite format the worker writes (see projectionOffsetKey)
+// or the two become lexicographically incomparable. total_capacity is left at
+// its column default.
 func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummaryRow, offset string) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO reporting_event_summary
@@ -101,12 +106,30 @@ func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummar
 	return err
 }
 
-// maxOutboxID returns the lexicographic max outbox_id, or `""` when the outbox
-// is empty. Used to reset the projection watermark after a full rebuild.
-func maxOutboxID(ctx context.Context, tx pgx.Tx) (string, error) {
-	var maxID string
-	err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(outbox_id), '') FROM outbox_events`).Scan(&maxID)
-	return maxID, err
+// rebuildWatermark returns the composite projectionOffsetKey of the newest
+// outbox event at snapshot time, or `""` when the outbox is empty. It is the
+// authoritative offset stamped into both reporting_event_summary.last_event_offset
+// and the reporting_projection_offsets watermark after a full rebuild.
+//
+// outbox_id is a random out_<hex> value and is NOT time-sortable, so the newest
+// event is selected by (created_at, outbox_id) — matching the worker's composite
+// key tiebreak — and formatted with the SAME helper the worker uses, keeping the
+// two offset representations lexicographically comparable under the upsert guard.
+func rebuildWatermark(ctx context.Context, tx pgx.Tx) (string, error) {
+	var createdAt time.Time
+	var outboxID string
+	err := tx.QueryRow(ctx, `
+		SELECT created_at, outbox_id
+		FROM outbox_events
+		ORDER BY created_at DESC, outbox_id DESC
+		LIMIT 1`).Scan(&createdAt, &outboxID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return projectionOffsetKey(createdAt, outboxID), nil
 }
 
 // resetProjectionOffset force-sets last_processed_outbox_id for a projection to
