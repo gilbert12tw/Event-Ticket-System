@@ -51,7 +51,7 @@ func TestBaremetalK8sLGTMProvisionsGrafanaDashboard(t *testing.T) {
 		"cets_db_pool_acquire_wait_seconds_total",
 		"cets_db_lock_waiting_sessions",
 		// Datasource UIDs — in every dashboard
-		`"uid": "Prometheus"`,
+		`"uid": "prometheus"`,
 		`"uid": "Loki"`,
 		`"uid": "Tempo"`,
 		`"uid": "Pyroscope"`,
@@ -102,10 +102,19 @@ func TestBaremetalK8sLGTMProvisionsGrafanaDashboard(t *testing.T) {
 	assert.False(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], "ingress-nginx -> frontend -> cets-backend"),
 		"k8s-06 must not imply API routes pass through frontend")
 
+	// Worker observability: PodMonitor + metrics port
+	assert.Contains(t, observability, "kind: PodMonitor", "observability.sh must define a PodMonitor for workers")
+	assert.Contains(t, observability, "name: cets-workers", "PodMonitor must be named cets-workers")
+	for _, kind := range []string{"worker-notification", "worker-projection", "worker-compensation", "worker-export"} {
+		assert.Contains(t, observability, kind, "PodMonitor must select %s pods", kind)
+	}
+	assert.Contains(t, app, "containerPort: 9090", "worker deployments must expose metrics port 9090")
+
 	verifyScript := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "66-verify-observability.sh"))
 	assert.Contains(t, verifyScript, `client="user",server="ingress-nginx"`)
 	assert.Contains(t, verifyScript, `client="user",server="cets-backend"`)
 	assert.NotContains(t, verifyScript, `client="ingress-nginx",server="cets-backend"`)
+	assert.Contains(t, verifyScript, `cets-worker-`, "verify script must check worker metrics")
 }
 
 func readK8sDashboardTexts(t *testing.T) map[string]string {

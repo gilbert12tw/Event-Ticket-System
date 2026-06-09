@@ -393,10 +393,22 @@ TEMPO_LOCAL_URL="http://127.0.0.1:$TEMPO_LOCAL_PORT"
 LOKI_LOCAL_URL="http://127.0.0.1:$LOKI_LOCAL_PORT"
 PYROSCOPE_LOCAL_URL="http://127.0.0.1:$PYROSCOPE_LOCAL_PORT"
 
+check_worker_metrics_targets() {
+  log "checking worker metrics targets in Prometheus"
+  for _ in $(seq 1 24); do
+    if prom_query_nonzero 'count(cets_build_info{service=~"cets-worker-.*"})'; then
+      return
+    fi
+    sleep 5
+  done
+  die "Prometheus did not return cets_build_info for any cets-worker-* service"
+}
+
 start_lgtm_port_forwards
 generate_backend_trace
 generate_dependency_trace
 check_backend_red_metrics
+check_worker_metrics_targets
 check_tempo_trace_ingest
 check_loki_trace_logs
 check_service_graph_metrics

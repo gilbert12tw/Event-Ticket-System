@@ -326,6 +326,28 @@ spec:
   - name: http
     port: 8080
     targetPort: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cets-workers
+  namespace: $CETS_NAMESPACE
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - worker-notification
+      - worker-projection
+      - worker-compensation
+      - worker-export
+  podMetricsEndpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
 EOF
 kubectl_bm apply -f "$GENERATED_DIR/cets-observability.yaml" || true
 }
