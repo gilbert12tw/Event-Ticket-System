@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   OfflineScanRecord,
   StoredCheckinPackage,
 } from "@/lib/offline/checkin-store";
 import { loadPackage } from "@/lib/offline/checkin-store";
+import { loadCachedAuthSession } from "@/lib/offline/auth-cache";
 import { Alert, BoundaryContext, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -69,7 +70,7 @@ export function OfflineCheckinBoundaryPage() {
     }
   }
 
-  const staffID = "";
+  const staffID = useMemo(() => loadCachedAuthSession()?.actor.id ?? "", []);
 
   return (
     <section className="content-grid">

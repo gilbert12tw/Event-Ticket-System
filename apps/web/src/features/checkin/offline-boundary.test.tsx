@@ -18,6 +18,7 @@ vi.mock("@/lib/api", async () => {
 
 vi.mock("@/lib/offline/auth-cache", () => ({
   isOffline: vi.fn(() => false),
+  loadCachedAuthSession: vi.fn(() => null),
 }));
 
 const mockSavePackage = vi.fn((pkg: OfflineCheckinPackage) =>

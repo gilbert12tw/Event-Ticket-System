@@ -35,6 +35,9 @@ export function OfflinePackageStep({
   const [restoredPkg, setRestoredPkg] = useState<StoredCheckinPackage | null>(
     null,
   );
+  const [activePackages, setActivePackages] = useState<StoredCheckinPackage[]>(
+    [],
+  );
   const deviceID =
     devicePreset === "custom" ? customDeviceID.trim() : devicePreset;
 
@@ -46,14 +49,20 @@ export function OfflinePackageStep({
   async function restoreFromIDB() {
     try {
       const active = await loadActivePackages();
-      if (active.length > 0) {
-        const latest = active.at(-1)!;
-        setRestoredPkg(latest);
-        onPackageReady(latest);
+      setActivePackages(active);
+      // Auto-select only when unambiguous; with multiple batches let the user
+      // choose explicitly instead of silently picking one.
+      if (active.length === 1) {
+        selectActivePackage(active[0]);
       }
     } catch {
       /* IDB unavailable */
     }
+  }
+
+  function selectActivePackage(pkg: StoredCheckinPackage) {
+    setRestoredPkg(pkg);
+    onPackageReady(pkg);
   }
 
   async function loadEvents() {
@@ -84,8 +93,8 @@ export function OfflinePackageStep({
     try {
       const next = await offlineCheckinPackage(eventID.trim(), deviceID);
       const stored = await savePackage(next, staffID);
-      setRestoredPkg(stored);
-      onPackageReady(stored);
+      setActivePackages(await loadActivePackages());
+      selectActivePackage(stored);
       setMessage(
         `已下載批次 ${next.batch_id}，共 ${next.ticket_count} 張票券。`,
       );
@@ -105,7 +114,9 @@ export function OfflinePackageStep({
         <div className="section-heading">
           <div>
             <h2>離線名單</h2>
-            <p>先下載活動票券清單，避免在離線端保留完整明文票券資訊。</p>
+            <p>
+              先下載活動票券名單以供離線比對；同步完成後會自動清除裝置上的明文票券與名單資料。
+            </p>
           </div>
           <Button
             variant="outline"
@@ -116,6 +127,23 @@ export function OfflinePackageStep({
             重新載入活動
           </Button>
         </div>
+        {activePackages.length > 1 && (
+          <SelectField
+            label="已下載離線名單"
+            value={restoredPkg?.batch_id ?? ""}
+            options={[
+              { value: "", label: "選擇要使用的批次" },
+              ...activePackages.map((p) => ({
+                value: p.batch_id,
+                label: `批次 ${p.batch_id}（${p.package.ticket_count} 張）`,
+              })),
+            ]}
+            onChange={(value) => {
+              const chosen = activePackages.find((p) => p.batch_id === value);
+              if (chosen) selectActivePackage(chosen);
+            }}
+          />
+        )}
         <SelectField
           label="活動"
           value={eventID}

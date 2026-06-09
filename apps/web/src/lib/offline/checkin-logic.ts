@@ -61,9 +61,9 @@ export function buildSyncPayload(stored: StoredCheckinPackage) {
     device_id: stored.package.device_id,
     package_signature: stored.package.package_signature,
     scans: stored.scans
-      .filter((s) => s.sync_status === "syncing")
+      .filter((s) => s.sync_status === "syncing" && Boolean(s.signed_token))
       .map((s) => ({
-        signed_token: s.signed_token,
+        signed_token: s.signed_token ?? "",
         scanned_at: s.scanned_at,
       })),
   };

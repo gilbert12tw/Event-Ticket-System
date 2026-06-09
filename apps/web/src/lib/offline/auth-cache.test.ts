@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   cacheAuthSession,
+  cacheProviderToken,
   clearCachedAuthSession,
+  clearCachedProviderToken,
   isOffline,
   loadCachedAuthSession,
+  loadCachedProviderToken,
 } from "./auth-cache";
 import type { AuthSession } from "@/lib/api";
 
@@ -55,6 +58,33 @@ describe("auth-cache", () => {
     cacheAuthSession(fakeSession());
     clearCachedAuthSession();
     expect(loadCachedAuthSession()).toBeNull();
+  });
+
+  it("round-trips a provider token that has not expired", () => {
+    cacheProviderToken("tok-123", "2999-01-01T00:00:00Z");
+    expect(loadCachedProviderToken()).toBe("tok-123");
+  });
+
+  it("returns null for an expired provider token and clears it", () => {
+    cacheProviderToken("tok-expired", "2000-01-01T00:00:00Z");
+    expect(loadCachedProviderToken()).toBeNull();
+    expect(localStorage.getItem("cets-provider-token")).toBeNull();
+  });
+
+  it("returns null when no provider token cached", () => {
+    expect(loadCachedProviderToken()).toBeNull();
+  });
+
+  it("ignores an empty provider token", () => {
+    cacheProviderToken("", "2999-01-01T00:00:00Z");
+    expect(loadCachedProviderToken()).toBeNull();
+  });
+
+  it("keeps a token with no expiry and clears on demand", () => {
+    cacheProviderToken("tok-no-exp", "");
+    expect(loadCachedProviderToken()).toBe("tok-no-exp");
+    clearCachedProviderToken();
+    expect(loadCachedProviderToken()).toBeNull();
   });
 
   it("isOffline reflects navigator.onLine", () => {

@@ -32,6 +32,9 @@ export function OfflineScanStep({
   const [lastResult, setLastResult] = useState<OfflineScanRecord | null>(null);
   const [manualInput, setManualInput] = useState("");
   const [processing, setProcessing] = useState(false);
+  // Synchronous guard: `processing` state is captured in the closure and lags
+  // behind rapid camera re-scans, so the ref is the real concurrency lock.
+  const processingRef = useRef(false);
   const scansRef = useRef(stored.scans);
   scansRef.current = stored.scans;
 
@@ -42,10 +45,11 @@ export function OfflineScanStep({
 
   const handleToken = useCallback(
     async (token: string) => {
-      if (processing || isClosed) return;
+      if (processingRef.current || isClosed) return;
       const trimmed = token.trim();
       if (!trimmed) return;
 
+      processingRef.current = true;
       setProcessing(true);
       try {
         const judgment = await judgeOfflineScan(trimmed, pkg, scansRef.current);
@@ -70,10 +74,11 @@ export function OfflineScanStep({
       } catch {
         /* scan processing error — ignore for demo */
       } finally {
+        processingRef.current = false;
         setProcessing(false);
       }
     },
-    [pkg, stored.batch_id, onScansChanged, processing, isClosed],
+    [pkg, stored.batch_id, onScansChanged, isClosed],
   );
 
   async function handleManualBatch() {

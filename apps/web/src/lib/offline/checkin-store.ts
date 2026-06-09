@@ -9,7 +9,8 @@ const STORE = "checkin-packages";
 
 export type OfflineScanRecord = {
   local_scan_id: string;
-  signed_token: string;
+  // Cleared after a successful sync to avoid retaining plaintext tokens on the device.
+  signed_token?: string;
   token_hash: string;
   scanned_at: string;
   local_status: "accepted" | "duplicate" | "conflict";
@@ -65,42 +66,51 @@ export async function addScanRecord(
 ): Promise<void> {
   const stored = await loadPackage(batchID);
   if (!stored) return;
-  stored.scans.push(record);
-  await putItem(STORE, stored);
+  const updated: StoredCheckinPackage = {
+    ...stored,
+    scans: [...stored.scans, record],
+  };
+  await putItem(STORE, updated);
 }
 
+export type SyncUpdateResult = {
+  stored: StoredCheckinPackage;
+  complete: boolean;
+};
+
+// The backend replays scans in request order (see replayOfflineSync), so
+// results map positionally onto the scans we sent as "syncing". `complete` is
+// true only when every syncing scan received a result; otherwise unmatched
+// scans stay "syncing" so the next sync retries them and the batch is not
+// closed prematurely.
 export async function updateScansFromSync(
   batchID: string,
   results: CheckinResponse[],
-): Promise<StoredCheckinPackage | undefined> {
+): Promise<SyncUpdateResult | undefined> {
   const stored = await loadPackage(batchID);
   if (!stored) return undefined;
 
-  const resultByHash = new Map<string, CheckinResponse>();
-  for (const r of results) {
-    const matchingScan = stored.scans.find(
-      (s) => s.sync_status === "syncing" && !resultByHash.has(s.token_hash),
-    );
-    if (matchingScan) {
-      resultByHash.set(matchingScan.token_hash, r);
-    }
-  }
-
+  const now = new Date().toISOString();
   let resultIdx = 0;
-  for (const scan of stored.scans) {
-    if (scan.sync_status !== "syncing") continue;
+  const scans = stored.scans.map((scan) => {
+    if (scan.sync_status !== "syncing") return scan;
     const result = results[resultIdx++];
-    if (!result) continue;
-    scan.server_status = result.status;
-    scan.server_reason_code = result.reason_code;
-    scan.server_conflict_reason = result.conflict_reason;
-    scan.server_checkin_id = result.checkin_id;
-    scan.sync_status = "synced";
-    scan.updated_at = new Date().toISOString();
-  }
+    if (!result) return scan;
+    return {
+      ...scan,
+      server_status: result.status,
+      server_reason_code: result.reason_code,
+      server_conflict_reason: result.conflict_reason,
+      server_checkin_id: result.checkin_id,
+      sync_status: "synced" as const,
+      updated_at: now,
+    };
+  });
 
-  await putItem(STORE, stored);
-  return stored;
+  const complete = !scans.some((s) => s.sync_status === "syncing");
+  const updated: StoredCheckinPackage = { ...stored, scans };
+  await putItem(STORE, updated);
+  return { stored: updated, complete };
 }
 
 export async function markScansAsSyncing(
@@ -108,31 +118,51 @@ export async function markScansAsSyncing(
 ): Promise<StoredCheckinPackage | undefined> {
   const stored = await loadPackage(batchID);
   if (!stored) return undefined;
-  for (const scan of stored.scans) {
-    if (scan.sync_status === "queued") {
-      scan.sync_status = "syncing";
-      scan.updated_at = new Date().toISOString();
-    }
-  }
-  await putItem(STORE, stored);
-  return stored;
+  const now = new Date().toISOString();
+  const scans = stored.scans.map((scan) =>
+    scan.sync_status === "queued" || scan.sync_status === "sync_failed"
+      ? { ...scan, sync_status: "syncing" as const, updated_at: now }
+      : scan,
+  );
+  const updated: StoredCheckinPackage = { ...stored, scans };
+  await putItem(STORE, updated);
+  return updated;
 }
 
 export async function markScansSyncFailed(batchID: string): Promise<void> {
   const stored = await loadPackage(batchID);
   if (!stored) return;
-  for (const scan of stored.scans) {
-    if (scan.sync_status === "syncing") {
-      scan.sync_status = "sync_failed";
-      scan.updated_at = new Date().toISOString();
-    }
-  }
-  await putItem(STORE, stored);
+  const now = new Date().toISOString();
+  const scans = stored.scans.map((scan) =>
+    scan.sync_status === "syncing"
+      ? { ...scan, sync_status: "sync_failed" as const, updated_at: now }
+      : scan,
+  );
+  await putItem(STORE, { ...stored, scans });
 }
 
+// Close a fully-synced batch and purge plaintext PII from the device: the
+// signed tokens and holder snapshots are no longer needed once results are in.
+// token_hash + server_* fields are retained for the audit/result view.
 export async function markBatchSynced(batchID: string): Promise<void> {
   const stored = await loadPackage(batchID);
   if (!stored) return;
-  stored.status = "synced";
-  await putItem(STORE, stored);
+  const scans = stored.scans.map(
+    ({
+      signed_token: _signed_token,
+      matched_ticket: _matched_ticket,
+      ...rest
+    }) => rest,
+  );
+  const purgedPackage: OfflineCheckinPackage = {
+    ...stored.package,
+    tickets: [],
+  };
+  const updated: StoredCheckinPackage = {
+    ...stored,
+    status: "synced",
+    scans,
+    package: purgedPackage,
+  };
+  await putItem(STORE, updated);
 }

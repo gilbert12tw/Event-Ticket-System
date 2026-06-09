@@ -6,6 +6,7 @@ import {
   readiness,
   selectMockProfile,
   setApiObserver,
+  setProviderToken,
 } from "@/lib/api";
 import type {
   ApiLogEntry,
@@ -27,8 +28,10 @@ import type { RouteKey } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
 import {
   cacheAuthSession,
+  clearCachedAuthSession,
   isOffline,
   loadCachedAuthSession,
+  loadCachedProviderToken,
 } from "@/lib/offline/auth-cache";
 import { Alert, DebugChromeGate, DebugToggle } from "@/components/shared";
 import { LoadingScreen, StatusPanel } from "@/components/layout";
@@ -150,6 +153,10 @@ function App() {
         } else if (isOffline()) {
           const cached = loadCachedAuthSession();
           if (cached) {
+            // Restore the persisted provider token so the reconnect sync is
+            // authenticated after a PWA restart / offline reload.
+            const cachedToken = loadCachedProviderToken();
+            if (cachedToken) setProviderToken(cachedToken);
             setAuth(cached);
             setAuthMessage("離線模式：使用已儲存的身分");
             return;
@@ -213,6 +220,9 @@ function App() {
   function handleSwitchProfile() {
     setAuthMessage("");
     clearProviderToken();
+    // Drop the cached identity too, so an offline reload after switching does
+    // not restore the previous operator's session/PII.
+    clearCachedAuthSession();
     setAuth(null);
     navigate(routePath("user-events"));
   }

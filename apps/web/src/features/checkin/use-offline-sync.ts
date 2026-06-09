@@ -45,10 +45,18 @@ export function useOfflineSync(batchID: string | undefined) {
       const result = await syncOfflineCheckins(payload);
       setSyncResult(result);
 
-      const updated = await updateScansFromSync(batchID, result.results);
-      await markBatchSynced(batchID);
-      setSyncState("synced");
-      return updated;
+      const update = await updateScansFromSync(batchID, result.results);
+      // Only close (and purge) the batch when every syncing scan got a result;
+      // otherwise leave unmatched scans as "syncing" and surface a retry prompt
+      // instead of falsely reporting the sync as complete.
+      if (update?.complete) {
+        await markBatchSynced(batchID);
+        setSyncState("synced");
+        return await loadPackage(batchID);
+      }
+      setSyncState("error");
+      setSyncError("部分掃描未收到伺服器回應，請重新同步。");
+      return update?.stored;
     } catch (error) {
       await markScansSyncFailed(batchID).catch(() => {});
       setSyncState("error");
@@ -70,13 +78,16 @@ export function useOfflineSync(batchID: string | undefined) {
       }
     };
 
-    globalThis.addEventListener("online", trySync);
-    document.addEventListener("visibilitychange", () => {
+    const onVisible = () => {
       if (document.visibilityState === "visible") trySync();
-    });
+    };
+
+    globalThis.addEventListener("online", trySync);
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       globalThis.removeEventListener("online", trySync);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [batchID, syncNow]);
 
