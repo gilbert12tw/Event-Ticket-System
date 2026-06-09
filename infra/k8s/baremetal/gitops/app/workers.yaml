@@ -21,6 +21,9 @@ spec:
           image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
           env:
             - name: WORKER_KINDS
               value: notification
@@ -61,6 +64,9 @@ spec:
           image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
           env:
             - name: WORKER_KINDS
               value: projection
@@ -101,6 +107,9 @@ spec:
           image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
           env:
             - name: WORKER_KINDS
               value: compensation
@@ -141,6 +150,9 @@ spec:
           image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
           env:
             - name: WORKER_KINDS
               value: export
