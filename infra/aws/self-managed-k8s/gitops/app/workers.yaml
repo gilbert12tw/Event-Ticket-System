@@ -16,12 +16,16 @@ spec:
     spec:
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
             - name: WORKER_KINDS
               value: "notification"
+            - name: OTEL_SERVICE_NAME
+              value: "cets-worker-notification"
+            - name: PYROSCOPE_APPLICATION_NAME
+              value: "cets-worker-notification"
           envFrom:
             - configMapRef:
                 name: cets-config
@@ -46,12 +50,16 @@ spec:
     spec:
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
             - name: WORKER_KINDS
               value: "projection"
+            - name: OTEL_SERVICE_NAME
+              value: "cets-worker-projection"
+            - name: PYROSCOPE_APPLICATION_NAME
+              value: "cets-worker-projection"
           envFrom:
             - configMapRef:
                 name: cets-config
@@ -76,12 +84,16 @@ spec:
     spec:
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
             - name: WORKER_KINDS
               value: "compensation"
+            - name: OTEL_SERVICE_NAME
+              value: "cets-worker-compensation"
+            - name: PYROSCOPE_APPLICATION_NAME
+              value: "cets-worker-compensation"
           envFrom:
             - configMapRef:
                 name: cets-config
@@ -106,12 +118,16 @@ spec:
     spec:
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
             - name: WORKER_KINDS
               value: "export"
+            - name: OTEL_SERVICE_NAME
+              value: "cets-worker-export"
+            - name: PYROSCOPE_APPLICATION_NAME
+              value: "cets-worker-export"
           envFrom:
             - configMapRef:
                 name: cets-config

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -80,6 +79,7 @@ type Config struct {
 	OTelEndpoint                    string
 	OTelServiceName                 string
 	OTelServiceVersion              string
+	CETSReplicaID                   string
 	PyroscopeEnabled                bool
 	PyroscopeAddress                string
 	PyroscopeAppName                string
@@ -147,11 +147,22 @@ func Load() Config {
 		OTelEndpoint:                    strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
 		OTelServiceName:                 otelServiceName,
 		OTelServiceVersion:              getEnv("OTEL_SERVICE_VERSION", "dev"),
+		CETSReplicaID:                   replicaIDFromEnv(),
 		PyroscopeEnabled:                parseBoolEnv("PYROSCOPE_ENABLED", "false", &loadErrors),
 		PyroscopeAddress:                strings.TrimSpace(os.Getenv("PYROSCOPE_SERVER_ADDRESS")),
 		PyroscopeAppName:                getEnv("PYROSCOPE_APPLICATION_NAME", otelServiceName),
 		loadErrors:                      loadErrors,
 	}
+}
+
+func replicaIDFromEnv() string {
+	if replica := strings.TrimSpace(os.Getenv("CETS_REPLICA_ID")); replica != "" {
+		return replica
+	}
+	if hostname := strings.TrimSpace(os.Getenv("HOSTNAME")); hostname != "" {
+		return hostname
+	}
+	return "unknown"
 }
 
 func (c Config) ValidateForServe() error {
@@ -173,7 +184,7 @@ func (c Config) ValidateForServe() error {
 	if err := c.validateRuntimeObservability(); err != nil {
 		return err
 	}
-	if c.isProduction() {
+	if c.IsProduction() {
 		if err := c.validateProductionAuth(); err != nil {
 			return err
 		}
@@ -278,7 +289,7 @@ func (c Config) validateWorkerMailer() error {
 }
 
 func (c Config) validateProductionWorker() error {
-	if !c.isProduction() {
+	if !c.IsProduction() {
 		return nil
 	}
 	if err := validateProductionSecret("TOKEN_SIGNING_SECRET", c.TokenSigningSecret, localTokenSecret, demoTokenSecret); err != nil {
@@ -287,7 +298,8 @@ func (c Config) validateProductionWorker() error {
 	return c.validateProductionBackingServices()
 }
 
-func (c Config) isProduction() bool {
+// IsProduction reports whether APP_ENV selects the production profile.
+func (c Config) IsProduction() bool {
 	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "production")
 }
 
@@ -361,140 +373,4 @@ func (c Config) validateProductionBackingServices() error {
 		return errors.New("MAILER_PORT must be positive")
 	}
 	return nil
-}
-
-func getEnv(key string, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func parseBoolEnv(key string, fallback string, loadErrors *[]string) bool {
-	value := getEnv(key, fallback)
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a boolean, got %q", key, value))
-		return false
-	}
-	return parsed
-}
-
-func parseDurationMSEnv(key string, fallback string, loadErrors *[]string) time.Duration {
-	value := getEnv(key, fallback)
-	ms, err := strconv.Atoi(value)
-	if err != nil || ms <= 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of milliseconds, got %q", key, value))
-		return 5 * time.Second
-	}
-	return time.Duration(ms) * time.Millisecond
-}
-
-func parseNonNegativeDurationSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
-	value := getEnv(key, fallback)
-	seconds, err := strconv.Atoi(value)
-	if err != nil || seconds < 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a non-negative integer of seconds, got %q", key, value))
-		return 30 * time.Second
-	}
-	return time.Duration(seconds) * time.Second
-}
-
-func parsePositiveDurationSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
-	value := getEnv(key, fallback)
-	seconds, err := strconv.Atoi(value)
-	if err != nil || seconds <= 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of seconds, got %q", key, value))
-		fallbackValue, fallbackErr := strconv.Atoi(fallback)
-		if fallbackErr != nil || fallbackValue <= 0 {
-			return time.Second
-		}
-		return time.Duration(fallbackValue) * time.Second
-	}
-	return time.Duration(seconds) * time.Second
-}
-
-func parseSecondsEnv(key string, fallback string, loadErrors *[]string) time.Duration {
-	value := getEnv(key, fallback)
-	secs, err := strconv.Atoi(value)
-	if err != nil || secs <= 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer of seconds, got %q", key, value))
-		return 0
-	}
-	return time.Duration(secs) * time.Second
-}
-
-func parseOnOffEnv(key string, fallback string, loadErrors *[]string) bool {
-	value := strings.ToLower(getEnv(key, fallback))
-	switch value {
-	case "on", "true", "1", "yes":
-		return true
-	case "off", "false", "0", "no", "":
-		return false
-	default:
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be one of on|off, got %q", key, value))
-		return false
-	}
-}
-
-func parseBookingContentionStrategyEnv(loadErrors *[]string) string {
-	value := strings.ToLower(getEnv("BOOKING_CONTENTION_STRATEGY", "phase1"))
-	switch value {
-	case "phase1", "advisory":
-		return value
-	default:
-		*loadErrors = append(*loadErrors, fmt.Sprintf("BOOKING_CONTENTION_STRATEGY must be one of phase1|advisory, got %q", value))
-		return "phase1"
-	}
-}
-
-func parsePositiveIntEnv(key string, fallback string, loadErrors *[]string) int {
-	value := getEnv(key, fallback)
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a positive integer, got %q", key, value))
-		fallbackValue, fallbackErr := strconv.Atoi(fallback)
-		if fallbackErr != nil || fallbackValue <= 0 {
-			return 1
-		}
-		return fallbackValue
-	}
-	return parsed
-}
-
-func parsePositiveIntEnvAlias(primary string, legacy string, fallback string, loadErrors *[]string) int {
-	if strings.TrimSpace(os.Getenv(primary)) != "" {
-		return parsePositiveIntEnv(primary, fallback, loadErrors)
-	}
-	if strings.TrimSpace(os.Getenv(legacy)) != "" {
-		return parsePositiveIntEnv(legacy, fallback, loadErrors)
-	}
-	return parsePositiveIntEnv(primary, fallback, loadErrors)
-}
-
-func parseNonNegativeIntEnv(key string, fallback string, loadErrors *[]string) int {
-	value := getEnv(key, fallback)
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < 0 {
-		*loadErrors = append(*loadErrors, fmt.Sprintf("%s must be a non-negative integer, got %q", key, value))
-		fallbackValue, fallbackErr := strconv.Atoi(fallback)
-		if fallbackErr != nil || fallbackValue < 0 {
-			return 0
-		}
-		return fallbackValue
-	}
-	return parsed
-}
-
-func RedactedDatabaseURL(databaseURL string) string {
-	if databaseURL == "" {
-		return ""
-	}
-	at := strings.LastIndex(databaseURL, "@")
-	schemeEnd := strings.Index(databaseURL, "://")
-	if at == -1 || schemeEnd == -1 || schemeEnd > at {
-		return databaseURL
-	}
-	return fmt.Sprintf("%s://***:***%s", databaseURL[:schemeEnd], databaseURL[at:])
 }

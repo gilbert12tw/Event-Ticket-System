@@ -72,9 +72,8 @@ TEMPO_TRACE_EVIDENCE="$ARTIFACT_DIR/tempo-trace-$RUN_ID.json"
 TEMPO_ERROR_TRACE_EVIDENCE="$ARTIFACT_DIR/tempo-error-trace-$RUN_ID.json"
 SERVICE_GRAPH_EVIDENCE="$ARTIFACT_DIR/prometheus-service-graph-$RUN_ID.json"
 SERVICE_GRAPH_BACKEND_DEPENDENCY_EVIDENCE="$ARTIFACT_DIR/prometheus-service-graph-backend-dependency-$RUN_ID.json"
-SERVICE_GRAPH_INBOUND_QUERY='sum(traces_service_graph_request_total{server="cets-backend"})'
-SERVICE_GRAPH_BACKEND_DEPENDENCY_QUERY='sum(traces_service_graph_request_total{client="cets-backend"})'
-SERVICE_GRAPH_INBOUND_BASELINE=0
+SERVICE_GRAPH_WINDOW=${CETS_PHASE3_SERVICE_GRAPH_WINDOW:-30m}
+SERVICE_GRAPH_BACKEND_DEPENDENCY_QUERY="sum(increase(traces_service_graph_request_total{client=\"cets-backend\"}[$SERVICE_GRAPH_WINDOW]))"
 SERVICE_GRAPH_BACKEND_DEPENDENCY_BASELINE=0
 PYROSCOPE_PROFILE_EVIDENCE="$ARTIFACT_DIR/pyroscope-profile-$RUN_ID.json"
 LOKI_TRACE_LOG_EVIDENCE="$ARTIFACT_DIR/loki-trace-logs-$RUN_ID.json"

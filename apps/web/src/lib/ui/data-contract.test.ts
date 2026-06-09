@@ -49,11 +49,13 @@ const viewGroups = [
 const tones = new Set(["ok", "warn", "fail", "info", "neutral"]);
 const optionData = options as unknown as Record<string, readonly unknown[][]>;
 const messageData = messages as Record<string, string>;
+const sortAlphabetically = (left: string, right: string) =>
+  left.localeCompare(right);
 
 describe("ui data contracts", () => {
   it("keeps option and status groups available to options.ts", () => {
-    expect(Object.keys(optionData).sort()).toEqual(
-      [...optionGroups, ...viewGroups].sort(),
+    expect(Object.keys(optionData).sort(sortAlphabetically)).toEqual(
+      [...optionGroups, ...viewGroups].sort(sortAlphabetically),
     );
   });
 

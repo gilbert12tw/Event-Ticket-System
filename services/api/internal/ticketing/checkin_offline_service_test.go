@@ -40,7 +40,7 @@ func TestSyncOfflineCheckinsValidatesBatchOwnershipBeforeScans(t *testing.T) {
 				EventID:          tt.eventID,
 				DeviceID:         tt.deviceID,
 				PackageSignature: pkg.PackageSignature,
-				Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: time.Now().UTC()}},
+				Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: event.StartsAt}},
 			})
 			require.Error(t, err, "expected ownership error")
 			assert.Equal(t, tt.wantError, ErrorStatus(err))
@@ -100,7 +100,7 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	assert.NotEmpty(t, pkg.Tickets[0].Holder.DisplayName)
 	assert.NotEmpty(t, pkg.Tickets[0].Holder.Department)
 	assert.NotEmpty(t, pkg.Tickets[0].Holder.City)
-	scannedAt := time.Date(2026, 6, 2, 10, 12, 13, 123456789, time.UTC)
+	scannedAt := event.StartsAt
 	scans := []OfflineCheckinScanInput{
 		{SignedToken: "bad.token", ScannedAt: scannedAt.Add(time.Second)},
 		{SignedToken: otherTicket.SignedToken, ScannedAt: scannedAt.Add(2 * time.Second)},
@@ -186,7 +186,7 @@ func TestSyncOfflineCheckinsRecordsMissingTicketForValidToken(t *testing.T) {
 		EventID:          event.EventID,
 		DeviceID:         "gate-1",
 		PackageSignature: pkg.PackageSignature,
-		Scans:            []OfflineCheckinScanInput{{SignedToken: missingToken, ScannedAt: time.Now().UTC()}},
+		Scans:            []OfflineCheckinScanInput{{SignedToken: missingToken, ScannedAt: event.StartsAt}},
 	})
 
 	require.NoError(t, err)
@@ -211,7 +211,7 @@ func TestSyncOfflineCheckinsKeepsFirstCommitWinsForRepeatedScans(t *testing.T) {
 	event, ticket := createOfflineSyncTicket(t, service, ctx, "First Commit Wins", "E1001", "first-commit-ticket")
 	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
 	require.NoError(t, err)
-	firstScannedAt := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	firstScannedAt := event.StartsAt
 
 	req := OfflineCheckinSyncRequest{
 		BatchID:          pkg.BatchID,
@@ -297,11 +297,15 @@ func TestSyncOfflineCheckinsRejectsTamperedOrExpiredPackage(t *testing.T) {
 
 func createOfflineSyncTicket(t *testing.T, service *Service, ctx context.Context, title string, employeeID string, idempotencyKey string) (EventSummary, Ticket) {
 	t.Helper()
+	now := service.now()
 	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
-		Title:    title,
-		Capacity: 1,
-		Status:   EventStatusPublished,
-		Rule:     RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+		Title:             title,
+		StartsAt:          now,
+		RegistrationStart: now.Add(-time.Hour),
+		RegistrationClose: now.Add(time.Hour),
+		Capacity:          1,
+		Status:            EventStatusPublished,
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
 	})
 	require.NoError(t, err)
 	booking, err := service.Book(ctx, Actor{ID: employeeID, Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: employeeID, IdempotencyKey: idempotencyKey})

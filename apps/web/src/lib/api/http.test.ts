@@ -11,6 +11,7 @@ import {
   setProviderTokenProvider,
   uploadEventPoster,
 } from "@/lib/api";
+import { buildQuerySuffix } from "./http";
 
 function response(body: unknown, init: ResponseInit = {}) {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), {
@@ -158,5 +159,20 @@ describe("api http helpers", () => {
       status: 409,
       response: { error: "not ready" },
     });
+  });
+
+  it("serializes query params without object default stringification", () => {
+    const query = buildQuerySuffix({
+      search: " workshop ",
+      page: 2,
+      include_cancelled: false,
+      empty: " ",
+      tags: ["onsite", " internal "],
+      filters: { site: "Taipei HQ" },
+    });
+
+    expect(query).toBe(
+      "?search=workshop&page=2&include_cancelled=false&tags=onsite&tags=internal&filters=%7B%22site%22%3A%22Taipei+HQ%22%7D",
+    );
   });
 });

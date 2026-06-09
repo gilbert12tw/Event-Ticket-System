@@ -7,6 +7,7 @@ import {
   changeEventState,
   createEvent,
   duplicateEvent,
+  eventPosterBlob,
   listAdminEvents,
   previewEligibility,
   seedDemo,
@@ -72,6 +73,7 @@ vi.mock("@/lib/api", async () => {
     changeEventState: vi.fn(),
     createEvent: vi.fn(),
     duplicateEvent: vi.fn(),
+    eventPosterBlob: vi.fn(),
     listAdminEvents: vi.fn(),
     previewEligibility: vi.fn(),
     seedDemo: vi.fn(),
@@ -84,8 +86,17 @@ vi.mock("@/lib/api", async () => {
 describe("AdminEventsPage CRUD tabs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.pushState({}, "", "/admin/events");
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:poster-preview"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    globalThis.history.pushState({}, "", "/admin/events");
     vi.mocked(listAdminEvents).mockResolvedValue([eventFixture()]);
+    vi.mocked(eventPosterBlob).mockResolvedValue(null);
     vi.mocked(adminHROptions).mockResolvedValue({
       sites: [
         { value: "*", label: "所有廠區" },
@@ -176,7 +187,7 @@ describe("AdminEventsPage CRUD tabs", () => {
   });
 
   it("restores the active CRUD tab from the URL query", async () => {
-    window.history.pushState({}, "", "/admin/events?tab=danger");
+    globalThis.history.pushState({}, "", "/admin/events?tab=danger");
 
     render(<AdminEventsPage />);
 
@@ -292,6 +303,95 @@ describe("AdminEventsPage CRUD tabs", () => {
       expect(uploadEventPoster).toHaveBeenCalledWith("evt-1", poster),
     );
     expect(await screen.findByText("活動海報已更新。")).toBeInTheDocument();
+  });
+
+  it("uploads a selected poster after creating the event", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+    const poster = new File(["pngdata"], "poster.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText("活動海報"), poster);
+    expect(screen.getByText(/poster\.png/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "建立並發布" }));
+
+    await waitFor(() =>
+      expect(createEvent).toHaveBeenCalledWith(expect.any(Object)),
+    );
+    await waitFor(() =>
+      expect(uploadEventPoster).toHaveBeenCalledWith("evt-2", poster),
+    );
+    expect(
+      await screen.findByText("活動已建立並寫入稽核紀錄，海報已上傳。"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the created event when poster upload fails after create", async () => {
+    vi.mocked(uploadEventPoster).mockRejectedValueOnce(
+      new Error("object storage offline"),
+    );
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "建立活動" }));
+    const poster = new File(["pngdata"], "poster.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText("活動海報"), poster);
+    await userEvent.click(screen.getByRole("button", { name: "建立並發布" }));
+
+    await waitFor(() => expect(createEvent).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(uploadEventPoster).toHaveBeenCalledWith("evt-2", poster),
+    );
+    expect(
+      await screen.findByText(/活動已建立，但海報上傳失敗/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "編輯活動" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText(/請在編輯活動分頁重新上傳/)).toBeInTheDocument();
+  });
+
+  it("rejects invalid poster files before upload", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    render(<AdminEventsPage />);
+
+    await user.click(await screen.findByRole("tab", { name: "編輯活動" }));
+    const textFile = new File(["bad"], "poster.txt", { type: "text/plain" });
+    await user.upload(screen.getByLabelText("活動海報"), textFile);
+
+    expect(
+      await screen.findByText("海報格式需為 JPG、PNG 或 WebP。"),
+    ).toBeInTheDocument();
+    expect(uploadEventPoster).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized poster files before upload", async () => {
+    render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "編輯活動" }));
+    const largePoster = new File(
+      [new Uint8Array(5 * 1024 * 1024 + 1)],
+      "poster.png",
+      { type: "image/png" },
+    );
+    await userEvent.upload(screen.getByLabelText("活動海報"), largePoster);
+
+    expect(
+      await screen.findByText("海報必須小於或等於 5MB。"),
+    ).toBeInTheDocument();
+    expect(uploadEventPoster).not.toHaveBeenCalled();
+  });
+
+  it("shows an admin poster fallback when the event has no uploaded poster", async () => {
+    const { container } = render(<AdminEventsPage />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "編輯活動" }));
+
+    expect(
+      container.querySelector(
+        ".admin-poster-frame .employee-event-poster-fallback",
+      ),
+    ).not.toBeNull();
   });
 
   it("updates the quick-setup template dropdown label after selection", async () => {

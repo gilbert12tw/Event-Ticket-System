@@ -11,20 +11,18 @@ import {
   updateEvent,
   uploadEventPoster,
 } from "@/lib/api";
-import type {
-  CreateEventRequest,
-  EventSummary,
-  UpdateEventRequest,
-} from "@/lib/api";
+import type { EventSummary } from "@/lib/api";
 import {
   defaultEditEventForm,
   defaultEventForm,
   editFormFromEvent,
   employeeMatchesRule,
   errorMessage,
-  splitTags,
-  toISO,
 } from "@/lib/formatting";
+import {
+  selectCurrentEventID,
+  sortEventsByManagementPriority,
+} from "@/lib/current-event";
 import { Alert, CompactStatsBar } from "@/components/shared";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
@@ -44,15 +42,26 @@ import {
 import { AdminEventDangerTab } from "./admin-event-danger-panel";
 import { adminEventTabs, type AdminEventTab } from "./admin-event-crud-types";
 import { AdminCreateResult } from "./admin-create-result";
+import {
+  createBody,
+  eventSiteOptions,
+  initialTab,
+  updateBody,
+  windowReady,
+} from "./admin-page-helpers";
 
 type FormSubmitEvent = { preventDefault: () => void };
 
 export function AdminEventsPage() {
   const [form, setForm] = useState(defaultEventForm);
   const [created, setCreated] = useState<EventSummary | null>(null);
+  const [createPosterFile, setCreatePosterFile] = useState<File | null>(null);
   const [adminEvents, setAdminEvents] = useState<EventSummary[]>([]);
   const [selectedEventID, setSelectedEventID] = useState("");
   const [editForm, setEditForm] = useState(() => defaultEditEventForm());
+  const [editPosterFile, setEditPosterFile] = useState<File | null>(null);
+  const [editPosterStatus, setEditPosterStatus] = useState("");
+  const [posterPreviewVersion, setPosterPreviewVersion] = useState(0);
   const [stateForm, setStateForm] = useState({
     status: "published",
     reason: "",
@@ -87,11 +96,13 @@ export function AdminEventsPage() {
     (Number.isFinite(Number(form.capacity)) && Number(form.capacity) > 0);
   const createWindowReady = windowReady(
     form.starts_at,
+    form.ends_at,
     form.registration_start,
     form.registration_close,
   );
   const editWindowReady = windowReady(
     editForm.starts_at,
+    editForm.ends_at,
     editForm.registration_start,
     editForm.registration_close,
   );
@@ -141,11 +152,13 @@ export function AdminEventsPage() {
 
   async function refreshAdminEvents(nextSelectedID = selectedEventID) {
     try {
-      const rows = await listAdminEvents();
+      const rows = sortEventsByManagementPriority(await listAdminEvents());
       setAdminEvents(rows);
       applySelectedEvent(
         rows,
-        nextSelectedID === "" ? (rows[0]?.event_id ?? "") : nextSelectedID,
+        nextSelectedID === ""
+          ? selectCurrentEventID(rows, selectedEventID)
+          : nextSelectedID,
       );
     } catch (error) {
       setMessage(errorMessage(error));
@@ -158,6 +171,7 @@ export function AdminEventsPage() {
     setSelectedEventID(nextEvent?.event_id ?? "");
     if (!nextEvent) return;
     setEditForm(editFormFromEvent(nextEvent));
+    clearSelectedPosterDraft();
     setStateForm({
       status: nextEvent.status,
       reason: "",
@@ -179,14 +193,35 @@ export function AdminEventsPage() {
 
   async function submit(event: FormSubmitEvent) {
     event.preventDefault();
+    const posterFile = createPosterFile;
     setBusy(true);
     setMessage("");
     try {
       const result = await createEvent(createBody(form));
       setCreated(result);
-      setMessage("活動已建立並寫入稽核紀錄。");
-      setActiveTab("list");
       await refreshAdminEvents(result.event_id);
+      if (!posterFile) {
+        setMessage("活動已建立並寫入稽核紀錄。");
+        setActiveTab("list");
+        return;
+      }
+      try {
+        await uploadEventPoster(result.event_id, posterFile);
+        setCreatePosterFile(null);
+        setPosterPreviewVersion((version) => version + 1);
+        setMessage("活動已建立並寫入稽核紀錄，海報已上傳。");
+        setActiveTab("list");
+        await refreshAdminEvents(result.event_id);
+      } catch (posterError) {
+        const copy = errorMessage(posterError);
+        setCreatePosterFile(null);
+        setEditPosterFile(posterFile);
+        setEditPosterStatus(`海報上傳失敗：${copy}`);
+        setMessage(
+          `活動已建立，但海報上傳失敗：${copy}。請在編輯活動分頁重新上傳。`,
+        );
+        setActiveTab("edit");
+      }
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
@@ -264,17 +299,29 @@ export function AdminEventsPage() {
 
   async function uploadSelectedPoster(file: File) {
     if (!selectedAdminEvent) return;
+    setEditPosterFile(file);
+    setEditPosterStatus("正在上傳海報…");
     setBusy(true);
     setMessage("");
     try {
       await uploadEventPoster(selectedAdminEvent.event_id, file);
-      setMessage("活動海報已更新。");
       await refreshAdminEvents(selectedAdminEvent.event_id);
+      setPosterPreviewVersion((version) => version + 1);
+      setEditPosterFile(null);
+      setEditPosterStatus("已上傳此海報。");
+      setMessage("活動海報已更新。");
     } catch (error) {
-      setMessage(errorMessage(error));
+      const copy = errorMessage(error);
+      setEditPosterStatus(`海報上傳失敗：${copy}`);
+      setMessage(`海報上傳失敗：${copy}`);
     } finally {
       setBusy(false);
     }
+  }
+
+  function clearSelectedPosterDraft() {
+    setEditPosterFile(null);
+    setEditPosterStatus("");
   }
 
   return (
@@ -287,12 +334,12 @@ export function AdminEventsPage() {
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as AdminEventTab)}
       >
-        <div className="section-heading">
+        <div className="section-heading admin-event-tabs-heading">
           <div>
             <h2>活動設定工作區</h2>
             <p>每個分頁只服務一個任務，重要分頁會保存在網址查詢參數。</p>
           </div>
-          <TabsList>
+          <TabsList className="admin-event-tabs-list">
             <TabsTrigger value="list">活動清單</TabsTrigger>
             <TabsTrigger value="create">建立活動</TabsTrigger>
             <TabsTrigger value="edit">編輯活動</TabsTrigger>
@@ -335,7 +382,12 @@ export function AdminEventsPage() {
               eventSiteOptions={eventSiteOptions(hrSiteOptions)}
               eligibilitySiteOptions={hrSiteOptions}
               onFormChange={setForm}
-              onReset={() => setForm(defaultEventForm())}
+              posterFile={createPosterFile}
+              onPosterSelect={setCreatePosterFile}
+              onReset={() => {
+                setForm(defaultEventForm());
+                setCreatePosterFile(null);
+              }}
               onSeed={() => void seed()}
               onSubmit={submit}
             />
@@ -346,10 +398,14 @@ export function AdminEventsPage() {
           <AdminEventEditTab
             busy={busy}
             editForm={editForm}
+            posterFile={editPosterFile}
+            posterStatus={editPosterStatus}
+            posterVersion={posterPreviewVersion}
             selectedEvent={selectedAdminEvent}
             eventSiteOptions={eventSiteOptions(hrSiteOptions)}
             windowReady={editWindowReady}
             onEditFormChange={setEditForm}
+            onPosterClear={clearSelectedPosterDraft}
             onPosterUpload={(file) => void uploadSelectedPoster(file)}
             onSave={saveSelected}
           />
@@ -379,86 +435,5 @@ export function AdminEventsPage() {
         </TabsContent>
       </Tabs>
     </section>
-  );
-}
-
-function createBody(
-  form: ReturnType<typeof defaultEventForm>,
-): CreateEventRequest {
-  const unlimited = form.capacity_type === "unlimited";
-  return {
-    title: form.title.trim(),
-    description: form.description.trim(),
-    location: form.location.trim(),
-    event_city: form.event_city.trim() || undefined,
-    event_site: form.event_site.trim() || undefined,
-    starts_at: toISO(form.starts_at),
-    registration_start: toISO(form.registration_start),
-    registration_close: toISO(form.registration_close),
-    capacity_type: form.capacity_type,
-    capacity: unlimited ? null : Number(form.capacity),
-    allows_family: unlimited,
-    status: form.status,
-    category: form.category.trim(),
-    tags: splitTags(form.tags),
-    entry_method: form.entry_method.trim(),
-    visibility: form.visibility.trim(),
-    rule: {
-      department: form.department.trim() || "*",
-      site: form.site.trim() || "*",
-      min_grade: Number(form.min_grade),
-      employment_status: form.employment_status.trim() || "active",
-    },
-  };
-}
-
-function updateBody(
-  editForm: ReturnType<typeof defaultEditEventForm>,
-): UpdateEventRequest {
-  const unlimited = editForm.capacity_type === "unlimited";
-  return {
-    title: editForm.title.trim(),
-    description: editForm.description.trim(),
-    location: editForm.location.trim(),
-    event_city: editForm.event_city.trim() || undefined,
-    event_site: editForm.event_site.trim() || undefined,
-    starts_at: toISO(editForm.starts_at),
-    registration_start: toISO(editForm.registration_start),
-    registration_close: toISO(editForm.registration_close),
-    capacity_type: editForm.capacity_type,
-    capacity: unlimited ? null : Number(editForm.capacity),
-    allows_family: unlimited,
-    category: editForm.category.trim(),
-    tags: splitTags(editForm.tags),
-    entry_method: editForm.entry_method.trim(),
-    visibility: editForm.visibility.trim(),
-  };
-}
-
-function eventSiteOptions(siteOptions: Option[]) {
-  return [
-    { value: "", label: "未設定" },
-    ...siteOptions.filter((option) => option.value !== "*"),
-  ];
-}
-
-function initialTab(): AdminEventTab {
-  if (globalThis.location.pathname.includes("/new")) return "create";
-  if (globalThis.location.pathname.includes("/edit")) return "edit";
-  if (globalThis.location.pathname.includes("/eligibility"))
-    return "eligibility";
-  return "list";
-}
-
-function windowReady(starts: string, start: string, close: string) {
-  const startsAt = new Date(starts);
-  const registrationStart = new Date(start);
-  const registrationClose = new Date(close);
-  return (
-    [startsAt, registrationStart, registrationClose].every(
-      (date) => !Number.isNaN(date.getTime()),
-    ) &&
-    registrationStart <= registrationClose &&
-    registrationClose <= startsAt
   );
 }

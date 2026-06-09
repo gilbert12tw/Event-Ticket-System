@@ -145,9 +145,9 @@ employee_token=$(sign_token "E1001" "Ariel Chen" "employee" "Engineering" "Taipe
 staff_token=$(sign_token "staff-1" "Staff One" "checkin_staff" "Operations" "Taipei HQ" "Taipei" 5)
 
 log "running redaction canary API flow"
-starts_at=$(date -u -d '+7 days' +%Y-%m-%dT%H:%M:%SZ)
+starts_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 registration_start=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
-registration_close=$(date -u -d '+6 days' +%Y-%m-%dT%H:%M:%SZ)
+registration_close=$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)
 raw_idempotency_key="phase3-raw-idempotency-canary-$RUN_ID"
 event_body=$(jq -nc \
   --arg title "redaction-canary-$RUN_ID" \

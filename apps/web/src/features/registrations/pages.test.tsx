@@ -38,6 +38,7 @@ const event: EventSummary = {
   description: "Company gathering",
   location: "Taipei HQ",
   starts_at: "2026-06-01T10:00:00Z",
+  ends_at: "2026-06-01T12:00:00Z",
   registration_start: "2026-05-01T00:00:00Z",
   registration_close: "2026-05-25T00:00:00Z",
   capacity_type: "limited",
@@ -115,7 +116,7 @@ const rows: RegistrationDetail[] = [
 
 describe("AdminRegistrationsPage", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/admin/registrations");
+    globalThis.history.pushState({}, "", "/admin/registrations");
     vi.clearAllMocks();
     mockListAdminEvents.mockResolvedValue([event]);
     mockListRegistrations.mockResolvedValue(rows);
@@ -163,6 +164,7 @@ describe("AdminRegistrationsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Annual Summit" }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("報名治理摘要")).toHaveTextContent("需處理3");
     expect(screen.getByText("reg-confirmed")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "候補名單" }));

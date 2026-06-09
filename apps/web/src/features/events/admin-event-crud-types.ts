@@ -105,6 +105,7 @@ export function applySchedulePreset(form: AdminCreateForm, preset: string) {
       registration_start: localInputDate(0),
       registration_close: localInputDate(48),
       starts_at: localInputDate(72),
+      ends_at: localInputDate(74),
       _selectedSchedule: preset,
     };
   }
@@ -114,6 +115,7 @@ export function applySchedulePreset(form: AdminCreateForm, preset: string) {
       registration_start: localInputDate(0),
       registration_close: localInputDate(24 * 7),
       starts_at: localInputDate(24 * 10),
+      ends_at: localInputDate(24 * 10 + 2),
       _selectedSchedule: preset,
     };
   }
@@ -123,6 +125,7 @@ export function applySchedulePreset(form: AdminCreateForm, preset: string) {
       registration_start: localInputDate(24 * 7),
       registration_close: localInputDate(24 * 11),
       starts_at: localInputDate(24 * 14),
+      ends_at: localInputDate(24 * 14 + 2),
       _selectedSchedule: preset,
     };
   }

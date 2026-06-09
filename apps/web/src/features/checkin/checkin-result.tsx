@@ -128,6 +128,9 @@ function recoveryCopy(reasonCode: string, rejectionMessage?: string) {
   if (reasonCode === "event_mismatch") {
     return "此票券屬於其他活動，請切換正確活動或請持票人出示正確票券。";
   }
+  if (reasonCode === "event_not_started") {
+    return "活動尚未開始，請於活動開始時間後再驗票，或轉交主辦人工確認。";
+  }
   if (reasonCode === "ticket_token_claims_mismatch") {
     return "票券簽章與票券資料不一致，請拒絕入場並回報主辦。";
   }

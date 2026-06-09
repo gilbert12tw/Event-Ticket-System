@@ -17,8 +17,8 @@ export const demoSteps = [
     "執行 deterministic lottery",
     "POST /api/v1/admin/events/{event_id}/lottery-runs",
   ],
-  ["ticket", "查看 winner 票券", "GET /api/v1/me/tickets"],
-  ["checkin", "現場首次驗票", "POST /api/v1/checkins"],
+  ["ticket", "目前票券 QR", "GET /api/v1/me/tickets"],
+  ["checkin", "掃描即驗票", "POST /api/v1/checkins"],
   ["duplicate", "重複掃描拒絕", "POST /api/v1/checkins"],
   ["report", "查報表與稽核", "GET /api/v1/admin/reports + audit-logs"],
 ] as const;
@@ -30,7 +30,7 @@ export function initialSteps(): StepMap {
   return Object.fromEntries(
     demoSteps.map(([id]) => [
       id,
-      { state: "pending" as StepState, hint: "待執行" },
+      { state: "pending" satisfies StepState, hint: "待執行" },
     ]),
   ) as StepMap;
 }

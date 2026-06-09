@@ -101,9 +101,9 @@ api GET /api/v1/auth/me "$employee_token" "" "$tmpdir/me.json"
 jq -e '.data.employee_id == "E1001" and (.data.mapped_roles | index("employee")) and .data.claims_status == "complete"' "$tmpdir/me.json" >/dev/null
 
 log "creating smoke event"
-starts_at=$(date -u -d '+7 days' +%Y-%m-%dT%H:%M:%SZ)
+starts_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 registration_start=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
-registration_close=$(date -u -d '+6 days' +%Y-%m-%dT%H:%M:%SZ)
+registration_close=$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)
 event_body=$(jq -nc \
   --arg title "baremetal-smoke-$RUN_ID" \
   --arg starts_at "$starts_at" \

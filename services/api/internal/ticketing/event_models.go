@@ -21,6 +21,7 @@ type Event struct {
 	EventCity         string    `json:"event_city"`
 	EventSite         string    `json:"event_site"`
 	StartsAt          time.Time `json:"starts_at"`
+	EndsAt            time.Time `json:"ends_at"`
 	RegistrationStart time.Time `json:"registration_start"`
 	RegistrationClose time.Time `json:"registration_close"`
 	CapacityType      string    `json:"capacity_type"`
@@ -68,6 +69,7 @@ type CreateEventRequest struct {
 	EventCity         string    `json:"event_city"`
 	EventSite         string    `json:"event_site"`
 	StartsAt          time.Time `json:"starts_at"`
+	EndsAt            time.Time `json:"ends_at"`
 	RegistrationStart time.Time `json:"registration_start"`
 	RegistrationClose time.Time `json:"registration_close"`
 	CapacityType      string    `json:"capacity_type"`
@@ -89,6 +91,7 @@ type UpdateEventRequest struct {
 	EventCity         *string    `json:"event_city,omitempty"`
 	EventSite         *string    `json:"event_site,omitempty"`
 	StartsAt          *time.Time `json:"starts_at,omitempty"`
+	EndsAt            *time.Time `json:"ends_at,omitempty"`
 	RegistrationStart *time.Time `json:"registration_start,omitempty"`
 	RegistrationClose *time.Time `json:"registration_close,omitempty"`
 	CapacityType      *string    `json:"capacity_type,omitempty"`

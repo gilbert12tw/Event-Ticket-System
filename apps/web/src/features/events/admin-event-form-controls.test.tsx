@@ -45,6 +45,10 @@ describe("admin event form controls", () => {
       "aria-invalid",
       "true",
     );
+    expect(screen.getByLabelText(/活動結束/)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
     expect(screen.getByLabelText(/報名開始/)).toHaveAttribute(
       "aria-invalid",
       "true",

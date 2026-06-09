@@ -204,7 +204,7 @@ function createTicketFixture(kind, employeeStart, count) {
     const actorId = employeeId(employeeStart + i);
     const booking = book(event.event_id, actorId, `${runId}-correctness-${kind}-book-${i}`);
     const token = booking?.ticket?.signed_token || "";
-    check(token, { [`${kind} fixture ticket token issued`]: (value) => Boolean(value) });
+    check(token, { [`${kind} fixture ticket token issued`]: Boolean });
     if (!token) {
       exec.test.abort(`${kind} fixture booking did not issue a ticket at index ${i}`);
     }
@@ -477,7 +477,7 @@ function envelopeData(response, label) {
 function envelope(response, label) {
   try {
     const payload = response.json();
-    check(payload, { [`${label} envelope is parsed`]: (body) => Boolean(body) });
+    check(payload, { [`${label} envelope is parsed`]: Boolean });
     return payload || null;
   } catch {
     check(response, { [`${label} json envelope parsed`]: () => false });

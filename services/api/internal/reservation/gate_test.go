@@ -7,7 +7,13 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // newTestGate returns a RedisGate connected to the URL in REDIS_URL. Tests
@@ -42,6 +48,40 @@ func uniqueEventID(t *testing.T) string {
 	id, err := newReservationID()
 	require.NoError(t, err)
 	return "evt_" + id
+}
+
+func TestTraceRedisScriptUsesServiceGraphAttributes(t *testing.T) {
+	exporter, shutdown := installReservationTraceExporter(t)
+	defer shutdown()
+
+	result, err := traceRedisScript(context.Background(), "reserve", nil, func(context.Context) (interface{}, error) {
+		return "ok", nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result)
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "redis.reserve", spans[0].Name)
+	assert.Contains(t, spans[0].Attributes, attribute.String("peer.service", "redis"))
+	assert.Contains(t, spans[0].Attributes, attribute.String("server.address", "redis"))
+	for _, attr := range spans[0].Attributes {
+		value := attr.Value.AsString()
+		assert.NotContains(t, value, "idempotency")
+		assert.NotContains(t, value, "email@example.test")
+		assert.NotContains(t, value, "token")
+	}
+}
+
+func installReservationTraceExporter(t *testing.T) (*tracetest.InMemoryExporter, func()) {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(provider)
+	return exporter, func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(noop.NewTracerProvider())
+	}
 }
 
 func TestRedisGateReserveGrantsThenExhausts(t *testing.T) {
@@ -159,6 +199,53 @@ func TestRedisGateConfirmDoesNotIncrementCounter(t *testing.T) {
 	require.Equal(t, int64(0), exists)
 }
 
+func TestRedisGatePressureSnapshotCountsActiveHolds(t *testing.T) {
+	gate, client, cleanup := newTestGate(t)
+	defer cleanup()
+	ctx := context.Background()
+	eventID := uniqueEventID(t)
+	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "pressure-key")
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), holdKey(eventID, hash))
+
+	probe := func(ctx context.Context) (int, int64, error) { return 2, 1, nil }
+	_, err := gate.Reserve(ctx, eventID, hash, "actor", probe)
+	require.NoError(t, err)
+
+	snapshot, err := gate.PressureSnapshot(ctx, eventID)
+
+	require.NoError(t, err)
+	require.Equal(t, PressureStateAvailable, snapshot.State)
+	require.Equal(t, 1, snapshot.ActiveCount)
+}
+
+func TestRedisGatePressureSnapshotsCountActiveHoldsInOneBatch(t *testing.T) {
+	gate, client, cleanup := newTestGate(t)
+	defer cleanup()
+	ctx := context.Background()
+	firstEventID := uniqueEventID(t)
+	secondEventID := uniqueEventID(t)
+	hash := Hash([]byte("k"), "registration.book", firstEventID, "E1001", "pressure-batch-key")
+	defer client.Del(ctx,
+		remainingKey(firstEventID),
+		pendingKey(firstEventID),
+		holdKey(firstEventID, hash),
+		remainingKey(secondEventID),
+		pendingKey(secondEventID),
+	)
+
+	probe := func(ctx context.Context) (int, int64, error) { return 2, 1, nil }
+	_, err := gate.Reserve(ctx, firstEventID, hash, "actor", probe)
+	require.NoError(t, err)
+
+	snapshots, err := gate.PressureSnapshots(ctx, []string{firstEventID, secondEventID})
+
+	require.NoError(t, err)
+	require.Equal(t, PressureStateAvailable, snapshots[firstEventID].State)
+	require.Equal(t, 1, snapshots[firstEventID].ActiveCount)
+	require.Equal(t, PressureStateAvailable, snapshots[secondEventID].State)
+	require.Equal(t, 0, snapshots[secondEventID].ActiveCount)
+}
+
 func TestRedisGateExhaustedDoesNotDecrementBelowZero(t *testing.T) {
 	gate, client, cleanup := newTestGate(t)
 	defer cleanup()
@@ -186,6 +273,13 @@ func TestNoopGateAlwaysGrants(t *testing.T) {
 	hold, err := g.Reserve(context.Background(), "evt", "h", "a", probe)
 	require.NoError(t, err)
 	require.Equal(t, OutcomeGranted, hold.Outcome)
+	snapshot, err := g.PressureSnapshot(context.Background(), "evt")
+	require.NoError(t, err)
+	require.Equal(t, PressureStateDisabled, snapshot.State)
+	snapshots, err := g.PressureSnapshots(context.Background(), []string{"evt_a", "evt_b"})
+	require.NoError(t, err)
+	require.Equal(t, PressureStateDisabled, snapshots["evt_a"].State)
+	require.Equal(t, PressureStateDisabled, snapshots["evt_b"].State)
 }
 
 func TestHashIsDeterministicAndDomainSeparated(t *testing.T) {

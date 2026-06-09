@@ -5,6 +5,10 @@ function session<const Role extends string>(id: string, role: Role) {
   };
 }
 
+function relativeTicketIso(hours: number) {
+  return new Date(Date.now() + hours * 60 * 60_000).toISOString();
+}
+
 export const sessions = {
   E1001: session("E1001", "employee"),
   "admin-1": session("admin-1", "activity_admin"),
@@ -22,10 +26,11 @@ export const sampleTickets = [
     event_id: "evt-cets-001",
     employee_id: "E1001",
     status: "active",
-    issued_at: "2026-01-02T09:00:00Z",
+    issued_at: relativeTicketIso(-2),
+    expires_at: relativeTicketIso(8),
     event_title: "第一階段企業午餐日",
     event_location: "台北總部多功能廳",
-    event_starts_at: "2026-01-10T10:00:00Z",
+    event_starts_at: relativeTicketIso(-1),
     employee_name: "陳雅莉",
     qr_payload: "mocked-qr-token",
     signed_token: "mocked-token",
@@ -39,7 +44,7 @@ export const sampleEvent = {
   location: "台北總部多功能廳",
   event_city: "Taipei",
   event_site: "Taipei",
-  starts_at: "2026-01-10T10:00:00Z",
+  starts_at: "2026-06-04T00:00:00Z",
   registration_start: "2026-01-01T10:00:00Z",
   registration_close: "2026-01-09T23:00:00Z",
   capacity_type: "limited",
@@ -90,7 +95,7 @@ export const reportRows = [
     checkin_count: 8,
     remaining_capacity: 228,
     city_distribution: { Taipei: 12 },
-    starts_at: "2026-01-10T10:00:00Z",
+    starts_at: "2026-06-04T00:00:00Z",
   },
 ];
 

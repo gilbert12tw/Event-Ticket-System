@@ -10,15 +10,15 @@ import (
 )
 
 func TestPhase3VerifyCapturesControlledErrorMetricBaselineBeforeOwnedRequest(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
-	prometheus := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-prometheus-evidence.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyScript))
+	prometheus := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyPrometheus))
 
-	assert.Contains(t, script, "phase3-verify-prometheus-evidence.sh")
+	assert.Contains(t, script, phase3VerifyPrometheus)
 	assert.Contains(t, script, `. "$ROOT_DIR/scripts/compose/phase3-verify-prometheus-evidence.sh"`)
 	assert.Contains(t, prometheus, "capture_prometheus_controlled_error_baseline() {")
 	assert.Contains(t, prometheus, "check_prometheus_controlled_error_metrics() {")
 
-	mainIndex := strings.Index(script, "main() {")
+	mainIndex := strings.Index(script, mainFunctionFragment)
 	require.NotEqual(t, -1, mainIndex)
 	mainBody := script[mainIndex:]
 
@@ -44,10 +44,10 @@ func TestPhase3VerifyPersistsReducedLokiTraceLogProof(t *testing.T) {
 }
 
 func TestPhase3VerifyPrometheusEvidenceHelpersAreSourced(t *testing.T) {
-	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
-	prometheus := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-prometheus-evidence.sh"))
+	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyScript))
+	prometheus := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyPrometheus))
 
-	assert.Contains(t, verify, "phase3-verify-prometheus-evidence.sh")
+	assert.Contains(t, verify, phase3VerifyPrometheus)
 	assert.Contains(t, verify, `. "$ROOT_DIR/scripts/compose/phase3-verify-prometheus-evidence.sh"`)
 	assert.Contains(t, prometheus, "prom_query() {")
 	assert.Contains(t, prometheus, "check_prometheus_targets() {")
@@ -59,7 +59,7 @@ func TestPhase3VerifyPrometheusEvidenceHelpersAreSourced(t *testing.T) {
 }
 
 func TestPhase3VerifyLgtmHealthHelpersAreSourced(t *testing.T) {
-	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
+	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyScript))
 	lgtm := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-lgtm-health.sh"))
 
 	assert.Contains(t, verify, "phase3-verify-lgtm-health.sh")
@@ -75,10 +75,10 @@ func TestPhase3VerifyLgtmHealthHelpersAreSourced(t *testing.T) {
 }
 
 func TestPhase3VerifyPersistsReducedLokiRedactionProof(t *testing.T) {
-	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
-	loki := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-loki-evidence.sh"))
+	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyScript))
+	loki := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyLoki))
 
-	assert.Contains(t, verify, "phase3-verify-loki-evidence.sh")
+	assert.Contains(t, verify, phase3VerifyLoki)
 	assert.Contains(t, verify, `. "$ROOT_DIR/scripts/compose/phase3-verify-loki-evidence.sh"`)
 	assert.Contains(t, loki, `write_loki_redaction_proof "$LOKI_REDACTION_EVIDENCE"`)
 	assert.Contains(t, loki, `raw_secret_absent: true`)
@@ -86,7 +86,7 @@ func TestPhase3VerifyPersistsReducedLokiRedactionProof(t *testing.T) {
 }
 
 func TestPhase3VerifyWritesLokiRedactionProofAfterStrictChecks(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-loki-evidence.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyLoki))
 	checkIndex := strings.Index(script, "check_loki_logs_and_redaction() {")
 	require.NotEqual(t, -1, checkIndex)
 	proofHelperIndex := strings.Index(script, "\nwrite_loki_redaction_proof() {")
@@ -109,7 +109,7 @@ func TestPhase3VerifyWritesLokiRedactionProofAfterStrictChecks(t *testing.T) {
 }
 
 func TestPhase3VerifyChecksProfileDataBeforeLokiRedaction(t *testing.T) {
-	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
+	verify := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyScript))
 	profile := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-profile-evidence.sh"))
 
 	assert.Contains(t, verify, "phase3-verify-profile-evidence.sh")
@@ -118,7 +118,7 @@ func TestPhase3VerifyChecksProfileDataBeforeLokiRedaction(t *testing.T) {
 	assert.Contains(t, profile, `process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="cets-backend"}`)
 	assert.NotContains(t, verify, "\ncheck_profile_data() {")
 
-	mainIndex := strings.Index(verify, "main() {")
+	mainIndex := strings.Index(verify, mainFunctionFragment)
 	require.NotEqual(t, -1, mainIndex)
 	mainBody := verify[mainIndex:]
 
@@ -134,10 +134,10 @@ func TestPhase3VerifyChecksProfileDataBeforeLokiRedaction(t *testing.T) {
 }
 
 func TestPhase3VerifyCapturesServiceGraphBaselineBeforeK6Load(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", phase3VerifyScript))
 	serviceGraph := readText(t, filepath.Join("..", "..", "..", "scripts", "compose", "phase3-verify-service-graph-evidence.sh"))
 
-	prometheusSourceIndex := strings.Index(script, "phase3-verify-prometheus-evidence.sh")
+	prometheusSourceIndex := strings.Index(script, phase3VerifyPrometheus)
 	serviceGraphSourceIndex := strings.Index(script, "phase3-verify-service-graph-evidence.sh")
 	require.NotEqual(t, -1, prometheusSourceIndex)
 	require.NotEqual(t, -1, serviceGraphSourceIndex)
@@ -145,11 +145,16 @@ func TestPhase3VerifyCapturesServiceGraphBaselineBeforeK6Load(t *testing.T) {
 	assert.Contains(t, script, `. "$ROOT_DIR/scripts/compose/phase3-verify-service-graph-evidence.sh"`)
 	assert.Contains(t, serviceGraph, "capture_service_graph_baseline() {")
 	assert.Contains(t, serviceGraph, "check_service_graph() {")
-	assert.Contains(t, serviceGraph, `prom_query "$SERVICE_GRAPH_INBOUND_QUERY"`)
+	assert.Contains(t, serviceGraph, `prom_query "$SERVICE_GRAPH_BACKEND_DEPENDENCY_QUERY"`)
+	assert.Contains(t, serviceGraph, `-v before="$SERVICE_GRAPH_BACKEND_DEPENDENCY_BASELINE"`)
+	assert.Contains(t, serviceGraph, `-v after="$backend_dependency_value"`)
+	assert.Contains(t, serviceGraph, "exit(after > before ? 0 : 1)")
+	assert.NotContains(t, serviceGraph, `http_get "$EDGE_URL/readyz"`)
+	assert.NotContains(t, serviceGraph, "SERVICE_GRAPH_INBOUND_QUERY")
 	assert.NotContains(t, script, "\ncheck_service_graph() {")
 	assert.NotContains(t, script, "\ncapture_service_graph_baseline() {")
 
-	mainIndex := strings.Index(script, "main() {")
+	mainIndex := strings.Index(script, mainFunctionFragment)
 	require.NotEqual(t, -1, mainIndex)
 	mainBody := script[mainIndex:]
 

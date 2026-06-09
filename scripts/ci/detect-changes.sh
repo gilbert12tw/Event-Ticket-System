@@ -31,6 +31,13 @@ else
 
   if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
     base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+    if [[ -z "$base" ]]; then
+      git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main 2>/dev/null || true
+      base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+    fi
+    if [[ -z "$base" ]]; then
+      base="$(git merge-base HEAD main 2>/dev/null || true)"
+    fi
     if [[ -z "$base" && -n "${head:-}" ]]; then
       base="$(git rev-list --max-parents=0 "$head")"
     fi

@@ -208,8 +208,8 @@ func TestMetricsEndpointUsesRoutePatternsNotRawIdentifiers(t *testing.T) {
 	require.Equal(t, http.StatusOK, metricsRec.Code)
 	assert.Equal(t, "text/plain; version=0.0.4; charset=utf-8", metricsRec.Header().Get("Content-Type"))
 	assertEnvelope(t, metricsRec.Body.String(),
-		`cets_http_requests_total{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"} 1`,
-		`cets_http_request_seconds_bucket{route="/api/v1/events/{event_id}",method="GET",status_class="2xx"`,
+		`cets_http_requests_total{service="cets-api",replica="unknown",route="/api/v1/events/{event_id}",method="GET",status="200",status_class="2xx"} 1`,
+		`cets_http_request_seconds_bucket{service="cets-api",replica="unknown",route="/api/v1/events/{event_id}",method="GET",status="200",status_class="2xx"`,
 	)
 	assert.NotContains(t, metricsRec.Body.String(), "evt_secret_token")
 }
@@ -229,8 +229,8 @@ func TestMetricsEndpointCollapsesUnmatchedRoutesToBoundedLabel(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, metricsRec.Code)
 	assertEnvelope(t, metricsRec.Body.String(),
-		`cets_http_requests_total{route="/unknown",method="DELETE",status_class="4xx"} 1`,
-		`cets_http_request_seconds_bucket{route="/unknown",method="DELETE",status_class="4xx"`,
+		`cets_http_requests_total{service="cets-api",replica="unknown",route="/unknown",method="DELETE",status="405",status_class="4xx"} 1`,
+		`cets_http_request_seconds_bucket{service="cets-api",replica="unknown",route="/unknown",method="DELETE",status="405",status_class="4xx"`,
 	)
 	assertEnvelope(t, logs.String(), `"route":"/unknown"`, `"path":"/wp-login-secret"`)
 	assert.NotContains(t, metricsRec.Body.String(), "wp-login-secret")
@@ -251,8 +251,8 @@ func TestMetricsEndpointNormalizesHeadRoutesFromGetPatterns(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, metricsRec.Code)
 	assertEnvelope(t, metricsRec.Body.String(),
-		`cets_http_requests_total{route="/healthz",method="HEAD",status_class="2xx"} 1`,
-		`cets_http_request_seconds_bucket{route="/healthz",method="HEAD",status_class="2xx"`,
+		`cets_http_requests_total{service="cets-api",replica="unknown",route="/healthz",method="HEAD",status="200",status_class="2xx"} 1`,
+		`cets_http_request_seconds_bucket{service="cets-api",replica="unknown",route="/healthz",method="HEAD",status="200",status_class="2xx"`,
 	)
 	assertEnvelope(t, logs.String(), `"method":"HEAD"`, `"route":"/healthz"`)
 	assert.NotContains(t, metricsRec.Body.String(), `route="GET /healthz"`)

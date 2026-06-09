@@ -10,8 +10,13 @@ export type WorkerKind =
 export type CapacityPressureRow = {
   event_id: string;
   capacity_type: CapacityType;
+  confirmed_count: number;
+  waitlist_count: number;
+  received_count: number;
   remaining_capacity: number | null;
   reservation_count: number;
+  reservation_state: "available" | "disabled" | "unavailable";
+  rejected_per_min: number | null;
   rate_limit_drop_per_min: number | null;
   idempotency_replay_per_min: number | null;
 };

@@ -74,7 +74,7 @@ const reportRows: ReportRow[] = [
 
 describe("HrReportsPage", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/admin/reports");
+    globalThis.history.pushState({}, "", "/admin/reports");
     mockReports.mockReset();
     mockCreateReportExport.mockReset();
     mockDownloadReportExport.mockReset();
@@ -125,6 +125,11 @@ describe("HrReportsPage", () => {
     expect(screen.getByLabelText("人資報表摘要")).toHaveTextContent(
       "到場率30%",
     );
+    expect(
+      screen
+        .getAllByRole("link", { name: "家庭電影夜" })[0]
+        ?.getAttribute("href"),
+    ).toBe("/admin/events/evt-full/registrations?event_id=evt-full");
     expect(
       screen.getAllByText("Taipei: 6 / Hsinchu: 2").length,
     ).toBeGreaterThan(0);

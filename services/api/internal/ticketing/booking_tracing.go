@@ -29,6 +29,13 @@ func startBookingStageSpan(ctx context.Context, stage string) (context.Context, 
 	}
 }
 
+func annotateBookingSpan(ctx context.Context, eventID string) {
+	span := trace.SpanFromContext(ctx)
+	if eventID != "" {
+		span.SetAttributes(attribute.String("cets.event_id", eventID))
+	}
+}
+
 func boundedBookingTraceLabel(value string) string {
 	switch value {
 	case "total", "preadmission", "tx", "begin_tx", "idempotency_lock", "event_lock", "validate",

@@ -10,6 +10,13 @@ export type Actor = { id: string; role: Role };
 export type Envelope<T> = { success: boolean; data: T; error: string | null };
 export type MockProviderToken = { provider_token: string; expires_at: string };
 export type EventSummary = { event_id: string; title: string };
+export type RegistrationDetail = {
+  registration_id: string;
+  event_id: string;
+  employee_id: string;
+  status: string;
+  ticket?: Ticket | null;
+};
 export type Ticket = {
   ticket_id: string;
   event_id: string;
@@ -33,8 +40,10 @@ export function collectBrowserErrors(page: Page) {
   const errors: string[] = [];
   page.on("console", (message) => {
     const text = message.text();
-    if (message.type() === "error" && !/status of (401|403|404|409)/.test(text))
-      errors.push(text);
+    if (message.type() !== "error") return;
+    if (/status of (401|403|404|409)/.test(text)) return;
+    if (/Failed to load resource:.*404/.test(text)) return;
+    errors.push(text);
   });
   page.on("pageerror", (error) => errors.push(error.message));
   return errors;
@@ -120,6 +129,31 @@ export async function signedTokenFor(
   return ticket?.signed_token || "";
 }
 
+export async function signedTokenForEventTitle(
+  request: APIRequestContext,
+  actor: Actor,
+  eventTitle: string,
+) {
+  const tickets = await api<Ticket[]>(
+    request,
+    actor,
+    "GET",
+    "/api/v1/me/tickets",
+  );
+  const ticket = tickets.find(
+    (candidate) => candidate.event_title === eventTitle,
+  );
+  expect(ticket?.event_id, `ticket event id for ${eventTitle}`).toBeTruthy();
+  expect(ticket?.signed_token, `ticket token for ${eventTitle}`).toBeTruthy();
+  return {
+    event: {
+      event_id: ticket?.event_id || "",
+      title: ticket?.event_title || eventTitle,
+    },
+    token: ticket?.signed_token || "",
+  };
+}
+
 export async function waitForNotificationDelivery(
   page: Page,
   request: APIRequestContext,
@@ -160,6 +194,16 @@ export async function api<T>(
     `${method} ${path} envelope error: ${payload.error}`,
   ).toBe(true);
   return payload.data;
+}
+
+export function apiResponse(
+  request: APIRequestContext,
+  actor: Actor,
+  method: string,
+  path: string,
+  body?: unknown,
+) {
+  return rawApi(request, actor, method, path, body);
 }
 
 export function futureISO(hours: number) {
@@ -236,5 +280,5 @@ async function providerTokenFor(request: APIRequestContext, profileID: string) {
 }
 
 function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }

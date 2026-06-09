@@ -13,9 +13,9 @@ import (
 )
 
 func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
-	envExample, err := os.ReadFile(".env.example")
+	envExample, err := os.ReadFile(envExampleFile)
 	require.NoError(t, err)
 	combined := string(compose) + "\n" + string(envExample)
 
@@ -90,6 +90,7 @@ func TestComposeDeclaresOptionalObservabilityStackContracts(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318",
 		"OTEL_SERVICE_NAME=cets-api",
 		"OTEL_SERVICE_VERSION=local-compose",
+		"CETS_REPLICA_ID=app",
 		"GRAFANA_PORT=3000",
 	}
 	for _, fragment := range required {
@@ -174,6 +175,13 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 		"endpoint: 0.0.0.0:4317",
 		"endpoint: 0.0.0.0:4318",
 		"cets_http_requests_total",
+		"cets_build_info",
+		"label_values(cets_build_info, service)",
+		"label_values(cets_build_info{service=~\\\"$service\\\"}, replica)",
+		"sum by (service, route) (rate(cets_http_requests_total[1m]))",
+		"sum by (service) (rate(cets_http_requests_total{status_class=\\\"5xx\\\"}[5m]))",
+		"sum by (service, route, status) (increase(cets_http_requests_total[5m]))",
+		"sum by (service, replica, route, status) (rate(cets_http_requests_total{service=~\\\"$service\\\",replica=~\\\"$replica\\\",status_class=\\\"5xx\\\"}[1m]))",
 		"cets_http_request_seconds_bucket",
 		"cets_db_pool_conns",
 		"cets_db_lock_waiting_sessions",
@@ -215,7 +223,7 @@ func TestObservabilityProvisioningDeclaresDashboardSignals(t *testing.T) {
 }
 
 func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	composeText := string(compose)
 
@@ -237,7 +245,7 @@ func TestOptionalLogTraceBackendsDoNotChangeAppRuntimeContracts(t *testing.T) {
 }
 
 func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	prometheus, err := os.ReadFile("observability/prometheus.yml")
 	require.NoError(t, err)
@@ -250,7 +258,7 @@ func TestBlackboxProbingStaysOutsideProductBehavior(t *testing.T) {
 }
 
 func TestInfraExportersStayOutsideProductRuntimeContracts(t *testing.T) {
-	compose, err := os.ReadFile("compose.yaml")
+	compose, err := os.ReadFile(composeFile)
 	require.NoError(t, err)
 	composeText := string(compose)
 

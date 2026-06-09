@@ -24,6 +24,12 @@ import { CheckinResult } from "./checkin-result";
 import { MobileQrScanner } from "./mobile-qr-scanner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  isCheckinReady,
+  selectedCheckinEventID,
+  shouldSubmitDetectedToken,
+  type RecentScan,
+} from "./checkin-flow";
 
 export { CheckinResult } from "./checkin-result";
 export { OfflineCheckinBoundaryPage } from "./offline-page";
@@ -41,6 +47,7 @@ export function CheckinPage() {
   const [eventID, setEventID] = useState("");
   const [busy, setBusy] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
+  const lastScanRef = useRef<RecentScan | null>(null);
   const recentToken = hasDemoCheckinToken() ? getDemoCheckinToken() : "";
   const deviceID =
     devicePreset === "custom" ? customDeviceID.trim() : devicePreset;
@@ -50,13 +57,24 @@ export function CheckinPage() {
     (event) => event.event_id === selectedEventID,
   );
 
-  async function submit() {
+  async function submit(nextToken = token) {
+    const signedToken = nextToken.trim();
+    if (
+      !isCheckinReady({
+        token: signedToken,
+        deviceID,
+        eventID: selectedEventID,
+      }) ||
+      busy
+    ) {
+      return;
+    }
     setBusy(true);
     setMessage("");
     setResult(null);
     try {
       const response = await checkIn(
-        token.trim(),
+        signedToken,
         deviceID,
         selectedEventID.trim(),
         holderMismatchReason.trim(),
@@ -89,12 +107,12 @@ export function CheckinPage() {
 
   function readinessMessage() {
     if (!selectedEventID.trim()) {
-      return "請先選擇驗票活動，避免核銷其他活動票券。";
+      return "目前沒有可驗票活動，請確認活動是否已載入。";
     }
     if (tokenOnlyReady) {
       return "請選擇或填寫裝置代號。";
     }
-    return "請掃描或貼上票券簽章碼。";
+    return "請掃描 QR code；手動貼上只作為備援。";
   }
 
   useEffect(() => {
@@ -110,19 +128,36 @@ export function CheckinPage() {
     if (result || message) resultRef.current?.focus();
   }, [message, result]);
 
-  const eventOptions = [
-    { value: "", label: "請選擇活動" },
-    ...events.map((event) => ({
-      value: event.event_id,
-      label: event.title,
-      helper: event.status,
-    })),
-  ];
-  const tokenReady =
-    token.trim().length > 0 &&
-    deviceID.length > 0 &&
-    selectedEventID.trim().length > 0;
+  const tokenReady = isCheckinReady({
+    token,
+    deviceID,
+    eventID: selectedEventID,
+  });
   const tokenOnlyReady = token.trim().length > 0;
+
+  function handleDetectedToken(detectedToken: string) {
+    const tokenText = detectedToken.trim();
+    const nowMs = Date.now();
+    if (
+      !shouldSubmitDetectedToken({
+        detectedToken: tokenText,
+        lastScan: lastScanRef.current,
+        nowMs,
+      })
+    ) {
+      setMessage("已忽略重複掃描，請等待目前驗票結果。");
+      return;
+    }
+    lastScanRef.current = { token: tokenText, scannedAtMs: nowMs };
+    setToken(tokenText);
+    if (
+      isCheckinReady({ token: tokenText, deviceID, eventID: selectedEventID })
+    ) {
+      void submit(tokenText);
+      return;
+    }
+    setMessage("已讀取 QR code，請先確認活動已載入且裝置代號可用。");
+  }
 
   function handleTokenKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter" || !tokenReady) return;
@@ -132,21 +167,22 @@ export function CheckinPage() {
 
   return (
     <section className="content-grid checkin-workspace">
-      <Card asChild className="panel span-6 checkin-form">
-        <form
-          aria-busy={busy}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
+      <form
+        className="span-12 checkin-form"
+        aria-busy={busy}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <Card className="panel checkin-scan-panel">
           <div className="section-heading">
             <div>
               <h2>線上驗票</h2>
-              <p>送出後會立即顯示可入場、重複掃描或拒絕原因。</p>
+              <p>當前活動會自動鎖定；掃描 QR code 後立即驗票。</p>
             </div>
           </div>
-          <MobileQrScanner onTokenDetected={setToken} />
+          <MobileQrScanner onTokenDetected={handleDetectedToken} />
           <CompactStatsBar
             items={[
               { label: "活動", value: selectedEvent?.title || "未選擇" },
@@ -156,22 +192,56 @@ export function CheckinPage() {
             ]}
             label="驗票摘要"
           />
-          <SelectField
-            label="驗票活動"
-            value={selectedEventID}
-            options={eventOptions}
-            onChange={setEventID}
-            required
-          />
+          <div className="helper-strip" aria-label="目前驗票活動">
+            <StatusBadge tone={selectedEvent ? "ok" : "warn"}>
+              當前活動
+            </StatusBadge>
+            <span>{selectedEvent?.title || "尚未載入可驗票活動"}</span>
+            {events.length > 1 && (
+              <span className="table-muted">
+                已自動選定活動時間最接近現在的活動。
+              </span>
+            )}
+          </div>
+        </Card>
+        <Card
+          className={`panel checkin-result-panel${
+            result || message ? " has-result" : ""
+          }`}
+          ref={resultRef}
+          role="region"
+          aria-labelledby="checkin-result-title"
+          aria-live="polite"
+          tabIndex={-1}
+        >
+          <h2 id="checkin-result-title">驗票結果</h2>
+          <div className="kpi-row">
+            <Kpi label="活動" value={selectedEvent?.title || "未選擇"} />
+            <Kpi label="裝置" value={deviceID || "未設定"} />
+          </div>
+          {message && (
+            <Alert tone={message.includes("已核銷") ? "warn" : "fail"}>
+              {message}
+            </Alert>
+          )}
+          {!result && !message && (
+            <EmptyState
+              title="等待掃描"
+              action="掃描或貼上票券簽章碼後送出，結果會在此顯示。"
+            />
+          )}
+          {result && <CheckinResult result={result} />}
+        </Card>
+        <Card className="panel checkin-controls-panel">
           <Field
             autoComplete="off"
-            label="掃描或貼上票券"
+            label="掃描或貼上票券簽章碼"
             name="signed-token"
             value={token}
             onChange={setToken}
             onKeyDown={handleTokenKeyDown}
             required
-            hint="掃描器送出 Enter 時會直接驗票；長簽章碼可展開手動貼上。"
+            hint="QR 掃描成功後會自動驗票；長簽章碼可展開手動貼上。"
           />
           <details className="advanced-filter">
             <summary>
@@ -213,7 +283,7 @@ export function CheckinPage() {
             label={tokenReady ? "可驗票" : "資料未齊"}
             message={
               tokenReady
-                ? "已偵測活動、簽章碼與裝置代號，可以送出驗票。"
+                ? "已偵測當前活動、簽章碼與裝置代號；掃描 QR 會自動送出。"
                 : readinessMessage()
             }
           />
@@ -239,38 +309,8 @@ export function CheckinPage() {
             <Icon name="scan" />
             {busy ? "驗票中" : "送出驗票"}
           </Button>
-        </form>
-      </Card>
-      <Card
-        className="panel span-6"
-        ref={resultRef}
-        role="region"
-        aria-labelledby="checkin-result-title"
-        aria-live="polite"
-        tabIndex={-1}
-      >
-        <h2 id="checkin-result-title">驗票結果</h2>
-        <div className="kpi-row">
-          <Kpi label="活動" value={selectedEvent?.title || "未選擇"} />
-          <Kpi label="裝置" value={deviceID || "未設定"} />
-        </div>
-        {message && (
-          <Alert tone={message.includes("已核銷") ? "warn" : "fail"}>
-            {message}
-          </Alert>
-        )}
-        {!result && !message && (
-          <EmptyState
-            title="等待掃描"
-            action="掃描或貼上票券簽章碼後送出，結果會在此顯示。"
-          />
-        )}
-        {result && <CheckinResult result={result} />}
-      </Card>
+        </Card>
+      </form>
     </section>
   );
-}
-
-function selectedCheckinEventID(events: EventSummary[], current: string) {
-  return events.some((event) => event.event_id === current) ? current : "";
 }

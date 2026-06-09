@@ -104,12 +104,45 @@ func TestBaremetalManifestsExposeCapacityReplicaHeaders(t *testing.T) {
 	assert.Contains(t, app, `add_header Content-Type text/plain;`)
 }
 
+func TestK8sResetDemoDBJobsAreManualAndNonDestructive(t *testing.T) {
+	for _, scriptPath := range []string{
+		filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "72-reset-demo-db.sh"),
+		filepath.Join("..", "..", "..", "infra", "aws", "self-managed-k8s", "scripts", "72-reset-demo-db.sh"),
+	} {
+		script := readText(t, scriptPath)
+		assert.Contains(t, script, "kind: Job")
+		assert.Contains(t, script, "name: cets-reset-demo-db")
+		assert.Contains(t, script, `args: ["reset-demo-db"]`)
+		assert.Contains(t, script, "envFrom:")
+		assert.Contains(t, script, "delete job cets-reset-demo-db --ignore-not-found")
+		assert.Contains(t, script, "wait --for=condition=complete job/cets-reset-demo-db")
+		assert.NotContains(t, script, "delete service")
+		assert.NotContains(t, script, "delete deployment")
+		assert.NotContains(t, script, "delete pvc")
+		assert.NotContains(t, script, "delete pv")
+	}
+}
+
+func TestBaremetalAppEnvCanEnableDemoMockProfiles(t *testing.T) {
+	app := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "deploy-cets", "app.sh"))
+	envExample := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", ".env.example"))
+	initLocalEnv := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "05-init-local-env.sh"))
+	readme := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "README.md"))
+
+	assert.Contains(t, app, `APP_ENV: "${CETS_APP_ENV:-baremetal}"`)
+	assert.NotContains(t, app, `APP_ENV: "baremetal"`)
+	assert.Contains(t, envExample, "CETS_APP_ENV=baremetal")
+	assert.Contains(t, initLocalEnv, "CETS_APP_ENV=${CETS_APP_ENV:-baremetal}")
+	assert.Contains(t, readme, "CETS_APP_ENV=demo")
+	assert.Contains(t, readme, "mock profile selection")
+}
+
 func TestBaremetalPostgresFailoverWritesReport(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
 	stateDir := t.TempDir()
 	primaryMoved := filepath.Join(stateDir, "primary-moved")
-	kubectlLog := filepath.Join(stateDir, "kubectl.log")
+	kubectlLog := filepath.Join(stateDir, kubectlLogFile)
 	curlLog := filepath.Join(stateDir, "curl.log")
 	smokeScript := filepath.Join(fakeBin, "smoke-ok")
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
@@ -123,7 +156,7 @@ case "$args" in
   *"jsonpath={.status.readyInstances}"*) printf '3';;
   *"jsonpath={.status.phase}"*) printf 'Cluster in healthy state';;
   *"get cluster cets-postgres"*) printf 'NAME READY STATUS PRIMARY\ncets-postgres 3 healthy cets-postgres-2\n';;
-  *"delete pod cets-postgres-1"*) : >"$FAKE_PRIMARY_MOVED";;
+  *"`+deletePostgresOnePod+`"*) : >"$FAKE_PRIMARY_MOVED";;
   *"SHOW synchronous_standby_names"*) printf 'sync-standby\n';;
   *"pg_stat_replication"*) printf '1\n';;
   *"INSERT INTO audit_logs"*) : ;;
@@ -140,17 +173,17 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "71-verify-postgres-failover.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", postgresFailoverScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_PG_FAILOVER_ARTIFACT_DIR="+artifactDir,
+		baremetalPGArtifact+artifactDir,
 		"BAREMETAL_PG_FAILOVER_RUN_ID=mock-pg-failover",
-		"BAREMETAL_PG_FAILOVER_SMOKE_SCRIPT="+smokeScript,
-		"POSTGRES_DB=cets",
-		"POSTGRES_USER=cets",
+		baremetalPGSmokeScript+smokeScript,
+		postgresDBEnv,
+		postgresUserEnv,
 		"FAKE_PRIMARY_MOVED="+primaryMoved,
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		fakeKubectlLogEnv+kubectlLog,
 		"FAKE_CURL_LOG="+curlLog,
 	)
 	require.NoError(t, cmd.Run())
@@ -160,11 +193,11 @@ exit 0
 	kubectlCalls := readText(t, kubectlLog)
 	curlCalls := readText(t, curlLog)
 	assert.Contains(t, report, "| Status | `passed` |")
-	assert.Contains(t, report, "| Old primary | `cets-postgres-1` |")
+	assert.Contains(t, report, oldPrimaryPostgresOneRow)
 	assert.Contains(t, report, "| New primary | `cets-postgres-2` |")
 	assert.Contains(t, report, "| Probe audit ID | `ha-failover-probe-mock-pg-failover` |")
 	assert.Contains(t, report, "| Failure reason | `none` |")
-	assert.Contains(t, events, "cets-postgres-1|old_primary_detected")
+	assert.Contains(t, events, oldPrimaryDetectedEvent)
 	assert.Contains(t, events, "cets-postgres-1|sync_replication_before_ok")
 	assert.Contains(t, events, "cets-postgres-1|probe_committed")
 	assert.Contains(t, events, "cets-postgres-1|primary_deleted")
@@ -174,12 +207,12 @@ exit 0
 	assert.Contains(t, events, "cets-postgres-2|probe_survived")
 	assert.Contains(t, events, "ingress|readyz_after_failover")
 	assert.Contains(t, events, "app-smoke|passed")
-	assert.Contains(t, kubectlCalls, "delete pod cets-postgres-1")
+	assert.Contains(t, kubectlCalls, deletePostgresOnePod)
 	assert.Contains(t, curlCalls, "/readyz")
 }
 
 func TestBaremetalPostgresFailoverPreflightsDangerousInputs(t *testing.T) {
-	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "71-verify-postgres-failover.sh"))
+	script := readText(t, filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", postgresFailoverScript))
 
 	assert.Contains(t, script, `POSTGRES_DB=${POSTGRES_DB:-cets}`)
 	assert.Contains(t, script, `POSTGRES_USER=${POSTGRES_USER:-postgres}`)
@@ -210,15 +243,15 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "71-verify-postgres-failover.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", postgresFailoverScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_PG_FAILOVER_ARTIFACT_DIR="+artifactDir,
+		baremetalPGArtifact+artifactDir,
 		"BAREMETAL_PG_FAILOVER_RUN_ID=mock-smoke-preflight",
-		"BAREMETAL_PG_FAILOVER_SMOKE_SCRIPT="+smokeScript,
-		"POSTGRES_DB=cets",
-		"POSTGRES_USER=cets",
+		baremetalPGSmokeScript+smokeScript,
+		postgresDBEnv,
+		postgresUserEnv,
 	)
 	err := cmd.Run()
 	require.Error(t, err)
@@ -228,13 +261,13 @@ exit 0
 	assert.Contains(t, report, "| Status | `failed` |")
 	assert.Contains(t, report, "| Smoke script | `"+smokeScript+"` |")
 	assert.Contains(t, report, "| Failure reason | `PostgreSQL failover smoke script is not executable: "+smokeScript+"` |")
-	assert.Contains(t, events, "drill|failed")
+	assert.Contains(t, events, drillFailedEvent)
 }
 
 func TestBaremetalPostgresFailoverPreflightOnlyStopsBeforePrimaryDelete(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	smokeScript := filepath.Join(fakeBin, "smoke-ok")
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
@@ -254,17 +287,17 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "71-verify-postgres-failover.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", postgresFailoverScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_PG_FAILOVER_ARTIFACT_DIR="+artifactDir,
+		baremetalPGArtifact+artifactDir,
 		"BAREMETAL_PG_FAILOVER_RUN_ID=mock-pg-preflight",
 		"BAREMETAL_PG_FAILOVER_PREFLIGHT_ONLY=true",
-		"BAREMETAL_PG_FAILOVER_SMOKE_SCRIPT="+smokeScript,
-		"POSTGRES_DB=cets",
-		"POSTGRES_USER=cets",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		baremetalPGSmokeScript+smokeScript,
+		postgresDBEnv,
+		postgresUserEnv,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	require.NoError(t, cmd.Run())
 
@@ -272,21 +305,21 @@ exit 0
 	events := readText(t, filepath.Join(artifactDir, "postgres-failover-events-mock-pg-preflight.txt"))
 	kubectlCalls := readText(t, kubectlLog)
 	assert.Contains(t, report, "| Status | `preflight-passed` |")
-	assert.Contains(t, report, "| Old primary | `cets-postgres-1` |")
+	assert.Contains(t, report, oldPrimaryPostgresOneRow)
 	assert.Contains(t, report, "| New primary | `not-run` |")
 	assert.Contains(t, report, "| Probe audit ID | `not-run` |")
 	assert.Contains(t, report, "| Failure reason | `none` |")
-	assert.Contains(t, events, "cets-postgres-1|old_primary_detected")
+	assert.Contains(t, events, oldPrimaryDetectedEvent)
 	assert.Contains(t, events, "cets-postgres-1|sync_replication_before_ok")
 	assert.Contains(t, events, "cets-postgres-1|preflight_only_passed")
 	assert.NotContains(t, kubectlCalls, "INSERT INTO audit_logs")
-	assert.NotContains(t, kubectlCalls, "delete pod cets-postgres-1")
+	assert.NotContains(t, kubectlCalls, deletePostgresOnePod)
 }
 
 func TestBaremetalPostgresFailoverWritesFailedReport(t *testing.T) {
 	fakeBin := t.TempDir()
 	artifactDir := t.TempDir()
-	kubectlLog := filepath.Join(t.TempDir(), "kubectl.log")
+	kubectlLog := filepath.Join(t.TempDir(), kubectlLogFile)
 	writeExecutable(t, filepath.Join(fakeBin, "kubectl"), `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
@@ -302,15 +335,15 @@ exit 0
 exit 0
 `)
 
-	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "71-verify-postgres-failover.sh")
+	script := filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", postgresFailoverScript)
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BAREMETAL_PG_FAILOVER_ARTIFACT_DIR="+artifactDir,
+		baremetalPGArtifact+artifactDir,
 		"BAREMETAL_PG_FAILOVER_RUN_ID=mock-pg-fail",
-		"POSTGRES_DB=cets",
-		"POSTGRES_USER=cets",
-		"FAKE_KUBECTL_LOG="+kubectlLog,
+		postgresDBEnv,
+		postgresUserEnv,
+		fakeKubectlLogEnv+kubectlLog,
 	)
 	err := cmd.Run()
 	require.Error(t, err)
@@ -319,9 +352,9 @@ exit 0
 	events := readText(t, filepath.Join(artifactDir, "postgres-failover-events-mock-pg-fail.txt"))
 	kubectlCalls := readText(t, kubectlLog)
 	assert.Contains(t, report, "| Status | `failed` |")
-	assert.Contains(t, report, "| Old primary | `cets-postgres-1` |")
+	assert.Contains(t, report, oldPrimaryPostgresOneRow)
 	assert.Contains(t, report, "| Failure reason | `expected at least one sync or quorum standby on cets-postgres-1, got 0` |")
-	assert.Contains(t, events, "cets-postgres-1|old_primary_detected")
-	assert.Contains(t, events, "drill|failed")
-	assert.NotContains(t, kubectlCalls, "delete pod cets-postgres-1")
+	assert.Contains(t, events, oldPrimaryDetectedEvent)
+	assert.Contains(t, events, drillFailedEvent)
+	assert.NotContains(t, kubectlCalls, deletePostgresOnePod)
 }

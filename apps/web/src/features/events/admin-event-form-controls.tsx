@@ -97,6 +97,16 @@ export function EventCoreFields<T extends AdminCreateForm | AdminEditForm>({
           required
         />
         <Field
+          label="活動結束"
+          name="event-ends-at"
+          type="datetime-local"
+          value={form.ends_at}
+          onChange={(ends_at) => onChange({ ...form, ends_at })}
+          hint="活動結束需晚於活動開始，票券有效期限會到此時間。"
+          invalid={!windowReady}
+          required
+        />
+        <Field
           label="報名開始"
           name="registration-start"
           type="datetime-local"

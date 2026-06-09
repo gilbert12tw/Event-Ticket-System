@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS events (
 		event_city TEXT NOT NULL DEFAULT '',
 		event_site TEXT NOT NULL DEFAULT '',
 		starts_at TIMESTAMPTZ NOT NULL,
+		ends_at TIMESTAMPTZ NOT NULL,
 		registration_start TIMESTAMPTZ NOT NULL,
 		registration_close TIMESTAMPTZ NOT NULL,
 		capacity_type TEXT NOT NULL DEFAULT 'limited' CHECK (capacity_type IN ('limited', 'unlimited')),
@@ -35,6 +36,9 @@ CREATE TABLE IF NOT EXISTS events (
 		CONSTRAINT events_capacity_rules_check CHECK (
 			(capacity_type = 'limited' AND capacity IS NOT NULL AND capacity > 0 AND allows_family = false)
 			OR (capacity_type = 'unlimited' AND capacity IS NULL)
+		),
+		CONSTRAINT events_time_window_check CHECK (
+			ends_at > starts_at
 		)
 	);
 
@@ -48,6 +52,7 @@ CREATE TABLE IF NOT EXISTS event_versions (
 		event_city TEXT NOT NULL DEFAULT '',
 		event_site TEXT NOT NULL DEFAULT '',
 		starts_at TIMESTAMPTZ NOT NULL,
+		ends_at TIMESTAMPTZ NOT NULL,
 		registration_start TIMESTAMPTZ NOT NULL,
 		registration_close TIMESTAMPTZ NOT NULL,
 		capacity_type TEXT NOT NULL DEFAULT 'limited' CHECK (capacity_type IN ('limited', 'unlimited')),
@@ -65,6 +70,9 @@ CREATE TABLE IF NOT EXISTS event_versions (
 		CONSTRAINT event_versions_capacity_rules_check CHECK (
 			(capacity_type = 'limited' AND capacity IS NOT NULL AND capacity > 0 AND allows_family = false)
 			OR (capacity_type = 'unlimited' AND capacity IS NULL)
+		),
+		CONSTRAINT event_versions_time_window_check CHECK (
+			ends_at > starts_at
 		),
 		UNIQUE (event_id, version)
 	);
@@ -329,6 +337,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DE
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_filter ON audit_logs(action, entity_type, entity_id, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_audit_logs_rate_limited_event_recent
+	ON audit_logs(created_at DESC, (metadata->>'event_id'))
+	WHERE action = 'booking.rate_limited' AND metadata ? 'event_id';
+
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(publish_status, available_at);
 
 CREATE INDEX IF NOT EXISTS idx_outbox_published_lag ON outbox_events(event_type, published_at, created_at)
@@ -392,6 +404,16 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS event_city TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE events ADD COLUMN IF NOT EXISTS event_site TEXT NOT NULL DEFAULT '';
 
+ALTER TABLE events ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
+
+UPDATE events SET ends_at = starts_at + interval '24 hours' WHERE ends_at IS NULL;
+
+ALTER TABLE events ALTER COLUMN ends_at SET NOT NULL;
+
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_time_window_check;
+
+ALTER TABLE events ADD CONSTRAINT events_time_window_check CHECK (ends_at > starts_at);
+
 ALTER TABLE events ADD COLUMN IF NOT EXISTS capacity_type TEXT NOT NULL DEFAULT 'limited';
 
 ALTER TABLE events ADD COLUMN IF NOT EXISTS allows_family BOOLEAN NOT NULL DEFAULT false;
@@ -428,6 +450,16 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS event_city TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS event_site TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
+
+UPDATE event_versions SET ends_at = starts_at + interval '24 hours' WHERE ends_at IS NULL;
+
+ALTER TABLE event_versions ALTER COLUMN ends_at SET NOT NULL;
+
+ALTER TABLE event_versions DROP CONSTRAINT IF EXISTS event_versions_time_window_check;
+
+ALTER TABLE event_versions ADD CONSTRAINT event_versions_time_window_check CHECK (ends_at > starts_at);
 
 ALTER TABLE event_versions ADD COLUMN IF NOT EXISTS capacity_type TEXT NOT NULL DEFAULT 'limited';
 

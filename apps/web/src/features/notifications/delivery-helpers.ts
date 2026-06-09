@@ -20,3 +20,25 @@ export function retryDisabledReason(row: NotificationDelivery) {
   if (row.status === "pending") return "待處理中，不可重試";
   return "目前狀態不可重試";
 }
+
+export function sortDeliveriesByAttention(rows: NotificationDelivery[]) {
+  return [...rows].sort((left, right) => {
+    const priorityDiff =
+      deliveryAttentionPriority(left) - deliveryAttentionPriority(right);
+    if (priorityDiff !== 0) return priorityDiff;
+    return parseTime(right.updated_at) - parseTime(left.updated_at);
+  });
+}
+
+function deliveryAttentionPriority(row: NotificationDelivery) {
+  if (canRetryDelivery(row)) return 0;
+  if (row.status === "failed" || row.status === "dead_letter") return 1;
+  if (row.status === "pending") return 2;
+  if (row.status === "suppressed") return 3;
+  return 4;
+}
+
+function parseTime(value?: string) {
+  const time = new Date(value ?? "").getTime();
+  return Number.isNaN(time) ? 0 : time;
+}

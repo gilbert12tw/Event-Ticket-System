@@ -1,122 +1,85 @@
-# CLAUDE.md
+# Corporate Event Ticketing System Agent Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the concise entry point for coding agents and developers working in this repository. Keep it under 100 lines. Detailed rules live in `docs/agent-rules/`.
 
-## Source of Truth Docs
+## Source of Truth
 
-Read before changing code:
+- Architecture decisions: follow `docs/ARCHITECTURE.md`.
+- Implementation discipline: follow this file and task-relevant `docs/agent-rules/*.md`.
+- Product and design context: see `docs/PRODUCT.md` and `docs/DESIGN.md`.
+- Documentation map: start with `docs/INDEX.md`.
+- Specs: use `docs/specs/` for task-specific acceptance criteria.
+- Completed or superseded workstream notes live in `docs/archive/`; do not treat them as current scope without cross-checking active docs.
+- Backend directory refactors: start from `docs/specs/backend-directory-architecture.md`.
+- If architecture or implementation strategy changes, update the relevant docs before changing code.
 
-- `AGENTS.md` — entry point for coding agents; concise rules summary.
-- `docs/ARCHITECTURE.md` — Phase 1 architecture, capacity, NFRs, 12-Factor mapping.
-- `docs/agent-rules/{architecture,clean-code,correctness,development-workflow,local-environment}.md` — non-negotiable rule files.
-- `docs/PRODUCT.md`, `docs/DESIGN.md`, `docs/specs/` — product, UX, and task-specific acceptance criteria.
-- `docs/openapi.yaml` + `docs/openapi/` — API contract (gated by `scripts/check-openapi-contract.rb`).
+## Progressive Rule Reading
 
-If architecture or strategy changes, update the relevant doc BEFORE changing code.
+Start with this file. Do not preload every `docs/agent-rules/*.md` file. Open only the rule files triggered by the current task; if a task spans multiple domains, read each matching file before editing that domain:
 
-## Common Commands
+- Architecture, module, or deployment-shape changes -> `docs/agent-rules/architecture.md`.
+- Non-trivial implementation or review behavior -> `docs/agent-rules/llm-behavior.md`.
+- Code style, file-size, or refactor work -> `docs/agent-rules/clean-code.md`.
+- Ticketing correctness, idempotency, or audit work -> `docs/agent-rules/correctness.md`.
+- Multi-step tasks, tests, or commits -> `docs/agent-rules/development-workflow.md`.
+- Docker, local services, or runtime verification -> `docs/agent-rules/local-environment.md`.
 
-Backend (Go modular monolith under `services/api`):
+## Behavioral Guidelines
 
-```bash
-# Full backend tests
-cd services/api && go test ./... -count=1
+Follow the complete, non-abridged behavioral guidelines in `docs/agent-rules/llm-behavior.md`.
 
-# Single package / single test
-go test ./internal/ticketing -run TestRegistrationOversell -count=1
+## Project Context
 
-# Run app or worker locally against Compose DB
-DATABASE_URL=postgresql://cets:cets_dev_password@localhost:15432/cets go run ./services/api/cmd/cets {serve|worker|migrate|seed|hr-sync|ready}
-```
+This project implements a TDD-first corporate event ticketing system. The current codebase is a Go
+modular monolith with a React SPA and focuses on:
 
-Frontend (`apps/web`, React 19 + Vite + TS + Tailwind 4):
+- event publishing, eligibility, booking, waitlist, and allocation correctness;
+- signed tickets, one-time QR redemption, and offline check-in conflict boundaries;
+- notification, reporting, audit, privacy, and role-based operational workflows;
+- PostgreSQL source-of-truth transactions plus Redis, MinIO, Mailhog, HR, and SSO adapters.
 
-```bash
-pnpm install                                # at repo root, uses pnpm 10.33.3
-pnpm --filter cets-web lint                 # ESLint, --max-warnings=0
-pnpm --filter cets-web test                 # vitest run
-pnpm --filter cets-web test -- src/foo.test.ts  # single test file
-pnpm --filter cets-web build                # tsc -b && vite build → embedded into Go static
-pnpm --filter cets-web test:e2e             # Playwright mocked viewport gate
-pnpm --filter cets-web test:e2e:live        # Playwright against running Compose app
-```
+Treat the local docs below as source material. Retired research artifacts have been consolidated
+into these checked-in docs and are not required for agent work:
 
-Turbo orchestrates workspace tasks: `pnpm dev|build|test|lint` at root.
+- [docs/principles/solid.md](docs/principles/solid.md)
+- [docs/principles/twelve-factor-rule.md](docs/principles/twelve-factor-rule.md)
 
-OpenAPI contract check: `ruby scripts/check-openapi-contract.rb`.
+## Non-Negotiable Rules
 
-k6 production gate (requires running stack on `BASE_URL`): see `k6/phase1-production-gate.js`, run via `grafana/k6:1.7.1-with-browser`.
+- Keep hand-written source files small: target 200-300 lines, never exceed 500 lines.
+- Use Google style guidance plus project formatter and linter settings.
+- Keep module boundaries explicit; avoid cyclic dependencies, hidden global state, and broad shared utility dumping grounds.
+- Prevent oversell with PostgreSQL transactions, row locks or unique constraints; Redis is never the final transaction truth.
+- Use idempotency keys or equivalent deduplication for booking, cancellation, ticket generation, notification, and check-in sync.
+- Recheck eligibility and event state during final booking, not only in cached event lists.
+- One ticket may be redeemed successfully only once; database constraints are the final guarantee.
+- Record audit logs for sensitive actions and conflict outcomes.
 
-## Docker Compose Workflow
+## Workflow
 
-Compose file is the single local entry point. Always pass the env-file and compose file explicitly:
+Do not implement a large task in one pass. Split work into small tasks by use case, module, risk, or independently verifiable behavior.
 
-```bash
-dc()    { docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml "$@"; }
-dcdev() { docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml -f services/api/deploy/compose.dev.yaml "$@"; }
+For large coordinated tasks, delegate narrow workstreams to specialist subagents with explicit file ownership. Prefer fast coding agents such as `gpt-5.3-codex-spark` for bounded implementation or review slices when available.
 
-dc build app
-dc up -d app worker                # auto: migrate → seed → app/worker
-curl -fsS http://localhost:8080/readyz
-```
+Before each small task, define the goal, acceptance criteria, impact scope, test strategy, and non-goals. Keep diffs focused. Do not mix broad formatting, dependency upgrades, unrelated refactors, docs rewrites, and feature work in one task.
 
-`seed` 服務經 `depends_on` 串接，每次 `dc up` 會跑一次 `SeedDemoData` 寫入 demo 員工 (E1001/E1002/E2001)；`ON CONFLICT DO UPDATE` 重跑安全。
+After each small task, add or update matching tests, inspect `git status` and `git diff --stat`, then create a local commit unless the user explicitly says not to commit.
 
-Rebuild `app` only when Go code, migrations, the embedded production frontend bundle (`services/api/internal/httpapi/static`), the Dockerfile, or dependency manifests change. Pure frontend hot-reload uses `dcdev ... up -d web-dev` and Vite at `:5173`.
+Before pushing committed work, run `act push` once to verify the GitHub Actions push workflow locally. Do not push if `act push` fails; either fix the workflow/code issue or document the blocker explicitly with the failed job and log excerpt.
 
-Local default ports (overrides via env): app `8080`, postgres `15432`, redis `16379`, minio `19000/19001`, mailhog `11025/18025`, vite `5173`.
+Before pushing, run Sonar scanning if local Sonar tooling is available. Treat Sonar as available when `sonar-scanner` is installed, or an equivalent scanner container/script can run with `SONAR_HOST_URL` and `SONAR_TOKEN`. If available, run the full scan path with coverage; if the scan, server-side processing, or Quality Gate reports issues, fix them immediately and rerun until clean before pushing. If Sonar is not installed/configured, document that it was skipped for that reason.
 
-Host-CLI DB URL: `postgresql://cets:cets_dev_password@localhost:15432/cets`. Inside Compose the hostname is `postgres`.
+Reviewer subagents must check correctness, tests, 12-Factor compliance, clean-code limits, and unrelated diff churn before a task is accepted.
 
-`compose_test.go` validates the compose file via `docker compose ... config`; do not break it.
+## Verification
 
-## Architecture
+Use task-relevant checks. At minimum, documentation-only changes need `git diff --check`. Runtime or Docker-related changes should verify:
 
-Phase 1 is a Go modular monolith (`services/api`) + same-binary `worker` process consuming a PostgreSQL `outbox_events` table. Do NOT introduce microservices, Kafka, Kubernetes, or cross-region HA as Phase 1 deliverables.
+- `docker compose --env-file services/api/deploy/.env.example -f services/api/deploy/compose.yaml config`
+- Relevant Go, frontend, integration, and failure tests
+- Logs do not contain full PII or secrets
+- Phase 1 docs do not claim microservices, Kafka, Kubernetes, or cross-region HA are complete
 
-Layering (strict — enforced by `internal/architecture/architecture_test.go`):
+## Codex Rules Note
 
-- `cmd/cets` — process entrypoint; dispatches `serve|worker|migrate|seed|hr-sync|ready` (see `cmd/cets/main.go`).
-- `internal/httpapi` — controllers, router, auth, request/response shapes. Input/output and authorization only.
-- `internal/ticketing` — application services + domain rules for all modules (Auth/RBAC, Event, Eligibility, Registration, Ticket, Check-in, Notification, Reporting, Audit). `internal/ticketing` MUST NOT import `internal/httpapi`.
-- `internal/postgres` — migrations.
-- `internal/objectstore`, `internal/traceid`, `internal/config` — adapters and infra.
-
-Frontend mirrors backend modules under `apps/web/src/features/{auth,events,registrations,tickets,checkin,reporting,audit,notifications,hr-settings,demo-runbook}`. Routes live in `src/app/routes.ts` with boundary tests in `src/app/architecture-boundaries.test.ts`.
-
-### Non-negotiable correctness rules
-
-- PostgreSQL is the only source of truth for committed booking, ticket, check-in, and audit state. Redis is an optional reservation/idempotency/cache layer; never the final transaction truth.
-- Final booking must recheck eligibility, event state, capacity, booking window, and allocation policy inside the DB transaction. Cached event/eligibility summaries cannot authorize a booking.
-- Booking, cancellation, ticket generation, notification, and check-in sync require `idempotency_key` (or equivalent) with unique constraints.
-- One ticket may be redeemed exactly once. `checkin_record.ticket_id` unique constraint is the final guarantee; first-commit-wins for offline sync, preserve conflict rows with `device_id`/`scanned_at`/`staff_id`.
-- Business data and async side effects (notifications, report exports) commit together via the PostgreSQL outbox; the worker must be idempotent and safe to retry.
-- Sensitive actions write immutable audit log entries. Logs must never contain full PII or secrets — CI scans `app`/`worker`/`mailhog` logs for known leakage patterns (see `ci.yml` "Scan live gate logs").
-
-### Auth model
-
-Protected APIs and `/api/v1/auth/me` require `Authorization: Bearer <provider-token>` signed with `PROVIDER_TOKEN_SECRET`. The API maps required employee claims to exactly one application role. Local/demo/test profiles ask the backend to mint provider-format bearer tokens; legacy role headers and `/auth/login` session cookies are demo-only and not real auth paths. Production requires non-demo `TOKEN_SIGNING_SECRET` and `PROVIDER_TOKEN_SECRET` values.
-
-### File size enforcement
-
-`internal/architecture/architecture_test.go` fails CI if any hand-written `.go` under `services/api` or any web source under `apps/web/src` exceeds 500 lines. Target 200–300; split before adding behavior past ~400. Generated files, migrations, lockfiles, fixtures are exempt.
-
-## Workflow Expectations
-
-- Split large changes into small tasks. Each task = one use case / module / risk with explicit goal, acceptance criteria, impact scope, test strategy, non-goals.
-- Add or update tests with the change. Cover oversell, duplicate booking, ineligible booking, duplicate check-in, notification retry, queue retry where relevant.
-- Keep diffs focused: do NOT mix broad formatting, dependency upgrades, unrelated refactors, doc rewrites, and feature work.
-- Commit message scope style: `feat(registration): ...`, `fix(checkin): ...`, etc. (see `git log`).
-- Do not commit `.env`, real secrets, or unrelated files. Inspect `git status` and `git diff --stat` before committing.
-- Phase 1 docs must not claim microservices, Kafka, Kubernetes, or cross-region HA are complete.
-
-## CI Gates (`.github/workflows/ci.yml`)
-
-Path-filtered jobs:
-
-- `backend` — `go test ./... -count=1` against Postgres 16 service.
-- `frontend` — pnpm lint, vitest, build, mocked Playwright.
-- `openapi` — `ruby scripts/check-openapi-contract.rb`.
-- `live-gates` — full Compose stack + live Playwright + k6 smoke (release gate is workflow_dispatch). Also greps logs for PII/secret leakage.
-
-Run the matching local check before pushing.
+OpenAI Codex `.codex/rules/*.rules` files are for sandbox escalation and command prefix policy. Do not place architecture, clean-code, workflow, or product guidance there.

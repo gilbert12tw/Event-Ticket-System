@@ -31,13 +31,13 @@ func (s *Service) readEventWithRuleTx(ctx context.Context, tx pgx.Tx, eventID st
 	var event Event
 	var tags string
 	var capacity pgtype.Int4
-	query := `SELECT event_id, title, description, location, event_city, event_site, starts_at, registration_start, registration_close,
+	query := `SELECT event_id, title, description, location, event_city, event_site, starts_at, ends_at, registration_start, registration_close,
 			capacity_type, capacity, allows_family, status, allocation_mode,
 			category, tags, entry_method, visibility, version, COALESCE(archived_at, '0001-01-01 00:00:00+00'::timestamptz), created_by, created_at, updated_at
 		FROM events WHERE event_id = $1`
 	query += string(lockMode)
 	err := tx.QueryRow(ctx, query, eventID).
-		Scan(&event.EventID, &event.Title, &event.Description, &event.Location, &event.EventCity, &event.EventSite, &event.StartsAt, &event.RegistrationStart, &event.RegistrationClose,
+		Scan(&event.EventID, &event.Title, &event.Description, &event.Location, &event.EventCity, &event.EventSite, &event.StartsAt, &event.EndsAt, &event.RegistrationStart, &event.RegistrationClose,
 			&event.CapacityType, &capacity, &event.AllowsFamily, &event.Status, &event.AllocationMode,
 			&event.Category, &tags, &event.EntryMethod, &event.Visibility, &event.Version, &event.ArchivedAt, &event.CreatedBy, &event.CreatedAt, &event.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -68,10 +68,10 @@ func (s *Service) insertEventVersionTx(ctx context.Context, tx pgx.Tx, actor Act
 		reason = "not specified"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO event_versions
-		(version_id, event_id, version, title, description, location, event_city, event_site, starts_at, registration_start, registration_close,
+		(version_id, event_id, version, title, description, location, event_city, event_site, starts_at, ends_at, registration_start, registration_close,
 		 capacity_type, capacity, allows_family, status, allocation_mode, category, tags, entry_method, visibility, changed_by, change_reason)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
-		versionID, event.EventID, event.Version, event.Title, event.Description, event.Location, event.EventCity, event.EventSite, event.StartsAt, event.RegistrationStart, event.RegistrationClose,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		versionID, event.EventID, event.Version, event.Title, event.Description, event.Location, event.EventCity, event.EventSite, event.StartsAt, event.EndsAt, event.RegistrationStart, event.RegistrationClose,
 		event.CapacityType, event.Capacity, event.AllowsFamily, event.Status, event.AllocationMode, event.Category, joinTags(event.Tags), event.EntryMethod, event.Visibility, actor.ID, reason)
 	return err
 }

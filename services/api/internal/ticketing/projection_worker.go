@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -98,15 +97,10 @@ func (s *Service) processClaimedProjectionOutbox(
 	}
 
 	newCounts := computeNewCounts(current, proj)
-	if err := upsertEventSummary(
-		ctx, tx,
-		proj.EventID,
-		newCounts.ConfirmedCount,
-		newCounts.CancelledCount,
-		newCounts.WaitlistCount,
-		newCounts.DepartmentBreakdown,
-		proj.OutboxID,
-	); err != nil {
+	// proj.OutboxID is the time-ordered composite offset (see projectionOffsetKey),
+	// NOT the raw random outbox_id — it is what the upsert's lexicographic guard
+	// compares against, so older events never overwrite newer aggregates.
+	if err := upsertEventSummary(ctx, tx, proj.EventID, newCounts, proj.OutboxID); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
@@ -183,7 +177,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 			if eventID != "" && triggerEventID != "" {
 				return ProjectionEvent{
 					EventID:        eventID,
-					OutboxID:       fmt.Sprintf("%s|%s", claim.createdAt.UTC().Format(time.RFC3339Nano), claim.outboxID),
+					OutboxID:       projectionOffsetKey(claim.createdAt, claim.outboxID),
 					TriggerEventID: triggerEventID,
 					Department:     strings.TrimSpace(v2.Payload.Department),
 				}, true
@@ -206,7 +200,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	}
 	return ProjectionEvent{
 		EventID:    eventID,
-		OutboxID:   fmt.Sprintf("%s|%s", claim.createdAt.UTC().Format(time.RFC3339Nano), claim.outboxID),
+		OutboxID:   projectionOffsetKey(claim.createdAt, claim.outboxID),
 		InnerType:  innerType,
 		Department: strings.TrimSpace(v1.Department),
 	}, true

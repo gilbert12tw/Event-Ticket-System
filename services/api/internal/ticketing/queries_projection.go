@@ -18,11 +18,10 @@ func upsertEventSummary(
 	ctx context.Context,
 	tx pgx.Tx,
 	eventID string,
-	confirmed, cancelled, waitlist int,
-	breakdown map[string]int,
+	counts eventSummaryRow,
 	outboxID string,
 ) error {
-	breakdownJSON, err := json.Marshal(breakdown)
+	breakdownJSON, err := json.Marshal(counts.DepartmentBreakdown)
 	if err != nil {
 		return fmt.Errorf("projection: marshal department_breakdown: %w", err)
 	}
@@ -56,9 +55,9 @@ func upsertEventSummary(
 				THEN now()
 				ELSE reporting_event_summary.updated_at END`,
 		eventID,
-		max(confirmed, 0),
-		max(cancelled, 0),
-		max(waitlist, 0),
+		max(counts.ConfirmedCount, 0),
+		max(counts.CancelledCount, 0),
+		max(counts.WaitlistCount, 0),
 		string(breakdownJSON),
 		outboxID,
 	)

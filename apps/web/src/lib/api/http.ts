@@ -85,14 +85,7 @@ export async function api<T>(
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
     });
-    const contentType = response.headers.get("Content-Type") || "";
-    const envelope = contentType.includes("application/json")
-      ? ((await response.json()) as ApiEnvelope<T>)
-      : ({
-          success: false,
-          data: null as T,
-          error: await response.text(),
-        } satisfies ApiEnvelope<T>);
+    const envelope = await readEnvelope<T>(response);
 
     logApi(
       `${method} ${path}`,
@@ -102,7 +95,7 @@ export async function api<T>(
       envelope,
     );
     if (!response.ok) {
-      throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
+      throw new ApiError(response.status, envelope);
     }
     return envelope.data;
   } catch (error) {
@@ -116,6 +109,41 @@ export async function api<T>(
 
 export async function apiList<T>(path: string, options: RequestOptions = {}) {
   return (await api<T[] | null>(path, options)) ?? [];
+}
+
+export async function readEnvelope<T>(
+  response: Response,
+): Promise<ApiEnvelope<T>> {
+  const contentType = response.headers.get("Content-Type") || "";
+  return contentType.includes("application/json")
+    ? ((await response.json()) as ApiEnvelope<T>)
+    : ({
+        success: false,
+        data: null as T,
+        error: await response.text(),
+      } satisfies ApiEnvelope<T>);
+}
+
+export function buildQuerySuffix(params: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      const trimmed = queryValue(item).trim();
+      if (trimmed !== "") search.append(key, trimmed);
+    }
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+function queryValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value.toString();
+  }
+  return JSON.stringify(value);
 }
 
 export function encoded(value: string) {
@@ -141,14 +169,7 @@ export async function postForm<T>(path: string, body: FormData) {
     headers: authHeaders(),
     body,
   });
-  const contentType = response.headers.get("Content-Type") || "";
-  const envelope = contentType.includes("application/json")
-    ? ((await response.json()) as ApiEnvelope<T>)
-    : ({
-        success: false,
-        data: null as T,
-        error: await response.text(),
-      } satisfies ApiEnvelope<T>);
+  const envelope = await readEnvelope<T>(response);
   logApi(
     `POST ${path}`,
     response.status,
@@ -157,7 +178,7 @@ export async function postForm<T>(path: string, body: FormData) {
     envelope,
   );
   if (!response.ok) {
-    throw new ApiError(response.status, envelope as ApiEnvelope<unknown>);
+    throw new ApiError(response.status, envelope);
   }
   return envelope.data;
 }

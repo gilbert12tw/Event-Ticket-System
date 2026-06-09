@@ -58,3 +58,10 @@ test-results/
 /bin/
 /scripts/.venv/
 /services/api/reservation_experiment
+
+# logs
+docs/code-task
+docs/plan
+docs/review
+
+references/

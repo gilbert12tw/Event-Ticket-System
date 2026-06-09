@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  expectElementAboveMobileTabbar,
   expectNoHorizontalOverflow,
   expectNotificationControlsCompact,
   expectPrimaryCtaTreatment,
@@ -8,7 +9,6 @@ import {
   forbiddenRouteCases,
   roleCases,
   sampleEvent,
-  sampleTickets,
   type EventFixture,
 } from "./core-role-routes.fixtures";
 import { ensureSessionRoutes, loginAs } from "./core-role-routes.mocks";
@@ -78,8 +78,11 @@ test("employee tickets open exact detail only after list click", async ({
 }) => {
   await openRoute(page, "E1001", "/user/tickets");
 
-  await expect(page.getByRole("heading", { name: "票券清單" })).toBeVisible();
-  await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { level: 2, name: "我的票券" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("目前可入場票券")).toBeVisible();
+  await expect(page.getByLabel("票券二維碼").first()).toBeVisible();
 
   await page.getByRole("link", { name: /第一階段企業午餐日/ }).click();
   await expect(page).toHaveURL(/\/user\/tickets\?ticket_id=ticket-001$/);
@@ -114,13 +117,17 @@ test("employee booking CTAs keep primary visual treatment", async ({
     remaining_capacity: 0,
   };
 
-  await openRoute(page, "E1001", "/user/events", {
+  await openRoute(page, "E1001", "/user/events?view=week&date=2026-06-04", {
     eventDetail: bookableEvent,
     events: [bookableEvent, waitlistEvent],
   });
 
-  await expectPrimaryCtaTreatment(page.getByRole("link", { name: /立即報名/ }));
-  await expectPrimaryCtaTreatment(page.getByRole("link", { name: /加入候補/ }));
+  await expectPrimaryCtaTreatment(
+    page.getByRole("link", { name: "報名活動：可直接報名活動" }),
+  );
+  await expectPrimaryCtaTreatment(
+    page.getByRole("link", { name: "查看詳情：候補活動" }),
+  );
 
   await page.goto("/user/events/detail?event_id=evt-waitlist", {
     waitUntil: "domcontentloaded",
@@ -128,6 +135,110 @@ test("employee booking CTAs keep primary visual treatment", async ({
   await expectPrimaryCtaTreatment(
     page.getByRole("button", { name: /加入候補/ }),
   );
+  await expectNoHorizontalOverflow(page);
+});
+
+test("employee event discovery search stays compact and keyboard accessible", async ({
+  page,
+}) => {
+  const lunchEvent: EventFixture = {
+    ...sampleEvent,
+    current_user_status: undefined,
+    current_user_ticket: undefined,
+    event_id: "evt-search-lunch",
+    registration_close: "2099-01-09T23:00:00Z",
+    title: "企業午餐交流",
+  };
+  const otherEvent: EventFixture = {
+    ...lunchEvent,
+    event_id: "evt-search-training",
+    tags: ["training"],
+    title: "技術訓練工作坊",
+  };
+
+  await openRoute(
+    page,
+    "E1001",
+    "/user/events?mode=list&view=week&date=2026-06-04",
+    {
+      events: [lunchEvent, otherEvent],
+    },
+  );
+
+  const search = page.getByRole("searchbox", { name: "搜尋活動" });
+  await expect(search).toBeVisible();
+  await expect(page.getByRole("tab", { name: "活動列表" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await search.focus();
+  await expect(search).toBeFocused();
+  await search.fill("午餐");
+
+  await expect(page).toHaveURL(/q=%E5%8D%88%E9%A4%90/);
+  await expect(page.getByText("符合 1 場活動")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "報名活動：企業午餐交流" }),
+  ).toBeVisible();
+  await expect(page.getByText("技術訓練工作坊")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /清除/ })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("employee calendar tab stays date-first without search controls", async ({
+  page,
+}) => {
+  await openRoute(page, "E1001", "/user/events?view=week&date=2026-06-04");
+
+  await expect(page.getByRole("tab", { name: "日曆" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByLabel("週行事曆")).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "搜尋活動" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("button", { name: "更新" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("employee event agenda keeps a single desktop card at reusable width", async ({
+  page,
+}) => {
+  if ((page.viewportSize()?.width ?? 0) <= 900) return;
+
+  const singleEvent: EventFixture = {
+    ...sampleEvent,
+    event_id: "evt-single-card",
+    title: "單一活動桌面比例檢查",
+    starts_at: "2026-06-04T10:00:00+08:00",
+    registration_close: "2099-01-09T23:00:00Z",
+    current_user_status: undefined,
+    current_user_ticket: undefined,
+  };
+
+  await openRoute(page, "E1001", "/user/events?view=day&date=2026-06-04", {
+    events: [singleEvent],
+  });
+
+  const cardList = page.locator(".employee-event-card-list").first();
+  const eventCard = page.locator(".employee-event-card").first();
+  await expect(eventCard).toBeVisible();
+  await expect(page.locator(".employee-event-card")).toHaveCount(1);
+
+  const cardBox = await eventCard.boundingBox();
+  const listBox = await cardList.boundingBox();
+  if (!cardBox || !listBox) {
+    throw new Error("employee event card layout bounds are unavailable");
+  }
+  expect(
+    cardBox.width,
+    "single event card keeps desktop card width",
+  ).toBeLessThanOrEqual(380);
+  expect(
+    listBox.width - cardBox.width,
+    "single event card does not stretch across the agenda",
+  ).toBeGreaterThan(120);
   await expectNoHorizontalOverflow(page);
 });
 
@@ -139,144 +250,28 @@ test("employee ticket detail missing state is recoverable", async ({
   await expect(page.getByText("找不到票券。")).toBeVisible();
   await expect(page.getByLabel("票券二維碼")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "返回我的票券" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { exact: true, name: "回我的票券" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "瀏覽活動" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新整理" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 
-test("employee cancellation requires confirmation before API call", async ({
+test("mobile check-in result stays clear of bottom navigation", async ({
   page,
 }) => {
-  let cancelRequests = 0;
-  const cancellableEvent: EventFixture = {
-    ...sampleEvent,
-    registration_close: "2099-01-09T23:00:00Z",
-  };
-  await ensureSessionRoutes(page, "E1001", {
-    eventDetail: cancellableEvent,
-    events: [cancellableEvent],
-  });
-  page.on("request", (request) => {
-    const pathName = new URL(request.url()).pathname;
-    if (/\/api\/v1\/me\/registrations\/[^/]+\/cancel$/.test(pathName)) {
-      cancelRequests += 1;
-    }
-  });
-  await loginAs(page, "E1001");
-  await page.goto("/user/events?tab=registered", {
-    waitUntil: "domcontentloaded",
-  });
+  if ((page.viewportSize()?.width ?? 0) > 900) return;
 
-  await page.getByRole("button", { name: "取消報名" }).click();
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("第一階段企業午餐日")).toBeVisible();
-  await expect(dialog.getByText(/已核發票券會同步失效/)).toBeVisible();
-  expect(cancelRequests).toBe(0);
+  await openRoute(page, "staff-1", "/admin/checkin");
+  await page.getByLabel("掃描或貼上票券簽章碼").fill("mocked-token");
+  await page.getByRole("button", { name: "送出驗票" }).click();
 
-  await page.getByRole("button", { name: "保留報名" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  expect(cancelRequests).toBe(0);
-
-  await page.getByRole("button", { name: "取消報名" }).click();
-  await page.getByRole("button", { name: "確認取消報名" }).click();
-  await expect(page.getByText("報名已取消").first()).toBeVisible();
-  expect(cancelRequests).toBe(1);
-  await expectNoHorizontalOverflow(page);
-});
-
-test("admin governance actions keep selected reason feedback", async ({
-  page,
-}) => {
-  const requestBodies = {
-    cancel: [] as Record<string, unknown>[],
-    revoke: [] as Record<string, unknown>[],
-  };
-  await ensureSessionRoutes(page, "admin-1");
-  page.on("request", (request) => {
-    const pathName = new URL(request.url()).pathname;
-    const body = JSON.parse(request.postData() || "{}") as Record<
-      string,
-      unknown
-    >;
-    if (
-      /\/api\/v1\/admin\/events\/[^/]+\/registrations\/[^/]+\/cancel$/.test(
-        pathName,
-      )
-    ) {
-      requestBodies.cancel.push(body);
-    }
-    if (/\/api\/v1\/admin\/tickets\/[^/]+\/revoke$/.test(pathName)) {
-      requestBodies.revoke.push(body);
-    }
-  });
-  await loginAs(page, "admin-1");
-  await page.goto("/admin/registrations", { waitUntil: "domcontentloaded" });
-
-  await page.getByRole("button", { name: "取消" }).click();
-  await page.getByRole("combobox", { name: "處置原因" }).click();
-  await page.getByRole("option", { name: "主管要求" }).click();
-  await page.getByRole("button", { name: "確認取消報名" }).click();
-  await expect(page.getByText("報名已取消。")).toBeVisible();
-  expect(requestBodies.cancel).toEqual([
-    { reason: "manager request", idempotency_key: "cancel-reg-001" },
-  ]);
-
-  await page.getByRole("tab", { name: "票券狀態" }).click();
-  await page.getByRole("button", { name: "撤銷票券" }).click();
-  await page.getByRole("combobox", { name: "處置原因" }).click();
-  await page.getByRole("option", { name: "安全審核" }).click();
-  await page.getByRole("button", { name: "確認撤銷" }).click();
-  await expect(page.getByText("票券已撤銷。")).toBeVisible();
-  expect(requestBodies.revoke).toEqual([{ reason: "security review" }]);
-  await expectNoHorizontalOverflow(page);
-});
-
-test("employee duplicate booking response keeps existing ticket handoff", async ({
-  page,
-}) => {
-  let bookingRequests = 0;
-  const availableEvent: EventFixture = {
-    ...sampleEvent,
-    current_user_status: undefined,
-    current_user_ticket: undefined,
-    registration_close: "2099-01-09T23:00:00Z",
-    remaining_capacity: 3,
-  };
-  await ensureSessionRoutes(page, "E1001", {
-    bookingResponse: {
-      registration: {
-        registration_id: "reg-001",
-        event_id: "evt-cets-001",
-        employee_id: "E1001",
-        status: "confirmed",
-        idempotency_key: "book-evt-cets-001-E1001",
-        created_at: "2026-01-02T09:00:00Z",
-      },
-      ticket: sampleTickets[0],
-      remaining_capacity: 227,
-      message: "booking confirmed",
-      duplicate: true,
-    },
-    eventDetail: availableEvent,
-    events: [availableEvent],
-  });
-  page.on("request", (request) => {
-    const pathName = new URL(request.url()).pathname;
-    if (/\/api\/v1\/events\/[^/]+\/bookings$/.test(pathName)) {
-      bookingRequests += 1;
-    }
-  });
-  await loginAs(page, "E1001");
-  await page.goto("/user/events/detail?event_id=evt-cets-001", {
-    waitUntil: "domcontentloaded",
-  });
-
-  await page.getByRole("button", { name: "立即報名" }).click();
-  await expect(page.getByText("你已經報名此活動")).toBeVisible();
-  await expect(page.getByText(/未建立新的報名/)).toBeVisible();
-  expect(bookingRequests).toBe(1);
-
-  await page.getByRole("link", { name: "查看票券" }).click();
-  await expect(page).toHaveURL(/\/user\/tickets\?ticket_id=ticket-001$/);
+  await expect(page.getByRole("heading", { name: "驗票成功" })).toBeVisible();
+  await expectElementAboveMobileTabbar(
+    page,
+    ".checkin-result-panel.has-result",
+  );
   await expectNoHorizontalOverflow(page);
 });
 

@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 41,
+  "uid": "k8s-use-infra",
+  "title": "ETS 04 — USE Infrastructure",
+  "description": "SRE/Infra resource owner view. Use when services are degraded but error rates are near-zero — look for CPU or memory saturation before tracing individual requests. USE = Utilization (% of capacity used) + Saturation (queue or wait time) + Errors (resource errors). Decision guide: If backend pod CPU > 80% → open Pyroscope to find the hot function. If DB pool acquired/total > 70% → check lock contention in Service Anomaly. If pod restarts > 0 → check OOM kills or liveness probe failures.",
+  "tags": ["cets", "k8s", "use", "infrastructure", "sre"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info, service)",
+        "includeAll": true,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "query": "label_values(cets_build_info, service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "includeAll": true,
+        "label": "Replica",
+        "multi": false,
+        "name": "replica",
+        "query": "label_values(cets_build_info{service=~\"$service\"}, replica)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "Golden Signals", "url": "/d/k8s-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "RED Traffic Drilldown", "url": "/d/k8s-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/k8s-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/k8s-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/k8s-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ CPU & MEMORY — Pod-level utilization (kubelet cAdvisor via kube-prometheus-stack)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "CPU Usage by Pod (CPU cores)",
+      "description": "CPU cores consumed per pod, filtered to backend/worker/frontend pods in the cets namespace. Shows raw CPU usage — useful without CPU limits set. If one pod is consistently higher, it has an uneven load or CPU hotspot. Open Pyroscope to find the hot function.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"cets\", pod=~\"backend-.*|worker-.*|frontend-.*\", container!=\"\"}[2m]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Memory Usage by Pod",
+      "description": "Working set memory per pod (excludes reclaimable cache). This is the metric Kubernetes uses for OOM eviction decisions. Sustained growth without GC sawtooth = memory leak. Navigate to Service Anomaly logs to see OOM kill events.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"cets\", pod=~\"backend-.*|worker-.*|frontend-.*\", container!=\"\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 }
+    },
+    {
+      "id": 3,
+      "title": "Pod Restarts (last 1h)",
+      "description": "Container restart count per pod in the last hour. Non-zero = OOM kill, liveness probe failure, or crash loop. Check Service Anomaly logs filtered to that pod name for the crash reason.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"cets\", pod=~\"backend-.*|worker-.*|frontend-.*\"}[1h]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 }
+    },
+    {
+      "id": 4,
+      "title": "Pod Ready Status",
+      "description": "Pod readiness per pod (1 = ready, 0 = not ready). A pod that drops to 0 is being excluded from the service endpoint — it may be crashing or failing its readiness probe.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "kube_pod_status_ready{namespace=\"cets\", pod=~\"backend-.*|worker-.*\", condition=\"true\"}",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ DATABASE CONNECTIONS — Pool Utilization and Saturation per backend pod",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "id": 5,
+      "title": "DB Pool Connections by State (per instance)",
+      "description": "Number of acquired (active), idle, and total connections per backend pod. acquired/total > 70% = approaching saturation.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"acquired\"}", "legendFormat": "acquired {{instance}}", "refId": "A" },
+        { "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"idle\"}", "legendFormat": "idle {{instance}}", "refId": "B" },
+        { "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"total\"}", "legendFormat": "total {{instance}}", "refId": "C" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 }
+    },
+    {
+      "id": 6,
+      "title": "DB Pool Average Acquire Wait (per instance)",
+      "description": "Average time a goroutine waits for a DB connection from the pool. Rising above 20ms = pool is saturated.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "rate(cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}[5m]) / clamp_min(rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m]), 0.001)", "legendFormat": "avg wait {{instance}}", "refId": "A" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 }
+    },
+    {
+      "id": 7,
+      "title": "DB Lock Waiting Sessions",
+      "description": "PostgreSQL sessions blocked on a lock. Any value > 0 = lock contention. Persistent lock waits cause connection pool saturation.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "max by (job) (cets_db_lock_waiting_sessions{job=\"cets-backend\"})", "legendFormat": "lock waiters", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 }
+    },
+    {
+      "id": 8,
+      "title": "DB Pool Acquire Count Rate",
+      "description": "Rate of pool acquire calls per backend pod. Correlates with request rate.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "expr": "rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m])", "legendFormat": "{{instance}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 }
+    }
+  ]
+}

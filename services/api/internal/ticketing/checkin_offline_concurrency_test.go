@@ -20,7 +20,7 @@ func TestSyncOfflineCheckinsConcurrentSameBatchReplaysFirstResult(t *testing.T) 
 	event, ticket := createOfflineSyncTicket(t, service, ctx, "Concurrent Offline Replay", "E1001", "offline-concurrent-ticket")
 	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
 	require.NoError(t, err)
-	scannedAt := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	scannedAt := event.StartsAt
 	req := OfflineCheckinSyncRequest{
 		BatchID:          pkg.BatchID,
 		EventID:          event.EventID,

@@ -107,7 +107,11 @@ describe("EmployeeEventDetailPage", () => {
         revokeObjectURL: vi.fn(),
       }),
     );
-    window.history.replaceState({}, "", "/user/events/detail?event_id=evt-1");
+    globalThis.history.replaceState(
+      {},
+      "",
+      "/user/events/detail?event_id=evt-1",
+    );
   });
 
   it("shows compact confirmation and waitlist policy on event detail", async () => {
@@ -125,7 +129,7 @@ describe("EmployeeEventDetailPage", () => {
     expect(screen.getByText("取消期限")).toBeInTheDocument();
   });
 
-  it("shows event introduction and poster when available", async () => {
+  it("shows app-style event hero and poster when available", async () => {
     showEvent({
       description: "年度家庭日活動介紹",
     });
@@ -136,13 +140,21 @@ describe("EmployeeEventDetailPage", () => {
     render(<EmployeeEventDetailPage claims={claims} />);
 
     expect(
-      await screen.findByRole("heading", { name: "活動介紹" }),
+      await screen.findByRole("heading", { level: 2, name: "活動" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("年度家庭日活動介紹").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/報名至|今天截止|明天截止|報名剩/).length,
+    ).toBeGreaterThan(0);
     expect(
       await screen.findByRole("img", { name: "活動 海報" }),
     ).toHaveAttribute("src", "blob:poster");
     expect(mockEventPosterBlob).toHaveBeenCalledWith("evt-1");
+    expect(screen.queryByText("活動編號")).not.toBeInTheDocument();
+    expect(screen.queryByText("evt-1")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "加入行事曆：活動" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps event detail actions without embedding the ticket QR", async () => {
@@ -155,10 +167,57 @@ describe("EmployeeEventDetailPage", () => {
 
     expect(await screen.findByText("主要操作")).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: /下載行事曆.*活動/ }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: "查看這張票券" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
     expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
+  });
+
+  it("downloads an ICS file from event detail with visible feedback", async () => {
+    showEvent({
+      current_user_ticket: ticket("T-calendar", "R-calendar"),
+      current_user_status: "confirmed",
+      description: "團隊交流",
+      location: "Taipei HQ",
+      starts_at: "2026-06-04T13:00:00+08:00",
+      title: "已報名活動",
+    });
+    const createObjectURL = vi.fn(() => "blob:calendar");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL,
+        revokeObjectURL,
+      }),
+    );
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "下載行事曆 (.ics)：已報名活動",
+      }),
+    );
+
+    expect(click).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("text/calendar;charset=utf-8");
+    await expect(blob.text()).resolves.toContain("BEGIN:VCALENDAR");
+    await expect(blob.text()).resolves.toContain("SUMMARY:已報名活動");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:calendar");
+    expect(
+      await screen.findByText("已下載行事曆檔案：2026-06-04-已報名活動.ics"),
+    ).toBeInTheDocument();
+
+    click.mockRestore();
   });
 
   it("opens the exact ticket detail from the event detail handoff", async () => {
@@ -173,8 +232,8 @@ describe("EmployeeEventDetailPage", () => {
       await screen.findByRole("link", { name: "查看這張票券" }),
     );
 
-    expect(window.location.pathname).toBe("/user/tickets");
-    expect(window.location.search).toBe("?ticket_id=T-3");
+    expect(globalThis.location.pathname).toBe("/user/tickets");
+    expect(globalThis.location.search).toBe("?ticket_id=T-3");
   });
 
   it("opens the exact ticket detail after booking success", async () => {
@@ -197,8 +256,8 @@ describe("EmployeeEventDetailPage", () => {
       await screen.findByRole("link", { name: "查看票券" }),
     );
 
-    expect(window.location.pathname).toBe("/user/tickets");
-    expect(window.location.search).toBe("?ticket_id=T-4");
+    expect(globalThis.location.pathname).toBe("/user/tickets");
+    expect(globalThis.location.search).toBe("?ticket_id=T-4");
   });
 
   it("shows duplicate confirmed booking as existing state with exact ticket handoff", async () => {
@@ -236,8 +295,8 @@ describe("EmployeeEventDetailPage", () => {
 
     await userEvent.click(screen.getByRole("link", { name: "查看票券" }));
 
-    expect(window.location.pathname).toBe("/user/tickets");
-    expect(window.location.search).toBe("?ticket_id=T-duplicate");
+    expect(globalThis.location.pathname).toBe("/user/tickets");
+    expect(globalThis.location.search).toBe("?ticket_id=T-duplicate");
   });
 
   it("shows duplicate waitlist booking without fresh success wording", async () => {

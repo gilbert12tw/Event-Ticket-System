@@ -12,6 +12,7 @@ type fakeTicketingService struct {
 	createTrace           string
 	listEventsActor       ticketing.Actor
 	listEventsEmployeeID  string
+	listEventsQuery       []ticketing.EventListQuery
 	getEventEmployeeID    string
 	eligibilityActor      ticketing.Actor
 	eligibilityEmployeeID string
@@ -79,9 +80,10 @@ func (s *fakeTicketingService) ArchiveEvent(context.Context, ticketing.Actor, st
 	return ticketing.EventSummary{Event: ticketing.Event{EventID: "evt_1", Status: ticketing.EventStatusArchived}}, nil
 }
 
-func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.EventSummary, error) {
+func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Actor, employeeID string, query ...ticketing.EventListQuery) ([]ticketing.EventSummary, error) {
 	s.listEventsActor = actor
 	s.listEventsEmployeeID = employeeID
+	s.listEventsQuery = query
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
 }
 
@@ -237,8 +239,11 @@ func (s *fakeTicketingService) CapacityPressure(_ context.Context, actor ticketi
 	return ticketing.CapacityPressure{Events: []ticketing.CapacityPressureRow{{
 		EventID:                 "evt_1",
 		CapacityType:            ticketing.CapacityTypeLimited,
+		ConfirmedCount:          7,
+		WaitlistCount:           2,
 		RemainingCapacity:       &remaining,
 		ReservationCount:        4,
+		ReservationState:        "available",
 		RateLimitDropPerMin:     &rateLimitDrop,
 		IdempotencyReplayPerMin: &idempotencyReplay,
 	}}}, nil

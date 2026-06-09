@@ -7,7 +7,7 @@ import {
 
 describe("debug chrome helpers", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/user/events");
+    globalThis.history.replaceState({}, "", "/user/events");
   });
 
   it("keeps debug chrome disabled without the debug query when default is off", () => {
@@ -22,22 +22,22 @@ describe("debug chrome helpers", () => {
   it("toggles debug chrome through the URL query", () => {
     setDebugChromeQuery(true, false);
 
-    expect(window.location.search).toBe("?debug=1");
+    expect(globalThis.location.search).toBe("?debug=1");
     expect(isDebugChromeEnabled(true, false)).toBe(true);
     expect(isDebugChromeEnabled(false, false)).toBe(false);
 
     setDebugChromeQuery(false, false);
-    expect(window.location.search).toBe("");
+    expect(globalThis.location.search).toBe("");
   });
 
   it("lets web dev users explicitly turn debug chrome off", () => {
     setDebugChromeQuery(false, true);
 
-    expect(window.location.search).toBe("?debug=0");
+    expect(globalThis.location.search).toBe("?debug=0");
     expect(isDebugChromeEnabled(true, true)).toBe(false);
 
     setDebugChromeQuery(true, true);
-    expect(window.location.search).toBe("");
+    expect(globalThis.location.search).toBe("");
     expect(isDebugChromeEnabled(true, true)).toBe(true);
   });
 
