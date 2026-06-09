@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -172,26 +173,39 @@ func TestRebuildProjection_TruncatesStaleRows(t *testing.T) {
 	assert.True(t, summaryRowExists(t, service, ctx, "evtA"))
 }
 
-// Test 5: offset is reset to the lexicographic max outbox_id.
-func TestRebuildProjection_OffsetResetToMaxOutbox(t *testing.T) {
+// Test 5: offset is reset to the composite key of the NEWEST outbox event
+// (time-ordered), matching the worker's projectionOffsetKey format. outbox_id is
+// random and not time-sortable, so the watermark must follow created_at, not the
+// lexical max id — here out_b (newest) wins even though out_c is the lexical max.
+func TestRebuildProjection_OffsetResetToNewestEventComposite(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
 	ctx := context.Background()
 
-	for _, id := range []string{"out_a", "out_c", "out_b"} {
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
+	rows := []struct {
+		id string
+		at time.Time
+	}{
+		{"out_a", base},
+		{"out_c", base.Add(1 * time.Second)},
+		{"out_b", base.Add(2 * time.Second)}, // newest by created_at
+	}
+	for _, r := range rows {
 		_, err := service.db.Exec(ctx, `
-			INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload)
-			VALUES ($1, 'evtA', 'booking.confirmed', '{}'::jsonb)`, id)
+			INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
+			VALUES ($1, 'evtA', 'booking.confirmed', '{}'::jsonb, $2)`, r.id, r.at)
 		require.NoError(t, err)
 	}
 
+	want := projectionOffsetKey(base.Add(2*time.Second), "out_b")
 	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "out_c", result.OffsetResetTo)
-	assert.Equal(t, "out_c", readOffset(t, service, ctx))
+	assert.Equal(t, want, result.OffsetResetTo, "watermark must be the newest event's composite, not the lexical max id")
+	assert.Equal(t, want, readOffset(t, service, ctx))
 }
 
-// Test 6: offset resets to ” when the outbox is empty (TEXT equivalent of 0).
+// Test 6: offset resets to "" when the outbox is empty (TEXT equivalent of 0).
 func TestRebuildProjection_OffsetResetToZeroWhenNoOutbox(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
@@ -356,7 +370,9 @@ func TestRebuildProjection_PendingOutboxNotDoubleCounted(t *testing.T) {
 
 	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
-	require.Equal(t, 1, readSummary(t, service, ctx, "evtA").ConfirmedCount)
+	postRebuild := readSummary(t, service, ctx, "evtA")
+	require.Equal(t, 1, postRebuild.ConfirmedCount)
+	require.Equal(t, 1, postRebuild.DepartmentBreakdown["Engineering"], "rebuild itself must not double-count the breakdown")
 
 	// Draining the still-pending event must be a no-op: it is at/below the
 	// rebuild watermark, so the worker's offset guard suppresses it.

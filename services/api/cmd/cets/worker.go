@@ -12,6 +12,7 @@ import (
 	"event-ticket-system/internal/config"
 	"event-ticket-system/internal/notification"
 	"event-ticket-system/internal/objectstore"
+	"event-ticket-system/internal/observability"
 	"event-ticket-system/internal/postgres"
 	"event-ticket-system/internal/reservation"
 	"event-ticket-system/internal/ticketing"
@@ -60,7 +61,9 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 		logger.Info("migration complete", "mode", "auto")
 	}
 
-	service := newTicketingService(pool, cfg, logger)
+	metrics := observability.NewRegistry()
+	service := newTicketingService(pool, cfg, logger).
+		WithMetrics(metrics)
 	sender := notification.SMTPNotificationSender{Host: cfg.MailerHost, Port: cfg.MailerPort, From: cfg.MailerFrom}
 	sender.RedirectTo = cfg.MailerRedirectTo
 	reportStore := objectstore.S3CompatibleStore{

@@ -98,6 +98,7 @@ type outboxClaim struct {
 	idempotencyKey string
 	partitionKey   string
 	leaseStartedAt time.Time
+	createdAt      time.Time
 }
 
 type outboxNotificationPreferences struct {
@@ -152,7 +153,7 @@ func claimOutboxEvent(ctx context.Context, tx pgx.Tx, workerKinds []string, leas
 		WHERE outbox.outbox_id = next_outbox.outbox_id
 		RETURNING outbox.outbox_id, outbox.aggregate_id, outbox.event_type, outbox.payload::text,
 			outbox.attempts, outbox.schema_version, COALESCE(outbox.idempotency_key, ''),
-			COALESCE(outbox.partition_key, ''), outbox.lease_started_at`,
+			COALESCE(outbox.partition_key, ''), outbox.lease_started_at, outbox.created_at`,
 		leaseTTL.Seconds(), outboxWorkerKindFilter(workerKinds)).
 		Scan(
 			&claim.outboxID,
@@ -164,6 +165,7 @@ func claimOutboxEvent(ctx context.Context, tx pgx.Tx, workerKinds []string, leas
 			&claim.idempotencyKey,
 			&claim.partitionKey,
 			&claim.leaseStartedAt,
+			&claim.createdAt,
 		)
 	return claim, err
 }

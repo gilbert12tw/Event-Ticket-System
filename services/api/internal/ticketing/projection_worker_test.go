@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"event-ticket-system/internal/observability"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,6 +83,57 @@ func insertProjectionOutboxAt(
 		string(payloadJSON),
 		createdAt,
 	)
+	require.NoError(t, err)
+}
+
+// insertProjectionOutboxV2 seeds a schema_version=2 projection envelope whose
+// inner type is resolved by the worker via an outbox_events lookup on
+// trigger_event_id. The trigger row (event_type=innerType, already published so
+// the projection worker never claims it) is seeded only when innerType != "" —
+// pass innerType="" to simulate a GC'd / missing trigger row.
+func insertProjectionOutboxV2(
+	t *testing.T,
+	service *Service,
+	ctx context.Context,
+	outboxID string,
+	eventID string,
+	triggerID string,
+	innerType string,
+	department string,
+) {
+	t.Helper()
+	if innerType != "" {
+		_, err := service.db.Exec(ctx, `
+			INSERT INTO outbox_events
+				(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts, available_at)
+			VALUES ($1, $2, $3, '{}'::jsonb, 'published', 1, 0, now() - interval '2 seconds')`,
+			triggerID, eventID, innerType)
+		require.NoError(t, err)
+	}
+	const projectionName = projectionProjectionName
+	idempotencyKey := "reporting.projection.update_required:" + projectionName + ":" + eventID + ":" + triggerID
+	envelope := map[string]interface{}{
+		"event_id":        outboxID,
+		"event_type":      outboxEventReportingProjectionUpdateRequiredV2,
+		"schema_version":  2,
+		"occurred_at":     "2026-05-28T10:00:00Z",
+		"idempotency_key": idempotencyKey,
+		"partition_key":   projectionName,
+		"payload": map[string]interface{}{
+			"projection_name":  projectionName,
+			"aggregate_id":     eventID,
+			"trigger_event_id": triggerID,
+			"department":       department,
+		},
+	}
+	body, err := json.Marshal(envelope)
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO outbox_events
+			(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts,
+			 available_at, idempotency_key, partition_key)
+		VALUES ($1, $2, $3, $4::jsonb, 'pending', 2, 0, now() - interval '1 second', $5, $6)`,
+		outboxID, eventID, outboxEventReportingProjectionUpdateRequiredV2, string(body), idempotencyKey, projectionName)
 	require.NoError(t, err)
 }
 
@@ -161,7 +214,8 @@ func TestProjectionWorker_CountNeverGoesBelowZero(t *testing.T) {
 func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 	service, ctx := newWorkerTest(t)
 	// Seed the primary event with a higher outbox ID.
-	insertProjectionOutbox(t, service, ctx, "ob-500", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-10 * time.Second)
+	insertProjectionOutboxAt(t, service, ctx, "ob-500", "evt_1", projectionInnerTypeBookingConfirmed, now)
 
 	// Process first time.
 	processed, err := runProjectionWorkerOnce(service, ctx)
@@ -169,9 +223,8 @@ func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 	assert.Equal(t, 1, processed)
 
 	// Seed a second outbox row with a LOWER outboxID to simulate stale replay.
-	// The idempotency guard should prevent it from overwriting the row written
-	// by ob-500 (lexicographically ob-300 < ob-500).
-	insertProjectionOutbox(t, service, ctx, "ob-300", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	// We give it an older timestamp to ensure it's treated as older.
+	insertProjectionOutboxAt(t, service, ctx, "ob-300", "evt_1", projectionInnerTypeBookingConfirmed, now.Add(-1*time.Minute))
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
@@ -180,24 +233,27 @@ func TestProjectionWorker_IdempotentReplay(t *testing.T) {
 }
 
 // Test 5: an older offset must not overwrite a newer projection state.
-// Uses padded IDs so lexicographic GREATEST comparison works correctly.
 func TestProjectionWorker_OlderEventDoesNotOverwriteNewer(t *testing.T) {
 	service, ctx := newWorkerTest(t)
 
-	// Process ob-010 first — sets confirmed_count to 1 and last_event_offset = ob-010.
-	insertProjectionOutbox(t, service, ctx, "ob-010", "evt_1", projectionInnerTypeBookingConfirmed, "Engineering")
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-10 * time.Second)
+
+	// Process ob-010 first — sets confirmed_count to 1.
+	insertProjectionOutboxAt(t, service, ctx, "ob-010", "evt_1", projectionInnerTypeBookingConfirmed, now)
 	_, err := runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
-	// Then replay ob-003 (lexicographically older than ob-010).
+	// Then replay ob-003 with an OLDER created_at.
 	// The ON CONFLICT guard prevents it from overwriting the state written by ob-010.
-	insertProjectionOutbox(t, service, ctx, "ob-003", "evt_1", projectionInnerTypeBookingCancelled, "Engineering")
+	insertProjectionOutboxAt(t, service, ctx, "ob-003", "evt_1", projectionInnerTypeBookingCancelled, now.Add(-1*time.Minute))
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
 	row := readEventSummary(t, service, ctx, "evt_1")
 	assert.Equal(t, 1, row.ConfirmedCount, "older event must not overwrite confirmed_count set by newer event")
-	assert.Equal(t, "ob-010", row.LastEventOffset, "last_event_offset must remain at newer offset")
+
+	expectedOffset := projectionOffsetKey(now, "ob-010")
+	assert.Equal(t, expectedOffset, row.LastEventOffset, "last_event_offset must remain at newer offset")
 }
 
 // AC-4 / Test 6: last_processed_outbox_id advances after every successful event.
@@ -213,7 +269,46 @@ func TestProjectionWorker_OffsetAdvancesAfterProcessing(t *testing.T) {
 	}
 
 	offset := readProjectionOffset(t, service, ctx, projectionProjectionName)
-	assert.Equal(t, "ob-3", offset)
+	// Must be the composite key (20-digit unix-nano | outbox id), not a raw id —
+	// guards against a regression that reverts to writing claim.outboxID.
+	assert.Regexp(t, `^\d{20}\|ob-3$`, offset)
+}
+
+// schema_version=2 envelope: inner type is resolved from outbox_events via
+// trigger_event_id, then the aggregate is updated like a v1 event.
+func TestProjectionWorker_V2EnvelopeResolvesTriggerType(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutboxV2(t, service, ctx, "ob-v2-1", "evt_1", "trig-1", projectionInnerTypeBookingConfirmed, "Engineering")
+
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 1, row.ConfirmedCount)
+	assert.Equal(t, 1, row.DepartmentBreakdown["Engineering"])
+}
+
+// schema_version=2 envelope whose trigger row is missing (published/GC'd before
+// the projection event drains) is skipped gracefully — no error, no aggregate
+// change — and still consumed (marked published) so it does not loop.
+func TestProjectionWorker_V2EnvelopeTriggerGCSkipped(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutboxV2(t, service, ctx, "ob-v2-gc", "evt_1", "trig-missing", "", "")
+
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	var summaryRows int
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM reporting_event_summary WHERE event_id = $1`, "evt_1").Scan(&summaryRows))
+	assert.Equal(t, 0, summaryRows, "GC'd-trigger event must not create an aggregate row")
+
+	var pending int
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM outbox_events WHERE outbox_id = $1 AND publish_status = 'pending'`, "ob-v2-gc").Scan(&pending))
+	assert.Equal(t, 0, pending, "skipped projection event must be marked published, not left pending")
 }
 
 // AC-7 / Test 7: unknown inner event types are skipped without error or
@@ -240,8 +335,9 @@ func TestProjectionWorker_UnknownInnerEventTypeIsSkipped(t *testing.T) {
 // with no double-counts.
 func TestProjectionWorker_CrashRecovery(t *testing.T) {
 	service, ctx := newWorkerTest(t)
-	insertProjectionOutbox(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, "")
-	insertProjectionOutbox(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	baseTime := time.Now().UTC()
+	insertProjectionOutboxAt(t, service, ctx, "ob-1", "evt_1", projectionInnerTypeBookingConfirmed, baseTime)
+	insertProjectionOutboxAt(t, service, ctx, "ob-2", "evt_1", projectionInnerTypeBookingConfirmed, baseTime.Add(1*time.Second))
 
 	// Process ob-1 and ob-2 normally.
 	_, err := runProjectionWorkerOnce(service, ctx)
@@ -249,10 +345,10 @@ func TestProjectionWorker_CrashRecovery(t *testing.T) {
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
-	// Simulate a "restart": ob-2 is re-queued as ob-2b with the same inner
+	// Simulate a "restart": ob-1 is re-queued as ob-1b with the same inner
 	// event but a lower offset than the current watermark — idempotency guard
 	// must prevent double-count.
-	insertProjectionOutbox(t, service, ctx, "ob-1b", "evt_1", projectionInnerTypeBookingConfirmed, "")
+	insertProjectionOutboxAt(t, service, ctx, "ob-1b", "evt_1", projectionInnerTypeBookingConfirmed, baseTime)
 	_, err = runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
@@ -268,17 +364,12 @@ func TestProjectionWorker_LagMetricRecorded(t *testing.T) {
 	insertProjectionOutboxAt(t, service, ctx, "ob-lag", "evt_lag", projectionInnerTypeBookingConfirmed, past)
 
 	// Reset global metrics so the snapshot is clean.
-	globalProjectionMetrics.mu.Lock()
-	globalProjectionMetrics.lagBuckets = make([]uint64, len(projectionLagBuckets))
-	globalProjectionMetrics.lagCount = 0
-	globalProjectionMetrics.lagSum = 0
-	globalProjectionMetrics.processed = 0
-	globalProjectionMetrics.mu.Unlock()
+	service.metrics = observability.NewRegistry()
 
 	_, err := runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
 
-	snap := globalProjectionMetrics.Snapshot()
+	snap := service.metrics.ProjectionSnapshot()
 	assert.GreaterOrEqual(t, snap.LagCount, uint64(1), "at least one lag observation expected")
 	// The lag should be positive (the lease is acquired after created_at).
 	assert.Greater(t, snap.LagSum, 0.0, "lag sum must be positive")

@@ -346,6 +346,10 @@ CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(publish_status, a
 CREATE INDEX IF NOT EXISTS idx_outbox_published_lag ON outbox_events(event_type, published_at, created_at)
 		WHERE publish_status = 'published' AND published_at IS NOT NULL;
 
+-- Supports the PH2-43 rebuild watermark lookup (newest event by created_at,
+-- outbox_id) so it is an index scan + LIMIT 1 rather than a full sort.
+CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON outbox_events(created_at DESC, outbox_id DESC);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_deliveries_outbox_channel ON notification_deliveries(outbox_id, channel) WHERE outbox_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status ON notification_deliveries(status, updated_at DESC);
