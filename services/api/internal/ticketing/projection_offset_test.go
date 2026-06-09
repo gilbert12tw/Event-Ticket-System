@@ -27,7 +27,7 @@ func TestProjectionOffsetKey_LexicalOrderMatchesTime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			older := projectionOffsetKey(tc.earlier, "out_a")
 			newer := projectionOffsetKey(tc.later, "out_a")
-			if !(older < newer) {
+			if older >= newer {
 				t.Fatalf("lexical order broken: older=%q must sort before newer=%q", older, newer)
 			}
 		})
@@ -44,7 +44,7 @@ func TestProjectionOffsetKey_FixedWidthAndTiebreak(t *testing.T) {
 	if tsField := strings.SplitN(a, "|", 2)[0]; len(tsField) != 20 {
 		t.Fatalf("timestamp field not 20 digits wide: %q (field=%q)", a, tsField)
 	}
-	if !(a < b) {
+	if a >= b {
 		t.Fatalf("tiebreak by outboxID broken: %q must sort before %q", a, b)
 	}
 }
