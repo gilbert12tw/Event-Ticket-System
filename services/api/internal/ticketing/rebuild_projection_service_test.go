@@ -205,7 +205,7 @@ func TestRebuildProjection_OffsetResetToNewestEventComposite(t *testing.T) {
 	assert.Equal(t, want, readOffset(t, service, ctx))
 }
 
-// Test 6: offset resets to ” when the outbox is empty (TEXT equivalent of 0).
+// Test 6: offset resets to "" when the outbox is empty (TEXT equivalent of 0).
 func TestRebuildProjection_OffsetResetToZeroWhenNoOutbox(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
@@ -370,7 +370,9 @@ func TestRebuildProjection_PendingOutboxNotDoubleCounted(t *testing.T) {
 
 	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
-	require.Equal(t, 1, readSummary(t, service, ctx, "evtA").ConfirmedCount)
+	postRebuild := readSummary(t, service, ctx, "evtA")
+	require.Equal(t, 1, postRebuild.ConfirmedCount)
+	require.Equal(t, 1, postRebuild.DepartmentBreakdown["Engineering"], "rebuild itself must not double-count the breakdown")
 
 	// Draining the still-pending event must be a no-op: it is at/below the
 	// rebuild watermark, so the worker's offset guard suppresses it.

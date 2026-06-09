@@ -134,7 +134,7 @@ func rebuildWatermark(ctx context.Context, tx pgx.Tx) (string, error) {
 
 // resetProjectionOffset force-sets last_processed_outbox_id for a projection to
 // the rebuild watermark (not GREATEST — rebuild is an authoritative reset).
-func resetProjectionOffset(ctx context.Context, tx pgx.Tx, projectionName, outboxID string) error {
+func resetProjectionOffset(ctx context.Context, tx pgx.Tx, projectionName, offset string) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO reporting_projection_offsets
 			(projection_name, last_processed_outbox_id, updated_at)
@@ -142,7 +142,7 @@ func resetProjectionOffset(ctx context.Context, tx pgx.Tx, projectionName, outbo
 		ON CONFLICT (projection_name) DO UPDATE SET
 			last_processed_outbox_id = excluded.last_processed_outbox_id,
 			updated_at = now()`,
-		projectionName, outboxID)
+		projectionName, offset)
 	return err
 }
 
