@@ -18,10 +18,17 @@ import (
 // created_at, which would let an older event overwrite a newer aggregate.
 //
 // Zero-padded UnixNano (20 digits, wide enough for the int64 max) guarantees
-// lexical order == chronological order. outboxID is appended as a deterministic
-// tiebreaker for events sharing an instant. outbox_id itself is a random
-// out_<hex> value (see ids.go) and is NOT time-sortable, so it can only serve as
-// the tiebreaker, never the primary key.
+// lexical order == chronological order for all timestamps from the Unix epoch to
+// year 2262. outboxID is appended after the timestamp; outbox_id is a random
+// out_<hex> value (see ids.go) and is NOT time-sortable, so it serves only as a
+// tiebreaker for events sharing the same nanosecond instant — and because that
+// suffix is random, the tiebreak winner is arbitrary, not causal. A strictly
+// causal order would require a monotonic sequence column on outbox_events.
+//
+// Assumption: createdAt is at or after the Unix epoch. A pre-1970 time yields a
+// negative UnixNano whose "%020d" rendering carries a leading '-', inverting the
+// order; outbox_events.created_at in this system is always post-2020, so this is
+// not reachable.
 func projectionOffsetKey(createdAt time.Time, outboxID string) string {
 	return fmt.Sprintf("%020d|%s", createdAt.UTC().UnixNano(), outboxID)
 }

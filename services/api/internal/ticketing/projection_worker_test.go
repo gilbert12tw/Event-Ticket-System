@@ -86,6 +86,57 @@ func insertProjectionOutboxAt(
 	require.NoError(t, err)
 }
 
+// insertProjectionOutboxV2 seeds a schema_version=2 projection envelope whose
+// inner type is resolved by the worker via an outbox_events lookup on
+// trigger_event_id. The trigger row (event_type=innerType, already published so
+// the projection worker never claims it) is seeded only when innerType != "" —
+// pass innerType="" to simulate a GC'd / missing trigger row.
+func insertProjectionOutboxV2(
+	t *testing.T,
+	service *Service,
+	ctx context.Context,
+	outboxID string,
+	eventID string,
+	triggerID string,
+	innerType string,
+	department string,
+) {
+	t.Helper()
+	if innerType != "" {
+		_, err := service.db.Exec(ctx, `
+			INSERT INTO outbox_events
+				(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts, available_at)
+			VALUES ($1, $2, $3, '{}'::jsonb, 'published', 1, 0, now() - interval '2 seconds')`,
+			triggerID, eventID, innerType)
+		require.NoError(t, err)
+	}
+	const projectionName = projectionProjectionName
+	idempotencyKey := "reporting.projection.update_required:" + projectionName + ":" + eventID + ":" + triggerID
+	envelope := map[string]interface{}{
+		"event_id":        outboxID,
+		"event_type":      outboxEventReportingProjectionUpdateRequiredV2,
+		"schema_version":  2,
+		"occurred_at":     "2026-05-28T10:00:00Z",
+		"idempotency_key": idempotencyKey,
+		"partition_key":   projectionName,
+		"payload": map[string]interface{}{
+			"projection_name":  projectionName,
+			"aggregate_id":     eventID,
+			"trigger_event_id": triggerID,
+			"department":       department,
+		},
+	}
+	body, err := json.Marshal(envelope)
+	require.NoError(t, err)
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO outbox_events
+			(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts,
+			 available_at, idempotency_key, partition_key)
+		VALUES ($1, $2, $3, $4::jsonb, 'pending', 2, 0, now() - interval '1 second', $5, $6)`,
+		outboxID, eventID, outboxEventReportingProjectionUpdateRequiredV2, string(body), idempotencyKey, projectionName)
+	require.NoError(t, err)
+}
+
 // readEventSummary reads the current reporting_event_summary row.
 func readEventSummary(t *testing.T, service *Service, ctx context.Context, eventID string) eventSummaryRow {
 	t.Helper()
@@ -218,7 +269,46 @@ func TestProjectionWorker_OffsetAdvancesAfterProcessing(t *testing.T) {
 	}
 
 	offset := readProjectionOffset(t, service, ctx, projectionProjectionName)
-	assert.Contains(t, offset, "ob-3")
+	// Must be the composite key (20-digit unix-nano | outbox id), not a raw id —
+	// guards against a regression that reverts to writing claim.outboxID.
+	assert.Regexp(t, `^\d{20}\|ob-3$`, offset)
+}
+
+// schema_version=2 envelope: inner type is resolved from outbox_events via
+// trigger_event_id, then the aggregate is updated like a v1 event.
+func TestProjectionWorker_V2EnvelopeResolvesTriggerType(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutboxV2(t, service, ctx, "ob-v2-1", "evt_1", "trig-1", projectionInnerTypeBookingConfirmed, "Engineering")
+
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	row := readEventSummary(t, service, ctx, "evt_1")
+	assert.Equal(t, 1, row.ConfirmedCount)
+	assert.Equal(t, 1, row.DepartmentBreakdown["Engineering"])
+}
+
+// schema_version=2 envelope whose trigger row is missing (published/GC'd before
+// the projection event drains) is skipped gracefully — no error, no aggregate
+// change — and still consumed (marked published) so it does not loop.
+func TestProjectionWorker_V2EnvelopeTriggerGCSkipped(t *testing.T) {
+	service, ctx := newWorkerTest(t)
+	insertProjectionOutboxV2(t, service, ctx, "ob-v2-gc", "evt_1", "trig-missing", "", "")
+
+	processed, err := runProjectionWorkerOnce(service, ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+
+	var summaryRows int
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM reporting_event_summary WHERE event_id = $1`, "evt_1").Scan(&summaryRows))
+	assert.Equal(t, 0, summaryRows, "GC'd-trigger event must not create an aggregate row")
+
+	var pending int
+	require.NoError(t, service.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM outbox_events WHERE outbox_id = $1 AND publish_status = 'pending'`, "ob-v2-gc").Scan(&pending))
+	assert.Equal(t, 0, pending, "skipped projection event must be marked published, not left pending")
 }
 
 // AC-7 / Test 7: unknown inner event types are skipped without error or

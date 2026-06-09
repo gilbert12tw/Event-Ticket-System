@@ -154,7 +154,7 @@ func computeNewCounts(current eventSummaryRow, proj ProjectionEvent) eventSummar
 
 // decodeProjectionEvent extracts the relevant fields from a projection outbox
 // claim. Supports both:
-//   - schema_version=2 envelope: outer JSON has {"payload": {"aggregate_id": ..., "trigger_event_type": ...}}
+//   - schema_version=2 envelope: outer JSON has {"payload": {"aggregate_id": ..., "trigger_event_id": ...}}
 //   - schema_version=1 / test-seeded payloads: flat JSON with aggregate_id + inner_event_type
 //
 // Returns false on decode failure — callers skip without dead-lettering.
@@ -162,7 +162,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	if strings.TrimSpace(claim.eventType) != outboxEventReportingProjectionUpdateRequiredV2 {
 		return ProjectionEvent{}, false
 	}
-	// v2 envelope: {"event_id":..., "payload": {"aggregate_id":..., "trigger_event_type":..., ...}}
+	// v2 envelope: {"event_id":..., "payload": {"aggregate_id":..., "trigger_event_id":..., ...}}
 	if claim.schemaVersion == 2 {
 		var v2 struct {
 			Payload struct {

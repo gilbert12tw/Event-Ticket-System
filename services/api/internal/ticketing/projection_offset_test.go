@@ -1,6 +1,7 @@
 package ticketing
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,10 +41,25 @@ func TestProjectionOffsetKey_FixedWidthAndTiebreak(t *testing.T) {
 	instant := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 	a := projectionOffsetKey(instant, "out_a")
 	b := projectionOffsetKey(instant, "out_b")
-	if len(a) != len("00000000000000000000|out_a") {
-		t.Fatalf("timestamp field not fixed-width: %q", a)
+	if tsField := strings.SplitN(a, "|", 2)[0]; len(tsField) != 20 {
+		t.Fatalf("timestamp field not 20 digits wide: %q (field=%q)", a, tsField)
 	}
 	if !(a < b) {
 		t.Fatalf("tiebreak by outboxID broken: %q must sort before %q", a, b)
+	}
+}
+
+// TestProjectionOffsetKey_UTCNormalization proves the same instant expressed in
+// different zones yields an identical key — claim.createdAt comes from Postgres
+// and may arrive in a non-UTC location depending on pgx configuration.
+func TestProjectionOffsetKey_UTCNormalization(t *testing.T) {
+	taipei, err := time.LoadLocation("Asia/Taipei") // UTC+8
+	if err != nil {
+		t.Skipf("tz data unavailable: %v", err)
+	}
+	local := time.Date(2026, 6, 9, 20, 0, 0, 0, taipei)
+	utc := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC) // same instant
+	if got, want := projectionOffsetKey(local, "out_x"), projectionOffsetKey(utc, "out_x"); got != want {
+		t.Fatalf("UTC normalization broken: %q != %q", got, want)
 	}
 }
