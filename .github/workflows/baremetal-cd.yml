@@ -149,7 +149,7 @@ jobs:
           set -euo pipefail
           if [ "${{ needs.changes.outputs.build_api }}" = "true" ]; then
             awk -v tag="$IMAGE_TAG" '
-              $0 ~ /newName: ghcr\.io\/.*\/cets-api$/ { in_image=1; print; next }
+              /name: cets-api$/ { in_image=1; print; next }
               in_image == 1 && $1 == "newTag:" { sub(/newTag: .*/, "newTag: " tag); in_image=0 }
               { print }
             ' "$KUSTOMIZATION" > "$KUSTOMIZATION.tmp"
@@ -157,7 +157,7 @@ jobs:
           fi
           if [ "${{ needs.changes.outputs.build_frontend }}" = "true" ]; then
             awk -v tag="$IMAGE_TAG" '
-              $0 ~ /newName: ghcr\.io\/.*\/cets-frontend$/ { in_image=1; print; next }
+              /name: cets-frontend$/ { in_image=1; print; next }
               in_image == 1 && $1 == "newTag:" { sub(/newTag: .*/, "newTag: " tag); in_image=0 }
               { print }
             ' "$KUSTOMIZATION" > "$KUSTOMIZATION.tmp"
