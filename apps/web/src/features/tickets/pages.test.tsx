@@ -15,6 +15,16 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("@/lib/offline/auth-cache", () => ({
+  isOffline: vi.fn(() => false),
+}));
+
+vi.mock("@/lib/offline/tickets-store", () => ({
+  cacheTickets: vi.fn(() => Promise.resolve()),
+  loadCachedTickets: vi.fn(() => Promise.resolve([])),
+  loadCachedTicket: vi.fn(() => Promise.resolve(undefined)),
+}));
+
 const mockGetTicket = vi.mocked(getTicket);
 const mockListTickets = vi.mocked(listTickets);
 const mockEventPosterBlob = vi.mocked(eventPosterBlob);

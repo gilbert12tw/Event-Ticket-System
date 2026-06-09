@@ -25,6 +25,11 @@ import {
 } from "@/app/routes";
 import type { RouteKey } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
+import {
+  cacheAuthSession,
+  isOffline,
+  loadCachedAuthSession,
+} from "@/lib/offline/auth-cache";
 import { Alert, DebugChromeGate, DebugToggle } from "@/components/shared";
 import { LoadingScreen, StatusPanel } from "@/components/layout";
 import { AuthenticatedShell } from "@/components/layout/shell";
@@ -139,6 +144,18 @@ function App() {
       try {
         const [session, sessionError] = await settle(me());
         if (!active) return;
+
+        if (session) {
+          cacheAuthSession(session);
+        } else if (isOffline()) {
+          const cached = loadCachedAuthSession();
+          if (cached) {
+            setAuth(cached);
+            setAuthMessage("離線模式：使用已儲存的身分");
+            return;
+          }
+        }
+
         setAuth(session ?? null);
 
         const [bootstrap, bootstrapError] = await settle(authBootstrap());

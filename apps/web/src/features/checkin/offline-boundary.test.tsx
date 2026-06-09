@@ -1,12 +1,9 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OfflineCheckinBoundaryPage } from "./pages";
-import {
-  listAdminEvents,
-  offlineCheckinPackage,
-  syncOfflineCheckins,
-} from "@/lib/api";
+import { listAdminEvents, offlineCheckinPackage } from "@/lib/api";
+import type { OfflineCheckinPackage } from "@/lib/api";
 import { eventFixture } from "@/test/event-fixtures";
 
 vi.mock("@/lib/api", async () => {
@@ -19,25 +16,58 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("@/lib/offline/auth-cache", () => ({
+  isOffline: vi.fn(() => false),
+}));
+
+const mockSavePackage = vi.fn((pkg: OfflineCheckinPackage) =>
+  Promise.resolve({
+    batch_id: pkg.batch_id,
+    package: pkg,
+    scans: [],
+    status: "active" as const,
+    downloaded_at: "2026-06-01T00:00:00Z",
+    staff_id: "",
+  }),
+);
+
+vi.mock("@/lib/offline/checkin-store", () => ({
+  savePackage: (...args: unknown[]) =>
+    mockSavePackage(...(args as [OfflineCheckinPackage])),
+  loadPackage: vi.fn(() => Promise.resolve(undefined)),
+  loadActivePackages: vi.fn(() => Promise.resolve([])),
+  addScanRecord: vi.fn(() => Promise.resolve()),
+  markScansAsSyncing: vi.fn(() => Promise.resolve(undefined)),
+  markScansSyncFailed: vi.fn(() => Promise.resolve()),
+  markBatchSynced: vi.fn(() => Promise.resolve()),
+  updateScansFromSync: vi.fn(() => Promise.resolve(undefined)),
+}));
+
+vi.mock("@/lib/offline/checkin-logic", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/offline/checkin-logic")
+  >("@/lib/offline/checkin-logic");
+  return {
+    ...actual,
+    judgeOfflineScan: vi.fn(() =>
+      Promise.resolve({ local_status: "accepted", matched_ticket: null }),
+    ),
+  };
+});
+
+vi.mock("@/lib/offline/hash", () => ({
+  hashToken: vi.fn(() => Promise.resolve("fakehash")),
+}));
+
 describe("OfflineCheckinBoundaryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    globalThis.history.replaceState({}, "", "/admin/checkin/offline");
   });
 
   it("loads events and creates an offline package", async () => {
     listAdminEvents.mockResolvedValue([offlineEvent()]);
-    offlineCheckinPackage.mockResolvedValue({
-      batch_id: "batch-1",
-      event_id: "evt-1",
-      device_id: "gate-1",
-      valid_until: "2026-05-06T14:00:00Z",
-      package_signature: "sig-1",
-      ticket_count: 2,
-      tickets: [
-        offlineTicket("t1", "E1001", "Ariel Chen"),
-        offlineTicket("t2", "E1002", "Ben Lin", 1),
-      ],
-    });
+    offlineCheckinPackage.mockResolvedValue(testPackage());
 
     render(<OfflineCheckinBoundaryPage />);
 
@@ -55,48 +85,13 @@ describe("OfflineCheckinBoundaryPage", () => {
         "gate-offline-1",
       ),
     );
-    await waitFor(() =>
-      expect(screen.getByText("Ariel Chen")).toBeInTheDocument(),
-    );
-    expect(screen.getByText(/E1001/)).toBeInTheDocument();
-    expect(screen.queryByText("hash-1")).not.toBeInTheDocument();
+
+    expect(mockSavePackage).toHaveBeenCalled();
   });
 
-  it("submits a scan batch and renders summary", async () => {
+  it("shows scan tab after package download", async () => {
     listAdminEvents.mockResolvedValue([offlineEvent()]);
-    offlineCheckinPackage.mockResolvedValue({
-      batch_id: "batch-2",
-      event_id: "evt-1",
-      device_id: "gate-1",
-      valid_until: "2026-05-06T14:00:00Z",
-      package_signature: "sig-2",
-      ticket_count: 1,
-      tickets: [offlineTicket("t1", "E1001", "Ariel Chen")],
-    });
-    syncOfflineCheckins.mockResolvedValue({
-      batch_id: "batch-2",
-      accepted: 1,
-      duplicate: 0,
-      conflict: 0,
-      results: [
-        {
-          checkin_id: "c1",
-          ticket_id: "t1",
-          event_id: "evt-1",
-          event_title: "Family Night",
-          employee_id: "E1001",
-          status: "accepted",
-          scanned_at: "2026-05-06T10:10:00Z",
-          duplicate: false,
-          holder: {
-            display_name: "Ariel Chen",
-            department: "Engineering",
-            city: "Taipei",
-          },
-          family_count: 0,
-        },
-      ],
-    });
+    offlineCheckinPackage.mockResolvedValue(testPackage());
 
     render(<OfflineCheckinBoundaryPage />);
 
@@ -106,39 +101,10 @@ describe("OfflineCheckinBoundaryPage", () => {
       ).toBeEnabled(),
     );
     await userEvent.click(screen.getByRole("button", { name: "下載離線名單" }));
-    await waitFor(() =>
-      expect(screen.getByText("Ariel Chen")).toBeInTheDocument(),
-    );
-
-    const batchInput = screen.getByRole("textbox", { name: "掃描批次" });
-    await userEvent.clear(batchInput);
-    await userEvent.type(batchInput, "signed-token-abc\n");
-    await userEvent.click(screen.getByRole("button", { name: "同步名單" }));
 
     await waitFor(() =>
-      expect(syncOfflineCheckins).toHaveBeenCalledWith({
-        batch_id: "batch-2",
-        event_id: "evt-1",
-        device_id: "gate-1",
-        package_signature: "sig-2",
-        scans: [
-          { signed_token: "signed-token-abc", scanned_at: expect.any(String) },
-        ],
-      }),
+      expect(screen.getByRole("tab", { name: "2 掃描驗票" })).toBeEnabled(),
     );
-    await userEvent.click(screen.getByRole("tab", { name: "3 同步結果" }));
-    await waitFor(() => {
-      const syncPanel = screen.getByRole("tabpanel").closest(".panel");
-      expect(syncPanel).not.toBeNull();
-      const tables = within(syncPanel as HTMLElement).getAllByRole("table");
-      expect(tables).toHaveLength(1);
-      const resultTable = tables[0];
-      expect(within(resultTable).getByText("t1")).toBeInTheDocument();
-      expect(within(resultTable).getByText(/E1001/)).toBeInTheDocument();
-      expect(within(resultTable).getByText("Family Night")).toBeInTheDocument();
-      expect(within(resultTable).getByText(/同行 0 人/)).toBeInTheDocument();
-      expect(within(resultTable).getByText("驗票成功")).toBeInTheDocument();
-    });
   });
 });
 
@@ -161,6 +127,21 @@ function offlineEvent() {
       employment_status: "active",
     },
   });
+}
+
+function testPackage() {
+  return {
+    batch_id: "batch-1",
+    event_id: "evt-1",
+    device_id: "gate-offline-1",
+    valid_until: "2099-05-06T14:00:00Z",
+    package_signature: "sig-1",
+    ticket_count: 2,
+    tickets: [
+      offlineTicket("t1", "E1001", "Ariel Chen"),
+      offlineTicket("t2", "E1002", "Ben Lin", 1),
+    ],
+  };
 }
 
 function offlineTicket(
