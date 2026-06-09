@@ -289,6 +289,7 @@ for dashboard in \
   {
     printf '  %s: |\n' "$dashboard"
     sed 's/^/    /' "$BM_DIR/dashboards/$dashboard"
+    printf '\n'
   } >>"$GENERATED_DIR/cets-grafana-dashboards.yaml"
 done
 kubectl_bm apply -f "$GENERATED_DIR/cets-grafana-dashboards.yaml"

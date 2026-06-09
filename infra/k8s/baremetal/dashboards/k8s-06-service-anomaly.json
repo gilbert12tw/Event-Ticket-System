@@ -11,7 +11,7 @@
     "list": [
       {
         "allValue": ".*",
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
         "label": "Service",
@@ -24,7 +24,7 @@
       },
       {
         "allValue": ".*",
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
         "label": "Replica",
@@ -57,7 +57,7 @@
       "title": "5xx Error Rate by Route × Replica",
       "description": "5xx request rate broken down by route and replica. Each series is labelled 'route [replica]' — a single replica generating all errors while others are healthy = instance-specific fault (bad deploy, OOM, DB connection). Set $replica to narrow all other panels.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
       "targets": [{ "expr": "sum by (route, replica) (rate(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[1m]))", "legendFormat": "{{route}}  [{{replica}}]", "refId": "A" }],
       "gridPos": { "h": 8, "w": 16, "x": 0, "y": 1 }
@@ -66,7 +66,7 @@
       "id": 2,
       "title": "5xx Total Last 5 min",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
       "targets": [{ "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m]))", "legendFormat": "5xx", "refId": "A" }],
@@ -76,7 +76,7 @@
       "id": 3,
       "title": "P99 Latency Last 5 min",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 2 }] } }, "overrides": [] },
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
       "targets": [{ "expr": "histogram_quantile(0.99, sum by (le) (rate(cets_http_request_seconds_bucket{service=~\"$service\", replica=~\"$replica\"}[5m])))", "legendFormat": "p99", "refId": "A" }],
@@ -87,7 +87,7 @@
       "title": "5xx Count — Route × Replica × Status (last 5 min)",
       "description": "Exact 5xx counts sorted desc. The 'replica' column tells you which pod is responsible. Use this to set $replica.",
       "type": "table",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": {}, "overrides": [{ "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "custom.width", "value": 80 }] }] },
       "options": { "sortBy": [{ "desc": true, "displayName": "Count" }] },
       "targets": [
@@ -107,7 +107,7 @@
       "id": 5,
       "title": "Booking Stage Error Rate by Stage",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [{ "expr": "sum by (stage) (rate(cets_booking_stage_seconds_count{outcome=\"error\"}[5m]))", "legendFormat": "{{stage}}", "refId": "A" }],
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 }
@@ -116,7 +116,7 @@
       "id": 6,
       "title": "Redis Gate Errors by Operation × Outage Mode",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [{ "expr": "sum by (outcome, outage_mode) (rate(cets_reservation_attempt_total{outcome=\"error\"}[5m]))", "legendFormat": "{{outcome}} mode={{outage_mode}}", "refId": "A" }],
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 }
@@ -125,7 +125,7 @@
       "id": 7,
       "title": "DB Lock Waiting Sessions",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }, "custom": { "thresholdsStyle": { "mode": "line" } } }, "overrides": [] },
       "targets": [{ "expr": "max by (job) (cets_db_lock_waiting_sessions{job=\"cets-backend\"})", "legendFormat": "lock waiters", "refId": "A" }],
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 }
@@ -142,7 +142,7 @@
       "title": "Service Graph Request Rate (Tempo-Derived Only)",
       "description": "Request rates and span metrics derived from traces by Tempo's metrics generator. These are Tempo-derived spans, NOT the K8s deployment topology. The node graph below shows only services that actually appeared in traces. Edges: client→server call direction. Use this to spot which service pair has rising error rates before drilling into individual traces.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
       "targets": [
         { "expr": "sum by (client, server) (rate(traces_service_graph_request_total[5m]))", "legendFormat": "{{client}} → {{server}}", "refId": "A" },
@@ -195,7 +195,7 @@
       "type": "logs",
       "datasource": { "type": "loki", "uid": "Loki" },
       "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |= `502` or {namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |= `503` or {namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |= `504`", "maxLines": 100, "refId": "A" }],
+      "targets": [{ "expr": "{namespace=\"ingress-nginx\", app=\"ingress-nginx\"} |~ `\" (502|503|504) `", "maxLines": 100, "refId": "A" }],
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 52 }
     },
     {

@@ -26,7 +26,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "Prometheus"
+          "uid": "prometheus"
         },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
@@ -47,7 +47,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "Prometheus"
+          "uid": "prometheus"
         },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
@@ -128,7 +128,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -157,7 +157,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -198,7 +198,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -227,7 +227,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -256,7 +256,7 @@
       "type": "table",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {},
@@ -328,7 +328,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -373,7 +373,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -402,7 +402,7 @@
       "type": "table",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {},

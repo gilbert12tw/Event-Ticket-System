@@ -351,13 +351,26 @@ docker compose -f services/api/deploy/compose.yaml \
 
 # Run k6 (uses mock-provider-token endpoint, no HMAC secret needed)
 k6 run --env BASE_URL=http://127.0.0.1:18080 \
-       --env K6_DURATION=120s \
+       --env LGTM_DURATION=120s \
        k6/k6-lgtm-debug-1000rps.js
 
 # Open Grafana at http://localhost:3000 → ETS 01 — Golden Signals
 ```
 
 ### Running on K8s Baremetal
+
+**Recommended**: Use the wrapper script, which handles MetalLB IP, host header, K8s secret
+extraction, employee seeding, and Docker-based k6 execution automatically:
+
+```bash
+# Basic run (1000 RPS, 120s, no 5xx injection)
+infra/k8s/baremetal/scripts/73-lgtm-debug-demo.sh
+
+# With failure drill: kills one backend pod mid-test to generate real 5xx
+infra/k8s/baremetal/scripts/73-lgtm-debug-demo.sh --with-failure-drill
+```
+
+**Manual alternative** (if you need custom options):
 
 ```bash
 # Port-forward Grafana (if not already exposed)
@@ -370,9 +383,10 @@ INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller \
 # Run k6 with HMAC provider token
 k6 run --env BASE_URL=http://${INGRESS_IP} \
        --env K6_HOST_HEADER=cets.local \
-       --env K6_PROVIDER_TOKEN_SECRET=$(kubectl get secret -n cets cets-secret \
+       --env K6_PROVIDER_TOKEN_SECRET=$(kubectl get secret -n cets cets-runtime-env \
          -o jsonpath='{.data.PROVIDER_TOKEN_SECRET}' | base64 -d) \
-       --env K6_DURATION=120s \
+       --env K6_USE_MOCK_PROVIDER=false \
+       --env LGTM_DURATION=120s \
        k6/k6-lgtm-debug-1000rps.js
 ```
 
@@ -384,7 +398,7 @@ k6 run --env BASE_URL=http://${INGRESS_IP} \
 | `K6_HOST_HEADER` | (none) | Host header for ingress routing |
 | `K6_PROVIDER_TOKEN_SECRET` | (none) | HMAC secret for K8s; omit for Docker Compose (uses mock endpoint) |
 | `K6_USE_MOCK_PROVIDER` | auto | Set `true` to force mock-provider-token endpoint |
-| `K6_DURATION` | `120s` | Test duration |
+| `LGTM_DURATION` | `120s` | Test duration (not `K6_DURATION` — that is a reserved k6 option name) |
 | `K6_READ_RPS` | `600` | Read traffic rate |
 | `K6_BOOKING_RPS` | `250` | Valid booking traffic rate |
 | `K6_INVALID_BOOKING_RPS` | `90` | Invalid booking (400) traffic rate |
@@ -395,8 +409,9 @@ k6 run --env BASE_URL=http://${INGRESS_IP} \
 
 ### What to Observe During the Run
 
-1. **ETS 01 — Golden Signals**: RPS rises to ~1000, 5xx error rate climbs as capacity
-   exhausts, p99 latency increases under booking contention
+1. **ETS 01 — Golden Signals**: RPS rises to ~1000, error rate climbs as capacity
+   exhausts (409 Conflict), p99 latency increases under booking contention.
+   5xx appears only when combined with failure drill (`--with-failure-drill`)
 2. **ETS 02 — RED Traffic**: POST `/api/v1/events/{id}/bookings` shows highest error rate;
    compare replica distribution
 3. **ETS 03 — Booking & Redis**: `preadmission` stage latency rises as Redis gate handles
@@ -525,3 +540,89 @@ To follow one request across all four signals:
 | `CETSDBLockWaitingSessions` | lock waiters > 0 | 2m | warning |
 | `CETSOutboxOldestLagHigh` | oldest lag > 300s | 5m | warning |
 | `CETSMetricsScrapeErrors` | any scrape error | 1m | warning |
+
+---
+
+## Appendix D: 1 分鐘 Demo 流程 (中文)
+
+### 為什麼需要可觀測性？
+
+傳統 monitoring 只能告訴你「系統掛了」，無法回答「為什麼掛」。LGTM+P 五大信號組合
+讓你從 **發現問題 → 定位根因** 只需要點擊，不需要 SSH 進機器翻 log。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Metrics (Prometheus)  ◄─── span metrics ───►  Traces (Tempo)    │
+│       │                                            │    │       │
+│  dashboard                              "Logs for  │    │       │
+│  drill-down                             this trace"│    │       │
+│       ▼                                            ▼    ▼       │
+│  01→02→03→04→05                              Loki Logs  Pyroscope│
+│  (Golden→RED→Booking→USE→Outbox)               │    CPU flamegraph│
+│                                          derived field          │
+│                                          link back to Tempo     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Demo 腳本 (1 分鐘)
+
+> **前提**：已執行 `73-lgtm-debug-demo.sh --with-failure-drill` 產生 1000 RPS 壓力
+> 並殺掉一個 Pod 製造真實 5xx。
+
+| 秒數 | 步驟 | 畫面 | 講什麼 |
+|------|------|------|--------|
+| 0-10 | **STEP 1 — 發現異常** | 開 ETS 01 Golden Signals | 「RPS 升到 1000，error rate 飆升、p99 延遲從 200ms 拉到 4 秒、DB pool 接近飽和。四個黃金指標一眼看出問題範圍。」 |
+| 10-20 | **STEP 2 — 縮小範圍** | 點連結到 ETS 02 RED Traffic | 「按 route 拆分：`POST /bookings` 錯誤最高。按 replica 看：特定 Pod 在重啟期間產生 5xx。**Metrics 告訴你 where**。」 |
+| 20-30 | **STEP 3 — 追蹤根因** | 切到 ETS 06 → Error Traces 面板 | 「TraceQL 撈出 error trace，點進去看 waterfall：`preadmission 12ms → event_lock 780ms → capacity 3.1s`。**Traces 告訴你 why**。」 |
+| 30-40 | **STEP 4 — 關聯 Log** | 在 Tempo trace 詳情點 "Logs for this trace" | 「一鍵跳到 Loki，自動帶入 trace_id 過濾。看到結構化 JSON log 顯示具體的 error message 和 stack。**Log 告訴你 what happened**。」 |
+| 40-50 | **STEP 5 — 效能剖析** | 在 Tempo trace 詳情點 "Profiles for this span" | 「跳到 Pyroscope CPU flame graph，看到哪個 function 吃最多 CPU。時間窗口自動對齊 span 範圍。**Profile 告訴你 where the CPU goes**。」 |
+| 50-60 | **總結** | 回到 ETS 01 | 「從發現到根因，全程零 SSH、零手動拼 query。四個信號透過 trace_id 自動關聯。這就是 LGTM+P 的完整 debug loop。」 |
+
+### 每步的關鍵技術點
+
+| 步驟 | 信號 | 技術實現 | 為什麼必要 |
+|------|------|---------|-----------|
+| STEP 1 | Metrics | Prometheus scrape `cets_http_requests_total`, `cets_http_request_seconds_bucket` | 秒級告警、趨勢判斷 |
+| STEP 2 | Metrics | 按 `route`, `replica`, `status_class` label 拆分 | 定位到具體 Pod 和 API |
+| STEP 3 | Traces | Tempo TraceQL + Alloy OTLP collector | 看到跨服務呼叫鏈和每個 span 耗時 |
+| STEP 4 | Logs | Loki `tracesToLogsV2` derived field (`otel_trace_id`) | 用 trace_id 串接，不用手動搜尋 |
+| STEP 5 | Profiles | Pyroscope `tracesToProfiles` link | CPU flame graph 定位 hot function |
+
+### 四信號關聯機制
+
+```
+Metrics ──────── service, replica labels ────────── 找到哪個 Pod 有問題
+    │
+Traces ─── otel_trace_id (32 hex) ─── 看到呼叫鏈，點擊進入 Tempo
+    │                │
+    │          tracesToLogsV2
+    │                │
+    │                ▼
+Logs ──── {namespace="cets"} |= "trace_id" ──── 結構化 JSON + Loki derived field 反向連結 Tempo
+    │
+Traces ─── tracesToProfiles
+    │                │
+    │                ▼
+Profiles ── process_cpu{service_name="cets-backend"} ── 時間窗口自動對齊 span
+```
+
+**關聯的關鍵設定** (在 `kube-prometheus-stack-values.yaml`):
+- Loki → Tempo: `derivedFields` regex 抓 `otel_trace_id` → 點擊跳到 Tempo
+- Tempo → Loki: `tracesToLogsV2` 用 trace_id 過濾 → 點擊 "Logs for this trace"
+- Tempo → Prometheus: `tracesToMetrics` 用 span tags 查 `traces_spanmetrics_calls_total`
+- Tempo → Pyroscope: `tracesToProfiles` 用 span 時間窗口查 CPU profile
+
+### Demo 前準備清單
+
+```bash
+# 1. 確保 6 個 dashboard 都在 Grafana
+kubectl -n observability get configmap cets-k8s-lgtm-dashboard
+
+# 2. 產生壓力 + 5xx (約 2 分半完成)
+infra/k8s/baremetal/scripts/73-lgtm-debug-demo.sh --with-failure-drill
+
+# 3. 開 Grafana (如需 port-forward)
+kubectl -n observability port-forward svc/kube-prometheus-stack-grafana 3000:80 &
+
+# 4. 瀏覽器開 http://localhost:3000 → Event-Ticket-System 資料夾 → ETS 01
+```

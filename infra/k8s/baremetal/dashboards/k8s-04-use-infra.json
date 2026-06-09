@@ -11,7 +11,7 @@
     "list": [
       {
         "allValue": ".*",
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
         "label": "Service",
@@ -24,7 +24,7 @@
       },
       {
         "allValue": ".*",
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
         "label": "Replica",
@@ -57,7 +57,7 @@
       "title": "CPU Usage by Pod (CPU cores)",
       "description": "CPU cores consumed per pod, filtered to backend/worker/frontend pods in the cets namespace. Shows raw CPU usage — useful without CPU limits set. If one pod is consistently higher, it has an uneven load or CPU hotspot. Open Pyroscope to find the hot function.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [
         {
@@ -73,7 +73,7 @@
       "title": "Memory Usage by Pod",
       "description": "Working set memory per pod (excludes reclaimable cache). This is the metric Kubernetes uses for OOM eviction decisions. Sustained growth without GC sawtooth = memory leak. Navigate to Service Anomaly logs to see OOM kill events.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
       "targets": [
         {
@@ -89,7 +89,7 @@
       "title": "Pod Restarts (last 1h)",
       "description": "Container restart count per pod in the last hour. Non-zero = OOM kill, liveness probe failure, or crash loop. Check Service Anomaly logs filtered to that pod name for the crash reason.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -112,7 +112,7 @@
       "title": "Pod Ready Status",
       "description": "Pod readiness per pod (1 = ready, 0 = not ready). A pod that drops to 0 is being excluded from the service endpoint — it may be crashing or failing its readiness probe.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [
         {
@@ -135,7 +135,7 @@
       "title": "DB Pool Connections by State (per instance)",
       "description": "Number of acquired (active), idle, and total connections per backend pod. acquired/total > 70% = approaching saturation.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [
         { "expr": "cets_db_pool_conns{job=\"cets-backend\", state=\"acquired\"}", "legendFormat": "acquired {{instance}}", "refId": "A" },
@@ -149,7 +149,7 @@
       "title": "DB Pool Average Acquire Wait (per instance)",
       "description": "Average time a goroutine waits for a DB connection from the pool. Rising above 20ms = pool is saturated.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
         { "expr": "rate(cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}[5m]) / clamp_min(rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m]), 0.001)", "legendFormat": "avg wait {{instance}}", "refId": "A" }
@@ -161,7 +161,7 @@
       "title": "DB Lock Waiting Sessions",
       "description": "PostgreSQL sessions blocked on a lock. Any value > 0 = lock contention. Persistent lock waits cause connection pool saturation.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -178,7 +178,7 @@
       "title": "DB Pool Acquire Count Rate",
       "description": "Rate of pool acquire calls per backend pod. Correlates with request rate.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [{ "expr": "rate(cets_db_pool_acquire_count_total{job=\"cets-backend\"}[5m])", "legendFormat": "{{instance}}", "refId": "A" }],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 }
