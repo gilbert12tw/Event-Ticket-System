@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -74,6 +75,49 @@ func processNoShows(cfg config.Config, logger *slog.Logger) error {
 			return err
 		}
 		logger.Info("no-show processing complete", "processed", result.Processed, "cooldowns_applied", result.CooldownsApplied)
+		return nil
+	})
+}
+
+// adminCmd dispatches one-off `cets admin <subcommand>` operations. These run
+// as same-binary admin processes with env config and write no durable local
+// files.
+func adminCmd(cfg config.Config, logger *slog.Logger, args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "rebuild-projection":
+		return rebuildProjection(cfg, logger)
+	default:
+		return fmt.Errorf("unknown admin subcommand %q (supported: rebuild-projection)", sub)
+	}
+}
+
+// rebuildProjection rebuilds reporting_event_summary from PostgreSQL OLTP truth.
+// Behaviour is controlled by REBUILD_DRY_RUN and REBUILD_SAMPLE_VALIDATE env config.
+func rebuildProjection(cfg config.Config, logger *slog.Logger) error {
+	settings, err := config.LoadRebuildSettings()
+	if err != nil {
+		return err
+	}
+	return withDatabase(cfg, cfg.ValidateDatabase, func(ctx context.Context, pool *pgxpool.Pool) error {
+		service := newTicketingService(pool, cfg, logger)
+		actor := ticketing.Actor{ID: "rebuild-projection", Role: ticketing.RoleSystemAdmin}
+		result, err := service.RebuildProjection(ctx, actor, ticketing.RebuildOptions{
+			DryRun:         settings.DryRun,
+			SampleValidate: settings.SampleValidate,
+		})
+		if err != nil {
+			return err
+		}
+		logger.Info("read-model rebuild finished",
+			"rows_inserted", result.RowsInserted,
+			"offset_reset_to", result.OffsetResetTo,
+			"dry_run", result.DryRun,
+			"validated", result.Validated,
+		)
 		return nil
 	})
 }

@@ -40,6 +40,8 @@ func run(args []string, logger *slog.Logger) error {
 		return worker(cfg, logger, args[1:])
 	case "ops":
 		return ops(cfg, logger, args[1:])
+	case "admin":
+		return adminCmd(cfg, logger, args[1:])
 	case "process-no-shows":
 		return processNoShows(cfg, logger)
 	default:
