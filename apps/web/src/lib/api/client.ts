@@ -53,6 +53,10 @@ import {
   setProviderToken,
 } from "./http";
 import type { OpsDashboard } from "./ops-contracts";
+import {
+  cacheProviderToken,
+  clearCachedProviderToken,
+} from "@/lib/offline/auth-cache";
 
 export { employees } from "./demo-data";
 export {
@@ -102,10 +106,14 @@ export async function selectMockProfile(
 ): Promise<AuthSession> {
   const token = await mockProviderToken(profileID);
   setProviderToken(token.provider_token);
+  cacheProviderToken(token.provider_token, token.expires_at);
   return me();
 }
 
-export const clearProviderToken = () => setProviderToken(null);
+export const clearProviderToken = () => {
+  setProviderToken(null);
+  clearCachedProviderToken();
+};
 
 export function seedDemo() {
   return post<{ status: string }>("/api/v1/admin/seed-demo");

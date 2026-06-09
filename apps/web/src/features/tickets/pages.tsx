@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { getTicket, listTickets } from "@/lib/api";
 import type { AuthMeClaims, Ticket } from "@/lib/api";
+import { isOffline } from "@/lib/offline/auth-cache";
+import {
+  cacheTickets,
+  loadCachedTicket,
+  loadCachedTickets,
+} from "@/lib/offline/tickets-store";
 import { navigate, ticketDetailPath } from "@/app/routes";
 import { errorMessage } from "@/lib/formatting";
 import { runClientNavigation } from "@/lib/navigation";
@@ -45,7 +51,21 @@ export function EmployeeTicketsPage({
       const rows = await listTickets();
       setTickets(rows);
       setListLoaded(true);
+      void cacheTickets(rows);
     } catch (error) {
+      if (isOffline()) {
+        try {
+          const cached = await loadCachedTickets();
+          if (cached.length > 0) {
+            setTickets(cached);
+            setListLoaded(true);
+            setMessage("離線模式：顯示已儲存的票券");
+            return;
+          }
+        } catch {
+          /* IDB unavailable */
+        }
+      }
       setMessage(errorMessage(error));
     } finally {
       setLoading(false);
@@ -65,6 +85,18 @@ export function EmployeeTicketsPage({
       }
       setDetailTicket(ticket);
     } catch (error) {
+      if (isOffline()) {
+        try {
+          const cached = await loadCachedTicket(ticketID);
+          if (cached) {
+            setDetailTicket(cached);
+            setDetailMessage("離線模式：顯示已儲存的票券");
+            return;
+          }
+        } catch {
+          /* IDB unavailable */
+        }
+      }
       setDetailMessage(errorMessage(error));
     } finally {
       setDetailLoading(false);

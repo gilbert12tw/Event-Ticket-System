@@ -1,0 +1,15 @@
+{
+  "name": "企業活動票務系統",
+  "short_name": "票務",
+  "start_url": "/user/events",
+  "display": "standalone",
+  "theme_color": "#18181b",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
