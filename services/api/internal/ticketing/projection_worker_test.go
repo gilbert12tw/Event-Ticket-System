@@ -86,34 +86,35 @@ func insertProjectionOutboxAt(
 	require.NoError(t, err)
 }
 
+// projectionOutboxV2Seed groups the fields for a schema_version=2 projection
+// envelope so the seeding helper stays within the parameter-count limit.
+type projectionOutboxV2Seed struct {
+	outboxID   string
+	eventID    string
+	triggerID  string
+	innerType  string
+	department string
+}
+
 // insertProjectionOutboxV2 seeds a schema_version=2 projection envelope whose
 // inner type is resolved by the worker via an outbox_events lookup on
 // trigger_event_id. The trigger row (event_type=innerType, already published so
 // the projection worker never claims it) is seeded only when innerType != "" —
 // pass innerType="" to simulate a GC'd / missing trigger row.
-func insertProjectionOutboxV2(
-	t *testing.T,
-	service *Service,
-	ctx context.Context,
-	outboxID string,
-	eventID string,
-	triggerID string,
-	innerType string,
-	department string,
-) {
+func insertProjectionOutboxV2(t *testing.T, service *Service, ctx context.Context, seed projectionOutboxV2Seed) {
 	t.Helper()
-	if innerType != "" {
+	if seed.innerType != "" {
 		_, err := service.db.Exec(ctx, `
 			INSERT INTO outbox_events
 				(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts, available_at)
 			VALUES ($1, $2, $3, '{}'::jsonb, 'published', 1, 0, now() - interval '2 seconds')`,
-			triggerID, eventID, innerType)
+			seed.triggerID, seed.eventID, seed.innerType)
 		require.NoError(t, err)
 	}
 	const projectionName = projectionProjectionName
-	idempotencyKey := "reporting.projection.update_required:" + projectionName + ":" + eventID + ":" + triggerID
+	idempotencyKey := "reporting.projection.update_required:" + projectionName + ":" + seed.eventID + ":" + seed.triggerID
 	envelope := map[string]interface{}{
-		"event_id":        outboxID,
+		"event_id":        seed.outboxID,
 		"event_type":      outboxEventReportingProjectionUpdateRequiredV2,
 		"schema_version":  2,
 		"occurred_at":     "2026-05-28T10:00:00Z",
@@ -121,9 +122,9 @@ func insertProjectionOutboxV2(
 		"partition_key":   projectionName,
 		"payload": map[string]interface{}{
 			"projection_name":  projectionName,
-			"aggregate_id":     eventID,
-			"trigger_event_id": triggerID,
-			"department":       department,
+			"aggregate_id":     seed.eventID,
+			"trigger_event_id": seed.triggerID,
+			"department":       seed.department,
 		},
 	}
 	body, err := json.Marshal(envelope)
@@ -133,7 +134,7 @@ func insertProjectionOutboxV2(
 			(outbox_id, aggregate_id, event_type, payload, publish_status, schema_version, attempts,
 			 available_at, idempotency_key, partition_key)
 		VALUES ($1, $2, $3, $4::jsonb, 'pending', 2, 0, now() - interval '1 second', $5, $6)`,
-		outboxID, eventID, outboxEventReportingProjectionUpdateRequiredV2, string(body), idempotencyKey, projectionName)
+		seed.outboxID, seed.eventID, outboxEventReportingProjectionUpdateRequiredV2, string(body), idempotencyKey, projectionName)
 	require.NoError(t, err)
 }
 
@@ -278,7 +279,13 @@ func TestProjectionWorker_OffsetAdvancesAfterProcessing(t *testing.T) {
 // trigger_event_id, then the aggregate is updated like a v1 event.
 func TestProjectionWorker_V2EnvelopeResolvesTriggerType(t *testing.T) {
 	service, ctx := newWorkerTest(t)
-	insertProjectionOutboxV2(t, service, ctx, "ob-v2-1", "evt_1", "trig-1", projectionInnerTypeBookingConfirmed, "Engineering")
+	insertProjectionOutboxV2(t, service, ctx, projectionOutboxV2Seed{
+		outboxID:   "ob-v2-1",
+		eventID:    "evt_1",
+		triggerID:  "trig-1",
+		innerType:  projectionInnerTypeBookingConfirmed,
+		department: "Engineering",
+	})
 
 	processed, err := runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
@@ -294,7 +301,11 @@ func TestProjectionWorker_V2EnvelopeResolvesTriggerType(t *testing.T) {
 // change — and still consumed (marked published) so it does not loop.
 func TestProjectionWorker_V2EnvelopeTriggerGCSkipped(t *testing.T) {
 	service, ctx := newWorkerTest(t)
-	insertProjectionOutboxV2(t, service, ctx, "ob-v2-gc", "evt_1", "trig-missing", "", "")
+	insertProjectionOutboxV2(t, service, ctx, projectionOutboxV2Seed{
+		outboxID:  "ob-v2-gc",
+		eventID:   "evt_1",
+		triggerID: "trig-missing",
+	})
 
 	processed, err := runProjectionWorkerOnce(service, ctx)
 	require.NoError(t, err)
