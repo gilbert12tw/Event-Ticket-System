@@ -39,6 +39,7 @@ const checkinEvent: EventSummary = {
   description: "",
   location: "Taipei HQ",
   starts_at: "2026-05-16T10:00:00Z",
+  ends_at: "2026-05-16T12:00:00Z",
   registration_start: "2026-05-01T10:00:00Z",
   registration_close: "2026-05-15T10:00:00Z",
   capacity_type: "limited",
@@ -63,7 +64,7 @@ const checkinEvent: EventSummary = {
 
 describe("CheckinPage", () => {
   beforeEach(() => {
-    window.history.pushState({}, "", "/admin/checkin");
+    globalThis.history.pushState({}, "", "/admin/checkin");
     localStorage.clear();
     mockCheckIn.mockClear();
     mockListAdminEvents.mockReset();
@@ -84,7 +85,7 @@ describe("CheckinPage", () => {
   it("prefills token from navigation state and ignores production localStorage tokens by default", async () => {
     localStorage.setItem("cets:lastTicketToken", "legacy-token");
 
-    window.history.pushState(
+    globalThis.history.pushState(
       { cetsCheckinToken: "state-token" },
       "",
       "/admin/checkin",
@@ -103,7 +104,7 @@ describe("CheckinPage", () => {
   });
 
   it("shows empty token input when no handoff source exists", async () => {
-    window.history.pushState({}, "", "/admin/checkin");
+    globalThis.history.pushState({}, "", "/admin/checkin");
     render(<CheckinPage />);
 
     expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
@@ -222,6 +223,17 @@ describe("CheckinPage", () => {
 
   it("fills the token field when QR detection reads a code", async () => {
     mockReports.mockResolvedValue([]);
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-qr",
+      ticket_id: "tkt-qr",
+      event_id: "evt-live",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-05-16T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
     const controls = { stop: vi.fn() };
     zxingMocks.decodeFromConstraints.mockImplementation(
       async (_constraints, _video, callback) => {
@@ -236,10 +248,70 @@ describe("CheckinPage", () => {
     );
 
     expect(
-      await screen.findByText("已讀取 QR code，可以送出驗票。"),
+      await screen.findByText("已讀取 QR code，系統會自動送出驗票。"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue("qr-token-123");
+    expect(mockCheckIn).toHaveBeenCalledWith(
+      "qr-token-123",
+      "gate-1",
+      "evt-live",
+      "",
+    );
     expect(controls.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits QR detections with the latest selected event after events load", async () => {
+    mockReports.mockResolvedValue([]);
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-qr",
+      ticket_id: "tkt-qr",
+      event_id: "evt-live",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-05-16T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
+    let resolveEvents: (events: EventSummary[]) => void = () => {};
+    mockListAdminEvents.mockReturnValue(
+      new Promise<EventSummary[]>((resolve) => {
+        resolveEvents = resolve;
+      }),
+    );
+    const controls = { stop: vi.fn() };
+    let scanCallback: (result?: { getText: () => string }) => void = () => {};
+    zxingMocks.decodeFromConstraints.mockImplementation(
+      async (_constraints, _video, callback) => {
+        scanCallback = callback;
+        return controls;
+      },
+    );
+
+    render(<CheckinPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "手機掃描 QR" }),
+    );
+    await act(async () => {
+      resolveEvents([checkinEvent]);
+    });
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
+
+    await act(async () => {
+      scanCallback({ getText: () => "late-loaded-token" });
+    });
+
+    await waitFor(() =>
+      expect(mockCheckIn).toHaveBeenCalledWith(
+        "late-loaded-token",
+        "gate-1",
+        "evt-live",
+        "",
+      ),
+    );
+    expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue(
+      "late-loaded-token",
+    );
   });
 
   it("opens the camera without depending on BarcodeDetector support", async () => {
@@ -253,7 +325,7 @@ describe("CheckinPage", () => {
     );
 
     expect(
-      await screen.findByText("相機已開啟，請將 QR code 對準畫面中央。"),
+      await screen.findByText("相機已開啟，請將 QR code 對準掃描框。"),
     ).toBeInTheDocument();
     expect(zxingMocks.decodeFromConstraints).toHaveBeenCalled();
   });

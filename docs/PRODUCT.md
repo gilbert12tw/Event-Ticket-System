@@ -28,6 +28,8 @@ Avoid pale grey card piles where every surface has the same weight and the user'
 
 - Make operational truth visible: show eligibility, capacity, ticket state, check-in result, and audit metadata where decisions happen.
 - Preserve role clarity: employee, activity admin, check-in staff, and HR surfaces share one product system while keeping their workflows distinct.
+- Keep discovery and entry separate: `/user/events` is for finding and scheduling activities, while usable ticket QR codes appear only in `/user/tickets`, ticket detail, and check-in flows.
+- Prefer scan-first check-in: scanning a QR code submits the online check-in immediately with duplicate/invalid feedback and a manual token fallback for low-frequency recovery.
 - Prioritize task confidence: every mutating action needs a clear disabled, loading, success, warning, or error state.
 - Keep sensitive data quiet: signed tokens and session details stay redacted in ordinary UI and API activity.
 - Use density with discipline: tables, forms, and runbooks should scan quickly without collapsing into visual sameness.

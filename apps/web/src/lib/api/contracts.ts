@@ -143,6 +143,7 @@ type EventMutableFields = {
   event_city?: string;
   event_site?: string;
   starts_at: string;
+  ends_at: string;
   registration_start: string;
   registration_close: string;
   capacity_type: CapacityType;
@@ -175,6 +176,12 @@ export type EventSummary = EventMutableFields & {
   current_user_registration_id?: string;
   current_user_ticket?: Ticket;
   no_show_cooldown?: NoShowCooldown;
+};
+
+export type EventListFilters = {
+  capacity_type?: CapacityType;
+  city?: string;
+  status?: string;
 };
 
 export type EventAsset = {

@@ -56,7 +56,7 @@ const mockReports = vi.mocked(reports);
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.pushState({}, "", "/");
+    globalThis.history.pushState({}, "", "/");
     mockListEvents.mockResolvedValue([]);
     mockReports.mockResolvedValue([]);
     mockGetOpsDashboard.mockResolvedValue({
@@ -97,7 +97,7 @@ describe("App", () => {
     });
     mockReadiness.mockResolvedValue({});
 
-    window.history.pushState({}, "", "/admin/events");
+    globalThis.history.pushState({}, "", "/admin/events");
 
     render(<App />);
 
@@ -162,7 +162,7 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("selects and switches local mock profiles", async () => {
+  it("selects local mock profiles into the employee app chrome", async () => {
     const session: AuthSession = {
       actor: {
         id: "E1001",
@@ -214,20 +214,14 @@ describe("App", () => {
     await waitFor(() =>
       expect(mockSelectMockProfile).toHaveBeenCalledWith("E1001"),
     );
-    expect(await screen.findByText("活動列表")).toBeInTheDocument();
-
-    const debugButtons = await screen.findAllByRole("button", {
-      name: /Debug/,
-    });
-    await userEvent.click(debugButtons[0]);
-    const switchButtons = await screen.findAllByRole("button", {
-      name: /切換身分/,
-    });
-    await userEvent.click(switchButtons[0]);
-
-    expect(mockClearProviderToken).toHaveBeenCalled();
-    expect(await screen.findByLabelText("本機身分清單")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/user/events");
+    expect(
+      await screen.findAllByRole("heading", { name: "活動探索" }),
+    ).not.toHaveLength(0);
+    expect(screen.getByLabelText("活動行事曆")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Debug/ })).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("E1001");
+    expect(mockClearProviderToken).not.toHaveBeenCalled();
+    expect(globalThis.location.pathname).toBe("/user/events");
   });
 
   it("shows ops navigation only when the ops API is registered", async () => {
@@ -259,7 +253,7 @@ describe("App", () => {
       ops_api_enabled: true,
     });
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/reports");
+    globalThis.history.pushState({}, "", "/admin/reports");
 
     render(<App />);
 
@@ -292,7 +286,7 @@ describe("App", () => {
     mockMe.mockResolvedValueOnce(session);
     mockAuthBootstrap.mockRejectedValueOnce(new Error("bootstrap unavailable"));
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/demo");
+    globalThis.history.pushState({}, "", "/admin/demo");
 
     render(<App />);
 
@@ -343,7 +337,7 @@ describe("App", () => {
       demo_debug_enabled: true,
     });
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/demo");
+    globalThis.history.pushState({}, "", "/admin/demo");
 
     render(<App />);
 
@@ -387,7 +381,7 @@ describe("App", () => {
       ops_api_enabled: false,
     });
     mockReadiness.mockResolvedValue({});
-    window.history.pushState({}, "", "/admin/ops");
+    globalThis.history.pushState({}, "", "/admin/ops");
 
     render(<App />);
 

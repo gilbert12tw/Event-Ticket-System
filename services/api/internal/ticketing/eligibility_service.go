@@ -407,20 +407,32 @@ func (s *Service) createEligibilityImpactReviewsTx(ctx context.Context, tx pgx.T
 	}
 	rows.Close()
 
-	var count int
+	if len(pending) == 0 {
+		return 0, nil
+	}
+
+	batch := &pgx.Batch{}
 	for _, impact := range pending {
 		reviewID, err := newID("rev")
 		if err != nil {
 			return 0, err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO eligibility_impact_reviews
+		batch.Queue(`INSERT INTO eligibility_impact_reviews
 			(review_id, event_id, employee_id, ticket_id, status, reason)
-			VALUES ($1,$2,$3,NULLIF($4, ''),'pending',$5)`, reviewID, eventID, impact.employeeID, impact.ticketID, impact.reason); err != nil {
+			VALUES ($1,$2,$3,NULLIF($4, ''),'pending',$5)`, reviewID, eventID, impact.employeeID, impact.ticketID, impact.reason)
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	for range pending {
+		if _, err := results.Exec(); err != nil {
+			_ = results.Close()
 			return 0, err
 		}
-		count++
 	}
-	return count, nil
+	if err := results.Close(); err != nil {
+		return 0, err
+	}
+	return len(pending), nil
 }
 
 // maskID returns the first 4 characters of id followed by "****" to

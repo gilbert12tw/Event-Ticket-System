@@ -29,7 +29,7 @@ type EventService interface {
 	ChangeEventState(ctx context.Context, actor ticketing.Actor, eventID string, req ticketing.ChangeEventStateRequest) (ticketing.EventSummary, error)
 	DuplicateEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ArchiveEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
-	ListEvents(ctx context.Context, actor ticketing.Actor, employeeID string) ([]ticketing.EventSummary, error)
+	ListEvents(ctx context.Context, actor ticketing.Actor, employeeID string, query ...ticketing.EventListQuery) ([]ticketing.EventSummary, error)
 }
 
 type EventAssetService interface {

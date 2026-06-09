@@ -83,6 +83,20 @@ describe("UserNotificationsPage", () => {
     expect(screen.getByLabelText("通知摘要")).toHaveTextContent("票券更新1");
     expect(screen.getAllByText(/候補/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("可使用").length).toBeGreaterThan(0);
+    const subjectLinks = screen.getAllByRole("link", { name: "家庭電影夜" });
+    expect(
+      subjectLinks.some(
+        (link) =>
+          link.getAttribute("href") ===
+          "/user/events/detail?event_id=evt-waitlist",
+      ),
+    ).toBe(true);
+    expect(
+      subjectLinks.some(
+        (link) =>
+          link.getAttribute("href") === "/user/tickets?ticket_id=ticket-1",
+      ),
+    ).toBe(true);
     expect(
       screen.getAllByText("票券已核發，可於現場驗票使用。").length,
     ).toBeGreaterThan(0);

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { navigate } from "@/app/routes";
 import {
   createReportExport,
   downloadReportExport,
@@ -24,6 +25,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { reportExportStatusView, reportPresetOptions } from "@/lib/ui/options";
 import { Button } from "@/components/ui/button";
+import { runClientNavigation } from "@/lib/navigation";
+import { sortReportsByAttention } from "./report-priority";
 
 type ReportTab = "participation" | "exports";
 const reportTabs = ["participation", "exports"] as const;
@@ -104,13 +107,15 @@ export function HrReportsPage() {
     [reportRows],
   );
 
-  const filteredReports = reportRows.filter((row) => {
-    const needle = filter.toLowerCase();
-    const matchesText = `${row.title} ${row.event_id}`
-      .toLowerCase()
-      .includes(needle);
-    return matchesText && reportPresetMatches(row, reportPreset);
-  });
+  const filteredReports = sortReportsByAttention(
+    reportRows.filter((row) => {
+      const needle = filter.toLowerCase();
+      const matchesText = `${row.title} ${row.event_id}`
+        .toLowerCase()
+        .includes(needle);
+      return matchesText && reportPresetMatches(row, reportPreset);
+    }),
+  );
   const attendanceRate =
     totals.confirmed > 0
       ? `${Math.round((totals.checkins / totals.confirmed) * 100)}%`
@@ -192,7 +197,9 @@ export function HrReportsPage() {
               mobileCards={filteredReports.map((row) => (
                 <article className="mobile-summary-card" key={row.event_id}>
                   <div>
-                    <h3>{row.title}</h3>
+                    <h3>
+                      <ReportEventLink row={row} />
+                    </h3>
                     <p className="table-muted">{row.event_id}</p>
                   </div>
                   <CompactStatsBar
@@ -260,7 +267,7 @@ export function HrReportsPage() {
                 {filteredReports.map((row) => (
                   <tr key={row.event_id}>
                     <td className="report-event-cell">
-                      <span title={row.title}>{row.title}</span>
+                      <ReportEventLink row={row} />
                     </td>
                     <td>
                       {row.capacity_type === "unlimited" ? "不限量" : "限量"}
@@ -375,6 +382,20 @@ function reportPresetMatches(row: ReportRow, preset: string) {
     );
   }
   return true;
+}
+
+function ReportEventLink({ row }: Readonly<{ row: ReportRow }>) {
+  const eventID = encodeURIComponent(row.event_id);
+  const href = `/admin/events/${eventID}/registrations?event_id=${eventID}`;
+  return (
+    <a
+      href={href}
+      title={row.title}
+      onClick={(event) => runClientNavigation(event, () => navigate(href))}
+    >
+      {row.title}
+    </a>
+  );
 }
 
 function reportExportCompletedAt(reportExport: ReportExport) {

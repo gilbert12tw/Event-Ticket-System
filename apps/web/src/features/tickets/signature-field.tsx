@@ -38,7 +38,7 @@ export function TicketSignatureField({ token }: Readonly<{ token: string }>) {
           onClick={() => setRevealed((value) => !value)}
         >
           <Icon name={revealed ? "eyeOff" : "eye"} />
-          {revealed ? "隱藏" : "顯示"}
+          {revealed ? "隱藏簽章碼" : "顯示簽章碼"}
         </Button>
         <Button
           variant="outline"
@@ -47,7 +47,7 @@ export function TicketSignatureField({ token }: Readonly<{ token: string }>) {
           onClick={() => void copy()}
         >
           <Icon name="copy" />
-          {copied ? "已複製" : "複製"}
+          {copied ? "已複製" : "複製簽章碼"}
         </Button>
       </div>
     </div>

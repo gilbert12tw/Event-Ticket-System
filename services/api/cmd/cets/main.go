@@ -32,12 +32,16 @@ func run(args []string, logger *slog.Logger) error {
 		return migrate(cfg, logger)
 	case "ready":
 		return ready(cfg)
+	case "reset-demo-db":
+		return resetDemoDB(cfg, logger)
 	case "seed":
 		return seed(cfg, logger)
 	case "worker":
 		return worker(cfg, logger, args[1:])
 	case "ops":
 		return ops(cfg, logger, args[1:])
+	case "admin":
+		return adminCmd(cfg, logger, args[1:])
 	case "process-no-shows":
 		return processNoShows(cfg, logger)
 	default:

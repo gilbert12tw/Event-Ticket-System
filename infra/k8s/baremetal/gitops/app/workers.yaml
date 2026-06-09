@@ -18,7 +18,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
@@ -58,7 +58,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
@@ -98,7 +98,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:
@@ -138,7 +138,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: worker
-          image: cets-api
+          image: cets-api:v0.0.1
           imagePullPolicy: IfNotPresent
           args: ["worker"]
           env:

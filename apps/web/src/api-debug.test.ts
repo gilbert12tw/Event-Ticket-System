@@ -13,6 +13,14 @@ function jsonResponse(body: unknown) {
   });
 }
 
+function parseRequestBody(body: BodyInit | null | undefined) {
+  if (body === undefined || body === null) return undefined;
+  if (typeof body !== "string") {
+    throw new TypeError("expected request body to be a JSON string");
+  }
+  return JSON.parse(body) as unknown;
+}
+
 describe("debug API client", () => {
   const fetchMock = vi.fn();
 
@@ -38,8 +46,7 @@ describe("debug API client", () => {
       string,
       RequestInit | undefined,
     ];
-    const body =
-      init?.body === undefined ? undefined : JSON.parse(String(init.body));
+    const body = parseRequestBody(init?.body);
     return { path, init, body };
   }
 

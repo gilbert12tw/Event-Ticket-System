@@ -16,8 +16,13 @@ const (
 type ProjectionEvent struct {
 	// EventID is the domain event (event_id in the events table).
 	EventID string
-	// OutboxID is the outbox row ID used as the idempotency offset.
+	// OutboxID is the time-ordered composite offset key (projectionOffsetKey
+	// result, "<20-digit-unix-nano>|<raw-outbox-id>") written to the
+	// last_event_offset / last_processed_outbox_id watermarks. It is NOT the raw
+	// outbox row id — that is carried by claim.outboxID.
 	OutboxID string
+	// TriggerEventID is the outbox_id of the original event that triggered this projection.
+	TriggerEventID string
 	// InnerType is the original domain event type (e.g. "booking.confirmed").
 	InnerType string
 	// Department label — only the label is stored, never employee identifiers.

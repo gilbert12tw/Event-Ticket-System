@@ -230,6 +230,14 @@
     order: -1;
   }
 
+  .event-detail-app .employee-event-detail-action-panel {
+    order: 2;
+  }
+
+  .event-detail-app .event-detail-check-panel {
+    order: 3;
+  }
+
   .event-status-tools {
     grid-template-columns: minmax(0, 1fr);
   }

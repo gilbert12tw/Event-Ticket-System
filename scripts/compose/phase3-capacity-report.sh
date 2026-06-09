@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 
 write_report() {
-  best_rps=$1
-  summary="$ARTIFACT_DIR/k6-$RUN_ID-rps-$best_rps.json"
-  report="$ARTIFACT_DIR/capacity-report-$RUN_ID.md"
-  correctness="$ARTIFACT_DIR/post-load-correctness-$RUN_ID.txt"
-  replica_spread="$ARTIFACT_DIR/capacity-replica-spread-$RUN_ID-rps-$best_rps.txt"
-  prom_red="$ARTIFACT_DIR/prometheus-red-$RUN_ID.json"
-  prom_booking="$ARTIFACT_DIR/prometheus-booking-stages-$RUN_ID.json"
-  prom_reservation="$ARTIFACT_DIR/prometheus-reservation-$RUN_ID.json"
-  prom_cpu="$ARTIFACT_DIR/prometheus-backend-cpu-$RUN_ID.json"
-  prom_memory="$ARTIFACT_DIR/prometheus-backend-memory-$RUN_ID.json"
-  prom_db_pool="$ARTIFACT_DIR/prometheus-db-pool-wait-$RUN_ID.json"
-  prom_db_locks="$ARTIFACT_DIR/prometheus-db-lock-waits-$RUN_ID.json"
+  local best_rps=$1
+  local k6_summary="$ARTIFACT_DIR/k6-$RUN_ID-rps-$best_rps.json"
+  local report="$ARTIFACT_DIR/capacity-report-$RUN_ID.md"
+  local correctness="$ARTIFACT_DIR/post-load-correctness-$RUN_ID.txt"
+  local replica_spread="$ARTIFACT_DIR/capacity-replica-spread-$RUN_ID-rps-$best_rps.txt"
+  local prom_red="$ARTIFACT_DIR/prometheus-red-$RUN_ID.json"
+  local prom_booking="$ARTIFACT_DIR/prometheus-booking-stages-$RUN_ID.json"
+  local prom_reservation="$ARTIFACT_DIR/prometheus-reservation-$RUN_ID.json"
+  local prom_cpu="$ARTIFACT_DIR/prometheus-backend-cpu-$RUN_ID.json"
+  local prom_memory="$ARTIFACT_DIR/prometheus-backend-memory-$RUN_ID.json"
+  local prom_db_pool="$ARTIFACT_DIR/prometheus-db-pool-wait-$RUN_ID.json"
+  local prom_db_locks="$ARTIFACT_DIR/prometheus-db-lock-waits-$RUN_ID.json"
 
   validate_capacity_verify_report
 
@@ -47,7 +47,7 @@ write_report() {
     printf '| Traffic mix | `%s read / %s booking` |\n' "$READ_RATIO" "$(awk -v r="$READ_RATIO" 'BEGIN { printf "%.2f", 1-r }')"
     printf '| Employee fixture | `%s` employees, prefix `%s` |\n' "$EMPLOYEE_COUNT" "$EMPLOYEE_PREFIX"
     printf '| Hot event capacity | `%s` |\n' "$HOT_EVENT_CAPACITY"
-    printf '| k6 summary | `%s` |\n' "$summary"
+    printf '| k6 summary | `%s` |\n' "$k6_summary"
     printf '| Replica spread summary | `%s` |\n' "$replica_spread"
     printf '| Post-load correctness summary | `%s` |\n' "$correctness"
     printf '| Prometheus RED sample | `%s` |\n' "$prom_red"
@@ -68,7 +68,7 @@ write_report() {
       printf '| Highest failing RPS tested | `%s` |\n' "$(cat "$ARTIFACT_DIR/last-fail-rps-$RUN_ID.txt")"
     fi
     printf '\n## k6 Metrics\n\n'
-    jq -r --arg target_rps "$best_rps" -f "$K6_REPORT_FILTER" "$summary"
+    jq -r --arg target_rps "$best_rps" -f "$K6_REPORT_FILTER" "$k6_summary"
     printf '\n## Post-Load Correctness\n\n'
     print_correctness_summary "$correctness"
     printf '\n## Replica Spread\n\n'

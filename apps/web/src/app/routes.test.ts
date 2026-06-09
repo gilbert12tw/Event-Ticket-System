@@ -184,11 +184,11 @@ describe("route guards", () => {
   });
 
   it("preserves the event id from dynamic deep links for existing pages", () => {
-    window.history.replaceState({}, "", "/user/events/evt_1");
+    globalThis.history.replaceState({}, "", "/user/events/evt_1");
 
     expect(currentRoute()).toBe("user-event-detail");
-    expect(new URLSearchParams(window.location.search).get("event_id")).toBe(
-      "evt_1",
-    );
+    expect(
+      new URLSearchParams(globalThis.location.search).get("event_id"),
+    ).toBe("evt_1");
   });
 });

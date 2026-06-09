@@ -1,0 +1,129 @@
+.employee-discovery-strip {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.employee-discovery-head,
+.employee-discovery-primary {
+  min-width: 0;
+}
+
+.employee-discovery-head {
+  display: flex;
+  align-items: center;
+}
+
+.employee-discovery-primary {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.employee-discovery-search {
+  min-width: 0;
+}
+
+.employee-discovery-search [data-slot="field-label"],
+.employee-discovery-select [data-slot="field-label"] {
+  font-size: 0.76rem;
+}
+
+.employee-discovery-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: end;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.employee-discovery-controls .segmented-filter {
+  width: auto;
+  padding: 3px;
+}
+
+.employee-discovery-controls .segmented-filter-item {
+  min-height: 32px;
+  padding: 6px 9px;
+}
+
+.employee-discovery-select {
+  width: 8.75rem;
+  min-width: 7.5rem;
+}
+
+.employee-discovery-filter-toggle[data-slot="button"] {
+  display: none;
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.employee-discovery-summary {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  .employee-discovery-primary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .employee-discovery-strip {
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .employee-discovery-primary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .employee-discovery-summary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .employee-discovery-controls {
+    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .employee-discovery-controls.is-open {
+    display: grid;
+  }
+
+  .employee-discovery-controls .segmented-filter {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .employee-discovery-controls .segmented-filter-item {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    padding-inline: 6px;
+  }
+
+  .employee-discovery-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .employee-discovery-filter-toggle[data-slot="button"] {
+    display: inline-flex;
+    min-width: 4.5rem;
+  }
+}

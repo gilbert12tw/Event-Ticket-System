@@ -12,7 +12,7 @@
 Phase 1 僅交付「可用、可驗證、可維護」的票務核心與現場驗票流程；不追求跨域高可用或多服務分拆。
 
 - Phase 1 不做本地登入/登出、密碼、session 或 refresh token 生命週期管理；僅接受外部 provider token 並使用 claims 作為授權輸入。
-- 活動圖片 / 附件上傳與掃毒、Excel/PDF 匯出、ticket PDF、跨區 HA、RTO/RPO、跨區容災不列入產品交付範圍。
+- 活動海報上傳與瀏覽已支援；活動附件上傳與掃毒、Excel/PDF 匯出、ticket PDF、跨區 HA、RTO/RPO、跨區容災不列入產品交付範圍。
 - `/api/v1/auth/login`、`/api/v1/auth/logout` 不是產品 OpenAPI 要求；local demo 改用 mock provider metadata profiles 產生 bearer token，僅限開發測試用途。
 - HR sync 與營運設定在本階段維持為 same-codebase operator/admin command；產品 OpenAPI 僅暴露 eligibility impact review 查詢與 resolve flow，未新增 HR sync/settings API。
 
@@ -32,7 +32,7 @@ Phase 1 僅交付「可用、可驗證、可維護」的票務核心與現場驗
 | FR-AUTH-01 | 系統只消費外部 provider / SSO claims，包含 `employee_id`、角色、部門、城市等必要欄位。 |
 | FR-AUTH-02 | RBAC 依 claims 映射為 employee / activity admin / check-in staff / HR-admin。 |
 | FR-AUTH-03 | 身份缺失或角色不符時，敏感操作必須拒絕並回傳可理解錯誤；可降級為只讀瀏覽。 |
-| FR-EVENT-01 | 福委可建立與管理活動（草稿、上架、關閉、封存）、欄位含名稱、描述、時間、地點、城市、名額/名額類型、報名時段。 |
+| FR-EVENT-01 | 福委可建立與管理活動（草稿、上架、關閉、封存）、欄位含名稱、描述、開始/結束時間、地點、城市、名額/名額類型、報名時段。 |
 | FR-EVENT-02 | 活動列表與活動詳情需根據活動狀態與使用者資格顯示可報名/候補/不可報名。 |
 | FR-EVENT-03 | 支援 limited / unlimited 兩種名額型態；limited 需容量，unlimited 不扣庫存。 |
 | FR-QUAL-01 | 管理員可定義多維資格條件（部門、城市、職級、據點、年資、自訂標籤等）與 AND / OR / NOT 組合。 |
@@ -44,10 +44,10 @@ Phase 1 僅交付「可用、可驗證、可維護」的票務核心與現場驗
 | FR-REG-04 | 員工可自行取消但僅限報名期間；逾期取消需經管理員敏感例外流程並記錄原因。 |
 | FR-REG-05 | `cross-city` 僅屬警示，不得阻擋符合資格報名。 |
 | FR-REG-06 | 員工多次申請需 idempotent；重複請求不會產生重複確定結果。 |
-| FR-TKT-01 | 報名成功產生簽章 QR ticket；員工一次報名一筆有效票券。 |
+| FR-TKT-01 | 報名成功產生簽章 QR ticket；員工一次報名一筆有效票券，票券有效期限跟隨活動結束時間。 |
 | FR-TKT-02 | ticket 狀態需可見為：未使用、已核銷、已取消、已過期。 |
 | FR-TKT-03 | 票券需可離線顯示，無網路時仍能出示 QR。 |
-| FR-CHK-01 | 驗票員掃碼後可完成核銷，且同一票僅可成功一次。 |
+| FR-CHK-01 | 驗票員掃碼後可完成核銷；活動開始前不可核銷，活動開始後到票券有效期限內同一票僅可成功一次。 |
 | FR-CHK-02 | 重複掃描需回傳首筆核銷資訊並保留衝突記錄。 |
 | FR-CHK-03 | 線上核銷需顯示持有者姓名、部門、城市、同行人數，供現場判斷轉讓風險。 |
 | FR-NOTI-01 | 需至少支援 Email + 站內訊息；報名結果、抽籤結果、取消結果、跨城市提醒需可被通知。 |

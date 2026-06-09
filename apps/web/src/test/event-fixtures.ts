@@ -24,6 +24,7 @@ export function eventFixture(
     event_city: "Taipei",
     event_site: "Taipei",
     starts_at: "2027-01-01T10:00:00Z",
+    ends_at: "2027-01-01T12:00:00Z",
     registration_start: "2026-05-01T10:00:00Z",
     registration_close: "2026-12-31T10:00:00Z",
     capacity_type: "limited",

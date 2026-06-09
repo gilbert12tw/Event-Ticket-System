@@ -45,7 +45,7 @@ func TestPhase3QualityGateRequiresCapacityAndSonarEvidence(t *testing.T) {
 		"Optimization result",
 		"not identified in this run",
 		"not yet optimized",
-		"SONAR_HOST_URL is required",
+		sonarRequiredMessage,
 		"SONAR_TOKEN is required",
 		"sonar-scanner is required",
 		"phase3-sonar-result.sh",
@@ -68,20 +68,20 @@ func TestPhase3QualityGateRejectsLowRPSBeforeSonar(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, output, "highest passing RPS 100 is below required 900")
-	assert.NotContains(t, output, "SONAR_HOST_URL is required")
+	assert.NotContains(t, output, sonarRequiredMessage)
 	assert.NotContains(t, output, "sonar-scanner is required")
 }
 
 func TestPhase3QualityGateRejectsEmptyCapacityArtifactBeforeSonar(t *testing.T) {
 	dir := t.TempDir()
 	report := writePhase3QualityReport(t, dir, "950", false)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "k6.json"), nil, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, k6SummaryFile), nil, 0o600))
 
 	output, err := runPhase3Quality(t, report)
 
 	require.Error(t, err)
 	assert.Contains(t, output, "capacity report field 'k6 summary' points to a missing or empty artifact")
-	assert.NotContains(t, output, "SONAR_HOST_URL is required")
+	assert.NotContains(t, output, sonarRequiredMessage)
 }
 
 func TestPhase3QualityGateRejectsEmptyLGTMArtifactBeforeSonar(t *testing.T) {
@@ -92,24 +92,24 @@ func TestPhase3QualityGateRejectsEmptyLGTMArtifactBeforeSonar(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, output, "linked LGTM verify report field 'Tempo trace evidence' points to a missing or empty artifact")
-	assert.NotContains(t, output, "SONAR_HOST_URL is required")
+	assert.NotContains(t, output, sonarRequiredMessage)
 }
 
 func TestPhase3QualityGateWritesReportAfterSuccessfulSonarCommand(t *testing.T) {
 	dir := t.TempDir()
 	report := writePhase3QualityReport(t, dir, "950", false)
-	qualityReport := filepath.Join(dir, "quality-report.md")
+	qualityReport := filepath.Join(dir, qualityReportFile)
 	artifactDir := filepath.Join(dir, "quality-artifacts")
 	sonarResultReport := filepath.Join(artifactDir, "sonar-result-mock-quality-run.md")
 	fakeBin := writePhase3QualityFakeTools(t, dir)
 
 	output, err := runPhase3Quality(t, report,
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
+		sonarHostLocalEnv,
+		sonarTokenEnv,
 		"CETS_PHASE3_SONAR_COMMAND="+writePhase3SonarResultCommand("passed", "0", "0", "0"),
 		"CETS_PHASE3_QUALITY_ARTIFACT_DIR="+artifactDir,
-		"CETS_PHASE3_QUALITY_REPORT="+qualityReport,
+		qualityReportEnv+qualityReport,
 		"CETS_PHASE3_QUALITY_RUN_ID=mock-quality-run",
 	)
 
@@ -127,7 +127,7 @@ func TestPhase3QualityGateWritesReportAfterSuccessfulSonarCommand(t *testing.T) 
 	assert.Contains(t, quality, "| Sonar problems | `0` |")
 	assert.Contains(t, quality, "| Sonar security problems | `0` |")
 	assert.Contains(t, quality, "| Capacity report | `"+report+"` |")
-	assert.NotContains(t, quality, "phase3-secret-token")
+	assert.NotContains(t, quality, sonarTokenValue)
 	assert.NotContains(t, quality, "CETS_PHASE3_SONAR_COMMAND")
 	assert.NotContains(t, quality, "pnpm sonar:scan")
 }
@@ -135,15 +135,15 @@ func TestPhase3QualityGateWritesReportAfterSuccessfulSonarCommand(t *testing.T) 
 func TestPhase3QualityGateDoesNotWriteReportWhenSonarCommandFails(t *testing.T) {
 	dir := t.TempDir()
 	report := writePhase3QualityReport(t, dir, "950", false)
-	qualityReport := filepath.Join(dir, "quality-report.md")
+	qualityReport := filepath.Join(dir, qualityReportFile)
 	fakeBin := writePhase3QualityFakeTools(t, dir)
 
 	output, err := runPhase3Quality(t, report,
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
+		sonarHostLocalEnv,
+		sonarTokenEnv,
 		"CETS_PHASE3_SONAR_COMMAND=false",
-		"CETS_PHASE3_QUALITY_REPORT="+qualityReport,
+		qualityReportEnv+qualityReport,
 	)
 
 	require.Error(t, err)
@@ -154,17 +154,17 @@ func TestPhase3QualityGateDoesNotWriteReportWhenSonarCommandFails(t *testing.T) 
 func TestPhase3QualityGateRejectsMissingSonarResultReport(t *testing.T) {
 	dir := t.TempDir()
 	report := writePhase3QualityReport(t, dir, "950", false)
-	qualityReport := filepath.Join(dir, "quality-report.md")
+	qualityReport := filepath.Join(dir, qualityReportFile)
 	sonarResultReport := filepath.Join(dir, "missing-sonar-result.md")
 	fakeBin := writePhase3QualityFakeTools(t, dir)
 
 	output, err := runPhase3Quality(t, report,
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_COMMAND=true",
-		"CETS_PHASE3_QUALITY_REPORT="+qualityReport,
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+sonarResultReport,
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarCommandTrueEnv,
+		qualityReportEnv+qualityReport,
+		sonarResultReportEnv+sonarResultReport,
 	)
 
 	require.Error(t, err)
@@ -175,17 +175,17 @@ func TestPhase3QualityGateRejectsMissingSonarResultReport(t *testing.T) {
 func TestPhase3QualityGateRejectsFailedSonarQualityGate(t *testing.T) {
 	dir := t.TempDir()
 	report := writePhase3QualityReport(t, dir, "950", false)
-	qualityReport := filepath.Join(dir, "quality-report.md")
+	qualityReport := filepath.Join(dir, qualityReportFile)
 	sonarResultReport := writePhase3SonarResultReport(t, dir, "failed", "0", "0", "0")
 	fakeBin := writePhase3QualityFakeTools(t, dir)
 
 	output, err := runPhase3Quality(t, report,
 		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"SONAR_HOST_URL=http://sonar.local",
-		"SONAR_TOKEN=phase3-secret-token",
-		"CETS_PHASE3_SONAR_COMMAND=true",
-		"CETS_PHASE3_QUALITY_REPORT="+qualityReport,
-		"CETS_PHASE3_SONAR_RESULT_REPORT="+sonarResultReport,
+		sonarHostLocalEnv,
+		sonarTokenEnv,
+		sonarCommandTrueEnv,
+		qualityReportEnv+qualityReport,
+		sonarResultReportEnv+sonarResultReport,
 	)
 
 	require.Error(t, err)
@@ -235,7 +235,7 @@ func TestPhase3QualityGateRejectsInvalidSonarIssueCounts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			report := writePhase3QualityReport(t, dir, "950", false)
-			qualityReport := filepath.Join(dir, "quality-report.md")
+			qualityReport := filepath.Join(dir, qualityReportFile)
 			sonarResultReport := writePhase3SonarResultReport(
 				t,
 				dir,
@@ -248,11 +248,11 @@ func TestPhase3QualityGateRejectsInvalidSonarIssueCounts(t *testing.T) {
 
 			output, err := runPhase3Quality(t, report,
 				"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-				"SONAR_HOST_URL=http://sonar.local",
-				"SONAR_TOKEN=phase3-secret-token",
-				"CETS_PHASE3_SONAR_COMMAND=true",
-				"CETS_PHASE3_QUALITY_REPORT="+qualityReport,
-				"CETS_PHASE3_SONAR_RESULT_REPORT="+sonarResultReport,
+				sonarHostLocalEnv,
+				sonarTokenEnv,
+				sonarCommandTrueEnv,
+				qualityReportEnv+qualityReport,
+				sonarResultReportEnv+sonarResultReport,
 			)
 
 			require.Error(t, err)
@@ -317,8 +317,8 @@ func writePhase3SonarResultReport(
 	lines := []string{
 		"# Sonar Result Report",
 		"",
-		"| Field | Value |",
-		"| --- | --- |",
+		markdownFieldHeader,
+		markdownSeparator,
 		"| Quality Gate Status | `" + status + "` |",
 		"| Issues | `" + issues + "` |",
 		"| Problems | `" + problems + "` |",
@@ -331,7 +331,7 @@ func writePhase3SonarResultReport(
 func writePhase3QualityReport(t *testing.T, dir string, rps string, emptyLGTM bool) string {
 	t.Helper()
 	capacityArtifacts := map[string]string{
-		"k6.json":            `{"metrics":{}}`,
+		k6SummaryFile:        `{"metrics":{}}`,
 		"replica.txt":        "gateway|3\nfrontend|3\nbackend|3\n",
 		"correctness.txt":    "matching_events|1\n",
 		"prom-red.json":      `{"data":{"result":[{}]}}`,
@@ -353,7 +353,7 @@ func writePhase3QualityReport(t *testing.T, dir string, rps string, emptyLGTM bo
 		"Loki redaction evidence",
 	}
 	var verifyLines []string
-	verifyLines = append(verifyLines, "# Phase 3 Verify Report", "", "| Field | Value |", "| --- | --- |")
+	verifyLines = append(verifyLines, "# Phase 3 Verify Report", "", markdownFieldHeader, markdownSeparator)
 	for i, field := range lgtmFields {
 		artifact := filepath.Join(dir, "lgtm-"+strings.ToLower(strings.ReplaceAll(field, " ", "-"))+".json")
 		content := []byte(`{"ok":true}`)
@@ -369,10 +369,10 @@ func writePhase3QualityReport(t *testing.T, dir string, rps string, emptyLGTM bo
 	lines := []string{
 		"# Phase3 Capacity Report",
 		"",
-		"| Field | Value |",
-		"| --- | --- |",
+		markdownFieldHeader,
+		markdownSeparator,
 		"| Highest passing RPS | `" + rps + "` |",
-		"| k6 summary | `" + filepath.Join(dir, "k6.json") + "` |",
+		"| k6 summary | `" + filepath.Join(dir, k6SummaryFile) + "` |",
 		"| Replica spread summary | `" + filepath.Join(dir, "replica.txt") + "` |",
 		"| Post-load correctness summary | `" + filepath.Join(dir, "correctness.txt") + "` |",
 		"| Prometheus RED sample | `" + filepath.Join(dir, "prom-red.json") + "` |",

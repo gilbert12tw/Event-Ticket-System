@@ -21,8 +21,11 @@
       - name: status
         in: query
         required: false
+        description: Employee discovery only exposes published events; non-published statuses are rejected on this public route.
         schema:
-          "$ref": "../components/schemas/common.yaml#/EventStatus"
+          type: string
+          enum:
+            - published
     responses:
       "200":
         description: Events visible to the current employee.

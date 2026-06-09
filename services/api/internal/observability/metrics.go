@@ -59,15 +59,6 @@ func (m DatabaseMetrics) QueryRow(ctx context.Context, sql string, args ...inter
 	return m.Write.QueryRow(ctx, sql, args...)
 }
 
-type Registry struct {
-	mu          sync.Mutex
-	identity    registryIdentity
-	http        map[httpKey]*histogram
-	booking     map[bookingStageKey]*histogram
-	reservation map[reservationKey]*histogram
-	redisOp     map[redisOpKey]*histogram
-}
-
 type registryIdentity struct {
 	Service string
 	Replica string
@@ -88,6 +79,17 @@ type histogram struct {
 	Sum     float64
 }
 
+type Registry struct {
+	mu             sync.Mutex
+	identity       registryIdentity
+	http           map[httpKey]*histogram
+	booking        map[bookingStageKey]*histogram
+	reservation    map[reservationKey]*histogram
+	redisOp        map[redisOpKey]*histogram
+	projection     *histogram // lag histogram; uses projectionBuckets
+	processedTotal uint64     // all processed projection events, including skips
+}
+
 func NewRegistry() *Registry {
 	return NewRegistryWithIdentity("cets-api", "unknown")
 }
@@ -99,6 +101,7 @@ func NewRegistryWithIdentity(service string, replica string) *Registry {
 		booking:     map[bookingStageKey]*histogram{},
 		reservation: map[reservationKey]*histogram{},
 		redisOp:     map[redisOpKey]*histogram{},
+		projection:  &histogram{Buckets: make([]uint64, len(projectionBuckets))},
 	}
 }
 
@@ -204,7 +207,9 @@ func (r *Registry) WritePrometheus(ctx context.Context, w io.Writer, db any) {
 	r.writeHTTPMetrics(w)
 	r.writeBookingMetrics(w)
 	r.writeReservationMetrics(w)
+	r.writeProjectionMetrics(w)
 	r.writeRedisOperationMetrics(w)
+	r.writeRuntimeResourceMetrics(w)
 	writePoolMetrics(w, db)
 	writeSQLMetrics(ctx, w, db)
 }

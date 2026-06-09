@@ -1,29 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent } from "react";
 import { getTicket, listTickets } from "@/lib/api";
 import type { AuthMeClaims, Ticket } from "@/lib/api";
 import { navigate, ticketDetailPath } from "@/app/routes";
-import { errorMessage, formatDate } from "@/lib/formatting";
+import { errorMessage } from "@/lib/formatting";
 import { runClientNavigation } from "@/lib/navigation";
-import {
-  Alert,
-  CompactStatsBar,
-  EmptyState,
-  MetaList,
-  SkeletonRows,
-  StatusBadge,
-} from "@/components/shared";
+import { Alert, EmptyState, SkeletonRows } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
-import { TicketQrCode } from "./qr";
-import { TicketSignatureField } from "./signature-field";
-import { siteLabel, ticketStatusView } from "@/lib/ui/options";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  safeTicketID,
-  ticketEntryReadinessView,
-  ticketListMeta,
-} from "./ticket-readiness";
+  EmployeeTicketEntryHint,
+  EmployeeTicketPass,
+  EmployeeTicketTimeline,
+} from "./employee-ticket-components";
+import { groupEmployeeTicketsByDate } from "./employee-ticket-surface";
+import { selectCurrentTicket } from "./ticket-readiness";
+
+export { TicketPanel } from "./ticket-panel";
 
 export function EmployeeTicketsPage({
   claims,
@@ -41,7 +35,8 @@ export function EmployeeTicketsPage({
   const pendingListFocusRef = useRef(false);
 
   const principalID = claims.employee_id;
-  const readinessCounts = countTicketReadiness(tickets);
+  const currentTicket = selectCurrentTicket(tickets);
+  const ticketGroups = groupEmployeeTicketsByDate(tickets);
 
   async function refreshList() {
     setMessage("");
@@ -148,34 +143,55 @@ export function EmployeeTicketsPage({
           aria-busy={detailLoading}
         >
           <div className="section-heading ticket-detail-heading">
-            <div>
-              <h2 ref={detailHeadingRef} tabIndex={-1}>
-                票券詳細
-              </h2>
-              <p>入場二維碼只在票券詳細頁顯示；票券簽章碼不直接顯示。</p>
-            </div>
-            <Button asChild variant="outline">
+            <h2 className="sr-only" ref={detailHeadingRef} tabIndex={-1}>
+              票券詳細
+            </h2>
+            <Button
+              asChild
+              aria-label="返回我的票券"
+              className="ticket-detail-back-button"
+              size="icon"
+              title="返回我的票券"
+              variant="ghost"
+            >
               <a
                 href="/user/tickets"
                 onClick={(event) => runClientNavigation(event, returnToList)}
               >
-                返回我的票券
+                <Icon name="chevronLeft" />
+                <span className="sr-only">返回我的票券</span>
               </a>
             </Button>
           </div>
-          {detailMessage && <Alert tone="warn">{detailMessage}</Alert>}
+          {detailMessage && (
+            <div className="ticket-detail-recovery">
+              <Alert tone="warn">{detailMessage}</Alert>
+              <MissingTicketActions
+                loading={detailLoading}
+                onRefresh={() => void refreshDetail()}
+                onReturn={returnToList}
+              />
+            </div>
+          )}
           {detailLoading && <SkeletonRows rows={3} />}
           {!detailLoading && detailTicket && (
-            <TicketPanel
+            <EmployeeTicketPass
               ticket={detailTicket}
               onRefresh={() => void refreshDetail()}
             />
           )}
           {!detailLoading && !detailTicket && !detailMessage && (
-            <EmptyState
-              title="找不到票券"
-              action="請返回我的票券清單，或稍後重新整理。"
-            />
+            <div className="ticket-detail-recovery">
+              <EmptyState
+                title="找不到票券"
+                action="回到票券清單，或先瀏覽活動確認是否已完成報名。"
+              />
+              <MissingTicketActions
+                loading={detailLoading}
+                onRefresh={() => void refreshDetail()}
+                onReturn={returnToList}
+              />
+            </div>
           )}
         </Card>
       </section>
@@ -186,34 +202,31 @@ export function EmployeeTicketsPage({
     <section className="content-grid ticket-workspace">
       <Card className="panel span-12 ticket-list-panel">
         <div className="section-heading">
-          <div>
-            <h2 ref={listHeadingRef} tabIndex={-1}>
-              票券清單
-            </h2>
-            <p>點選票券後才會進入詳細頁並顯示入場二維碼。</p>
-          </div>
+          <h2 className="sr-only" ref={listHeadingRef} tabIndex={-1}>
+            我的票券清單
+          </h2>
           <Button
-            variant="outline"
-            type="button"
-            onClick={() => void refreshList()}
+            aria-label="重新整理票券"
             disabled={loading}
+            size="icon"
+            title="重新整理票券"
+            type="button"
+            variant="ghost"
+            onClick={() => void refreshList()}
           >
             <Icon name="refresh" />
-            重新整理
           </Button>
         </div>
-        <CompactStatsBar
-          items={[
-            { label: "票券", value: tickets.length },
-            { label: "可入場", value: readinessCounts["entry-ready"] },
-            { label: "尚未開放", value: readinessCounts["not-open"] },
-            { label: "待產生 QR", value: readinessCounts["qr-pending"] },
-            { label: "已核銷", value: readinessCounts.redeemed },
-            { label: "已撤銷", value: readinessCounts.revoked },
-          ]}
-          label="票券摘要"
-        />
         {message && <Alert tone="warn">{message}</Alert>}
+        {listLoaded && currentTicket && (
+          <EmployeeTicketPass
+            ticket={currentTicket}
+            onRefresh={() => void refreshList()}
+          />
+        )}
+        {listLoaded && !currentTicket && (
+          <EmployeeTicketEntryHint tickets={tickets} />
+        )}
         <div className="list-stack ticket-list" aria-busy={loading}>
           {loading && tickets.length === 0 && <SkeletonRows rows={3} />}
           {!loading && message && tickets.length === 0 && (
@@ -223,189 +236,73 @@ export function EmployeeTicketsPage({
             />
           )}
           {!loading && listLoaded && tickets.length === 0 && !message && (
-            <EmptyState
-              title="尚無票券"
-              action="完成報名確認後，票券會出現在這裡。"
-            />
+            <div className="ticket-empty-state">
+              <EmptyState
+                title="尚無票券"
+                action="完成報名確認後，票券會出現在這裡。"
+              />
+              <BrowseEventsAction />
+            </div>
           )}
-          {tickets.map((ticket) => (
-            <TicketRow
-              key={ticket.ticket_id}
-              ticket={ticket}
-              onOpen={openTicket}
-            />
-          ))}
+          {!loading && tickets.length > 0 && (
+            <EmployeeTicketTimeline groups={ticketGroups} onOpen={openTicket} />
+          )}
         </div>
       </Card>
     </section>
   );
 }
 
-function TicketRow({
-  onOpen,
-  ticket,
-}: Readonly<{
-  onOpen: (event: MouseEvent<HTMLAnchorElement>, ticketID: string) => void;
-  ticket: Ticket;
-}>) {
-  const readiness = ticketEntryReadinessView(ticket);
-  const statusView = ticketStatusView(ticket.status);
-  return (
-    <a
-      className="ticket-row"
-      href={ticketDetailPath(ticket.ticket_id)}
-      onClick={(event) => onOpen(event, ticket.ticket_id)}
-    >
-      <span className="ticket-row-main">
-        <strong>{ticket.event_title || ticket.event_id}</strong>
-        <small>{ticketListMeta(ticket)}</small>
-        <small>{safeTicketID(ticket.ticket_id)}</small>
-      </span>
-      <span className="ticket-row-badges">
-        <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
-        <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
-      </span>
-      <span className="ticket-row-action" aria-hidden="true">
-        <Icon name="arrowRight" />
-      </span>
-    </a>
-  );
+function ticketIDFromLocation() {
+  return new URLSearchParams(globalThis.location.search).get("ticket_id") || "";
 }
 
-export function TicketPanel({
-  compact = false,
+function MissingTicketActions({
+  loading,
   onRefresh,
-  ticket,
+  onReturn,
 }: Readonly<{
-  compact?: boolean;
-  onRefresh?: () => void;
-  ticket?: Ticket;
+  loading: boolean;
+  onRefresh: () => void;
+  onReturn: () => void;
 }>) {
-  if (!ticket) {
-    return (
-      <EmptyState
-        title="沒有可顯示的票券"
-        action="完成報名確認後，二維碼票券會出現在這裡。"
-      />
-    );
-  }
-  const qrToken = ticket.qr_payload || ticket.signed_token || "";
-  const readiness = ticketEntryReadinessView(ticket);
-  const statusView = ticketStatusView(ticket.status);
-  const canShowQr =
-    Boolean(qrToken) &&
-    (readiness.kind === "entry-ready" || readiness.kind === "not-open");
-  const showEntryInstruction = readiness.kind === "entry-ready";
-  const eventDetailHref = `/user/events/detail?event_id=${encodeURIComponent(ticket.event_id)}`;
-  const panelClassName = [
-    "ticket-panel",
-    compact ? "compact" : "",
-    canShowQr ? "" : "unavailable",
-  ]
-    .filter(Boolean)
-    .join(" ");
   return (
-    <div className={panelClassName}>
-      <div className="ticket-detail">
-        <StatusBadge tone={statusView.tone}>{statusView.label}</StatusBadge>
-        <h2>{ticket.event_title || ticket.event_id}</h2>
-        <div className="helper-strip">
-          <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
-          <span>{readiness.copy}</span>
-          {readiness.kind === "qr-pending" && onRefresh && (
-            <Button variant="outline" type="button" onClick={onRefresh}>
-              <Icon name="refresh" />
-              重新整理票券
-            </Button>
-          )}
-        </div>
-        <div className="ticket-nontransferable" role="note">
-          <StatusBadge tone="warn">不可轉讓</StatusBadge>
-          <span>此票券綁定持票員工本人，入場時驗票員會核對持票人身份。</span>
-        </div>
-        {canShowQr && (
-          <>
-            {showEntryInstruction && (
-              <div className="ticket-entry-instruction" role="note">
-                <StatusBadge tone="ok">入場提示</StatusBadge>
-                <span>
-                  請在入口出示此 QR code，驗票員完成核銷後票券會更新為已核銷。
-                </span>
-              </div>
-            )}
-            <div className="qr-wrap">
-              <TicketQrCode token={qrToken} />
-            </div>
-            <TicketSignatureField token={qrToken} />
-          </>
-        )}
-        <MetaList className="ticket-meta-list" rows={ticketMetaRows(ticket)} />
-        <Button asChild variant="outline">
-          <a
-            href={eventDetailHref}
-            onClick={(event) =>
-              runClientNavigation(event, () => navigate(eventDetailHref))
-            }
-          >
-            <Icon name="audit" />
-            查看活動詳情
-          </a>
-        </Button>
-      </div>
+    <div className="ticket-detail-recovery-actions">
+      <Button asChild>
+        <a
+          href="/user/tickets"
+          onClick={(event) => runClientNavigation(event, onReturn)}
+        >
+          <Icon name="ticket" />
+          回我的票券
+        </a>
+      </Button>
+      <BrowseEventsAction />
+      <Button
+        disabled={loading}
+        type="button"
+        variant="outline"
+        onClick={onRefresh}
+      >
+        <Icon name="refresh" />
+        重新整理
+      </Button>
     </div>
   );
 }
 
-function countTicketReadiness(tickets: Ticket[]) {
-  return tickets.reduce(
-    (counts, ticket) => {
-      counts[ticketEntryReadinessView(ticket).kind] += 1;
-      return counts;
-    },
-    {
-      "entry-ready": 0,
-      "not-open": 0,
-      "qr-pending": 0,
-      redeemed: 0,
-      unavailable: 0,
-      revoked: 0,
-    },
+function BrowseEventsAction() {
+  return (
+    <Button asChild variant="outline">
+      <a
+        href="/user/events"
+        onClick={(event) =>
+          runClientNavigation(event, () => navigate("/user/events"))
+        }
+      >
+        <Icon name="calendar" />
+        瀏覽活動
+      </a>
+    </Button>
   );
-}
-
-function ticketMetaRows(ticket: Ticket): Array<[string, ReactNode]> {
-  const rows: Array<[string, ReactNode]> = [
-    [
-      "持票人",
-      <>
-        {ticket.employee_name || ticket.employee_id}
-        <span className="table-muted">{ticket.employee_id}</span>
-      </>,
-    ],
-    [
-      "部門 / 城市",
-      <>
-        {ticket.department || "未提供"}
-        <span className="table-muted">{ticket.city || "未提供"}</span>
-      </>,
-    ],
-    [
-      "同行人數",
-      <>
-        {ticket.family_count ?? 0} 人
-        <span className="table-muted">僅供入場人數核對，非可轉讓票券。</span>
-      </>,
-    ],
-    ["地點", siteLabel(ticket.event_location)],
-    ["開始時間", formatDate(ticket.event_starts_at)],
-    ["票券編號", ticket.ticket_id],
-    ["發行時間", formatDate(ticket.issued_at)],
-  ];
-  if (ticket.expires_at) rows.push(["有效期限", formatDate(ticket.expires_at)]);
-  if (ticket.revoked_reason) rows.push(["撤銷原因", ticket.revoked_reason]);
-  return rows;
-}
-
-function ticketIDFromLocation() {
-  return new URLSearchParams(globalThis.location.search).get("ticket_id") || "";
 }

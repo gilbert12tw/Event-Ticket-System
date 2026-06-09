@@ -1,8 +1,18 @@
 package ticketing
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 const demoSiteTaipeiHQ = "Taipei HQ"
+
+type DemoEventTicketSeed struct {
+	TodayEventID   string
+	TodayTicketID  string
+	FutureEventID  string
+	FutureTicketID string
+}
 
 func (s *Service) SeedDemoData(ctx context.Context) error {
 	tx, err := s.db.Begin(ctx)
@@ -29,4 +39,70 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Service) SeedDemoEventTickets(ctx context.Context) (DemoEventTicketSeed, error) {
+	todayStarts := demoTodayCheckinStart(s.now())
+	futureStarts := demoNextCheckinStart(todayStarts)
+
+	todayEvent, todayTicket, err := s.seedDemoEventTicket(ctx, "Demo Check-in Today", "demo-today-booking", todayStarts)
+	if err != nil {
+		return DemoEventTicketSeed{}, err
+	}
+	futureEvent, futureTicket, err := s.seedDemoEventTicket(ctx, "Demo Future Check-in", "demo-future-booking", futureStarts)
+	if err != nil {
+		return DemoEventTicketSeed{}, err
+	}
+	return DemoEventTicketSeed{
+		TodayEventID:   todayEvent.EventID,
+		TodayTicketID:  todayTicket.TicketID,
+		FutureEventID:  futureEvent.EventID,
+		FutureTicketID: futureTicket.TicketID,
+	}, nil
+}
+
+func (s *Service) seedDemoEventTicket(ctx context.Context, title string, idempotencyKey string, startsAt time.Time) (EventSummary, Ticket, error) {
+	now := s.now()
+	event, err := s.CreateEvent(ctx, Actor{ID: "demo-admin", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:             title,
+		Description:       "Demo activity for check-in readiness validation.",
+		Location:          demoSiteTaipeiHQ,
+		EventCity:         "Taipei",
+		EventSite:         demoSiteTaipeiHQ,
+		StartsAt:          startsAt,
+		RegistrationStart: now.Add(-24 * time.Hour),
+		RegistrationClose: now.Add(24 * time.Hour),
+		CapacityType:      CapacityTypeLimited,
+		Capacity:          20,
+		Status:            EventStatusPublished,
+		Category:          "demo",
+		Tags:              []string{"demo", "check-in"},
+		EntryMethod:       "qr",
+		Visibility:        "eligible",
+		Rule:              RuleInput{Department: "Engineering", Site: demoSiteTaipeiHQ, MinGrade: 5, EmploymentStatus: "active"},
+	})
+	if err != nil {
+		return EventSummary{}, Ticket{}, err
+	}
+	booking, err := s.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{
+		EmployeeID:     "E1001",
+		IdempotencyKey: idempotencyKey,
+		FamilyCount:    0,
+	})
+	if err != nil {
+		return EventSummary{}, Ticket{}, err
+	}
+	if booking.Ticket == nil {
+		return EventSummary{}, Ticket{}, conflict("demo booking did not issue a ticket")
+	}
+	return event, *booking.Ticket, nil
+}
+
+func demoTodayCheckinStart(now time.Time) time.Time {
+	localNow := now.In(checkinBusinessLocation())
+	return time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, checkinBusinessLocation()).UTC()
+}
+
+func demoNextCheckinStart(todayStarts time.Time) time.Time {
+	return todayStarts.In(checkinBusinessLocation()).AddDate(0, 0, 1).UTC()
 }

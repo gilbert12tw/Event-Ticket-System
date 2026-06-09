@@ -3,7 +3,9 @@ package ticketing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"time"
 
 	"event-ticket-system/internal/traceid"
 
@@ -32,17 +34,48 @@ func (s *Service) processClaimedProjectionOutbox(
 	proj, ok := decodeProjectionEvent(claim)
 	if !ok {
 		s.logProjectionSkip(ctx, claim, "decode_failed")
+		if s != nil && s.metrics != nil {
+			s.metrics.IncrementProjectionProcessed()
+		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+	}
+
+	if proj.InnerType == "" && proj.TriggerEventID != "" {
+		var rawEventType string
+		err := tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1`, proj.TriggerEventID).Scan(&rawEventType)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// Trigger row already published or GC'd — skip gracefully.
+				s.logProjectionSkip(ctx, claim, "trigger_event_gc")
+				if s != nil && s.metrics != nil {
+					s.metrics.IncrementProjectionProcessed()
+				}
+				return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+			}
+			logAttempt(outboxAttemptOutcomeError)
+			return 0, err
+		}
+		proj.InnerType = normalizeProjectionTriggerType(rawEventType)
+		if proj.InnerType == "" {
+			s.logProjectionSkip(ctx, claim, "decode_failed")
+			if s != nil && s.metrics != nil {
+				s.metrics.IncrementProjectionProcessed()
+			}
+			return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+		}
 	}
 
 	switch proj.InnerType {
 	case projectionInnerTypeCheckinCompleted:
 		// checkin has no aggregate effect — advance offset and mark published.
-		if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, claim.outboxID); err != nil {
+		if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
 			logAttempt(outboxAttemptOutcomeError)
 			return 0, err
 		}
-		recordProjectionLag(claim.leaseStartedAt)
+		if s != nil && s.metrics != nil {
+			s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
+			s.metrics.IncrementProjectionProcessed()
+		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	case projectionInnerTypeBookingConfirmed,
 		projectionInnerTypeBookingCancelled,
@@ -51,6 +84,9 @@ func (s *Service) processClaimedProjectionOutbox(
 		// handled below
 	default:
 		s.logProjectionSkip(ctx, claim, "unknown_inner_type:"+proj.InnerType)
+		if s != nil && s.metrics != nil {
+			s.metrics.IncrementProjectionProcessed()
+		}
 		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 	}
 
@@ -61,17 +97,23 @@ func (s *Service) processClaimedProjectionOutbox(
 	}
 
 	newCounts := computeNewCounts(current, proj)
-	if err := upsertEventSummary(ctx, tx, proj.EventID, newCounts, claim.outboxID); err != nil {
+	// proj.OutboxID is the time-ordered composite offset (see projectionOffsetKey),
+	// NOT the raw random outbox_id — it is what the upsert's lexicographic guard
+	// compares against, so older events never overwrite newer aggregates.
+	if err := upsertEventSummary(ctx, tx, proj.EventID, newCounts, proj.OutboxID); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
 
-	if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, claim.outboxID); err != nil {
+	if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
 
-	recordProjectionLag(claim.leaseStartedAt)
+	if s != nil && s.metrics != nil {
+		s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
+		s.metrics.IncrementProjectionProcessed()
+	}
 	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 }
 
@@ -112,7 +154,7 @@ func computeNewCounts(current eventSummaryRow, proj ProjectionEvent) eventSummar
 
 // decodeProjectionEvent extracts the relevant fields from a projection outbox
 // claim. Supports both:
-//   - schema_version=2 envelope: outer JSON has {"payload": {"aggregate_id": ..., "trigger_event_type": ...}}
+//   - schema_version=2 envelope: outer JSON has {"payload": {"aggregate_id": ..., "trigger_event_id": ...}}
 //   - schema_version=1 / test-seeded payloads: flat JSON with aggregate_id + inner_event_type
 //
 // Returns false on decode failure — callers skip without dead-lettering.
@@ -120,24 +162,24 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	if strings.TrimSpace(claim.eventType) != outboxEventReportingProjectionUpdateRequiredV2 {
 		return ProjectionEvent{}, false
 	}
-	// v2 envelope: {"event_id":..., "payload": {"aggregate_id":..., "trigger_event_type":..., ...}}
+	// v2 envelope: {"event_id":..., "payload": {"aggregate_id":..., "trigger_event_id":..., ...}}
 	if claim.schemaVersion == 2 {
 		var v2 struct {
 			Payload struct {
-				AggregateID      string `json:"aggregate_id"`
-				TriggerEventType string `json:"trigger_event_type"`
-				Department       string `json:"department"`
+				AggregateID    string `json:"aggregate_id"`
+				TriggerEventID string `json:"trigger_event_id"`
+				Department     string `json:"department"`
 			} `json:"payload"`
 		}
 		if err := json.Unmarshal([]byte(claim.payloadText), &v2); err == nil {
 			eventID := strings.TrimSpace(v2.Payload.AggregateID)
-			innerType := normalizeProjectionTriggerType(v2.Payload.TriggerEventType)
-			if eventID != "" && innerType != "" {
+			triggerEventID := strings.TrimSpace(v2.Payload.TriggerEventID)
+			if eventID != "" && triggerEventID != "" {
 				return ProjectionEvent{
-					EventID:    eventID,
-					OutboxID:   claim.outboxID,
-					InnerType:  innerType,
-					Department: strings.TrimSpace(v2.Payload.Department),
+					EventID:        eventID,
+					OutboxID:       projectionOffsetKey(claim.createdAt, claim.outboxID),
+					TriggerEventID: triggerEventID,
+					Department:     strings.TrimSpace(v2.Payload.Department),
 				}, true
 			}
 		}
@@ -158,7 +200,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 	}
 	return ProjectionEvent{
 		EventID:    eventID,
-		OutboxID:   claim.outboxID,
+		OutboxID:   projectionOffsetKey(claim.createdAt, claim.outboxID),
 		InnerType:  innerType,
 		Department: strings.TrimSpace(v1.Department),
 	}, true

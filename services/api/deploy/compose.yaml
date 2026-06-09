@@ -179,6 +179,27 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  db-reset:
+    <<: *api-image
+    profiles: ["admin"]
+    restart: "no"
+    command: ["reset-demo-db"]
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cets}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cets}
+      DATABASE_TIMEOUT_MS: ${DATABASE_TIMEOUT_MS:-5000}
+      REDIS_URL: redis://redis:6379/0
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-local_dev_ticket_signing_secret_change_me}
+      NO_SHOW_THRESHOLD: ${NO_SHOW_THRESHOLD:-1}
+      NO_SHOW_COOLDOWN_DAYS: ${NO_SHOW_COOLDOWN_DAYS:-90}
+      NO_SHOW_GRACE_HOURS: ${NO_SHOW_GRACE_HOURS:-24}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:16.13-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
     restart: unless-stopped
