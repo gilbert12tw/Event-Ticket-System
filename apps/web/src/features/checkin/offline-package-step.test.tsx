@@ -88,14 +88,14 @@ describe("OfflinePackageStep — download flow", () => {
       .mockResolvedValueOnce([stored(pkg)]);
     const onPackageReady = vi.fn();
 
-    render(<OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />);
+    render(
+      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Family Night")).toBeInTheDocument(),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: /下載離線名單/ }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /下載離線名單/ }));
 
     await waitFor(() =>
       expect(offlineCheckinPackage).toHaveBeenCalledWith(
@@ -117,9 +117,7 @@ describe("OfflinePackageStep — download flow", () => {
     await waitFor(() =>
       expect(screen.getByText("Family Night")).toBeInTheDocument(),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: /下載離線名單/ }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /下載離線名單/ }));
 
     expect(await screen.findByText("download failed")).toBeInTheDocument();
     expect(savePackage).not.toHaveBeenCalled();
@@ -129,9 +127,7 @@ describe("OfflinePackageStep — download flow", () => {
     render(<OfflinePackageStep staffID="staff-1" onPackageReady={vi.fn()} />);
     await waitFor(() => expect(listAdminEvents).toHaveBeenCalledTimes(1));
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "重新載入活動" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "重新載入活動" }));
     await waitFor(() => expect(listAdminEvents).toHaveBeenCalledTimes(2));
   });
 });
@@ -142,7 +138,9 @@ describe("OfflinePackageStep — restore from IDB", () => {
     loadActivePackages.mockResolvedValue([stored(pkg)]);
     const onPackageReady = vi.fn();
 
-    render(<OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />);
+    render(
+      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+    );
 
     await waitFor(() =>
       expect(onPackageReady).toHaveBeenCalledWith(stored(pkg)),
@@ -157,7 +155,9 @@ describe("OfflinePackageStep — restore from IDB", () => {
     loadActivePackages.mockResolvedValue([stored(pkgA), stored(pkgB)]);
     const onPackageReady = vi.fn();
 
-    render(<OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />);
+    render(
+      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+    );
 
     const selector = await screen.findByLabelText("已下載離線名單");
     expect(onPackageReady).not.toHaveBeenCalled();
@@ -173,7 +173,9 @@ describe("OfflinePackageStep — restore from IDB", () => {
     loadActivePackages.mockRejectedValue(new Error("idb down"));
     const onPackageReady = vi.fn();
 
-    render(<OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />);
+    render(
+      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+    );
 
     await waitFor(() => expect(listAdminEvents).toHaveBeenCalled());
     expect(onPackageReady).not.toHaveBeenCalled();
@@ -188,12 +190,12 @@ describe("OfflinePackageStep — restore from IDB", () => {
       .mockRejectedValueOnce(new Error("network down"));
     const onPackageReady = vi.fn();
 
-    render(<OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />);
+    render(
+      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+    );
 
     await waitFor(() => expect(onPackageReady).toHaveBeenCalled());
-    await userEvent.click(
-      screen.getByRole("button", { name: "重新載入活動" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "重新載入活動" }));
 
     expect(
       await screen.findByText("離線模式：使用已下載的離線名單"),

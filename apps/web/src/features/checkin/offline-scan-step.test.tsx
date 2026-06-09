@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -116,7 +116,10 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
   it("records an accepted scan and shows the success banner", async () => {
     const onScansChanged = vi.fn();
     render(
-      <OfflineScanStep stored={storedPackage()} onScansChanged={onScansChanged} />,
+      <OfflineScanStep
+        stored={storedPackage()}
+        onScansChanged={onScansChanged}
+      />,
     );
 
     scannerCallback!("signed-token");
@@ -127,9 +130,11 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
     expect(record.local_status).toBe("accepted");
     expect(record.token_hash).toBe("hash-1");
     expect(record.signed_token).toBe("signed-token");
-    expect(onScansChanged).toHaveBeenCalledWith([expect.objectContaining({
-      local_status: "accepted",
-    })]);
+    expect(onScansChanged).toHaveBeenCalledWith([
+      expect.objectContaining({
+        local_status: "accepted",
+      }),
+    ]);
     expect(await screen.findByText(/本地通過，等待同步/)).toBeInTheDocument();
   });
 
@@ -138,13 +143,13 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
       local_status: "duplicate",
       matched_ticket: ticket(),
     });
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     scannerCallback!("dupe-token");
 
-    expect(
-      await screen.findByText(/重複掃描/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/重複掃描/)).toBeInTheDocument();
   });
 
   it("maps a conflict reason to its message", async () => {
@@ -152,13 +157,13 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
       local_status: "conflict",
       local_reason: "not_in_offline_package",
     });
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     scannerCallback!("conflict-token");
 
-    expect(
-      await screen.findByText("衝突：不在離線名單"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("衝突：不在離線名單")).toBeInTheDocument();
   });
 
   it("falls back to the generic conflict message for an unknown reason", async () => {
@@ -166,7 +171,9 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
       local_status: "conflict",
       local_reason: "something_else",
     });
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     scannerCallback!("conflict-token");
 
@@ -174,11 +181,13 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
   });
 
   it("ignores blank tokens without judging", async () => {
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     scannerCallback!("   ");
 
-    await Promise.resolve();
+    await waitFor(() => expect(hashToken).not.toHaveBeenCalled());
     expect(judgeOfflineScan).not.toHaveBeenCalled();
     expect(addScanRecord).not.toHaveBeenCalled();
   });
@@ -187,7 +196,10 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
     judgeOfflineScan.mockRejectedValue(new Error("boom"));
     const onScansChanged = vi.fn();
     render(
-      <OfflineScanStep stored={storedPackage()} onScansChanged={onScansChanged} />,
+      <OfflineScanStep
+        stored={storedPackage()}
+        onScansChanged={onScansChanged}
+      />,
     );
 
     scannerCallback!("token");
@@ -204,7 +216,9 @@ describe("OfflineScanStep — processing guard", () => {
     judgeOfflineScan.mockImplementation(
       () => new Promise((resolve) => (resolveJudge = resolve)),
     );
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     scannerCallback!("first");
     scannerCallback!("second");
@@ -212,12 +226,18 @@ describe("OfflineScanStep — processing guard", () => {
     expect(judgeOfflineScan).toHaveBeenCalledTimes(1);
     resolveJudge({ local_status: "accepted", matched_ticket: ticket() });
     await waitFor(() => expect(addScanRecord).toHaveBeenCalledTimes(1));
+    // The dropped scan must stay dropped — the guard releasing after the first
+    // scan completes must not let the second re-enter judging.
+    expect(judgeOfflineScan).toHaveBeenCalledTimes(1);
+    expect(addScanRecord).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("OfflineScanStep — manual batch parsing", () => {
   it("processes each non-empty line and clears the textarea", async () => {
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     await userEvent.click(screen.getByText("手動輸入簽章碼"));
     const textarea = screen.getByLabelText("簽章碼批次");
@@ -248,15 +268,15 @@ describe("OfflineScanStep — gating", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/此批次已同步完成/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/此批次已同步完成/)).toBeInTheDocument();
     expect(screen.queryByTestId("scanner")).not.toBeInTheDocument();
   });
 
   it("blocks scanning when the package is expired", () => {
     isPackageExpired.mockReturnValue(true);
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
 
     expect(screen.getByText(/離線名單已過期/)).toBeInTheDocument();
     expect(screen.queryByTestId("scanner")).not.toBeInTheDocument();
@@ -283,19 +303,23 @@ describe("OfflineScanStep — scan table", () => {
     });
     render(<OfflineScanStep stored={stored} onScansChanged={vi.fn()} />);
 
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("E2002")).toBeInTheDocument();
-    // Badge labels collide with KPI labels, so assert at least one appears.
-    expect(screen.getAllByText("本地通過").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("重複").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("衝突").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("同步失敗").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("已同步").length).toBeGreaterThan(0);
-    expect(screen.getByText("同步中")).toBeInTheDocument();
+    // Badge labels collide with KPI labels, so scope assertions to the table
+    // region (the ResponsiveTable wrapper carries aria-label="掃描紀錄").
+    const table = within(screen.getByLabelText("掃描紀錄"));
+    expect(table.getByText("Alice")).toBeInTheDocument();
+    expect(table.getByText("E2002")).toBeInTheDocument();
+    expect(table.getByText("本地通過")).toBeInTheDocument();
+    expect(table.getByText("重複")).toBeInTheDocument();
+    expect(table.getByText("衝突")).toBeInTheDocument();
+    expect(table.getByText("同步失敗")).toBeInTheDocument();
+    expect(table.getByText("已同步")).toBeInTheDocument();
+    expect(table.getByText("同步中")).toBeInTheDocument();
   });
 
   it("shows the empty state when there are no scans", () => {
-    render(<OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />);
+    render(
+      <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
+    );
     expect(screen.getByText("尚無掃描")).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoredCheckinPackage } from "@/lib/offline/checkin-store";
 
 const loadPackage = vi.fn();
@@ -14,11 +14,19 @@ vi.mock("@/lib/offline/auth-cache", () => ({
 }));
 
 // Controllable sync hook so handleSync branches can be driven deterministically.
+// Mirror the real useOfflineSync return shape: syncError is a string ("" when
+// idle), never null, so the source's `{syncError && ...}` guard behaves the same.
+type HookState = {
+  syncState: string;
+  syncResult: unknown;
+  syncError: string;
+  canSync: boolean;
+};
 const syncNow = vi.fn();
-let hookState = {
-  syncState: "idle" as string,
-  syncResult: null as unknown,
-  syncError: null as string | null,
+let hookState: HookState = {
+  syncState: "idle",
+  syncResult: null,
+  syncError: "",
   canSync: true,
 };
 vi.mock("./use-offline-sync", () => ({
@@ -50,7 +58,10 @@ vi.mock("./offline-scan-step", () => ({
   }: {
     onScansChanged: (scans: unknown[]) => void;
   }) => (
-    <button type="button" onClick={() => onScansChanged([{ local_scan_id: "x" }])}>
+    <button
+      type="button"
+      onClick={() => onScansChanged([{ local_scan_id: "x" }])}
+    >
       add-scan
     </button>
   ),
@@ -58,7 +69,9 @@ vi.mock("./offline-scan-step", () => ({
 
 vi.mock("./offline-result-step", () => ({
   OfflineResultStep: ({ syncResult }: { syncResult: unknown }) => (
-    <div data-testid="result-step">{syncResult ? "has-result" : "no-result"}</div>
+    <div data-testid="result-step">
+      {syncResult ? "has-result" : "no-result"}
+    </div>
   ),
 }));
 
@@ -86,12 +99,16 @@ function storedFixture(
   };
 }
 
+const onLineDescriptor = Object.getOwnPropertyDescriptor(navigator, "onLine");
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // vi.clearAllMocks() does not touch this module-level object, so reset it
+  // explicitly; reassigning the reference avoids cross-test value bleed.
   hookState = {
     syncState: "idle",
     syncResult: null,
-    syncError: null,
+    syncError: "",
     canSync: true,
   };
   Object.defineProperty(navigator, "onLine", {
@@ -100,6 +117,12 @@ beforeEach(() => {
     configurable: true,
   });
   globalThis.history.replaceState({}, "", "/admin/checkin/offline");
+});
+
+afterEach(() => {
+  if (onLineDescriptor) {
+    Object.defineProperty(navigator, "onLine", onLineDescriptor);
+  }
 });
 
 describe("OfflineCheckinBoundaryPage — tab gating", () => {
@@ -137,7 +160,10 @@ describe("OfflineCheckinBoundaryPage — tab gating", () => {
 
 describe("OfflineCheckinBoundaryPage — sync", () => {
   it("stores the synced package and shows results when sync returns an update", async () => {
-    const synced = storedFixture({ status: "synced", scans: [{ local_scan_id: "x" } as never] });
+    const synced = storedFixture({
+      status: "synced",
+      scans: [{ local_scan_id: "x" } as never],
+    });
     syncNow.mockResolvedValue(synced);
     hookState.syncResult = { results: [] };
 
@@ -153,9 +179,16 @@ describe("OfflineCheckinBoundaryPage — sync", () => {
     expect(screen.getByTestId("result-step")).toHaveTextContent("has-result");
   });
 
-  it("reloads the package when sync returns no update", async () => {
+  it("reloads the package and applies it when sync returns no update", async () => {
     syncNow.mockResolvedValue(undefined);
-    loadPackage.mockResolvedValue(storedFixture({ scans: [{ local_scan_id: "x" } as never] }));
+    // A synced status distinguishes the reloaded value from the original, so
+    // the "已同步" badge appearing proves setStored applied the refreshed package.
+    loadPackage.mockResolvedValue(
+      storedFixture({
+        status: "synced",
+        scans: [{ local_scan_id: "x" } as never],
+      }),
+    );
     hookState.syncResult = { results: [] };
 
     render(<OfflineCheckinBoundaryPage />);
@@ -166,6 +199,7 @@ describe("OfflineCheckinBoundaryPage — sync", () => {
     await userEvent.click(screen.getByRole("button", { name: /立即同步/ }));
 
     await waitFor(() => expect(loadPackage).toHaveBeenCalledWith("batch-1"));
+    expect(await screen.findByText("已同步")).toBeInTheDocument();
   });
 
   it("surfaces a sync error in the results tab", async () => {
