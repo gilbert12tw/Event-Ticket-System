@@ -87,21 +87,8 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		return RebuildResult{}, fmt.Errorf("rebuild: reset offset: %w", err)
 	}
 
-	// Record the rebuild as a sensitive admin action in the same tx so the audit
-	// entry commits atomically with the projection rewrite. Metadata holds only
-	// counts/offset/flags — never employee PII.
-	auditID, err := newID("aud")
-	if err != nil {
+	if err := recordRebuildAudit(ctx, tx, actor, len(aggregated), offset, opts.SampleValidate); err != nil {
 		return RebuildResult{}, err
-	}
-	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor,
-		"projection.rebuilt", "reporting_projection", projectionProjectionName,
-		map[string]interface{}{
-			"rows_inserted":   len(aggregated),
-			"offset_reset_to": offset,
-			"sample_validate": opts.SampleValidate,
-		})); err != nil {
-		return RebuildResult{}, fmt.Errorf("rebuild: audit: %w", err)
 	}
 
 	if opts.SampleValidate {
@@ -120,6 +107,26 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		OffsetResetTo: offset,
 		Validated:     opts.SampleValidate,
 	}, nil
+}
+
+// recordRebuildAudit writes the rebuild as a sensitive admin action in the same
+// tx so the audit entry commits atomically with the projection rewrite. Metadata
+// holds only counts/offset/flags — never employee PII.
+func recordRebuildAudit(ctx context.Context, tx pgx.Tx, actor Actor, rowsInserted int, offset string, sampleValidate bool) error {
+	auditID, err := newID("aud")
+	if err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, newAuditRecord(auditID, actor,
+		"projection.rebuilt", "reporting_projection", projectionProjectionName,
+		map[string]interface{}{
+			"rows_inserted":   rowsInserted,
+			"offset_reset_to": offset,
+			"sample_validate": sampleValidate,
+		})); err != nil {
+		return fmt.Errorf("rebuild: audit: %w", err)
+	}
+	return nil
 }
 
 // validateRebuild spot-checks up to rebuildValidateSampleSize inserted rows by
