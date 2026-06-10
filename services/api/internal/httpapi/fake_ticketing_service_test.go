@@ -13,6 +13,11 @@ type fakeTicketingService struct {
 	listEventsActor       ticketing.Actor
 	listEventsEmployeeID  string
 	listEventsQuery       []ticketing.EventListQuery
+	hideEventActor        ticketing.Actor
+	hideEventID           string
+	unhideEventActor      ticketing.Actor
+	unhideEventID         string
+	hideEventErr          error
 	getEventEmployeeID    string
 	eligibilityActor      ticketing.Actor
 	eligibilityEmployeeID string
@@ -85,6 +90,18 @@ func (s *fakeTicketingService) ListEvents(_ context.Context, actor ticketing.Act
 	s.listEventsEmployeeID = employeeID
 	s.listEventsQuery = query
 	return []ticketing.EventSummary{{Event: ticketing.Event{EventID: "evt_1", Title: "Demo"}}}, nil
+}
+
+func (s *fakeTicketingService) HideEvent(_ context.Context, actor ticketing.Actor, eventID string) error {
+	s.hideEventActor = actor
+	s.hideEventID = eventID
+	return s.hideEventErr
+}
+
+func (s *fakeTicketingService) UnhideEvent(_ context.Context, actor ticketing.Actor, eventID string) error {
+	s.unhideEventActor = actor
+	s.unhideEventID = eventID
+	return s.hideEventErr
 }
 
 func (s *fakeTicketingService) SaveEventPoster(_ context.Context, _ ticketing.Actor, eventID string, input ticketing.EventAssetInput) (ticketing.EventAsset, error) {

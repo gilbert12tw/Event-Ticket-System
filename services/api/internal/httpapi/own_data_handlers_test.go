@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -100,6 +101,43 @@ func TestOwnDataHandlersUseProviderClaimsIdentity(t *testing.T) {
 	assert.Equal(t, "plans changed", service.cancelMyRequest.Reason)
 	assert.Equal(t, "E1001", service.listTicketsActor.ID)
 	assert.Equal(t, ticketing.RoleEmployee, service.listTicketsActor.Role)
+}
+
+func TestHideAndUnhideEventRoutes(t *testing.T) {
+	service := &fakeTicketingService{}
+	router := testTicketingRouter(service)
+
+	hide := httptest.NewRequest(http.MethodPut, "/api/v1/me/events/evt_9/hide", nil)
+	authorizeRequest(t, hide, ticketing.RoleEmployee)
+	hideRec := httptest.NewRecorder()
+	router.ServeHTTP(hideRec, hide)
+
+	require.Equal(t, http.StatusNoContent, hideRec.Code, hideRec.Body.String())
+	assert.Empty(t, hideRec.Body.String())
+	assert.Equal(t, "E1001", service.hideEventActor.ID)
+	assert.Equal(t, ticketing.RoleEmployee, service.hideEventActor.Role)
+	assert.Equal(t, "evt_9", service.hideEventID)
+
+	unhide := httptest.NewRequest(http.MethodDelete, "/api/v1/me/events/evt_9/hide", nil)
+	authorizeRequest(t, unhide, ticketing.RoleEmployee)
+	unhideRec := httptest.NewRecorder()
+	router.ServeHTTP(unhideRec, unhide)
+
+	require.Equal(t, http.StatusNoContent, unhideRec.Code, unhideRec.Body.String())
+	assert.Equal(t, "E1001", service.unhideEventActor.ID)
+	assert.Equal(t, "evt_9", service.unhideEventID)
+}
+
+func TestHideEventRouteMapsServiceError(t *testing.T) {
+	service := &fakeTicketingService{hideEventErr: errors.New("boom")}
+	router := testTicketingRouter(service)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/events/evt_9/hide", nil)
+	authorizeRequest(t, req, ticketing.RoleEmployee)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
 }
 
 func testTicketingRouter(service *fakeTicketingService) http.Handler {

@@ -53,6 +53,7 @@ type EventSummary struct {
 	CurrentUserRegistrationID string              `json:"current_user_registration_id,omitempty"`
 	CurrentUserTicket         *Ticket             `json:"current_user_ticket,omitempty"`
 	NoShowCooldown            NoShowCooldown      `json:"no_show_cooldown"`
+	Hidden                    bool                `json:"hidden"`
 }
 
 type NoShowCooldown struct {

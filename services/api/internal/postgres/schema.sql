@@ -678,3 +678,16 @@ ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS last_event_offset T
 -- PH2-42 last_processed_outbox_id: crash-recovery watermark in
 -- reporting_projection_offsets to resume processing after a worker restart
 ALTER TABLE reporting_projection_offsets ADD COLUMN IF NOT EXISTS last_processed_outbox_id TEXT NOT NULL DEFAULT '';
+
+-- Per-employee hidden events. A personal calendar view preference: a hidden
+-- event is dropped from the employee's calendar (to reduce clutter) but stays
+-- visible in the event list flagged as hidden. Not booking state, no audit.
+-- INSERT is naturally idempotent via the composite primary key.
+CREATE TABLE IF NOT EXISTS hidden_events (
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id) ON DELETE CASCADE,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		hidden_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (employee_id, event_id)
+	);
+
+CREATE INDEX IF NOT EXISTS idx_hidden_events_employee ON hidden_events(employee_id);

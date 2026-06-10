@@ -333,6 +333,7 @@ type eventListPersonalization struct {
 	RegistrationsByEvent  map[string]Registration
 	TicketsByRegistration map[string]*Ticket
 	BannedEvents          map[string]bool
+	HiddenEvents          map[string]bool
 }
 
 func (s *Service) populateEmployeeEventSummary(ctx context.Context, actor Actor, summary *EventSummary, eventID string, employeeID string) error {

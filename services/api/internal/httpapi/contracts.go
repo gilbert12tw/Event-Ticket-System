@@ -30,6 +30,8 @@ type EventService interface {
 	DuplicateEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ArchiveEvent(ctx context.Context, actor ticketing.Actor, eventID string) (ticketing.EventSummary, error)
 	ListEvents(ctx context.Context, actor ticketing.Actor, employeeID string, query ...ticketing.EventListQuery) ([]ticketing.EventSummary, error)
+	HideEvent(ctx context.Context, actor ticketing.Actor, eventID string) error
+	UnhideEvent(ctx context.Context, actor ticketing.Actor, eventID string) error
 }
 
 type EventAssetService interface {
