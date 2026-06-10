@@ -93,7 +93,10 @@
   }
 
   .split-grid {
-    grid-template-columns: 1fr;
+    /* minmax(0, …): a bare 1fr track has an auto minimum, so a child table
+       with min-width (e.g. 掃描紀錄) would blow the whole grid past the
+       viewport instead of scrolling inside .table-scroll. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -165,7 +165,7 @@ export function OfflineScanStep({
         )}
       </div>
 
-      <div>
+      <div className="offline-scan-records">
         {stored.scans.length > 0 ? (
           <ResponsiveTable label="掃描紀錄">
             <thead>
