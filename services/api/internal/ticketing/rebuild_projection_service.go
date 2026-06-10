@@ -64,21 +64,12 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		return RebuildResult{}, err
 	}
 
-	conn, err := s.db.Acquire(ctx)
-	if err != nil {
-		return RebuildResult{}, fmt.Errorf("rebuild: acquire connection: %w", err)
-	}
-	defer conn.Release()
-	if _, err := conn.Exec(ctx,
-		`SELECT pg_advisory_lock(hashtext($1)::bigint)`, projectionRebuildLockName); err != nil {
-		return RebuildResult{}, fmt.Errorf("rebuild: acquire rebuild lock: %w", err)
-	}
-	defer releaseProjectionRebuildLock(conn)
-
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	conn, tx, err := s.beginRebuildTx(ctx)
 	if err != nil {
 		return RebuildResult{}, err
 	}
+	defer conn.Release()
+	defer releaseProjectionRebuildLock(conn)
 	defer rollback(ctx, tx)
 
 	aggregated, err := aggregateFromOLTP(ctx, tx)
@@ -129,6 +120,30 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		OffsetResetTo: offset,
 		Validated:     opts.SampleValidate,
 	}, nil
+}
+
+// beginRebuildTx acquires a dedicated connection, takes the exclusive
+// projection-rebuild advisory lock on it, and opens the REPEATABLE READ
+// transaction. On success the caller owns all three teardown steps
+// (rollback, releaseProjectionRebuildLock, conn.Release); on error every
+// partially-acquired resource is already cleaned up here.
+func (s *Service) beginRebuildTx(ctx context.Context) (*pgxpool.Conn, pgx.Tx, error) {
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("rebuild: acquire connection: %w", err)
+	}
+	if _, err := conn.Exec(ctx,
+		`SELECT pg_advisory_lock(hashtext($1)::bigint)`, projectionRebuildLockName); err != nil {
+		conn.Release()
+		return nil, nil, fmt.Errorf("rebuild: acquire rebuild lock: %w", err)
+	}
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		releaseProjectionRebuildLock(conn)
+		conn.Release()
+		return nil, nil, err
+	}
+	return conn, tx, nil
 }
 
 // releaseProjectionRebuildLock releases the session-level rebuild lock before
