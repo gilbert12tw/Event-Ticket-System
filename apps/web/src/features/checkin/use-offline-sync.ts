@@ -43,7 +43,7 @@ export function useOfflineSync(
       }
       if (stored.status === "synced") {
         setSyncState("synced");
-        return stored;
+        return undefined;
       }
 
       const payload = buildSyncPayload(stored);
@@ -87,8 +87,7 @@ export function useOfflineSync(
     const trySync = () => {
       if (!navigator.onLine || syncingRef.current) return;
       void (async () => {
-        await syncNow();
-        const refreshed = await loadPackage(batchID);
+        const refreshed = await syncNow();
         if (refreshed) onAutoSyncedRef.current?.(refreshed);
       })();
     };
