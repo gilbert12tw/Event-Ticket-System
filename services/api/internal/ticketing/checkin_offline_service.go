@@ -3,7 +3,6 @@ package ticketing
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +16,7 @@ const (
 	offlineConflictClaimsMismatch = "ticket_token_claims_mismatch"
 	offlineConflictEventMismatch  = "offline_scan_event_mismatch"
 	offlineConflictExpired        = "ticket_expired"
+	offlineConflictFutureScan     = "invalid_scan_timestamp"
 	offlineConflictInvalidToken   = "invalid_ticket_token"
 	offlineConflictNotActive      = "ticket_not_active"
 	offlineConflictNotStarted     = checkinNotStartedReason
@@ -24,66 +24,12 @@ const (
 	offlineConflictRedeemed       = "ticket_already_redeemed"
 )
 
-func (s *Service) OfflineCheckinPackage(ctx context.Context, actor Actor, eventID string, deviceID string) (OfflineCheckinPackage, error) {
-	if err := requireRole(actor, RoleCheckinStaff); err != nil {
-		return OfflineCheckinPackage{}, err
-	}
-	deviceID = strings.TrimSpace(deviceID)
-	if deviceID == "" {
-		return OfflineCheckinPackage{}, badRequest("device_id is required")
-	}
-	rows, err := s.db.Query(ctx, `SELECT t.ticket_id, t.employee_id, t.signed_token_hash, r.family_count, e.full_name, e.department, e.site
-		FROM tickets t
-		JOIN registrations r ON r.registration_id = t.registration_id
-		JOIN employees e ON e.employee_id = t.employee_id
-		WHERE t.event_id = $1 AND t.status = 'active'
-		ORDER BY t.issued_at ASC`, eventID)
-	if err != nil {
-		return OfflineCheckinPackage{}, err
-	}
-	defer rows.Close()
-	var tickets []OfflineTicket
-	for rows.Next() {
-		var ticket OfflineTicket
-		if err := rows.Scan(&ticket.TicketID, &ticket.EmployeeID, &ticket.TokenHash, &ticket.FamilyCount, &ticket.Holder.DisplayName, &ticket.Holder.Department, &ticket.Holder.City); err != nil {
-			return OfflineCheckinPackage{}, err
-		}
-		tickets = append(tickets, ticket)
-	}
-	if err := rows.Err(); err != nil {
-		return OfflineCheckinPackage{}, err
-	}
-	batchID, err := newID("off")
-	if err != nil {
-		return OfflineCheckinPackage{}, err
-	}
-	validUntil := s.now().Add(4 * time.Hour).UTC().Truncate(time.Second)
-	signature, err := s.signer.SignOfflinePackage(OfflinePackageClaims{
-		BatchID:    batchID,
-		EventID:    eventID,
-		DeviceID:   deviceID,
-		StaffID:    actor.ID,
-		ValidUntil: validUntil,
-	})
-	if err != nil {
-		return OfflineCheckinPackage{}, err
-	}
-	_, err = s.db.Exec(ctx, `INSERT INTO offline_checkin_batches
-		(batch_id, event_id, device_id, staff_id, status, valid_until, package_signature)
-		VALUES ($1,$2,$3,$4,'open',$5,$6)`, batchID, eventID, deviceID, actor.ID, validUntil, signature)
-	if err != nil {
-		return OfflineCheckinPackage{}, err
-	}
-	return OfflineCheckinPackage{
-		BatchID:          batchID,
-		EventID:          eventID,
-		DeviceID:         deviceID,
-		ValidUntil:       validUntil,
-		PackageSignature: signature,
-		TicketCount:      len(tickets),
-		Tickets:          tickets,
-	}, nil
-}
+// offlineScanClockSkewTolerance bounds how far ahead of the server clock a
+// client-supplied scanned_at may sit. scanned_at is attacker-controllable in
+// the sync request: without an upper bound a forged future timestamp passes
+// the event-start gate and redeems a ticket before the event opens. The
+// tolerance absorbs legitimate device clock drift.
+const offlineScanClockSkewTolerance = 5 * time.Minute
 
 func (s *Service) SyncOfflineCheckins(ctx context.Context, actor Actor, req OfflineCheckinSyncRequest) (OfflineCheckinSyncResponse, error) {
 	if err := requireRole(actor, RoleCheckinStaff); err != nil {
@@ -276,6 +222,11 @@ func (s *Service) applyOfflineTicketScanTx(ctx context.Context, tx pgx.Tx, actor
 		result.Status = offlineScanStatusConflict
 		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictNotActive
+		return result, offlineScanStatusConflict, nil
+	} else if scan.ScannedAt.After(s.now().Add(offlineScanClockSkewTolerance)) {
+		result.Status = offlineScanStatusConflict
+		result.ReasonCode = "offline_conflict"
+		result.ConflictReason = offlineConflictFutureScan
 		return result, offlineScanStatusConflict, nil
 	} else if !isCheckinAfterEventStart(ticket.EventStartsAt, scan.ScannedAt) {
 		result.Status = offlineScanStatusConflict

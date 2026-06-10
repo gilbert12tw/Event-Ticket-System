@@ -193,6 +193,48 @@ func TestCompensatorSkipsMembersWithinGracePeriod(t *testing.T) {
 	assert.Equal(t, int64(1), exists, "in-flight hold must remain")
 }
 
+// Regression (HIGH): a booking_idempotency_results row that exists but is not
+// yet completed marks an in-flight booking (e.g. stalled on lock contention
+// past the grace TTL). Releasing its hold would hand the slot to a second
+// request while the first may still confirm, defeating the gate. The sweep
+// must skip it — keeping both the hold and the pending member — so a later
+// sweep re-evaluates once the row settles.
+func TestCompensatorSkipsInFlightBookingPastGrace(t *testing.T) {
+	lookup := newFakeLookup()
+	comp, gate, client, cleanup := newTestCompensator(t, lookup)
+	defer cleanup()
+	ctx := context.Background()
+	eventID := uniqueEventID(t)
+	defer client.Del(ctx, remainingKey(eventID), pendingKey(eventID), driftKey(eventID))
+	hash := Hash([]byte("k"), "registration.book", eventID, "E1001", "inflight-k")
+	defer client.Del(ctx, holdKey(eventID, hash))
+
+	lookup.setCapacity(eventID, 3)
+	seedHold(t, gate, eventID, hash, 3) // counter: 3 -> 2
+	lookup.set(eventID, hash, BookingStatus{Found: true, Completed: false})
+	expirePending(t, client, eventID, hash)
+
+	require.NoError(t, comp.Sweep(ctx))
+
+	rem, err := client.Get(ctx, remainingKey(eventID)).Int()
+	require.NoError(t, err)
+	assert.Equal(t, 2, rem, "in-flight booking still owns its slot; counter must NOT be restored")
+	pendingCount, err := client.ZCard(ctx, pendingKey(eventID)).Result()
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), pendingCount, "pending member must remain for a later sweep to re-evaluate")
+
+	// Once the booking settles as confirmed, the next sweep drops the hold
+	// without returning the slot.
+	lookup.set(eventID, hash, BookingStatus{Found: true, Completed: true, Confirmed: true})
+	require.NoError(t, comp.Sweep(ctx))
+	rem, err = client.Get(ctx, remainingKey(eventID)).Int()
+	require.NoError(t, err)
+	assert.Equal(t, 2, rem, "confirmed booking keeps the slot")
+	pendingCount, err = client.ZCard(ctx, pendingKey(eventID)).Result()
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), pendingCount, "settled booking is reconciled and removed from pending")
+}
+
 func TestCompensatorReconciliationIsIdempotent(t *testing.T) {
 	lookup := newFakeLookup()
 	comp, gate, client, cleanup := newTestCompensator(t, lookup)

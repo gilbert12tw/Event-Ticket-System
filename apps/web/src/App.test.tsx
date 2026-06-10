@@ -30,6 +30,12 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("@/lib/offline/auth-cache", () => ({
+  cacheAuthSession: vi.fn(),
+  isOffline: vi.fn(() => false),
+  loadCachedAuthSession: vi.fn(() => null),
+}));
+
 vi.mock("@/features/demo-runbook/pages", () => ({
   DemoRunbookPage: ({
     session,

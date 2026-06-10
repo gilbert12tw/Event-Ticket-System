@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { navigate, ticketDetailPath } from "@/app/routes";
+import { navigate } from "@/app/routes";
 import { EmptyState, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
@@ -119,23 +119,36 @@ export function EmployeeAgenda({
 
 export function EmployeeEventPosterCard({
   event,
+  hidden = false,
   now,
+  onHide,
+  onUnhide,
   ticket,
 }: Readonly<{
   event: EventSummary;
+  hidden?: boolean;
   now: Date;
+  onHide?: (eventID: string) => void;
+  onUnhide?: (eventID: string) => void;
   ticket?: Ticket;
 }>) {
   const state = employeeEventDisplayState(event, ticket, now);
   const deadline = registrationDeadlineView(event, now);
-  const href = primaryHref(event, ticket, state.kind);
+  const href = primaryHref(event);
   const meta = eventMeta(event);
   return (
     <article className="employee-event-card">
+      <EventPosterCornerControl
+        event={event}
+        hidden={hidden}
+        onHide={onHide}
+        onUnhide={onUnhide}
+      />
       <EventPoster eventID={event.event_id} meta={meta} title={event.title} />
       <div className="employee-event-card-body">
         <div className="employee-event-card-main">
           <div className="employee-event-card-badges">
+            {hidden && <StatusBadge tone="fail">已隱藏</StatusBadge>}
             <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
             <EmployeeRegistrationDeadlineChip deadline={deadline} />
             {canAddToCalendar(event, ticket) && (
@@ -162,6 +175,46 @@ export function EmployeeEventPosterCard({
       </div>
     </article>
   );
+}
+
+function EventPosterCornerControl({
+  event,
+  hidden,
+  onHide,
+  onUnhide,
+}: Readonly<{
+  event: EventSummary;
+  hidden: boolean;
+  onHide?: (eventID: string) => void;
+  onUnhide?: (eventID: string) => void;
+}>) {
+  if (hidden && onUnhide) {
+    return (
+      <button
+        aria-label={`取消隱藏活動：${event.title}`}
+        className="employee-event-card-corner"
+        title="取消隱藏"
+        type="button"
+        onClick={() => onUnhide(event.event_id)}
+      >
+        <Icon name="eye" />
+      </button>
+    );
+  }
+  if (!hidden && onHide) {
+    return (
+      <button
+        aria-label={`隱藏活動：${event.title}`}
+        className="employee-event-card-corner"
+        title="隱藏活動"
+        type="button"
+        onClick={() => onHide(event.event_id)}
+      >
+        <Icon name="x" />
+      </button>
+    );
+  }
+  return null;
 }
 
 export function EmployeeEventDetailHero({
@@ -291,14 +344,7 @@ function CalendarDayButton({
   );
 }
 
-function primaryHref(
-  event: EventSummary,
-  ticket: Ticket | undefined,
-  stateKind: string,
-) {
-  if ((stateKind === "entry-ready" || stateKind === "registered") && ticket) {
-    return ticketDetailPath(ticket.ticket_id);
-  }
+function primaryHref(event: EventSummary) {
   return `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`;
 }
 

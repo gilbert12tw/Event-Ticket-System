@@ -211,6 +211,7 @@
 }
 
 .employee-event-card {
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
@@ -224,6 +225,40 @@
     border-color 180ms ease-out,
     background-color 180ms ease-out,
     box-shadow 180ms ease-out;
+}
+
+.employee-event-card-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.85);
+  color: var(--muted);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition:
+    color 160ms ease-out,
+    border-color 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.employee-event-card-corner:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.employee-event-card-corner svg {
+  width: 16px;
+  height: 16px;
 }
 
 .employee-event-card:hover {

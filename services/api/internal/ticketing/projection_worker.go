@@ -33,61 +33,94 @@ func (s *Service) processClaimedProjectionOutbox(
 ) (int, error) {
 	proj, ok := decodeProjectionEvent(claim)
 	if !ok {
-		s.logProjectionSkip(ctx, claim, "decode_failed")
-		if s != nil && s.metrics != nil {
-			s.metrics.IncrementProjectionProcessed()
-		}
-		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+		return s.skipProjectionEvent(ctx, tx, claim, logAttempt, "decode_failed")
 	}
 
-	if proj.InnerType == "" && proj.TriggerEventID != "" {
-		var rawEventType string
-		err := tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1`, proj.TriggerEventID).Scan(&rawEventType)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				// Trigger row already published or GC'd — skip gracefully.
-				s.logProjectionSkip(ctx, claim, "trigger_event_gc")
-				if s != nil && s.metrics != nil {
-					s.metrics.IncrementProjectionProcessed()
-				}
-				return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
-			}
-			logAttempt(outboxAttemptOutcomeError)
-			return 0, err
-		}
-		proj.InnerType = normalizeProjectionTriggerType(rawEventType)
-		if proj.InnerType == "" {
-			s.logProjectionSkip(ctx, claim, "decode_failed")
-			if s != nil && s.metrics != nil {
-				s.metrics.IncrementProjectionProcessed()
-			}
-			return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
-		}
+	proj, done, result, err := s.resolveProjectionInnerType(ctx, tx, claim, logAttempt, proj)
+	if done {
+		return result, err
 	}
 
 	switch proj.InnerType {
 	case projectionInnerTypeCheckinCompleted:
 		// checkin has no aggregate effect — advance offset and mark published.
-		if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
-			logAttempt(outboxAttemptOutcomeError)
-			return 0, err
-		}
-		if s != nil && s.metrics != nil {
-			s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
-			s.metrics.IncrementProjectionProcessed()
-		}
-		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+		return s.applyProjectionCheckin(ctx, tx, claim, logAttempt, proj)
 	case projectionInnerTypeBookingConfirmed,
 		projectionInnerTypeBookingCancelled,
 		projectionInnerTypeBookingWaitlisted,
 		projectionInnerTypeBookingWaitlistCancel:
-		// handled below
+		return s.applyProjectionBooking(ctx, tx, claim, logAttempt, proj)
 	default:
-		s.logProjectionSkip(ctx, claim, "unknown_inner_type:"+proj.InnerType)
-		if s != nil && s.metrics != nil {
-			s.metrics.IncrementProjectionProcessed()
+		return s.skipProjectionEvent(ctx, tx, claim, logAttempt, "unknown_inner_type:"+proj.InnerType)
+	}
+}
+
+// resolveProjectionInnerType fills in proj.InnerType for schema_version=2
+// envelopes by looking up the trigger event's type. It returns done=true when
+// the caller should stop (the event was skipped gracefully or a hard error
+// occurred), in which case (result, err) are the values to return.
+func (s *Service) resolveProjectionInnerType(
+	ctx context.Context,
+	tx pgx.Tx,
+	claim outboxClaim,
+	logAttempt outboxAttemptLogger,
+	proj ProjectionEvent,
+) (ProjectionEvent, bool, int, error) {
+	if proj.InnerType != "" || proj.TriggerEventID == "" {
+		return proj, false, 0, nil
+	}
+
+	var rawEventType string
+	err := tx.QueryRow(ctx, `SELECT event_type FROM outbox_events WHERE outbox_id = $1`, proj.TriggerEventID).Scan(&rawEventType)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Trigger row already published or GC'd — skip gracefully.
+			result, skipErr := s.skipProjectionEvent(ctx, tx, claim, logAttempt, "trigger_event_gc")
+			return proj, true, result, skipErr
 		}
-		return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+		logAttempt(outboxAttemptOutcomeError)
+		return proj, true, 0, err
+	}
+
+	proj.InnerType = normalizeProjectionTriggerType(rawEventType)
+	if proj.InnerType == "" {
+		result, skipErr := s.skipProjectionEvent(ctx, tx, claim, logAttempt, "decode_failed")
+		return proj, true, result, skipErr
+	}
+	return proj, false, 0, nil
+}
+
+// applyProjectionCheckin advances the offset for a checkin event, which has no
+// aggregate effect, then marks the outbox row published.
+func (s *Service) applyProjectionCheckin(
+	ctx context.Context,
+	tx pgx.Tx,
+	claim outboxClaim,
+	logAttempt outboxAttemptLogger,
+	proj ProjectionEvent,
+) (int, error) {
+	if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
+		logAttempt(outboxAttemptOutcomeError)
+		return 0, err
+	}
+	s.observeProjectionProcessed(claim)
+	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+}
+
+// applyProjectionBooking applies a booking event to the aggregate row, advances
+// the offset, and marks the outbox row published.
+func (s *Service) applyProjectionBooking(
+	ctx context.Context,
+	tx pgx.Tx,
+	claim outboxClaim,
+	logAttempt outboxAttemptLogger,
+	proj ProjectionEvent,
+) (int, error) {
+	// Serialize against RebuildProjection (shared among workers, exclusive for
+	// the rebuild) so the rebuild's DELETE + re-INSERT never races this upsert.
+	if err := acquireProjectionRebuildSharedLockTx(ctx, tx); err != nil {
+		logAttempt(outboxAttemptOutcomeError)
+		return 0, err
 	}
 
 	current, err := getEventSummaryRow(ctx, tx, proj.EventID)
@@ -110,11 +143,38 @@ func (s *Service) processClaimedProjectionOutbox(
 		return 0, err
 	}
 
+	s.observeProjectionProcessed(claim)
+	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+}
+
+// skipProjectionEvent records a skip (with reason), counts the event as
+// processed, and marks the outbox row published so it is not retried.
+func (s *Service) skipProjectionEvent(
+	ctx context.Context,
+	tx pgx.Tx,
+	claim outboxClaim,
+	logAttempt outboxAttemptLogger,
+	reason string,
+) (int, error) {
+	s.logProjectionSkip(ctx, claim, reason)
+	s.incrementProjectionProcessed()
+	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
+}
+
+// incrementProjectionProcessed counts one processed projection event.
+func (s *Service) incrementProjectionProcessed() {
+	if s != nil && s.metrics != nil {
+		s.metrics.IncrementProjectionProcessed()
+	}
+}
+
+// observeProjectionProcessed records the projection lag for claim and counts
+// the event as processed.
+func (s *Service) observeProjectionProcessed(claim outboxClaim) {
 	if s != nil && s.metrics != nil {
 		s.metrics.ObserveProjectionLag(time.Since(claim.createdAt))
 		s.metrics.IncrementProjectionProcessed()
 	}
-	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
 }
 
 // computeNewCounts derives new aggregate counts from the current row and a

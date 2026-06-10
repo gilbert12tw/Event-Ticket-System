@@ -81,8 +81,17 @@ func TestIdempotencyAndEmailDeliveryHelpers(t *testing.T) {
 	}
 	require.NoError(t, validateBookingIdempotencyResult(completed, "evt_1", "E1001", 1))
 	require.ErrorContains(t, validateBookingIdempotencyResult(completed, "evt_2", "E1001", 1), "different booking")
+	// Regression (HIGH): an idempotency row that exists but has not completed
+	// marks an IN-FLIGHT first attempt. A retry with the same key must get a
+	// retriable signal (429 + Retry-After), not a permanent 409 that makes
+	// clients abandon a booking that is about to succeed.
 	completed.RegistrationID = ""
-	require.ErrorContains(t, validateBookingIdempotencyResult(completed, "evt_1", "E1001", 1), "not ready")
+	inFlightErr := validateBookingIdempotencyResult(completed, "evt_1", "E1001", 1)
+	require.ErrorContains(t, inFlightErr, "still being processed")
+	assert.Equal(t, 429, ErrorStatus(inFlightErr), "in-flight retry must be retriable, not a permanent conflict")
+	retryAfter, ok := ErrorRetryAfterSeconds(inFlightErr)
+	assert.True(t, ok, "in-flight retry must carry Retry-After")
+	assert.GreaterOrEqual(t, retryAfter, 1)
 
 	policy := OutboxRetryPolicy{MaxAttempts: 3}
 	status, lastErr := emailDeliveryResult(nil, "E1001", outboxClaim{attempts: 1}, policy)

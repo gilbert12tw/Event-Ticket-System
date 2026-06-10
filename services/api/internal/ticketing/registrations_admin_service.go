@@ -150,6 +150,12 @@ func (s *Service) applyRegistrationCancellationTx(ctx context.Context, tx pgx.Tx
 	cancelledAt := s.now()
 	_, err := tx.Exec(ctx, `UPDATE registrations SET status = 'cancelled', cancel_idempotency_key = $1, cancel_reason = $2, cancelled_at = $3
 		WHERE registration_id = $4`, req.IdempotencyKey, req.Reason, cancelledAt, registrationID)
+	if isUniqueViolation(err) {
+		// registrations_unique_cancel_idempotency_key: this key already
+		// settled a different registration; applying it here would let one
+		// key cancel two registrations.
+		return conflict("cancel idempotency key was already used for another registration")
+	}
 	if err != nil {
 		return err
 	}

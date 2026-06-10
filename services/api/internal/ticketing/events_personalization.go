@@ -14,6 +14,7 @@ func (s *Service) loadEventListPersonalization(ctx context.Context, actor Actor,
 		RegistrationsByEvent:  map[string]Registration{},
 		TicketsByRegistration: map[string]*Ticket{},
 		BannedEvents:          map[string]bool{},
+		HiddenEvents:          map[string]bool{},
 	}
 	if actor.ID == employeeID && actor.Claims != nil {
 		employee, err := employeeFromClaims(actor)
@@ -54,11 +55,20 @@ func (s *Service) loadEventListPersonalization(ctx context.Context, actor Actor,
 		return personalization, err
 	}
 	personalization.BannedEvents = banned
+
+	hidden, err := s.loadHiddenEvents(ctx, employeeID)
+	if err != nil {
+		return personalization, err
+	}
+	personalization.HiddenEvents = hidden
 	return personalization, nil
 }
 
 func applyEventListPersonalization(summary *EventSummary, personalization eventListPersonalization) {
 	initializeEventSummaryEligibility(summary, summary.EventID)
+	// A hidden event is a personal view preference independent of eligibility or
+	// claim state, so apply it before any early returns below.
+	summary.Hidden = personalization.HiddenEvents[summary.EventID]
 	if personalization.MissingClaims {
 		summary.Eligibility.Reasons = []string{ErrMissingClaims.Error()}
 		applyEventListCooldown(summary, personalization)
