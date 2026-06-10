@@ -156,6 +156,20 @@ describe("OfflineCheckinBoundaryPage — tab gating", () => {
       expect(screen.getByRole("tab", { name: "3 同步結果" })).toBeEnabled(),
     );
   });
+
+  it("stays on the results tab before any sync result exists", async () => {
+    // Regression: the sync button lives on the results tab, so the page must
+    // not bounce back to the scan tab just because syncResult is still null.
+    render(<OfflineCheckinBoundaryPage />);
+    await userEvent.click(screen.getByText("ready-package"));
+    await userEvent.click(await screen.findByText("add-scan"));
+    await userEvent.click(screen.getByRole("tab", { name: "3 同步結果" }));
+
+    expect(
+      await screen.findByRole("button", { name: /立即同步/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("result-step")).toHaveTextContent("no-result");
+  });
 });
 
 describe("OfflineCheckinBoundaryPage — sync", () => {

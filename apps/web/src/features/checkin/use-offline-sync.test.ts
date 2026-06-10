@@ -122,6 +122,43 @@ describe("useOfflineSync", () => {
     await waitFor(() => expect(result.current.syncState).toBe("error"));
   });
 
+  it("skips the network when the batch is already closed", async () => {
+    markScansAsSyncing.mockResolvedValue({
+      ...storedWith(1),
+      status: "synced",
+    });
+
+    const { result } = renderHook(() => useOfflineSync(BATCH));
+    await act(async () => {
+      await result.current.syncNow();
+    });
+
+    expect(syncOfflineCheckins).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.syncState).toBe("synced"));
+  });
+
+  it("auto-syncs on the online event and pushes the refreshed package up", async () => {
+    syncOfflineCheckins.mockResolvedValue({ results: [{ status: "ok" }] });
+    updateScansFromSync.mockResolvedValue({
+      stored: storedWith(1),
+      complete: true,
+    });
+    const onAutoSynced = vi.fn();
+
+    renderHook(() => useOfflineSync(BATCH, onAutoSynced));
+    await act(async () => {
+      globalThis.dispatchEvent(new Event("online"));
+    });
+
+    await waitFor(() =>
+      expect(onAutoSynced).toHaveBeenCalledWith({
+        ...storedWith(1),
+        status: "synced",
+      }),
+    );
+    expect(markBatchSynced).toHaveBeenCalledWith(BATCH);
+  });
+
   it("canSync is false without a batch id and true when online with one", () => {
     const without = renderHook(() => useOfflineSync(undefined));
     expect(without.result.current.canSync).toBe(false);
