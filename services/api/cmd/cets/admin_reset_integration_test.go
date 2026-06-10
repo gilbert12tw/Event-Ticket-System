@@ -42,10 +42,12 @@ func TestResetDemoDBResetsPostgresAndRedis(t *testing.T) {
 
 	require.NoError(t, resetDemoDB(cfg, testLogger()))
 
+	// Seed: 12 employees (E1001-E1010 + E2001 + E3001); the today event books
+	// all 10 DemoEmployeeIDs and the future event books E1001 + E1002.
 	assertTableCount(t, pool, "events", 2)
-	assertTableCount(t, pool, "tickets", 2)
-	assertTableCount(t, pool, "registrations", 2)
-	assertTableCount(t, pool, "employees", 4)
+	assertTableCount(t, pool, "tickets", 12)
+	assertTableCount(t, pool, "registrations", 12)
+	assertTableCount(t, pool, "employees", 12)
 	assertTableCount(t, pool, "reporting_projection_offsets", 1)
 	assertRedisKeyAbsent(t, client, "cets:v1:resv:stale:remaining")
 	assertRedisKeyAbsent(t, client, "cets:v1:rate:booking:stale:event:20260604120000")

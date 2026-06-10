@@ -40,6 +40,10 @@ func (s *Service) SeedDemoData(ctx context.Context) error {
 		{EmployeeID: "E1008", FullName: "Henry Cheng", Department: "Engineering", Site: demoSiteTaipeiHQ, JobGrade: 5, EmploymentStatus: "active"},
 		{EmployeeID: "E1009", FullName: "Iris Yang", Department: "Engineering", Site: demoSiteTaipeiHQ, JobGrade: 6, EmploymentStatus: "active"},
 		{EmployeeID: "E1010", FullName: "Jack Kao", Department: "Engineering", Site: demoSiteTaipeiHQ, JobGrade: 5, EmploymentStatus: "active"},
+		// E3001 keeps a second distinct site in the demo HR data so admin
+		// site filters and eligibility previews stay multi-site. It is not in
+		// DemoEmployeeIDs because demo events are Taipei HQ only.
+		{EmployeeID: "E3001", FullName: "Tainan User", Department: "Engineering", Site: "Tainan HQ", JobGrade: 5, EmploymentStatus: "active"},
 	}
 	for _, employee := range employees {
 		_, err := tx.Exec(ctx, `INSERT INTO employees (employee_id, full_name, department, site, job_grade, employment_status)
