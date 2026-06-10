@@ -176,6 +176,7 @@ export type EventSummary = EventMutableFields & {
   current_user_registration_id?: string;
   current_user_ticket?: Ticket;
   no_show_cooldown?: NoShowCooldown;
+  hidden?: boolean;
 };
 
 export type EventListFilters = {

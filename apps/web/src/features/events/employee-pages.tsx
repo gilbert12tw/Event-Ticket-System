@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { navigate } from "@/app/routes";
-import { listEvents, listTickets } from "@/lib/api";
+import { hideEvent, listEvents, listTickets, unhideEvent } from "@/lib/api";
 import type { AuthMeClaims, EventSummary, Ticket } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
 import { Alert, EmptyState, SkeletonRows } from "@/components/shared";
@@ -20,7 +20,6 @@ import {
   type EmployeeCalendarViewMode,
 } from "./employee-calendar-planner";
 import { EmployeeCalendarView } from "./employee-calendar-view";
-import { useHiddenEvents } from "./employee-hidden-events";
 import { EmployeeDiscoveryControls } from "./employee-discovery-controls";
 import {
   defaultEmployeeDiscoveryState,
@@ -55,7 +54,6 @@ export function EmployeeEventsPage({
   );
 
   const principalID = claims.employee_id;
-  const { hiddenIds, setHidden } = useHiddenEvents(principalID);
   const now = useMemo(
     () => new Date(injectedNow ?? Date.now()),
     [events, injectedNow, tickets],
@@ -65,8 +63,8 @@ export function EmployeeEventsPage({
     [calendarState.date, calendarState.view, now],
   );
   const visibleEvents = useMemo(
-    () => events.filter((event) => !hiddenIds.has(event.event_id)),
-    [events, hiddenIds],
+    () => events.filter((event) => !event.hidden),
+    [events],
   );
   const calendarEvents = useMemo(
     () =>
@@ -113,6 +111,16 @@ export function EmployeeEventsPage({
       setMessage(errorMessage(error));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function setHidden(eventID: string, hidden: boolean) {
+    setEvents((current) => withHidden(current, eventID, hidden));
+    try {
+      await (hidden ? hideEvent(eventID) : unhideEvent(eventID));
+    } catch (error) {
+      setEvents((current) => withHidden(current, eventID, !hidden));
+      setMessage(errorMessage(error));
     }
   }
 
@@ -281,7 +289,6 @@ export function EmployeeEventsPage({
                   />
                 }
                 events={discoveryEvents}
-                hiddenIds={hiddenIds}
                 now={now}
                 onUnhide={(eventID) => setHidden(eventID, false)}
               />
@@ -293,16 +300,20 @@ export function EmployeeEventsPage({
   );
 }
 
+function withHidden(events: EventSummary[], eventID: string, hidden: boolean) {
+  return events.map((event) =>
+    event.event_id === eventID ? { ...event, hidden } : event,
+  );
+}
+
 function EmployeeEventListPanel({
   controls,
   events,
-  hiddenIds,
   now,
   onUnhide,
 }: Readonly<{
   controls: ReactNode;
   events: ReturnType<typeof selectEmployeeDiscoveryEventRows>;
-  hiddenIds: ReadonlySet<string>;
   now: Date;
   onUnhide: (eventID: string) => void;
 }>) {
@@ -328,7 +339,7 @@ function EmployeeEventListPanel({
           {events.map(({ event, ticket }) => (
             <EmployeeEventPosterCard
               event={event}
-              hidden={hiddenIds.has(event.event_id)}
+              hidden={event.hidden}
               key={event.event_id}
               now={now}
               onUnhide={onUnhide}

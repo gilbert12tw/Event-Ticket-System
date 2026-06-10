@@ -160,6 +160,15 @@
   align-content: start;
   gap: 8px;
   min-width: 0;
+  /* Keep a busy day's events inside the column box; scroll past the cap. */
+  min-height: 0;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.employee-calendar-event-block-wrap {
+  position: relative;
+  min-width: 0;
 }
 
 .employee-calendar-event-block {
@@ -177,6 +186,43 @@
 .employee-calendar-event-block:hover {
   border-color: var(--line-strong);
   background: var(--surface);
+}
+
+.employee-calendar-event-hide {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.86);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 140ms ease-out,
+    color 140ms ease-out,
+    border-color 140ms ease-out;
+}
+
+.employee-calendar-event-block-wrap:hover .employee-calendar-event-hide,
+.employee-calendar-event-block-wrap:focus-within .employee-calendar-event-hide {
+  opacity: 1;
+}
+
+.employee-calendar-event-hide:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.employee-calendar-event-hide svg {
+  width: 14px;
+  height: 14px;
 }
 
 .employee-calendar-event-block time,
@@ -218,7 +264,7 @@
 
 .employee-month-cell {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto 1fr;
   gap: 5px;
   min-height: 112px;
   min-width: 0;
@@ -228,6 +274,7 @@
   background: var(--surface-raised);
   color: var(--ink);
   text-align: left;
+  overflow: hidden;
   touch-action: manipulation;
 }
 
@@ -251,26 +298,97 @@
   color: var(--muted);
 }
 
-.employee-month-cell.muted .employee-month-previews span {
+.employee-month-cell.muted .employee-month-event {
   color: var(--muted);
+}
+
+/* Date + count: a full-width transparent button that selects the day. */
+.employee-month-select {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .employee-month-date {
   font-weight: 760;
 }
 
-.employee-month-previews {
+.employee-month-events {
   display: grid;
+  align-content: start;
   gap: 3px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.employee-month-event-row {
+  position: relative;
+  display: flex;
+  align-items: center;
   min-width: 0;
 }
 
-.employee-month-previews span {
-  overflow: hidden;
+.employee-month-event {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 1px 0;
+  border: 0;
+  background: transparent;
   color: var(--ink);
   font-size: 0.75rem;
-  text-overflow: ellipsis;
+  text-align: left;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.employee-month-event:hover {
+  text-decoration: underline;
+}
+
+.employee-month-event-hide {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 140ms ease-out,
+    color 140ms ease-out;
+}
+
+.employee-month-event-row:hover .employee-month-event-hide,
+.employee-month-event-row:focus-within .employee-month-event-hide {
+  opacity: 1;
+}
+
+.employee-month-event-hide:hover {
+  color: var(--ink);
+}
+
+.employee-month-event-hide svg {
+  width: 12px;
+  height: 12px;
 }
 
 .employee-day-agenda,
@@ -404,8 +522,16 @@
     text-align: center;
   }
 
-  .employee-month-previews {
+  .employee-month-events {
     display: none;
+  }
+}
+
+/* Touch devices have no hover, so keep the hide buttons visible there. */
+@media (pointer: coarse) {
+  .employee-calendar-event-hide,
+  .employee-month-event-hide {
+    opacity: 1;
   }
 }
 
