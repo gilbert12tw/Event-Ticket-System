@@ -678,3 +678,11 @@ ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS last_event_offset T
 -- PH2-42 last_processed_outbox_id: crash-recovery watermark in
 -- reporting_projection_offsets to resume processing after a worker restart
 ALTER TABLE reporting_projection_offsets ADD COLUMN IF NOT EXISTS last_processed_outbox_id TEXT NOT NULL DEFAULT '';
+
+-- PH2-45 export aggregate columns: maintained incrementally where the event
+-- stream allows, authoritatively by rebuild (cets admin rebuild-projection).
+-- Aggregate counts only — no PII.
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS employee_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS ticket_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS checkin_count INTEGER NOT NULL DEFAULT 0;

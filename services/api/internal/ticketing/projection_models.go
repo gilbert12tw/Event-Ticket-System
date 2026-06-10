@@ -35,6 +35,10 @@ type eventSummaryRow struct {
 	ConfirmedCount      int
 	CancelledCount      int
 	WaitlistCount       int
+	EmployeeCount       int
+	FamilyCount         int
+	TicketCount         int
+	CheckinCount        int
 	DepartmentBreakdown map[string]int
 	LastEventOffset     string // TEXT outbox_id of the last applied event
 }

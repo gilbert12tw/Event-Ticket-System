@@ -177,6 +177,10 @@ func computeNewCounts(current eventSummaryRow, proj ProjectionEvent) eventSummar
 		ConfirmedCount:  current.ConfirmedCount,
 		CancelledCount:  current.CancelledCount,
 		WaitlistCount:   current.WaitlistCount,
+		EmployeeCount:   current.EmployeeCount,
+		FamilyCount:     current.FamilyCount,
+		TicketCount:     current.TicketCount,
+		CheckinCount:    current.CheckinCount,
 		LastEventOffset: proj.OutboxID,
 	}
 	// Deep-copy breakdown so we do not mutate the input.

@@ -28,36 +28,29 @@ func upsertEventSummary(
 	_, err = tx.Exec(ctx, `
 		INSERT INTO reporting_event_summary
 			(event_id, confirmed_count, cancelled_count, waitlist_count,
+			 employee_count, family_count, ticket_count, checkin_count,
 			 department_breakdown, last_event_offset, updated_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, now())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, now())
 		ON CONFLICT (event_id) DO UPDATE SET
-			confirmed_count = CASE
-				WHEN excluded.last_event_offset > reporting_event_summary.last_event_offset
-				THEN excluded.confirmed_count
-				ELSE reporting_event_summary.confirmed_count END,
-			cancelled_count = CASE
-				WHEN excluded.last_event_offset > reporting_event_summary.last_event_offset
-				THEN excluded.cancelled_count
-				ELSE reporting_event_summary.cancelled_count END,
-			waitlist_count = CASE
-				WHEN excluded.last_event_offset > reporting_event_summary.last_event_offset
-				THEN excluded.waitlist_count
-				ELSE reporting_event_summary.waitlist_count END,
-			department_breakdown = CASE
-				WHEN excluded.last_event_offset > reporting_event_summary.last_event_offset
-				THEN excluded.department_breakdown
-				ELSE reporting_event_summary.department_breakdown END,
-			last_event_offset = GREATEST(
-				excluded.last_event_offset,
-				reporting_event_summary.last_event_offset),
-			updated_at = CASE
-				WHEN excluded.last_event_offset > reporting_event_summary.last_event_offset
-				THEN now()
-				ELSE reporting_event_summary.updated_at END`,
+			confirmed_count = excluded.confirmed_count,
+			cancelled_count = excluded.cancelled_count,
+			waitlist_count = excluded.waitlist_count,
+			employee_count = excluded.employee_count,
+			family_count = excluded.family_count,
+			ticket_count = excluded.ticket_count,
+			checkin_count = excluded.checkin_count,
+			department_breakdown = excluded.department_breakdown,
+			last_event_offset = excluded.last_event_offset,
+			updated_at = now()
+		WHERE excluded.last_event_offset > reporting_event_summary.last_event_offset`,
 		eventID,
 		max(counts.ConfirmedCount, 0),
 		max(counts.CancelledCount, 0),
 		max(counts.WaitlistCount, 0),
+		max(counts.EmployeeCount, 0),
+		max(counts.FamilyCount, 0),
+		max(counts.TicketCount, 0),
+		max(counts.CheckinCount, 0),
 		string(breakdownJSON),
 		outboxID,
 	)
@@ -108,6 +101,7 @@ func getEventSummaryRow(ctx context.Context, db interface {
 	var breakdownJSON []byte
 	err := db.QueryRow(ctx, `
 		SELECT confirmed_count, cancelled_count, waitlist_count,
+		       employee_count, family_count, ticket_count, checkin_count,
 		       department_breakdown, COALESCE(last_event_offset, '')
 		FROM reporting_event_summary
 		WHERE event_id = $1`, eventID).
@@ -115,6 +109,10 @@ func getEventSummaryRow(ctx context.Context, db interface {
 			&row.ConfirmedCount,
 			&row.CancelledCount,
 			&row.WaitlistCount,
+			&row.EmployeeCount,
+			&row.FamilyCount,
+			&row.TicketCount,
+			&row.CheckinCount,
 			&breakdownJSON,
 			&row.LastEventOffset,
 		)
