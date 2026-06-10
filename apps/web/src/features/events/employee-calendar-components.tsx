@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { navigate, ticketDetailPath } from "@/app/routes";
+import { navigate } from "@/app/routes";
 import { EmptyState, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
@@ -128,7 +128,7 @@ export function EmployeeEventPosterCard({
 }>) {
   const state = employeeEventDisplayState(event, ticket, now);
   const deadline = registrationDeadlineView(event, now);
-  const href = primaryHref(event, ticket, state.kind);
+  const href = primaryHref(event);
   const meta = eventMeta(event);
   return (
     <article className="employee-event-card">
@@ -291,14 +291,7 @@ function CalendarDayButton({
   );
 }
 
-function primaryHref(
-  event: EventSummary,
-  ticket: Ticket | undefined,
-  stateKind: string,
-) {
-  if ((stateKind === "entry-ready" || stateKind === "registered") && ticket) {
-    return ticketDetailPath(ticket.ticket_id);
-  }
+function primaryHref(event: EventSummary) {
   return `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`;
 }
 

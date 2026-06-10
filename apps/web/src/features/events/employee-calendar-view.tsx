@@ -1,4 +1,4 @@
-import { navigate, ticketDetailPath } from "@/app/routes";
+import { navigate } from "@/app/routes";
 import { EmptyState, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
@@ -330,10 +330,7 @@ function EmployeeCalendarEventBlock({
   );
 }
 
-function primaryHref({ event, state, ticket }: EmployeeCalendarEvent) {
-  if ((state.kind === "entry-ready" || state.kind === "registered") && ticket) {
-    return ticketDetailPath(ticket.ticket_id);
-  }
+function primaryHref({ event }: EmployeeCalendarEvent) {
   return `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`;
 }
 

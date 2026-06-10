@@ -151,7 +151,11 @@ describe("employee calendar helpers", () => {
         undefined,
         now,
       ),
-    ).toMatchObject({ kind: "entry-ready", label: "可入場" });
+    ).toMatchObject({
+      kind: "entry-ready",
+      label: "可入場",
+      primaryLabel: "查看詳情",
+    });
     expect(
       employeeEventDisplayState(
         event({
