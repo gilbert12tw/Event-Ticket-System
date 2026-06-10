@@ -116,9 +116,18 @@ The following fields must never appear in a projection-bound query or payload:
 | `cancelled_count` | INTEGER ≥ 0 | Count of registrations with status `cancelled` |
 | `waitlist_count` | INTEGER ≥ 0 | Count of registrations with status `waitlisted` |
 | `department_breakdown` | JSONB | Map of `{ "department_label": integer_count }` — no names or IDs |
+| `employee_count` | INTEGER ≥ 0 | PH2-45: confirmed registrations' distinct employees. Incremental: ±1 with confirm/cancel (one active registration per event+employee is DB-enforced); rebuild is authoritative |
+| `family_count` | INTEGER ≥ 0 | PH2-45: sum of confirmed registrations' family members. Incremental only when the projection event payload carries `family_count` (optional field; no current publisher emits it) — otherwise rebuild-maintained |
+| `ticket_count` | INTEGER ≥ 0 | PH2-45: distinct issued tickets. Incremental: +1 on confirm, never decremented (tickets are revoked, not deleted); rebuild is authoritative |
+| `checkin_count` | INTEGER ≥ 0 | PH2-45: distinct accepted check-ins. Incremental: +1 on `checkin.completed`; rebuild is authoritative |
 | `last_processed_at` | TIMESTAMPTZ | `created_at` of the last outbox event applied to this row |
 | `last_processed_outbox_id` | TEXT | `outbox_id` of the last outbox event applied (tiebreaker for same-second events) |
 | `updated_at` | TIMESTAMPTZ | Wall-clock time of last projection write |
+
+> **PH2-45 deploy note:** the four export aggregate columns default to 0 for rows written
+> before the migration. Run `cets admin rebuild-projection` as part of the PH2-45 release so
+> every row carries authoritative values; until that rebuild, pre-existing rows under-report
+> the new counts.
 
 `confirmed_count <= total_capacity` is intentionally not enforced at the projection layer.
 OLTP enforces capacity. The projection reflects a derived count; capacity enforcement is the
@@ -251,6 +260,24 @@ empty data set rather than erroring. The booking hot path is unaffected.
 - Rebuild and offset-reset operations: `system_admin` only.
 - Export endpoints (PH2-45): enforce the same privacy whitelist — only aggregate fields are
   included in any export payload or file.
+
+### Export contract (PH2-45, implemented)
+
+- `EXPORTS_SOURCE=projection` (default): the export worker builds the CSV from
+  `reporting_event_summary`; static event metadata (title, capacity, city, starts_at) comes
+  from a primary-key join on `events`. `EXPORTS_SOURCE=operational` restores the Phase 1
+  OLTP aggregation byte-exactly (rollback path).
+- Projection-sourced CSV carries the 14 Phase 1 whitelist columns in their original order
+  plus a trailing `projection_status` column (`fresh` | `pending_projection`). Events without
+  a projection row are marked `pending_projection` with empty count cells — zeros are never
+  fabricated (WS5-AC-4); metadata cells stay populated.
+- Fail-closed staleness gate (`EXPORTS_STALE_POLICY=fail`): the export fails retryably when
+  the `event_summary` offsets row is missing, or when unprocessed
+  `reporting.projection.update_required.v2` outbox backlog is older than
+  `REPORT_STALE_THRESHOLD_SECONDS`. Backlog age is used instead of `updated_at` age because
+  `updated_at` only advances when a projection event is processed; in quiet periods an
+  age-based gate would fail every export despite the projection being correct. Exhausted
+  retries dead-letter the export (`report_exports.status='failed'`) with an audit row.
 
 ### Enforcement guarantee
 

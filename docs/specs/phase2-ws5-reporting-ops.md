@@ -172,7 +172,7 @@ cets ops projection-rebuild --name=rollup [--from=epoch|<iso8601>] [--dry-run]
 - Reporting projection schema: additive tables; rollback = drop tables + revert migration; operational tables untouched.
 - Read model worker: a kind from `WORKER_KINDS` (WS4); disable by removing `projection` from the list. Reports fall back to operational queries (Phase 1 behavior) via `REPORTS_SOURCE=projection|operational` (default `projection`; setting `operational` restores Phase 1 source).
 - Freshness contract: `REPORTS_FRESHNESS_DEGRADED_SECONDS` and `REPORTS_FRESHNESS_HARD_LIMIT_SECONDS` are env tunables; setting both very high silences the degraded flag for emergency rollback (still served).
-- Exports from projection: `EXPORTS_SOURCE=projection|operational` toggles back to Phase 1 source.
+- Exports from projection: `EXPORTS_SOURCE=projection|operational` toggles back to Phase 1 source. `EXPORTS_STALE_POLICY=fail` (only implemented value) fails projection-sourced exports closed when the projection is stale or unavailable; the operator rollback for a persistently stale projection is `EXPORTS_SOURCE=operational`.
 - Ops UI: `OPS_UI_ENABLED=false` hides the route in router registration; backend endpoints follow `OPS_API_ENABLED` (shared with WS3/WS4).
 - Rebuild admin: dry-run by default; `--apply` required. Rebuild is idempotent and resumable; abort sets `rebuild_in_progress=false` and leaves data consistent.
 - `PH2-47` check-in cache: not implemented — nothing to roll back. Decision gate document is the only artifact.
