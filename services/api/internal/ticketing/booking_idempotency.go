@@ -84,7 +84,12 @@ func validateBookingIdempotencyResult(result bookingIdempotencyResult, eventID s
 		return conflict("idempotency key belongs to a different booking request")
 	}
 	if result.RegistrationID == "" || result.CompletedAt.IsZero() {
-		return conflict("booking idempotency result is not ready")
+		// The first attempt with this key is still in flight: its row exists
+		// but completed_at has not been stamped. A permanent 409 would make
+		// well-behaved clients abandon a booking that is about to succeed, so
+		// answer with a retriable 429 + Retry-After instead.
+		return rateLimited("BOOKING_IN_FLIGHT",
+			"booking with this idempotency key is still being processed; retry shortly", 1)
 	}
 	return nil
 }

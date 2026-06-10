@@ -678,3 +678,12 @@ ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS last_event_offset T
 -- PH2-42 last_processed_outbox_id: crash-recovery watermark in
 -- reporting_projection_offsets to resume processing after a worker restart
 ALTER TABLE reporting_projection_offsets ADD COLUMN IF NOT EXISTS last_processed_outbox_id TEXT NOT NULL DEFAULT '';
+
+-- Cancellation idempotency backstop: one cancel_idempotency_key may settle at
+-- most one registration. The application-level replay check only compares the
+-- key on an already-cancelled registration, so without this index the same
+-- key reused against a different registration would cancel it too. Mirrors
+-- the booking-side registrations.idempotency_key UNIQUE guarantee.
+CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_cancel_idempotency_key
+		ON registrations (cancel_idempotency_key)
+		WHERE cancel_idempotency_key IS NOT NULL AND cancel_idempotency_key <> '';
