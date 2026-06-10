@@ -37,6 +37,7 @@ func TestBaremetalK8sLGTMProvisionsGrafanaDashboard(t *testing.T) {
 		"ETS 04 — USE Infrastructure",
 		"ETS 05 — Outbox & Worker Health",
 		"ETS 06 — Service Anomaly Investigation",
+		"ETS 07 — Ingress & Gateway",
 		// Template variable queries — present in k8s-01/02
 		"CETS_REPLICA_ID",
 		"fieldPath: metadata.name",
@@ -88,6 +89,14 @@ func TestBaremetalK8sLGTMProvisionsGrafanaDashboard(t *testing.T) {
 	assertDashboardTitle(t, dashboards, "ETS 04 — USE Infrastructure")
 	assertDashboardTitle(t, dashboards, "ETS 05 — Outbox & Worker Health")
 	assertDashboardTitle(t, dashboards, "ETS 06 — Service Anomaly Investigation")
+	assertDashboardTitle(t, dashboards, "ETS 07 — Ingress & Gateway")
+
+	// k8s-07 must use ingress-nginx Loki labels.
+	assert.True(t, containsJSONValue(dashboards["k8s-07-ingress-gateway.json"], `{namespace="ingress-nginx"}`),
+		"k8s-07 must query ingress-nginx namespace logs")
+	// k8s-07 must include nginx controller metrics.
+	assert.True(t, containsJSONValue(dashboards["k8s-07-ingress-gateway.json"], "nginx_ingress_controller_requests"),
+		"k8s-07 must include nginx ingress controller metrics")
 
 	// k8s-06 must use Kubernetes log label selectors, not Docker Compose service_name.
 	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], `{namespace="cets", app=~"backend|worker"}`),
@@ -95,6 +104,9 @@ func TestBaremetalK8sLGTMProvisionsGrafanaDashboard(t *testing.T) {
 	// k8s-06 must have a Pyroscope CPU profile panel.
 	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], `process_cpu:cpu:nanoseconds:cpu:nanoseconds`),
 		"k8s-06 must include a Pyroscope CPU profiling panel")
+	// k8s-06 must have flamegraph panels (not just timeseries) for profiles.
+	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], "flamegraph"),
+		"k8s-06 must include flamegraph panel type for interactive profiling")
 	// k8s-06 must have trace-derived service graph metrics from Tempo.
 	assert.True(t, containsJSONValue(dashboards["k8s-06-service-anomaly.json"], "traces_service_graph_request_total"),
 		"k8s-06 must include Tempo-derived service graph metrics")
@@ -129,7 +141,7 @@ func readK8sDashboardTexts(t *testing.T) map[string]string {
 		}
 		texts[entry.Name()] = readText(t, filepath.Join(dashboardDir, entry.Name()))
 	}
-	require.Len(t, texts, 6)
+	require.Len(t, texts, 7)
 	return texts
 }
 

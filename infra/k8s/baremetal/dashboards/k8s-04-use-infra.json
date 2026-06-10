@@ -42,7 +42,8 @@
     { "title": "RED Traffic Drilldown", "url": "/d/k8s-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "Booking & Redis Pressure", "url": "/d/k8s-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "Outbox & Worker Health", "url": "/d/k8s-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "Service Anomaly Investigation", "url": "/d/k8s-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+    { "title": "Service Anomaly Investigation", "url": "/d/k8s-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Ingress & Gateway", "url": "/d/k8s-ingress-gateway", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false }
   ],
   "panels": [
     {

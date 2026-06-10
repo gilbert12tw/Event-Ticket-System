@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 41,
+  "uid": "ets-ingress-gateway",
+  "title": "ETS 07 — Ingress & Gateway",
+  "description": "Nginx load balancer observability for the HA compose environment. Row 1: access and error logs from all nginx tiers (edge-lb, gateway, frontend-lb, backend-lb). Row 2: distributed traces through ingress. Row 3: span metrics derived from Tempo traces.",
+  "tags": ["cets", "ets", "ingress", "gateway", "nginx"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "links": [
+    { "title": "Golden Signals", "url": "/d/ets-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "RED Traffic Drilldown", "url": "/d/ets-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/ets-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ NGINX ACCESS LOGS",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "Ingress Access Logs (all nginx tiers)",
+      "description": "Full access logs from all nginx load balancer containers: edge-lb, gateway-1/2/3, frontend-lb, backend-lb. Each line shows a proxied request with method, path, status, and upstream response time.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{service_name=~\"edge-lb|gateway-.*|frontend-lb|backend-lb\"}", "maxLines": 200, "refId": "A" }],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Nginx Error Logs (4xx + 5xx responses)",
+      "description": "Nginx access log lines where the status code is 4xx or 5xx. 502/503/504 indicate unhealthy or slow backend containers.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{service_name=~\"edge-lb|gateway-.*|frontend-lb|backend-lb\"} |~ \"\\\" [45][0-9]{2} \"", "maxLines": 200, "refId": "A" }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 11 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ INGRESS TRACES",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }
+    },
+    {
+      "id": 3,
+      "title": "Edge LB Traces (full e2e path)",
+      "description": "Traces originating from the edge load balancer. Shows the full chain: edge-lb → gateway → frontend/backend. Click a trace for the waterfall view.",
+      "type": "traces",
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "queryType": "traceql", "query": "{resource.service.name=\"cets-edge-lb\"}", "limit": 20, "tableType": "traces", "refId": "A" }],
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 20 }
+    },
+    {
+      "id": 4,
+      "title": "Gateway Error Traces",
+      "description": "Traces where any gateway replica recorded an error status — upstream connection refused, timeouts, or backend 5xx.",
+      "type": "traces",
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "queryType": "traceql", "query": "{resource.service.name=~\"cets-gateway-.*\" && status=error}", "limit": 20, "tableType": "traces", "refId": "A" }],
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 20 }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ SPAN METRICS (Tempo-derived)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }
+    },
+    {
+      "id": 5,
+      "title": "Ingress Request Rate (span metrics)",
+      "description": "Request rate through nginx tiers derived from Tempo span metrics. Compare with backend metrics to identify where requests are being dropped.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "sum by (service_name) (rate(traces_spanmetrics_calls_total{service_name=~\"cets-edge-lb|cets-gateway-.*|cets-frontend-lb|cets-backend-lb\"}[5m]))", "legendFormat": "{{service_name}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 }
+    },
+    {
+      "id": 6,
+      "title": "Ingress Error Rate (span metrics)",
+      "description": "Error rate through nginx tiers from Tempo span metrics. Errors here indicate upstream failures as seen from the nginx proxy layer.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "sum by (service_name) (rate(traces_spanmetrics_calls_total{service_name=~\"cets-edge-lb|cets-gateway-.*\", status_code=\"STATUS_CODE_ERROR\"}[5m]))", "legendFormat": "{{service_name}} errors", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 }
+    },
+    {
+      "id": 7,
+      "title": "Ingress P95 Latency (span metrics)",
+      "description": "95th percentile latency through nginx tiers from Tempo span metrics.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(traces_spanmetrics_duration_seconds_bucket{service_name=~\"cets-edge-lb|cets-gateway-.*\"}[5m])))", "legendFormat": "{{service_name}} p95", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 }
+    }
+  ]
+}

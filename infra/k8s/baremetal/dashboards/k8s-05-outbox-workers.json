@@ -108,6 +108,15 @@
       "keepTime": true,
       "includeVars": true,
       "targetBlank": false
+    },
+    {
+      "title": "Ingress & Gateway",
+      "url": "/d/k8s-ingress-gateway",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
     }
   ],
   "panels": [
