@@ -193,14 +193,12 @@
 
 .helper-strip,
 .publish-check,
-.action-readiness,
-.ticket-handoff {
+.action-readiness {
   align-items: flex-start;
 }
 
 .helper-strip [data-slot="button"],
-.publish-check [data-slot="button"],
-.ticket-handoff [data-slot="button"] {
+.publish-check [data-slot="button"] {
   flex: 0 0 auto;
 }
 

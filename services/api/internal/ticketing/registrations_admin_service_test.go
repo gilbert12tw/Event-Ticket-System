@@ -208,6 +208,56 @@ func TestCancelRegistrationRejectsCancelledStatusWithDifferentKey(t *testing.T) 
 	assertRowCount(t, service, ctx, `SELECT count(*) FROM outbox_events WHERE event_type = 'registration.cancelled' AND aggregate_id = $1`, confirmed.Registration.RegistrationID, 1)
 }
 
+// Regression (HIGH): cancel idempotency keys had no DB uniqueness backstop.
+// The application-level check only compares the key on an ALREADY-cancelled
+// registration, so the same key reused against a different, not-yet-cancelled
+// registration sailed through and cancelled it too. The partial unique index
+// on registrations(cancel_idempotency_key) is the final guarantee; reuse must
+// surface as a 409 and leave the second registration untouched.
+func TestCancelRegistrationRejectsCancelKeyReuseAcrossRegistrations(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	admin := Actor{ID: "admin-1", Role: RoleActivityAdmin}
+	event, err := service.CreateEvent(ctx, admin, CreateEventRequest{
+		Title:    "Cancel Key Reuse Guard",
+		Capacity: 2,
+		Status:   EventStatusPublished,
+		Rule:     RuleInput{Department: "*", Site: "*", MinGrade: 0, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	first, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1001", IdempotencyKey: "reuse-book-1"})
+	require.NoError(t, err)
+	second, err := service.Book(ctx, Actor{ID: "E1002", Role: RoleEmployee}, event.EventID, BookingRequest{EmployeeID: "E1002", IdempotencyKey: "reuse-book-2"})
+	require.NoError(t, err)
+
+	_, err = service.CancelRegistration(ctx, admin, event.EventID, first.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "shared-cancel-key",
+		Reason:         "approved cancellation",
+	})
+	require.NoError(t, err)
+
+	// Same key against a different registration must be rejected, not applied.
+	_, err = service.CancelRegistration(ctx, admin, event.EventID, second.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "shared-cancel-key",
+		Reason:         "second cancellation reusing the key",
+	})
+	require.Error(t, err)
+	assert.Equal(t, 409, ErrorStatus(err))
+
+	assertRowCount(t, service, ctx, `SELECT count(*) FROM registrations WHERE registration_id = $1 AND status = 'cancelled'`, second.Registration.RegistrationID, 0)
+
+	// Replaying the original cancellation with its key stays idempotent.
+	replayed, err := service.CancelRegistration(ctx, admin, event.EventID, first.Registration.RegistrationID, CancelRegistrationRequest{
+		IdempotencyKey: "shared-cancel-key",
+		Reason:         "approved cancellation",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, RegistrationCancelled, replayed.Registration.Status)
+}
+
 func TestCancelMyRegistrationCancelsOwnRegistrationAndRedactsTicket(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()

@@ -88,6 +88,20 @@ func handleListEvents(service TicketingService) http.HandlerFunc {
 	}
 }
 
+func handleHideEvent(service TicketingService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := service.HideEvent(r.Context(), actorFromRequest(r), r.PathValue("event_id"))
+		writeServiceStatus(w, http.StatusNoContent, err)
+	}
+}
+
+func handleUnhideEvent(service TicketingService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := service.UnhideEvent(r.Context(), actorFromRequest(r), r.PathValue("event_id"))
+		writeServiceStatus(w, http.StatusNoContent, err)
+	}
+}
+
 func eventListQueryFromRequest(w http.ResponseWriter, r *http.Request) (ticketing.EventListQuery, bool) {
 	params := r.URL.Query()
 	status := strings.TrimSpace(params.Get("status"))

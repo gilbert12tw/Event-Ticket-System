@@ -150,10 +150,10 @@ function registeredDisplayState(
 ) {
   const eventTicket = ticket ?? event.current_user_ticket ?? undefined;
   if (eventTicket?.status === "active" && eventIsCurrent(event, now)) {
-    return displayState("entry-ready", "可入場", "ok", "查看票券", true, true);
+    return displayState("entry-ready", "可入場", "ok", "查看詳情", true, true);
   }
   if (eventTicket?.status === "active") {
-    return displayState("registered", "已報名", "ok", "查看票券", true, true);
+    return displayState("registered", "已報名", "ok", "查看詳情", true, true);
   }
   if (event.current_user_status === "confirmed") {
     return displayState("registered", "已報名", "ok", "查看詳情", true, true);

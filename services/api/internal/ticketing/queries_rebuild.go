@@ -17,6 +17,22 @@ import (
 // Source of truth: registrations.status and employees.department. No OLTP
 // table is ever modified here; the projection tables are the only output.
 
+// projectionRebuildLockName keys the advisory lock that serializes a full
+// rebuild against in-flight projection worker upserts. Workers take the lock
+// shared (pg_advisory_xact_lock_shared) so they never block each other; the
+// rebuild takes it exclusive before establishing its snapshot. Without this,
+// a worker committing a fresh summary row between the rebuild's DELETE and
+// plain re-INSERT fails the whole rebuild on a duplicate key.
+const projectionRebuildLockName = "reporting_projection_rebuild"
+
+// acquireProjectionRebuildSharedLockTx takes the rebuild lock in shared mode
+// for the duration of a projection worker transaction.
+func acquireProjectionRebuildSharedLockTx(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, projectionRebuildLockName)
+	return err
+}
+
 // rebuildSummaryRow is one aggregated reporting_event_summary row computed
 // directly from OLTP. BreakdownJSON is the serialized confirmed-only
 // department_breakdown (jsonb) — never decoded here, just passed through.
@@ -140,9 +156,16 @@ func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummar
 }
 
 // rebuildWatermark returns the composite projectionOffsetKey of the newest
-// outbox event at snapshot time, or `""` when the outbox is empty. It is the
-// authoritative offset stamped into both reporting_event_summary.last_event_offset
-// and the reporting_projection_offsets watermark after a full rebuild.
+// projection envelope event at snapshot time, or `""` when none exists. It is
+// the authoritative offset stamped into both
+// reporting_event_summary.last_event_offset and the
+// reporting_projection_offsets watermark after a full rebuild.
+//
+// Only reporting.projection.update_required.v2 rows participate: the watermark
+// exists solely to suppress projection events already reflected in the OLTP
+// aggregate. A newer outbox row of any other type (notification, export)
+// would extend the watermark past projection events that are still pending,
+// and the worker's upsert guard would then drop their updates permanently.
 //
 // outbox_id is a random out_<hex> value and is NOT time-sortable, so the newest
 // event is selected by (created_at, outbox_id) — matching the worker's composite
@@ -154,8 +177,9 @@ func rebuildWatermark(ctx context.Context, tx pgx.Tx) (string, error) {
 	err := tx.QueryRow(ctx, `
 		SELECT created_at, outbox_id
 		FROM outbox_events
+		WHERE event_type = $1
 		ORDER BY created_at DESC, outbox_id DESC
-		LIMIT 1`).Scan(&createdAt, &outboxID)
+		LIMIT 1`, outboxEventReportingProjectionUpdateRequiredV2).Scan(&createdAt, &outboxID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

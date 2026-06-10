@@ -686,3 +686,25 @@ ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS employee_count INTE
 ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS ticket_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS checkin_count INTEGER NOT NULL DEFAULT 0;
+
+-- Per-employee hidden events. A personal calendar view preference: a hidden
+-- event is dropped from the employee's calendar (to reduce clutter) but stays
+-- visible in the event list flagged as hidden. Not booking state, no audit.
+-- INSERT is naturally idempotent via the composite primary key.
+CREATE TABLE IF NOT EXISTS hidden_events (
+		employee_id TEXT NOT NULL REFERENCES employees(employee_id) ON DELETE CASCADE,
+		event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+		hidden_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (employee_id, event_id)
+	);
+
+CREATE INDEX IF NOT EXISTS idx_hidden_events_employee ON hidden_events(employee_id);
+
+-- Cancellation idempotency backstop: one cancel_idempotency_key may settle at
+-- most one registration. The application-level replay check only compares the
+-- key on an already-cancelled registration, so without this index the same
+-- key reused against a different registration would cancel it too. Mirrors
+-- the booking-side registrations.idempotency_key UNIQUE guarantee.
+CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_cancel_idempotency_key
+		ON registrations (cancel_idempotency_key)
+		WHERE cancel_idempotency_key IS NOT NULL AND cancel_idempotency_key <> '';

@@ -1,4 +1,4 @@
-import { navigate, ticketDetailPath } from "@/app/routes";
+import { navigate } from "@/app/routes";
 import { EmptyState, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { EmployeeRegistrationDeadlineChip } from "./employee-registration-deadli
 type CalendarViewProps = {
   groups: EmployeeCalendarDayGroup[];
   now: Date;
+  onHide: (eventID: string) => void;
   onSelectDate: (dateKey: string) => void;
   onViewChange: (view: EmployeeCalendarViewMode) => void;
   onMove: (direction: -1 | 1) => void;
@@ -89,6 +90,7 @@ export function EmployeeCalendarToolbar({
 export function EmployeeCalendarView({
   groups,
   now,
+  onHide,
   onMove,
   onSelectDate,
   onToday,
@@ -106,26 +108,36 @@ export function EmployeeCalendarView({
         onViewChange={onViewChange}
       />
       {range.view === "day" && (
-        <EmployeeDayAgenda events={selectedEvents} now={now} />
+        <EmployeeDayAgenda events={selectedEvents} now={now} onHide={onHide} />
       )}
       {range.view === "week" && (
         <>
           <EmployeeWeekCalendar
             groups={groups}
+            onHide={onHide}
             onSelectDate={onSelectDate}
             selectedDateKey={selectedDateKey}
           />
-          <EmployeeSelectedDayAgenda events={selectedEvents} now={now} />
+          <EmployeeSelectedDayAgenda
+            events={selectedEvents}
+            now={now}
+            onHide={onHide}
+          />
         </>
       )}
       {range.view === "month" && (
         <>
           <EmployeeMonthCalendar
             groups={groups}
+            onHide={onHide}
             onSelectDate={onSelectDate}
             selectedDateKey={selectedDateKey}
           />
-          <EmployeeSelectedDayAgenda events={selectedEvents} now={now} />
+          <EmployeeSelectedDayAgenda
+            events={selectedEvents}
+            now={now}
+            onHide={onHide}
+          />
         </>
       )}
     </section>
@@ -135,23 +147,30 @@ export function EmployeeCalendarView({
 export function EmployeeDayAgenda({
   events,
   now,
-}: Readonly<{ events: EmployeeCalendarEvent[]; now: Date }>) {
+  onHide,
+}: Readonly<{
+  events: EmployeeCalendarEvent[];
+  now: Date;
+  onHide?: (eventID: string) => void;
+}>) {
   return (
     <section className="employee-day-agenda" aria-label="日行程">
       <div className="employee-section-title">
         <h2>日行程</h2>
       </div>
-      <PosterCardList events={events} now={now} />
+      <PosterCardList events={events} now={now} onHide={onHide} />
     </section>
   );
 }
 
 export function EmployeeWeekCalendar({
   groups,
+  onHide,
   onSelectDate,
   selectedDateKey,
 }: Readonly<{
   groups: EmployeeCalendarDayGroup[];
+  onHide?: (eventID: string) => void;
   onSelectDate: (dateKey: string) => void;
   selectedDateKey: string;
 }>) {
@@ -181,6 +200,7 @@ export function EmployeeWeekCalendar({
                 <EmployeeCalendarEventBlock
                   calendarEvent={event}
                   key={event.event.event_id}
+                  onHide={onHide}
                 />
               ))
             )}
@@ -193,43 +213,92 @@ export function EmployeeWeekCalendar({
 
 export function EmployeeMonthCalendar({
   groups,
+  onHide,
   onSelectDate,
   selectedDateKey,
 }: Readonly<{
   groups: EmployeeCalendarDayGroup[];
+  onHide?: (eventID: string) => void;
   onSelectDate: (dateKey: string) => void;
   selectedDateKey: string;
 }>) {
   return (
     <div className="employee-month-calendar" aria-label="月行事曆">
       {groups.map((group) => (
-        <button
-          aria-label={calendarGroupLabel(group)}
-          aria-pressed={group.dateKey === selectedDateKey}
-          className={[
-            "employee-month-cell",
-            group.dateKey === selectedDateKey ? "selected" : "",
-            group.isToday ? "today" : "",
-            group.isOutsideMonth ? "muted" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
+        <EmployeeMonthCell
+          group={group}
           key={group.dateKey}
-          type="button"
-          onClick={() => onSelectDate(group.dateKey)}
-        >
-          <span className="employee-month-date">{group.dayNumber}</span>
-          <span className="employee-month-count">
-            {group.eventCount > 0 ? `${group.eventCount} 場` : ""}
-            {group.hasRegistration ? " · 已報名" : ""}
-          </span>
-          <span className="employee-month-previews">
-            {group.events.slice(0, 2).map(({ event }) => (
-              <span key={event.event_id}>{event.title}</span>
-            ))}
-          </span>
-        </button>
+          onHide={onHide}
+          onSelectDate={onSelectDate}
+          selected={group.dateKey === selectedDateKey}
+        />
       ))}
+    </div>
+  );
+}
+
+function EmployeeMonthCell({
+  group,
+  onHide,
+  onSelectDate,
+  selected,
+}: Readonly<{
+  group: EmployeeCalendarDayGroup;
+  onHide?: (eventID: string) => void;
+  onSelectDate: (dateKey: string) => void;
+  selected: boolean;
+}>) {
+  return (
+    <div
+      className={[
+        "employee-month-cell",
+        selected ? "selected" : "",
+        group.isToday ? "today" : "",
+        group.isOutsideMonth ? "muted" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <button
+        aria-label={calendarGroupLabel(group)}
+        aria-pressed={selected}
+        className="employee-month-select"
+        type="button"
+        onClick={() => onSelectDate(group.dateKey)}
+      >
+        <span className="employee-month-date">{group.dayNumber}</span>
+        <span className="employee-month-count">
+          {group.eventCount > 0 ? `${group.eventCount} 場` : ""}
+          {group.hasRegistration ? " · 已報名" : ""}
+        </span>
+      </button>
+      {group.events.length > 0 && (
+        <ul className="employee-month-events">
+          {group.events.map(({ event }) => (
+            <li className="employee-month-event-row" key={event.event_id}>
+              <button
+                className="employee-month-event"
+                title={event.title}
+                type="button"
+                onClick={() => onSelectDate(group.dateKey)}
+              >
+                {event.title}
+              </button>
+              {onHide && (
+                <button
+                  aria-label={`隱藏活動：${event.title}`}
+                  className="employee-month-event-hide"
+                  title="隱藏活動"
+                  type="button"
+                  onClick={() => onHide(event.event_id)}
+                >
+                  <Icon name="x" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -237,13 +306,18 @@ export function EmployeeMonthCalendar({
 export function EmployeeSelectedDayAgenda({
   events,
   now,
-}: Readonly<{ events: EmployeeCalendarEvent[]; now: Date }>) {
+  onHide,
+}: Readonly<{
+  events: EmployeeCalendarEvent[];
+  now: Date;
+  onHide?: (eventID: string) => void;
+}>) {
   return (
     <section className="employee-selected-day-agenda" aria-label="選取日期活動">
       <div className="employee-section-title">
         <h2>選取日期活動</h2>
       </div>
-      <PosterCardList events={events} now={now} />
+      <PosterCardList events={events} now={now} onHide={onHide} />
     </section>
   );
 }
@@ -251,7 +325,12 @@ export function EmployeeSelectedDayAgenda({
 function PosterCardList({
   events,
   now,
-}: Readonly<{ events: EmployeeCalendarEvent[]; now: Date }>) {
+  onHide,
+}: Readonly<{
+  events: EmployeeCalendarEvent[];
+  now: Date;
+  onHide?: (eventID: string) => void;
+}>) {
   if (events.length === 0) {
     return (
       <EmptyState
@@ -267,6 +346,7 @@ function PosterCardList({
           event={event}
           key={event.event_id}
           now={now}
+          onHide={onHide}
           ticket={ticket}
         />
       ))}
@@ -303,37 +383,53 @@ function CalendarDayHeader({
 
 function EmployeeCalendarEventBlock({
   calendarEvent,
-}: Readonly<{ calendarEvent: EmployeeCalendarEvent }>) {
+  onHide,
+}: Readonly<{
+  calendarEvent: EmployeeCalendarEvent;
+  onHide?: (eventID: string) => void;
+}>) {
   const { deadline, event, state, ticket } = calendarEvent;
   const href = primaryHref(calendarEvent);
   return (
-    <a
-      aria-label={`開啟活動：${event.title}，${eventTimeRange(
-        event.starts_at,
-        event.ends_at,
-      )}，${siteLabel(event.location || event.event_site)}，${state.label}`}
-      className="employee-calendar-event-block"
-      href={href}
-      onClick={(clickEvent) =>
-        runClientNavigation(clickEvent, () => navigate(href))
-      }
-    >
-      <time>{eventTimeRange(event.starts_at, event.ends_at)}</time>
-      <strong>{event.title}</strong>
-      <span>{siteLabel(event.location || event.event_site)}</span>
-      <span className="employee-calendar-event-badges">
-        <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-        <EmployeeRegistrationDeadlineChip deadline={deadline} />
-      </span>
-      {ticket ? <span className="sr-only">已產生票券</span> : null}
-    </a>
+    // The hide button is a sibling of the anchor (not nested inside it) to keep
+    // interactive content out of the <a>.
+    <div className="employee-calendar-event-block-wrap">
+      <a
+        aria-label={`開啟活動：${event.title}，${eventTimeRange(
+          event.starts_at,
+          event.ends_at,
+        )}，${siteLabel(event.location || event.event_site)}，${state.label}`}
+        className="employee-calendar-event-block"
+        href={href}
+        onClick={(clickEvent) =>
+          runClientNavigation(clickEvent, () => navigate(href))
+        }
+      >
+        <time>{eventTimeRange(event.starts_at, event.ends_at)}</time>
+        <strong>{event.title}</strong>
+        <span>{siteLabel(event.location || event.event_site)}</span>
+        <span className="employee-calendar-event-badges">
+          <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+          <EmployeeRegistrationDeadlineChip deadline={deadline} />
+        </span>
+        {ticket ? <span className="sr-only">已產生票券</span> : null}
+      </a>
+      {onHide && (
+        <button
+          aria-label={`隱藏活動：${event.title}`}
+          className="employee-calendar-event-hide"
+          title="隱藏活動"
+          type="button"
+          onClick={() => onHide(event.event_id)}
+        >
+          <Icon name="x" />
+        </button>
+      )}
+    </div>
   );
 }
 
-function primaryHref({ event, state, ticket }: EmployeeCalendarEvent) {
-  if ((state.kind === "entry-ready" || state.kind === "registered") && ticket) {
-    return ticketDetailPath(ticket.ticket_id);
-  }
+function primaryHref({ event }: EmployeeCalendarEvent) {
   return `/user/events/detail?event_id=${encodeURIComponent(event.event_id)}`;
 }
 

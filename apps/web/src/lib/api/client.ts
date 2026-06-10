@@ -164,6 +164,20 @@ export function getEvent(eventID: string) {
   return api<EventSummary>(eventPath(eventID));
 }
 
+// Hide/unhide an event from the caller's own calendar view (personal
+// preference persisted server-side; reflected as EventSummary.hidden).
+export function hideEvent(eventID: string) {
+  return api<void>(`/api/v1/me/events/${encoded(eventID)}/hide`, {
+    method: "PUT",
+  });
+}
+
+export function unhideEvent(eventID: string) {
+  return api<void>(`/api/v1/me/events/${encoded(eventID)}/hide`, {
+    method: "DELETE",
+  });
+}
+
 export function checkEligibility(eventID: string) {
   return api<EligibilityDecision>(eventPath(eventID, "/eligibility"));
 }
