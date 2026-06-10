@@ -278,7 +278,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m]))",
+          "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m])) or vector(0)",
           "legendFormat": "5xx",
           "refId": "A"
         }

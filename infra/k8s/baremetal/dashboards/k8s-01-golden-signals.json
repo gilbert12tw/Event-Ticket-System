@@ -88,7 +88,7 @@
         "overrides": []
       },
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "5xx ratio", "refId": "A" }],
+      "targets": [{ "expr": "(sum(rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or vector(0)) / clamp_min(sum(rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "5xx ratio", "refId": "A" }],
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 }
     },
     {
@@ -188,7 +188,7 @@
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
-      "targets": [{ "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}", "refId": "A" }],
+      "targets": [{ "expr": "(sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or 0 * group by (service) (cets_build_info)) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}", "refId": "A" }],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
     },
     {

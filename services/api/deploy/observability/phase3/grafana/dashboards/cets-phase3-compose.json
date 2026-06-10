@@ -30,7 +30,7 @@
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
       "targets": [
-        { "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
+        { "expr": "(sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or 0 * group by (service) (cets_build_info)) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
       ],
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 }
     },

@@ -70,7 +70,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m]))", "legendFormat": "5xx", "refId": "A" }],
+      "targets": [{ "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m])) or vector(0)", "legendFormat": "5xx", "refId": "A" }],
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 }
     },
     {
