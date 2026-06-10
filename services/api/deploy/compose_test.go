@@ -204,20 +204,20 @@ func TestDockerfileBuildsSingleRuntimeBinary(t *testing.T) {
 	content := string(dockerfile)
 
 	required := []string{
-		"FROM public.ecr.aws/docker/library/node:24.14.1-alpine3.22 AS web-builder",
+		"FROM node:24.14.1-alpine3.22 AS web-builder",
 		"RUN corepack enable",
 		"COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./",
 		"COPY apps/web/package.json ./apps/web/",
 		"--mount=type=cache,id=pnpm-store,target=/pnpm/store",
 		"pnpm install --frozen-lockfile --filter cets-web --store-dir /pnpm/store",
 		"RUN pnpm --filter cets-web build",
-		"FROM public.ecr.aws/docker/library/golang:1.25.9-alpine3.22 AS builder",
+		"FROM golang:1.25.9-alpine3.22 AS builder",
 		"COPY services/api/go.mod services/api/go.sum ./",
 		"--mount=type=cache,target=/go/pkg/mod",
 		"COPY --from=web-builder /src/services/api/internal/httpapi/static ./internal/httpapi/static",
 		"--mount=type=cache,target=/root/.cache/go-build",
 		"CGO_ENABLED=0 GOOS=linux go build -o /out/cets ./cmd/cets",
-		"FROM public.ecr.aws/docker/library/alpine:3.22.4",
+		"FROM alpine:3.22.4",
 		"COPY --from=builder /out/cets /app/cets",
 		"USER cets",
 		"EXPOSE 8080",

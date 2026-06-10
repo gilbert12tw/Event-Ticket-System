@@ -12,26 +12,20 @@ import (
 
 func TestPhase3DocsDeclareLocalSimulationBoundary(t *testing.T) {
 	root := repoRoot(t)
-	spec, err := os.ReadFile(filepath.Join(root, "docs", "specs", "phase3-local-ha-compose-lgtm.md"))
+	spec, err := os.ReadFile(filepath.Join(root, "docs", "specs", "evolution-boundaries.md"))
 	require.NoError(t, err)
 	architecture, err := os.ReadFile(filepath.Join(root, "docs", "ARCHITECTURE.md"))
 	require.NoError(t, err)
 
 	combined := strings.ToLower(string(spec) + "\n" + string(architecture))
 	for _, phrase := range []string{
-		"single-machine local",
-		"local simulation",
-		"docker compose",
-		"explicit replica services",
-		"does not claim production",
-		"multi-az",
+		"phase 3",
+		"local",
+		"bare-metal",
+		"process-first",
 		"postgresql remains the final truth",
-		"grafana",
-		"loki",
-		"tempo",
-		"prometheus",
-		"pyroscope",
-		"microservices remain a deferred decision gate",
+		"full microservices",
+		"deferred decision gates",
 	} {
 		assert.Contains(t, combined, phrase, "Phase 3 local simulation boundary is missing %q", phrase)
 	}

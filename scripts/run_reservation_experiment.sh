@@ -3,7 +3,7 @@
 # Runs the booking burst twice — once with BOOKING_PREADMISSION=off and once
 # with =on — against the same Postgres + Redis containers, capturing each
 # run's JSON summary. The plotter (scripts/plot_reservation_experiment.py)
-# consumes the two JSON files and emits PNG figures into docs/reports/figures/.
+# consumes the two JSON files and emits PNG figures into artifacts/reservation-experiment/figures/.
 #
 # Usage:
 #   scripts/run_reservation_experiment.sh                 # defaults: 200 VUs, capacity 10
@@ -19,8 +19,8 @@ cd "${REPO_ROOT}"
 
 VUS="${EXPERIMENT_VUS:-200}"
 CAPACITY="${EXPERIMENT_CAPACITY:-10}"
-OUT_DIR="${EXPERIMENT_OUT_DIR:-docs/reports/figures}"
-DATA_DIR="${EXPERIMENT_DATA_DIR:-docs/reports/data}"
+OUT_DIR="${EXPERIMENT_OUT_DIR:-artifacts/reservation-experiment/figures}"
+DATA_DIR="${EXPERIMENT_DATA_DIR:-artifacts/reservation-experiment/data}"
 PLOT_REQUIREMENTS="${REPO_ROOT}/scripts/requirements-reservation-experiment.txt"
 
 mkdir -p "${OUT_DIR}" "${DATA_DIR}"

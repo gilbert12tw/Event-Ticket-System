@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cets-baremetal
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: cets
+    cets.io/track: baremetal
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/gilbert12tw/Event-Ticket-System.git
+    targetRevision: release/baremetal
+    path: infra/k8s/baremetal/gitops/app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true

@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cets-config
+  labels:
+    app.kubernetes.io/part-of: cets
+data:
+  APP_ADDR: ":8080"
+  APP_ENV: "demo"
+  AUTO_MIGRATE: "false"
+  OPS_API_ENABLED: "false"
+  POSTGRES_DB: "cets"
+  REDIS_URL: "redis://redis:6379/0"
+  QUEUE_URL: "redis://redis:6379/1"
+  OBJECT_STORAGE_ENDPOINT: "http://minio:9000"
+  OBJECT_STORAGE_REGION: "us-east-1"
+  OBJECT_STORAGE_BUCKET: "cets-dev"
+  MAILER_HOST: "mailhog"
+  MAILER_PORT: "1025"
+  MAILER_FROM: "no-reply@cets.local"
+  MAILER_REDIRECT_TO: ""
+  REQUEST_TIMEOUT_MS: "5000"
+  DATABASE_TIMEOUT_MS: "5000"
+  SHUTDOWN_TIMEOUT_MS: "10000"
+  BOOKING_PREADMISSION: "on"
+  REDIS_OUTAGE_MODE: "degrade"
+  OTEL_TRACES_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
+  PYROSCOPE_ENABLED: "true"
+  PYROSCOPE_SERVER_ADDRESS: "http://pyroscope.observability.svc.cluster.local:4040"

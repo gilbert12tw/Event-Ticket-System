@@ -31,7 +31,7 @@ Phase 2 defaults to **process-first scale hardening on the Phase 1 modular monol
 - Same Go binary; scale by splitting processes, not services. `app` + same-binary worker processes selected by env (`WORKER_KINDS=notification,projection,compensation,export`); reservation cleanup runs under the WS4-owned `compensation` kind.
 - Redis is a booking pre-admission gate only; PostgreSQL remains the final truth for booking, ticket, check-in, and audit state.
 - Reporting projections are derived, disposable, and rebuildable from the outbox; they must never be used as booking, eligibility, ticket redemption, check-in, authorization, or audit truth.
-- Extracting Registration, Notification, or Reporting into a separately deployed service is a **deferred decision-gate** and requires baseline evidence per `docs/specs/phase2-scale-hardening.md` §2 / §4. It is not a Phase 2 default deliverable.
+- Extracting Registration, Notification, or Reporting into a separately deployed service is a **deferred decision-gate** and requires bottleneck evidence per `docs/specs/evolution-boundaries.md`. It is not a Phase 2 default deliverable.
 - Kafka, Kubernetes, service mesh, cross-region HA, and full microservices are likewise deferred — **not Phase 2 deliverables**. The docs guard (`TestPhase2DocsDoNotClaimDeferredInfraIsRequired`) will fail if Phase 2 docs claim any of these are required, used, has, implemented, shipped, or complete.
 
 Phase 3 handles high availability, multi-AZ deployment, DB failover, partitioning, independent Check-in scaling, container platform (Kubernetes or equivalent), and other operational maturity beyond Phase 2 scope.

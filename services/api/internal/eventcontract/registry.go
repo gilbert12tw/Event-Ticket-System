@@ -2,8 +2,7 @@ package eventcontract
 
 import "regexp"
 
-// Registry mirrors docs/specs/phase2-event-contract-v2.md §4 and
-// docs/specs/phase2-ws4-async-notification.md §6 (normative event type registry).
+// Registry mirrors docs/specs/evolution-boundaries.md (normative event type registry).
 var Registry = []string{
 	"registration.confirmed.v2",
 	"registration.cancelled.v2",

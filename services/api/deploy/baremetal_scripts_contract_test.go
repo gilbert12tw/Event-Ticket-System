@@ -107,7 +107,6 @@ func TestBaremetalManifestsExposeCapacityReplicaHeaders(t *testing.T) {
 func TestK8sResetDemoDBJobsAreManualAndNonDestructive(t *testing.T) {
 	for _, scriptPath := range []string{
 		filepath.Join("..", "..", "..", "infra", "k8s", "baremetal", "scripts", "72-reset-demo-db.sh"),
-		filepath.Join("..", "..", "..", "infra", "aws", "self-managed-k8s", "scripts", "72-reset-demo-db.sh"),
 	} {
 		script := readText(t, scriptPath)
 		assert.Contains(t, script, "kind: Job")

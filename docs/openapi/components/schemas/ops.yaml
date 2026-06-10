@@ -1,6 +1,6 @@
 WorkerKind:
   type: string
-  description: "Phase 2 same-binary worker process kind. Source: docs/specs/phase2-ws4-async-notification.md §6 and docs/specs/phase2-ws3-registration-hot-path.md §7."
+  description: "Same-binary worker process kind. Source: docs/specs/evolution-boundaries.md."
   enum:
     - notification
     - projection
@@ -86,7 +86,7 @@ CapacityPressure:
       items:
         "$ref": "#/CapacityPressureRow"
 CapacityPressureResponse:
-  description: "Derived snapshot of hot-event pressure. Read-only; never used as booking commit authority. Per docs/specs/phase2-ws3-registration-hot-path.md §6."
+  description: "Derived snapshot of hot-event pressure. Read-only; never used as booking commit authority. Per docs/specs/evolution-boundaries.md."
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
     - type: object
@@ -131,7 +131,7 @@ QueueStatus:
       items:
         "$ref": "#/QueueStatusRow"
 QueueStatusResponse:
-  description: "Per-worker-kind queue health feed. Consumed by ops UI (WS5). Per docs/specs/phase2-ws4-async-notification.md §6."
+  description: "Per-worker-kind queue health feed for ops UI. Per docs/specs/evolution-boundaries.md."
   allOf:
     - "$ref": "./common.yaml#/ApiSuccessWithMetaEnvelope"
     - type: object

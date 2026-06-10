@@ -3,7 +3,6 @@
 .env.*
 !.env.example
 !services/api/deploy/.env.example
-!infra/aws/self-managed-k8s/.env.aws.example
 **/terraform.tfvars
 **/terraform.tfvars.json
 **/.terraform/
@@ -11,7 +10,6 @@
 *.tfstate.*
 *.tfplan
 infra/k8s/baremetal/generated/
-infra/aws/self-managed-k8s/generated/
 
 # OS / editor noise
 .DS_Store
@@ -20,6 +18,7 @@ infra/aws/self-managed-k8s/generated/
 
 # Local agent tooling
 .agents/skills/
+.codex/
 .claude/skills
 skills-lock.json
 
