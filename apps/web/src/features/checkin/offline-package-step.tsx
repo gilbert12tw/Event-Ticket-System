@@ -21,9 +21,11 @@ import { fingerprint } from "@/lib/api/redaction";
 export function OfflinePackageStep({
   staffID,
   onPackageReady,
+  onPackageRestored,
 }: Readonly<{
   staffID: string;
   onPackageReady: (stored: StoredCheckinPackage) => void;
+  onPackageRestored?: (stored: StoredCheckinPackage) => void;
 }>) {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [eventID, setEventID] = useState("");
@@ -51,9 +53,12 @@ export function OfflinePackageStep({
       const active = await loadActivePackages();
       setActivePackages(active);
       // Auto-select only when unambiguous; with multiple batches let the user
-      // choose explicitly instead of silently picking one.
+      // choose explicitly instead of silently picking one. Restoring must not
+      // navigate, or revisiting this step bounces straight back to the scan
+      // tab and re-downloading another event becomes impossible.
       if (active.length === 1) {
-        selectActivePackage(active[0]);
+        setRestoredPkg(active[0]);
+        onPackageRestored?.(active[0]);
       }
     } catch {
       /* IDB unavailable */
@@ -73,8 +78,8 @@ export function OfflinePackageStep({
       setEvents(nextEvents);
       if (!eventID) setEventID(nextEvents[0]?.event_id ?? "");
     } catch (error) {
-      if (isOffline() && restoredPkg) {
-        setMessage("離線模式：使用已下載的離線名單");
+      if (isOffline()) {
+        setMessage("離線模式：無法載入活動清單，可使用已下載的離線名單。");
         return;
       }
       setMessage(errorMessage(error));

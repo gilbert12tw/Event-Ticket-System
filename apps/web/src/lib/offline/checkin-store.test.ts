@@ -85,6 +85,21 @@ beforeEach(() => {
   store.clear();
 });
 
+describe("addScanRecord — closed-batch guard", () => {
+  it("persists into an active batch and reports success", async () => {
+    await savePackage(testPackage(), "staff-1");
+    expect(await addScanRecord(BATCH, scan())).toBe(true);
+  });
+
+  it("rejects scans for a missing or already-synced batch", async () => {
+    expect(await addScanRecord("missing", scan())).toBe(false);
+
+    await savePackage(testPackage(), "staff-1");
+    await markBatchSynced(BATCH);
+    expect(await addScanRecord(BATCH, scan())).toBe(false);
+  });
+});
+
 describe("markScansAsSyncing — #1 retry", () => {
   it("re-promotes sync_failed scans so they can be retried", async () => {
     await savePackage(testPackage(), "staff-1");
