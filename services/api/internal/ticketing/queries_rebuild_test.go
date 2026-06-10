@@ -12,11 +12,19 @@ import (
 // (seedRebuildEvent, seedRebuildEmployee, seedRegistration, ...) live in
 // rebuild_projection_service_test.go.
 
-func seedRegistrationWithFamily(t *testing.T, s *Service, ctx context.Context, regID, eventID, employeeID, status string, familyCount int) {
+type registrationSeed struct {
+	regID       string
+	eventID     string
+	employeeID  string
+	status      string
+	familyCount int
+}
+
+func seedRegistrationWithFamily(t *testing.T, s *Service, ctx context.Context, seed registrationSeed) {
 	t.Helper()
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO registrations (registration_id, event_id, employee_id, status, idempotency_key, family_count)
-		VALUES ($1, $2, $3, $4, $1, $5)`, regID, eventID, employeeID, status, familyCount)
+		VALUES ($1, $2, $3, $4, $1, $5)`, seed.regID, seed.eventID, seed.employeeID, seed.status, seed.familyCount)
 	require.NoError(t, err)
 }
 
@@ -53,10 +61,10 @@ func TestRebuildProjection_ExportAggregateColumns(t *testing.T) {
 	seedRebuildEmployee(t, service, ctx, "ENG1", "Engineering")
 	seedRebuildEmployee(t, service, ctx, "ENG2", "Engineering")
 	seedRebuildEmployee(t, service, ctx, "HR1", "HR")
-	seedRegistrationWithFamily(t, service, ctx, "r1", "evtA", "ENG1", "confirmed", 2)
-	seedRegistrationWithFamily(t, service, ctx, "r2", "evtA", "ENG2", "confirmed", 1)
+	seedRegistrationWithFamily(t, service, ctx, registrationSeed{regID: "r1", eventID: "evtA", employeeID: "ENG1", status: "confirmed", familyCount: 2})
+	seedRegistrationWithFamily(t, service, ctx, registrationSeed{regID: "r2", eventID: "evtA", employeeID: "ENG2", status: "confirmed", familyCount: 1})
 	// Waitlisted family members must not count toward family_count.
-	seedRegistrationWithFamily(t, service, ctx, "r3", "evtA", "HR1", "waitlisted", 4)
+	seedRegistrationWithFamily(t, service, ctx, registrationSeed{regID: "r3", eventID: "evtA", employeeID: "HR1", status: "waitlisted", familyCount: 4})
 	seedTicket(t, service, ctx, "t1", "r1", "evtA", "ENG1")
 	seedTicket(t, service, ctx, "t2", "r2", "evtA", "ENG2")
 	seedCheckin(t, service, ctx, "c1", "t1")

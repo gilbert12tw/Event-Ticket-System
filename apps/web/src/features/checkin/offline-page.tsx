@@ -46,7 +46,7 @@ export function OfflineCheckinBoundaryPage() {
 
   useEffect(() => {
     if (!stored && activeTab !== "package") setActiveTab("package");
-    if (activeTab === "results" && stored && stored.scans.length === 0) {
+    if (activeTab === "results" && stored?.scans.length === 0) {
       setActiveTab("scan");
     }
   }, [activeTab, stored, setActiveTab]);

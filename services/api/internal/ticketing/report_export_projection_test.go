@@ -39,7 +39,7 @@ func TestReportExportCSVReadsProjectionRows(t *testing.T) {
 
 	seedRebuildEvent(t, service, ctx, "evtProj")
 	seedRebuildEmployee(t, service, ctx, "ENG1", "Engineering")
-	seedRegistrationWithFamily(t, service, ctx, "r1", "evtProj", "ENG1", "confirmed", 1)
+	seedRegistrationWithFamily(t, service, ctx, registrationSeed{regID: "r1", eventID: "evtProj", employeeID: "ENG1", status: "confirmed", familyCount: 1})
 	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
 
