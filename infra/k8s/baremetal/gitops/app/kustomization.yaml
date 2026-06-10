@@ -15,6 +15,8 @@ resources:
   - cloudflared.yaml
 images:
   - name: cets-api
+    newName: ghcr.io/gilbert12tw/event-ticket-system/cets-api
     newTag: f2ff87324578cdf58ce8fa467a894669d4bb4b4b
   - name: cets-frontend
+    newName: ghcr.io/gilbert12tw/event-ticket-system/cets-frontend
     newTag: f2ff87324578cdf58ce8fa467a894669d4bb4b4b
