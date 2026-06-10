@@ -116,6 +116,13 @@ func (s *Service) applyProjectionBooking(
 	logAttempt outboxAttemptLogger,
 	proj ProjectionEvent,
 ) (int, error) {
+	// Serialize against RebuildProjection (shared among workers, exclusive for
+	// the rebuild) so the rebuild's DELETE + re-INSERT never races this upsert.
+	if err := acquireProjectionRebuildSharedLockTx(ctx, tx); err != nil {
+		logAttempt(outboxAttemptOutcomeError)
+		return 0, err
+	}
+
 	current, err := getEventSummaryRow(ctx, tx, proj.EventID)
 	if err != nil {
 		logAttempt(outboxAttemptOutcomeError)

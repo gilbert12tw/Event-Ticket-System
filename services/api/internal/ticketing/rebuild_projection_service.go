@@ -3,10 +3,12 @@ package ticketing
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // rebuildValidateSampleSize bounds the spot-check: up to this many events are
@@ -48,12 +50,32 @@ type RebuildResult struct {
 // commits between the two reads would be aggregated by neither the rebuild
 // (snapshot too early) nor the worker (its outbox event sits at/below the
 // watermark and is suppressed), permanently dropping the registration.
+//
+// The rebuild also holds the exclusive projection-rebuild advisory lock for
+// the whole transaction. Projection workers hold it shared per upsert, so the
+// DELETE + plain re-INSERT below can never race a concurrent worker row and
+// die on a duplicate key. The lock is a session-level lock taken BEFORE
+// BeginTx on a dedicated connection: a REPEATABLE READ snapshot is created by
+// the first statement in the transaction, so an in-transaction lock would be
+// acquired only after the snapshot — too late to see worker rows committed
+// while waiting for the lock.
 func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts RebuildOptions) (RebuildResult, error) {
 	if err := requireRole(actor, RoleSystemAdmin); err != nil {
 		return RebuildResult{}, err
 	}
 
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return RebuildResult{}, fmt.Errorf("rebuild: acquire connection: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx,
+		`SELECT pg_advisory_lock(hashtext($1)::bigint)`, projectionRebuildLockName); err != nil {
+		return RebuildResult{}, fmt.Errorf("rebuild: acquire rebuild lock: %w", err)
+	}
+	defer releaseProjectionRebuildLock(conn)
+
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return RebuildResult{}, err
 	}
@@ -107,6 +129,21 @@ func (s *Service) RebuildProjection(ctx context.Context, actor Actor, opts Rebui
 		OffsetResetTo: offset,
 		Validated:     opts.SampleValidate,
 	}, nil
+}
+
+// releaseProjectionRebuildLock releases the session-level rebuild lock before
+// the connection returns to the pool. A fresh bounded context is used so the
+// unlock still runs when the caller's context is already cancelled; if the
+// unlock fails anyway, the underlying session is closed so the lock dies with
+// it instead of leaking into the pool and blocking every future rebuild and
+// projection worker.
+func releaseProjectionRebuildLock(conn *pgxpool.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := conn.Exec(ctx,
+		`SELECT pg_advisory_unlock(hashtext($1)::bigint)`, projectionRebuildLockName); err != nil {
+		_ = conn.Conn().Close(ctx)
+	}
 }
 
 // recordRebuildAudit writes the rebuild as a sensitive admin action in the same

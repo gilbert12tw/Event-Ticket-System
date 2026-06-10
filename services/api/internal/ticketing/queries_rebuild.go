@@ -17,6 +17,22 @@ import (
 // Source of truth: registrations.status and employees.department. No OLTP
 // table is ever modified here; the projection tables are the only output.
 
+// projectionRebuildLockName keys the advisory lock that serializes a full
+// rebuild against in-flight projection worker upserts. Workers take the lock
+// shared (pg_advisory_xact_lock_shared) so they never block each other; the
+// rebuild takes it exclusive before establishing its snapshot. Without this,
+// a worker committing a fresh summary row between the rebuild's DELETE and
+// plain re-INSERT fails the whole rebuild on a duplicate key.
+const projectionRebuildLockName = "reporting_projection_rebuild"
+
+// acquireProjectionRebuildSharedLockTx takes the rebuild lock in shared mode
+// for the duration of a projection worker transaction.
+func acquireProjectionRebuildSharedLockTx(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, projectionRebuildLockName)
+	return err
+}
+
 // rebuildSummaryRow is one aggregated reporting_event_summary row computed
 // directly from OLTP. BreakdownJSON is the serialized confirmed-only
 // department_breakdown (jsonb) — never decoded here, just passed through.
