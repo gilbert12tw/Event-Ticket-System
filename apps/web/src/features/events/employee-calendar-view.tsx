@@ -16,6 +16,7 @@ import { EmployeeRegistrationDeadlineChip } from "./employee-registration-deadli
 type CalendarViewProps = {
   groups: EmployeeCalendarDayGroup[];
   now: Date;
+  onHide: (eventID: string) => void;
   onSelectDate: (dateKey: string) => void;
   onViewChange: (view: EmployeeCalendarViewMode) => void;
   onMove: (direction: -1 | 1) => void;
@@ -89,6 +90,7 @@ export function EmployeeCalendarToolbar({
 export function EmployeeCalendarView({
   groups,
   now,
+  onHide,
   onMove,
   onSelectDate,
   onToday,
@@ -106,7 +108,7 @@ export function EmployeeCalendarView({
         onViewChange={onViewChange}
       />
       {range.view === "day" && (
-        <EmployeeDayAgenda events={selectedEvents} now={now} />
+        <EmployeeDayAgenda events={selectedEvents} now={now} onHide={onHide} />
       )}
       {range.view === "week" && (
         <>
@@ -115,7 +117,11 @@ export function EmployeeCalendarView({
             onSelectDate={onSelectDate}
             selectedDateKey={selectedDateKey}
           />
-          <EmployeeSelectedDayAgenda events={selectedEvents} now={now} />
+          <EmployeeSelectedDayAgenda
+            events={selectedEvents}
+            now={now}
+            onHide={onHide}
+          />
         </>
       )}
       {range.view === "month" && (
@@ -125,7 +131,11 @@ export function EmployeeCalendarView({
             onSelectDate={onSelectDate}
             selectedDateKey={selectedDateKey}
           />
-          <EmployeeSelectedDayAgenda events={selectedEvents} now={now} />
+          <EmployeeSelectedDayAgenda
+            events={selectedEvents}
+            now={now}
+            onHide={onHide}
+          />
         </>
       )}
     </section>
@@ -135,13 +145,18 @@ export function EmployeeCalendarView({
 export function EmployeeDayAgenda({
   events,
   now,
-}: Readonly<{ events: EmployeeCalendarEvent[]; now: Date }>) {
+  onHide,
+}: Readonly<{
+  events: EmployeeCalendarEvent[];
+  now: Date;
+  onHide?: (eventID: string) => void;
+}>) {
   return (
     <section className="employee-day-agenda" aria-label="日行程">
       <div className="employee-section-title">
         <h2>日行程</h2>
       </div>
-      <PosterCardList events={events} now={now} />
+      <PosterCardList events={events} now={now} onHide={onHide} />
     </section>
   );
 }
@@ -237,13 +252,18 @@ export function EmployeeMonthCalendar({
 export function EmployeeSelectedDayAgenda({
   events,
   now,
-}: Readonly<{ events: EmployeeCalendarEvent[]; now: Date }>) {
+  onHide,
+}: Readonly<{
+  events: EmployeeCalendarEvent[];
+  now: Date;
+  onHide?: (eventID: string) => void;
+}>) {
   return (
     <section className="employee-selected-day-agenda" aria-label="選取日期活動">
       <div className="employee-section-title">
         <h2>選取日期活動</h2>
       </div>
-      <PosterCardList events={events} now={now} />
+      <PosterCardList events={events} now={now} onHide={onHide} />
     </section>
   );
 }
@@ -251,7 +271,12 @@ export function EmployeeSelectedDayAgenda({
 function PosterCardList({
   events,
   now,
-}: Readonly<{ events: EmployeeCalendarEvent[]; now: Date }>) {
+  onHide,
+}: Readonly<{
+  events: EmployeeCalendarEvent[];
+  now: Date;
+  onHide?: (eventID: string) => void;
+}>) {
   if (events.length === 0) {
     return (
       <EmptyState
@@ -267,6 +292,7 @@ function PosterCardList({
           event={event}
           key={event.event_id}
           now={now}
+          onHide={onHide}
           ticket={ticket}
         />
       ))}

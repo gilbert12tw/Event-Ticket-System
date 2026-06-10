@@ -86,6 +86,7 @@ describe("EmployeeEventsPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    localStorage.clear();
     mockListEvents.mockReset();
     mockListTickets.mockReset();
     mockListTickets.mockResolvedValue([]);
@@ -218,6 +219,33 @@ describe("EmployeeEventsPage", () => {
 
     expect(screen.getByLabelText("日行程")).toBeInTheDocument();
     expect(globalThis.location.search).toContain("view=day");
+  });
+
+  it("hides an event from the calendar but keeps it flagged in the list", async () => {
+    showEvents({ event_id: "evt-planner", title: "午餐講座" });
+
+    renderEmployeeEventsPage();
+
+    const agenda = await screen.findByRole("region", { name: "選取日期活動" });
+    await userEvent.click(
+      within(agenda).getByRole("button", { name: "隱藏活動：午餐講座" }),
+    );
+
+    expect(within(agenda).queryByText("午餐講座")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "活動列表" }));
+
+    const listPanel = await screen.findByRole("tabpanel", { name: "活動列表" });
+    expect(within(listPanel).getByText("午餐講座")).toBeInTheDocument();
+    expect(within(listPanel).getByText("已隱藏")).toBeInTheDocument();
+
+    await userEvent.click(
+      within(listPanel).getByRole("button", {
+        name: "取消隱藏活動：午餐講座",
+      }),
+    );
+
+    expect(within(listPanel).queryByText("已隱藏")).not.toBeInTheDocument();
   });
 
   it("hides cancelled and ineligible rows from the main agenda", async () => {

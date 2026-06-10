@@ -20,6 +20,7 @@ import {
   type EmployeeCalendarViewMode,
 } from "./employee-calendar-planner";
 import { EmployeeCalendarView } from "./employee-calendar-view";
+import { useHiddenEvents } from "./employee-hidden-events";
 import { EmployeeDiscoveryControls } from "./employee-discovery-controls";
 import {
   defaultEmployeeDiscoveryState,
@@ -54,6 +55,7 @@ export function EmployeeEventsPage({
   );
 
   const principalID = claims.employee_id;
+  const { hiddenIds, setHidden } = useHiddenEvents(principalID);
   const now = useMemo(
     () => new Date(injectedNow ?? Date.now()),
     [events, injectedNow, tickets],
@@ -62,9 +64,14 @@ export function EmployeeEventsPage({
     () => calendarRangeForView(calendarState.view, calendarState.date, now),
     [calendarState.date, calendarState.view, now],
   );
+  const visibleEvents = useMemo(
+    () => events.filter((event) => !hiddenIds.has(event.event_id)),
+    [events, hiddenIds],
+  );
   const calendarEvents = useMemo(
-    () => selectEmployeeCalendarEvents(events, tickets, calendarRange, now),
-    [calendarRange, events, now, tickets],
+    () =>
+      selectEmployeeCalendarEvents(visibleEvents, tickets, calendarRange, now),
+    [calendarRange, now, tickets, visibleEvents],
   );
   const discoveryEvents = useMemo(
     () =>
@@ -242,6 +249,7 @@ export function EmployeeEventsPage({
                 <EmployeeCalendarView
                   groups={calendarGroups}
                   now={now}
+                  onHide={(eventID) => setHidden(eventID, true)}
                   range={calendarRange}
                   selectedDateKey={calendarState.dateKey}
                   selectedEvents={selectedEvents}
@@ -273,7 +281,9 @@ export function EmployeeEventsPage({
                   />
                 }
                 events={discoveryEvents}
+                hiddenIds={hiddenIds}
                 now={now}
+                onUnhide={(eventID) => setHidden(eventID, false)}
               />
             )}
           </>
@@ -286,11 +296,15 @@ export function EmployeeEventsPage({
 function EmployeeEventListPanel({
   controls,
   events,
+  hiddenIds,
   now,
+  onUnhide,
 }: Readonly<{
   controls: ReactNode;
   events: ReturnType<typeof selectEmployeeDiscoveryEventRows>;
+  hiddenIds: ReadonlySet<string>;
   now: Date;
+  onUnhide: (eventID: string) => void;
 }>) {
   return (
     <section
@@ -314,8 +328,10 @@ function EmployeeEventListPanel({
           {events.map(({ event, ticket }) => (
             <EmployeeEventPosterCard
               event={event}
+              hidden={hiddenIds.has(event.event_id)}
               key={event.event_id}
               now={now}
+              onUnhide={onUnhide}
               ticket={ticket}
             />
           ))}
