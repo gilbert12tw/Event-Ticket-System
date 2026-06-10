@@ -11,6 +11,20 @@
 *.tfplan
 infra/k8s/baremetal/generated/
 
+# Kubernetes secret manifests — must never be committed (12-Factor III)
+infra/k8s/staging/secrets.yaml
+infra/k8s/*/secrets.yaml
+infra/k8s/baremetal/certs/
+**/bootstrap-secrets*.sh
+
+# TLS private keys and certificates
+*.key
+*.pem
+*.crt
+*.csr
+*.p12
+*.pfx
+
 # OS / editor noise
 .DS_Store
 .idea/

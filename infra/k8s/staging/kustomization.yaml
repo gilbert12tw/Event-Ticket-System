@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# NOTE: secrets.yaml is intentionally excluded from this kustomization.
+# All Kubernetes Secrets (cets-pg-app, cets-runtime-env, cets-app-secrets,
+# cloudflared-token, cets-tls) are injected out-of-band by the bootstrap
+# script: infra/k8s/baremetal/scripts/deploy-cets/app.sh
+# This follows 12-Factor App principle III (Config in the environment, not code).
+# DO NOT add secrets.yaml here — it must never be committed to git.
+resources:
+  - namespace.yaml
+  - platform.yaml
+  - app.yaml
+
+# Image tags are promoted by .github/workflows/staging-cd.yml: every push to
+# main builds SHA-tagged images and force-pushes main + one bump commit to the
+# `staging` branch that ArgoCD tracks. Tags must stay unique git SHAs.
+images:
+  - name: cets-api
+    newName: ghcr.io/gilbert12tw/event-ticket-system/cets-api
+    newTag: 62a6e51bdbe8a69472849b9ad04774f5ec6383a8
+  - name: cets-frontend
+    newName: ghcr.io/gilbert12tw/event-ticket-system/cets-frontend
+    newTag: 62a6e51bdbe8a69472849b9ad04774f5ec6383a8
