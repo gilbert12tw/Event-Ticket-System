@@ -194,7 +194,7 @@ func TestRebuildProjection_OffsetResetToNewestEventComposite(t *testing.T) {
 	for _, r := range rows {
 		_, err := service.db.Exec(ctx, `
 			INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
-			VALUES ($1, 'evtA', 'booking.confirmed', '{}'::jsonb, $2)`, r.id, r.at)
+			VALUES ($1, 'evtA', $2, '{}'::jsonb, $3)`, r.id, outboxEventReportingProjectionUpdateRequiredV2, r.at)
 		require.NoError(t, err)
 	}
 
@@ -202,6 +202,46 @@ func TestRebuildProjection_OffsetResetToNewestEventComposite(t *testing.T) {
 	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, want, result.OffsetResetTo, "watermark must be the newest event's composite, not the lexical max id")
+	assert.Equal(t, want, readOffset(t, service, ctx))
+}
+
+// Regression (HIGH): the watermark must be derived from projection envelope
+// events only. A newer outbox row of any other type (notification, export,
+// dead-lettered or not) must not extend the watermark: stamping a foreign
+// offset would make the worker's guard suppress every projection event between
+// the newest projection offset and that foreign offset, permanently dropping
+// their read-model updates.
+func TestRebuildProjection_WatermarkIgnoresNonProjectionEvents(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
+	_, err := service.db.Exec(ctx, `
+		INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
+		VALUES ('out_proj', 'evtA', $1, '{}'::jsonb, $2)`,
+		outboxEventReportingProjectionUpdateRequiredV2, base)
+	require.NoError(t, err)
+	// Newer rows of other event types must be invisible to the watermark.
+	for _, foreign := range []struct {
+		id        string
+		eventType string
+		at        time.Time
+	}{
+		{"out_notif", "booking.confirmed", base.Add(time.Minute)},
+		{"out_export", outboxEventReportExportRequestedV2, base.Add(2 * time.Minute)},
+	} {
+		_, err = service.db.Exec(ctx, `
+			INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
+			VALUES ($1, 'evtA', $2, '{}'::jsonb, $3)`, foreign.id, foreign.eventType, foreign.at)
+		require.NoError(t, err)
+	}
+
+	want := projectionOffsetKey(base, "out_proj")
+	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, want, result.OffsetResetTo,
+		"watermark must come from the newest projection envelope event, not newer foreign event types")
 	assert.Equal(t, want, readOffset(t, service, ctx))
 }
 
@@ -383,6 +423,63 @@ func TestRebuildProjection_PendingOutboxNotDoubleCounted(t *testing.T) {
 	row := readSummary(t, service, ctx, "evtA")
 	assert.Equal(t, 1, row.ConfirmedCount, "pending outbox event must not double-count after rebuild")
 	assert.Equal(t, 1, row.DepartmentBreakdown["Engineering"])
+}
+
+// Regression (HIGH): the rebuild must serialize against in-flight projection
+// worker transactions. Without mutual exclusion, a worker committing a fresh
+// summary row between the rebuild's DELETE and plain re-INSERT makes the
+// rebuild fail on a duplicate key (or, at REPEATABLE READ, a serialization
+// error) — repeatedly, on any active system. The worker holds the shared
+// rebuild advisory lock for the duration of its upsert transaction; the
+// rebuild takes the exclusive lock BEFORE its snapshot, so it observes every
+// committed worker row and rebuilds cleanly once in-flight workers drain.
+func TestRebuildProjection_SerializesWithProjectionWorker(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	seedRebuildEmployee(t, service, ctx, "ENG1", "Engineering")
+	seedRebuildEvent(t, service, ctx, "evtNew")
+	seedRegistration(t, service, ctx, "r1", "evtNew", "ENG1", "confirmed")
+
+	// Simulate an in-flight projection worker transaction: it holds the shared
+	// rebuild lock (as applyProjectionBooking does) and has upserted a fresh
+	// summary row for evtNew that is not yet committed.
+	workerTx, err := service.db.BeginTx(ctx, pgx.TxOptions{})
+	require.NoError(t, err)
+	defer rollback(ctx, workerTx)
+	_, err = workerTx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, projectionRebuildLockName)
+	require.NoError(t, err)
+	require.NoError(t, upsertEventSummary(ctx, workerTx, "evtNew", eventSummaryRow{
+		ConfirmedCount:      1,
+		DepartmentBreakdown: map[string]int{"Engineering": 1},
+	}, projectionOffsetKey(time.Now().UTC(), "out_live")))
+
+	done := make(chan error, 1)
+	go func() {
+		_, rebuildErr := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+		done <- rebuildErr
+	}()
+
+	// The rebuild must not complete while the worker transaction is in flight.
+	select {
+	case rebuildErr := <-done:
+		t.Fatalf("rebuild completed while a projection worker transaction was in flight (err=%v)", rebuildErr)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	require.NoError(t, workerTx.Commit(ctx))
+	select {
+	case rebuildErr := <-done:
+		require.NoError(t, rebuildErr,
+			"rebuild must succeed once the in-flight worker commits, not fail on a duplicate key")
+	case <-time.After(10 * time.Second):
+		t.Fatal("rebuild did not finish after the worker transaction committed")
+	}
+
+	row := readSummary(t, service, ctx, "evtNew")
+	assert.Equal(t, 1, row.ConfirmedCount)
 }
 
 // AC-7: a non-admin actor is rejected before any work happens.

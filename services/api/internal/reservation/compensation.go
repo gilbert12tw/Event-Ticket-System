@@ -38,6 +38,10 @@ type CompensationMetrics interface {
 	RecordCounterDrift(ctx context.Context, result string)
 }
 
+// compensationLogMessage is the shared structured-log message for every
+// reconcile outcome (release / drop / skip) so dashboards filter on one key.
+const compensationLogMessage = "reservation compensation"
+
 // CompensationConfig controls how aggressively the Compensator scans Redis.
 // All values come from environment variables in the worker bootstrap.
 type CompensationConfig struct {
@@ -149,9 +153,23 @@ func (c *Compensator) reconcile(ctx context.Context, eventID, idempotencyHash st
 		c.metrics.RecordAction(ctx, "lookup", "error")
 		return
 	}
-	if !status.Found || !status.Completed {
-		// Nothing or unfinished: the Redis hold is genuinely orphaned.
+	if !status.Found {
+		// No DB row at all: the Redis hold is genuinely orphaned.
 		c.releaseHold(ctx, eventID, idempotencyHash, "no_db_row")
+		return
+	}
+	if !status.Completed {
+		// A row exists but completed_at is still NULL: the booking is in
+		// flight (e.g. stalled on lock contention past the grace TTL).
+		// Releasing now would hand its slot to a second request while the
+		// first may still confirm. Skip — the hold and pending member stay,
+		// and a later sweep re-evaluates once the row settles.
+		c.logger.Info(compensationLogMessage,
+			"event_id", eventID,
+			"action", "skip",
+			"reason", "in_flight",
+			"result", "skipped")
+		c.metrics.RecordAction(ctx, "skip", "in_flight")
 		return
 	}
 	if status.Confirmed {
@@ -190,7 +208,7 @@ func (c *Compensator) releaseHold(ctx context.Context, eventID, idempotencyHash,
 		return
 	}
 	outcome, _ := raw.(string)
-	c.logger.Info("reservation compensation",
+	c.logger.Info(compensationLogMessage,
 		"event_id", eventID,
 		"action", "release",
 		"reason", reason,
@@ -215,7 +233,7 @@ func (c *Compensator) dropHold(ctx context.Context, eventID, idempotencyHash, re
 		return
 	}
 	outcome, _ := raw.(string)
-	c.logger.Info("reservation compensation",
+	c.logger.Info(compensationLogMessage,
 		"event_id", eventID,
 		"action", "drop",
 		"reason", reason,

@@ -691,3 +691,12 @@ CREATE TABLE IF NOT EXISTS hidden_events (
 	);
 
 CREATE INDEX IF NOT EXISTS idx_hidden_events_employee ON hidden_events(employee_id);
+
+-- Cancellation idempotency backstop: one cancel_idempotency_key may settle at
+-- most one registration. The application-level replay check only compares the
+-- key on an already-cancelled registration, so without this index the same
+-- key reused against a different registration would cancel it too. Mirrors
+-- the booking-side registrations.idempotency_key UNIQUE guarantee.
+CREATE UNIQUE INDEX IF NOT EXISTS registrations_unique_cancel_idempotency_key
+		ON registrations (cancel_idempotency_key)
+		WHERE cancel_idempotency_key IS NOT NULL AND cancel_idempotency_key <> '';

@@ -164,6 +164,84 @@ func TestSyncOfflineCheckinsPreservesPerScanConflictsAndAudits(t *testing.T) {
 	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM audit_logs WHERE action = 'offline_checkin.conflict' AND metadata->>'batch_id' = $1`, []interface{}{pkg.BatchID}, 3)
 }
 
+// Regression (HIGH): scanned_at is client-supplied. A forged far-future
+// timestamp must not pass the event-start gate and redeem a ticket before the
+// event opens; the server bounds scanned_at to now + clock-skew tolerance and
+// records anything beyond it as a conflict.
+func TestSyncOfflineCheckinsRejectsForgedFutureScannedAt(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
+	now := service.now()
+	// Event opens in one hour; any genuine scan right now is pre-start.
+	event, err := service.CreateEvent(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, CreateEventRequest{
+		Title:             "Future Scan Forgery",
+		StartsAt:          now.Add(time.Hour),
+		RegistrationStart: now.Add(-time.Hour),
+		RegistrationClose: now.Add(30 * time.Minute),
+		Capacity:          1,
+		Status:            EventStatusPublished,
+		Rule:              RuleInput{Department: "Engineering", Site: "Taipei HQ", MinGrade: 5, EmploymentStatus: "active"},
+	})
+	require.NoError(t, err)
+	booking, err := service.Book(ctx, Actor{ID: "E1001", Role: RoleEmployee}, event.EventID,
+		BookingRequest{EmployeeID: "E1001", IdempotencyKey: "future-scan-ticket"})
+	require.NoError(t, err)
+	require.NotNil(t, booking.Ticket)
+	ticket := *booking.Ticket
+
+	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
+	require.NoError(t, err)
+
+	// Forged timestamp one minute after event start, sent while the event has
+	// not opened yet.
+	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
+		BatchID:          pkg.BatchID,
+		EventID:          event.EventID,
+		DeviceID:         "gate-1",
+		PackageSignature: pkg.PackageSignature,
+		Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: now.Add(time.Hour + time.Minute)}},
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Results, 1)
+	assert.Equal(t, "conflict", response.Results[0].Status)
+	assert.Equal(t, offlineConflictFutureScan, response.Results[0].ConflictReason)
+	assertOfflineSyncCount(t, service, ctx, `SELECT count(*) FROM checkin_records WHERE ticket_id = $1`, []interface{}{ticket.TicketID}, 0)
+
+	var ticketStatus string
+	require.NoError(t, service.db.QueryRow(ctx, `SELECT status FROM tickets WHERE ticket_id = $1`, ticket.TicketID).Scan(&ticketStatus))
+	assert.Equal(t, "active", ticketStatus, "ticket must not be redeemed before the event opens")
+}
+
+// Counterpart: a scanned_at slightly ahead of the server clock (within the
+// skew tolerance) on an already-started event is a legitimate offline scan
+// and must still be accepted.
+func TestSyncOfflineCheckinsAcceptsScannedAtWithinClockSkew(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+	require.NoError(t, service.SeedDemoData(ctx))
+
+	staff := Actor{ID: "staff-1", Role: RoleCheckinStaff}
+	event, ticket := createOfflineSyncTicket(t, service, ctx, "Clock Skew Tolerance", "E1001", "clock-skew-ticket")
+	pkg, err := service.OfflineCheckinPackage(ctx, staff, event.EventID, "gate-1")
+	require.NoError(t, err)
+
+	response, err := service.SyncOfflineCheckins(ctx, staff, OfflineCheckinSyncRequest{
+		BatchID:          pkg.BatchID,
+		EventID:          event.EventID,
+		DeviceID:         "gate-1",
+		PackageSignature: pkg.PackageSignature,
+		Scans:            []OfflineCheckinScanInput{{SignedToken: ticket.SignedToken, ScannedAt: service.now().Add(time.Minute)}},
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Results, 1)
+	assert.Equal(t, "accepted", response.Results[0].Status)
+}
+
 func TestSyncOfflineCheckinsRecordsMissingTicketForValidToken(t *testing.T) {
 	service, cleanup := newIntegrationService(t)
 	defer cleanup()
