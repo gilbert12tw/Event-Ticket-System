@@ -107,9 +107,16 @@ func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummar
 }
 
 // rebuildWatermark returns the composite projectionOffsetKey of the newest
-// outbox event at snapshot time, or `""` when the outbox is empty. It is the
-// authoritative offset stamped into both reporting_event_summary.last_event_offset
-// and the reporting_projection_offsets watermark after a full rebuild.
+// projection envelope event at snapshot time, or `""` when none exists. It is
+// the authoritative offset stamped into both
+// reporting_event_summary.last_event_offset and the
+// reporting_projection_offsets watermark after a full rebuild.
+//
+// Only reporting.projection.update_required.v2 rows participate: the watermark
+// exists solely to suppress projection events already reflected in the OLTP
+// aggregate. A newer outbox row of any other type (notification, export)
+// would extend the watermark past projection events that are still pending,
+// and the worker's upsert guard would then drop their updates permanently.
 //
 // outbox_id is a random out_<hex> value and is NOT time-sortable, so the newest
 // event is selected by (created_at, outbox_id) — matching the worker's composite
@@ -121,8 +128,9 @@ func rebuildWatermark(ctx context.Context, tx pgx.Tx) (string, error) {
 	err := tx.QueryRow(ctx, `
 		SELECT created_at, outbox_id
 		FROM outbox_events
+		WHERE event_type = $1
 		ORDER BY created_at DESC, outbox_id DESC
-		LIMIT 1`).Scan(&createdAt, &outboxID)
+		LIMIT 1`, outboxEventReportingProjectionUpdateRequiredV2).Scan(&createdAt, &outboxID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

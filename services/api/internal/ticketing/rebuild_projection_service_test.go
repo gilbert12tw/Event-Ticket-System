@@ -194,7 +194,7 @@ func TestRebuildProjection_OffsetResetToNewestEventComposite(t *testing.T) {
 	for _, r := range rows {
 		_, err := service.db.Exec(ctx, `
 			INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
-			VALUES ($1, 'evtA', 'booking.confirmed', '{}'::jsonb, $2)`, r.id, r.at)
+			VALUES ($1, 'evtA', $2, '{}'::jsonb, $3)`, r.id, outboxEventReportingProjectionUpdateRequiredV2, r.at)
 		require.NoError(t, err)
 	}
 
@@ -202,6 +202,46 @@ func TestRebuildProjection_OffsetResetToNewestEventComposite(t *testing.T) {
 	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, want, result.OffsetResetTo, "watermark must be the newest event's composite, not the lexical max id")
+	assert.Equal(t, want, readOffset(t, service, ctx))
+}
+
+// Regression (HIGH): the watermark must be derived from projection envelope
+// events only. A newer outbox row of any other type (notification, export,
+// dead-lettered or not) must not extend the watermark: stamping a foreign
+// offset would make the worker's guard suppress every projection event between
+// the newest projection offset and that foreign offset, permanently dropping
+// their read-model updates.
+func TestRebuildProjection_WatermarkIgnoresNonProjectionEvents(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
+	_, err := service.db.Exec(ctx, `
+		INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
+		VALUES ('out_proj', 'evtA', $1, '{}'::jsonb, $2)`,
+		outboxEventReportingProjectionUpdateRequiredV2, base)
+	require.NoError(t, err)
+	// Newer rows of other event types must be invisible to the watermark.
+	for _, foreign := range []struct {
+		id        string
+		eventType string
+		at        time.Time
+	}{
+		{"out_notif", "booking.confirmed", base.Add(time.Minute)},
+		{"out_export", outboxEventReportExportRequestedV2, base.Add(2 * time.Minute)},
+	} {
+		_, err = service.db.Exec(ctx, `
+			INSERT INTO outbox_events (outbox_id, aggregate_id, event_type, payload, created_at)
+			VALUES ($1, 'evtA', $2, '{}'::jsonb, $3)`, foreign.id, foreign.eventType, foreign.at)
+		require.NoError(t, err)
+	}
+
+	want := projectionOffsetKey(base, "out_proj")
+	result, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, want, result.OffsetResetTo,
+		"watermark must come from the newest projection envelope event, not newer foreign event types")
 	assert.Equal(t, want, readOffset(t, service, ctx))
 }
 
