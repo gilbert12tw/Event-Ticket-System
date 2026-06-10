@@ -215,7 +215,14 @@ func withRequestLogging(logger *slog.Logger, replica string, next http.Handler) 
 				attrs = append(attrs, "otel_span_id", spanCtx.SpanID().String())
 			}
 		}
-		logger.Info("request handled", attrs...)
+		switch {
+		case recorder.status >= 500:
+			logger.Error("request handled", attrs...)
+		case recorder.status >= 400:
+			logger.Warn("request handled", attrs...)
+		default:
+			logger.Info("request handled", attrs...)
+		}
 	})
 }
 
