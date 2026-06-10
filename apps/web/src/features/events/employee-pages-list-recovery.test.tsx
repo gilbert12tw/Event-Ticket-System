@@ -108,4 +108,33 @@ describe("EmployeeEventsPage discovery list recovery rows", () => {
       screen.getByRole("link", { name: "查看詳情：報名截止活動" }),
     ).toBeInTheDocument();
   });
+
+  it("routes registered events with a ticket to the event detail page", async () => {
+    showEvents({
+      current_user_status: "confirmed",
+      current_user_ticket: {
+        employee_id: "E1001",
+        event_id: "evt-ticketed",
+        issued_at: isoOnDay(0, 9),
+        registration_id: "reg-evt-ticketed",
+        status: "active",
+        ticket_id: "tkt-1",
+      },
+      event_id: "evt-ticketed",
+      starts_at: isoOnDay(7, 10),
+      title: "已報名活動",
+    });
+
+    renderEmployeeEventsPage();
+
+    await userEvent.click(screen.getByRole("tab", { name: "活動列表" }));
+
+    const link = await screen.findByRole("link", {
+      name: "查看詳情：已報名活動",
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      "/user/events/detail?event_id=evt-ticketed",
+    );
+  });
 });
