@@ -15,6 +15,6 @@ resources:
   - cloudflared.yaml
 images:
   - name: cets-api
-    newTag: 02e30f7aafc3a9d01c372fb419544294a5d2d034
+    newTag: f2ff87324578cdf58ce8fa467a894669d4bb4b4b
   - name: cets-frontend
-    newTag: 02e30f7aafc3a9d01c372fb419544294a5d2d034
+    newTag: f2ff87324578cdf58ce8fa467a894669d4bb4b4b
