@@ -66,6 +66,11 @@ func clearEventSummary(ctx context.Context, tx pgx.Tx) error {
 // path reports as pending_projection (PH2-45 / WS5-AC-4). Count semantics
 // mirror the Phase 1 Reports() query: DISTINCT employees and tickets,
 // confirmed-only family sums, check-ins joined through tickets.
+//
+// checkin_count counts accepted check-ins only, matching the incremental
+// worker (+1 per checkin.completed) so a rebuild never diverges from the
+// projection. The schema allows status='conflict' rows; Phase 1 Reports()
+// counts them, the projection intentionally does not.
 func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, error) {
 	rows, err := tx.Query(ctx, `
 		WITH counts AS (
@@ -86,7 +91,7 @@ func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, err
 		chk AS (
 			SELECT t.event_id, COUNT(DISTINCT c.checkin_id) AS checkin_count
 			FROM tickets t
-			JOIN checkin_records c ON c.ticket_id = t.ticket_id
+			JOIN checkin_records c ON c.ticket_id = t.ticket_id AND c.status = 'accepted'
 			GROUP BY t.event_id
 		),
 		dept AS (

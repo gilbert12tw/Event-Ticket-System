@@ -76,6 +76,10 @@ type reportExportProjectionRow struct {
 // while no publisher emits projection events) an updated_at-age gate would
 // fail every export shortly after the last write despite the projection
 // being correct.
+//
+// The gate is deliberately global: any stale backlog fails all exports, even
+// for events whose own rows are current — conservative fail-closed over
+// per-event precision.
 func (s *Service) requireFreshProjectionForExport(ctx context.Context, thresholdSeconds int) error {
 	var offsetRowExists bool
 	err := s.db.QueryRow(ctx, `

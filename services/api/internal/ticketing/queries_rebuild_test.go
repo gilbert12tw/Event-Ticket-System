@@ -30,9 +30,14 @@ func seedTicket(t *testing.T, s *Service, ctx context.Context, ticketID, regID, 
 
 func seedCheckin(t *testing.T, s *Service, ctx context.Context, checkinID, ticketID string) {
 	t.Helper()
+	seedCheckinWithStatus(t, s, ctx, checkinID, ticketID, "accepted")
+}
+
+func seedCheckinWithStatus(t *testing.T, s *Service, ctx context.Context, checkinID, ticketID, status string) {
+	t.Helper()
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO checkin_records (checkin_id, ticket_id, staff_id, device_id, status)
-		VALUES ($1, $2, 'staff-1', 'device-1', 'accepted')`, checkinID, ticketID)
+		VALUES ($1, $2, 'staff-1', 'device-1', $3)`, checkinID, ticketID, status)
 	require.NoError(t, err)
 }
 
@@ -87,6 +92,31 @@ func TestRebuildProjection_EmployeeCountConfirmedOnly(t *testing.T) {
 	assert.Equal(t, 1, row.ConfirmedCount)
 	assert.Equal(t, 1, row.CancelledCount)
 	assert.Equal(t, 1, row.EmployeeCount, "cancelled registration must not inflate employee_count")
+}
+
+// checkin_count counts accepted check-ins only. The incremental worker adds
+// +1 per checkin.completed (accepted) event, so a rebuild over data containing
+// status='conflict' rows must not diverge from the incrementally-built count.
+func TestRebuildProjection_CheckinCountAcceptedOnly(t *testing.T) {
+	service, cleanup := newIntegrationService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	seedRebuildEvent(t, service, ctx, "evtA")
+	seedRebuildEmployee(t, service, ctx, "ENG1", "Engineering")
+	seedRebuildEmployee(t, service, ctx, "ENG2", "Engineering")
+	seedRegistration(t, service, ctx, "r1", "evtA", "ENG1", "confirmed")
+	seedRegistration(t, service, ctx, "r2", "evtA", "ENG2", "confirmed")
+	seedTicket(t, service, ctx, "t1", "r1", "evtA", "ENG1")
+	seedTicket(t, service, ctx, "t2", "r2", "evtA", "ENG2")
+	seedCheckin(t, service, ctx, "c1", "t1")
+	seedCheckinWithStatus(t, service, ctx, "c2", "t2", "conflict")
+
+	_, err := service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+	require.NoError(t, err)
+
+	row := readSummary(t, service, ctx, "evtA")
+	assert.Equal(t, 1, row.CheckinCount, "conflict check-in must not count toward checkin_count")
 }
 
 // PH2-45 / WS5-AC-4: rebuild drives from events, so a zero-activity event gets
