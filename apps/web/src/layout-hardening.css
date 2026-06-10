@@ -193,8 +193,7 @@
 
 .helper-strip,
 .publish-check,
-.action-readiness,
-.ticket-handoff {
+.action-readiness {
   align-items: flex-start;
 }
 

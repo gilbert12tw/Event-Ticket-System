@@ -103,8 +103,7 @@
 
 .publish-check,
 .helper-strip,
-.action-readiness,
-.ticket-handoff {
+.action-readiness {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -118,8 +117,7 @@
 
 .publish-check span,
 .helper-strip span,
-.action-readiness span,
-.ticket-handoff span {
+.action-readiness span {
   min-width: 0;
   color: var(--muted);
   font-size: 0.86rem;

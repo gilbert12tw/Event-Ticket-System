@@ -171,9 +171,6 @@ describe("EmployeeEventDetailPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看票券" })).toBeInTheDocument();
     expect(
-      screen.getByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
-    ).toBeInTheDocument();
-    expect(
       screen.queryByRole("link", { name: "查看這張票券" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
@@ -293,9 +290,6 @@ describe("EmployeeEventDetailPage", () => {
     expect(
       screen.queryByRole("button", { name: "立即報名" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
-    ).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("link", { name: "查看票券" }));
 
@@ -376,9 +370,6 @@ describe("EmployeeEventDetailPage", () => {
     expect(
       await screen.findByRole("button", { name: "已取消" }),
     ).toBeDisabled();
-    expect(
-      screen.queryByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
-    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "查看票券" }),
     ).not.toBeInTheDocument();

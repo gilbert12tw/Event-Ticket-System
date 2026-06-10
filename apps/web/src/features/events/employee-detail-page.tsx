@@ -251,8 +251,6 @@ export function EmployeeEventDetailPage({
             eventID={detail.event_id}
             result={visibleBookingResult || undefined}
           />
-          {detail.current_user_ticket?.status === "active" &&
-            !visibleBookingResult?.ticketID && <TicketHandoff />}
         </div>
       </Card>
       <Card className="panel span-12 event-detail-check-panel">
@@ -402,14 +400,6 @@ function detailReadinessCopy(event: EventSummary) {
     return "你符合資格，可以報名。";
   }
   return "目前不能報名，展開查看原因。";
-}
-
-function TicketHandoff() {
-  return (
-    <div className="ticket-handoff">
-      <span>二維碼已移到我的票券詳細頁，入場時再開啟即可。</span>
-    </div>
-  );
 }
 
 function cancellationResultCopy(event: EventSummary) {
