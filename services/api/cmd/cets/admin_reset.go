@@ -60,7 +60,9 @@ func resetDemoData(ctx context.Context, pool *pgxpool.Pool, redisClient *redis.C
 	logger.Info("demo database reset complete",
 		"redis_keys_deleted", deletedKeys,
 		"today_event_id", seed.TodayEventID,
+		"today_ticket_count", len(seed.TodayTicketIDs),
 		"future_event_id", seed.FutureEventID,
+		"future_ticket_count", len(seed.FutureTicketIDs),
 	)
 	return nil
 }

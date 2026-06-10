@@ -20,7 +20,9 @@ func TestPreviewEligibilityReturnsMatchCountsAndZeroMatch(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, event.EventID, matching.EventID)
-	assert.Equal(t, 2, matching.MatchCount)
+	// E1001-E1010: Engineering, Taipei HQ, grade >= 5, active. Excludes
+	// E2001 (Sales, grade 4) and E3001 (Tainan HQ).
+	assert.Equal(t, 10, matching.MatchCount)
 	assert.False(t, matching.ZeroMatch)
 
 	zero, err := service.PreviewEligibility(ctx, Actor{ID: "admin-1", Role: RoleActivityAdmin}, event.EventID, EligibilityPreviewRequest{
