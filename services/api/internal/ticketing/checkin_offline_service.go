@@ -17,12 +17,20 @@ const (
 	offlineConflictClaimsMismatch = "ticket_token_claims_mismatch"
 	offlineConflictEventMismatch  = "offline_scan_event_mismatch"
 	offlineConflictExpired        = "ticket_expired"
+	offlineConflictFutureScan     = "invalid_scan_timestamp"
 	offlineConflictInvalidToken   = "invalid_ticket_token"
 	offlineConflictNotActive      = "ticket_not_active"
 	offlineConflictNotStarted     = checkinNotStartedReason
 	offlineConflictNotFound       = "ticket_not_found"
 	offlineConflictRedeemed       = "ticket_already_redeemed"
 )
+
+// offlineScanClockSkewTolerance bounds how far ahead of the server clock a
+// client-supplied scanned_at may sit. scanned_at is attacker-controllable in
+// the sync request: without an upper bound a forged future timestamp passes
+// the event-start gate and redeems a ticket before the event opens. The
+// tolerance absorbs legitimate device clock drift.
+const offlineScanClockSkewTolerance = 5 * time.Minute
 
 func (s *Service) OfflineCheckinPackage(ctx context.Context, actor Actor, eventID string, deviceID string) (OfflineCheckinPackage, error) {
 	if err := requireRole(actor, RoleCheckinStaff); err != nil {
@@ -276,6 +284,11 @@ func (s *Service) applyOfflineTicketScanTx(ctx context.Context, tx pgx.Tx, actor
 		result.Status = offlineScanStatusConflict
 		result.ReasonCode = "offline_conflict"
 		result.ConflictReason = offlineConflictNotActive
+		return result, offlineScanStatusConflict, nil
+	} else if scan.ScannedAt.After(s.now().Add(offlineScanClockSkewTolerance)) {
+		result.Status = offlineScanStatusConflict
+		result.ReasonCode = "offline_conflict"
+		result.ConflictReason = offlineConflictFutureScan
 		return result, offlineScanStatusConflict, nil
 	} else if !isCheckinAfterEventStart(ticket.EventStartsAt, scan.ScannedAt) {
 		result.Status = offlineScanStatusConflict
