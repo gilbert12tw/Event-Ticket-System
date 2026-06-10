@@ -44,7 +44,8 @@
     { "title": "RED Traffic Drilldown", "url": "/d/ets-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Ingress & Gateway", "url": "/d/ets-ingress-gateway", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false }
   ],
   "panels": [
     {

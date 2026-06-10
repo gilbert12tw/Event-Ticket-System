@@ -15,6 +15,7 @@ import (
 	"event-ticket-system/internal/traceid"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -214,7 +215,14 @@ func withRequestLogging(logger *slog.Logger, replica string, next http.Handler) 
 				attrs = append(attrs, "otel_span_id", spanCtx.SpanID().String())
 			}
 		}
-		logger.Info("request handled", attrs...)
+		switch {
+		case recorder.status >= 500:
+			logger.Error("request handled", attrs...)
+		case recorder.status >= 400:
+			logger.Warn("request handled", attrs...)
+		default:
+			logger.Info("request handled", attrs...)
+		}
 	})
 }
 
@@ -231,7 +239,13 @@ func withTraceID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := traceid.Ensure(r.Header.Get(traceid.Header))
 		w.Header().Set(traceid.Header, id)
-		next.ServeHTTP(w, r.WithContext(traceid.WithContext(r.Context(), id)))
+		ctx := traceid.WithContext(r.Context(), id)
+		if member, err := baggage.NewMember("cets.trace_id", id); err == nil {
+			if bag, err := baggage.New(member); err == nil {
+				ctx = baggage.ContextWithBaggage(ctx, bag)
+			}
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

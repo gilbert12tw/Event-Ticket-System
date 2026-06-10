@@ -108,6 +108,15 @@
       "keepTime": true,
       "includeVars": true,
       "targetBlank": false
+    },
+    {
+      "title": "Ingress & Gateway",
+      "url": "/d/ets-ingress-gateway",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
     }
   ],
   "panels": [
@@ -269,7 +278,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m]))",
+          "expr": "sum(increase(cets_http_requests_total{status_class=\"5xx\", service=~\"$service\", replica=~\"$replica\"}[5m])) or vector(0)",
           "legendFormat": "5xx",
           "refId": "A"
         }
@@ -693,7 +702,7 @@
       },
       "targets": [
         {
-          "expr": "{service_name=~\"backend-.*|worker-.*\"} | json | level =~ `(?i)error`",
+          "expr": "{service_name=~\"backend-.*|worker-.*|edge-lb|gateway-.*|frontend-lb|backend-lb\"} | json | level =~ `(?i)error`",
           "maxLines": 200,
           "refId": "A"
         }
@@ -725,7 +734,7 @@
       },
       "targets": [
         {
-          "expr": "{service_name=~\"backend-.*|worker-.*\"} |= `otel_trace_id` | json | __error__ = ``",
+          "expr": "{service_name=~\"backend-.*|worker-.*|edge-lb|gateway-.*|frontend-lb|backend-lb\"} |= `otel_trace_id` | json | __error__ = ``",
           "maxLines": 100,
           "refId": "A"
         }
@@ -740,7 +749,7 @@
     {
       "collapsed": false,
       "id": 104,
-      "title": "▶ STEP 5 — PROFILE: CPU hotspot per service and replica",
+      "title": "▶ STEP 5 — PROFILE: CPU & memory hotspots per service",
       "type": "row",
       "gridPos": {
         "h": 1,
@@ -751,8 +760,8 @@
     },
     {
       "id": 14,
-      "title": "CPU Profile Activity by Service (Pyroscope)",
-      "description": "CPU nanoseconds consumed over time per cets-* service from Pyroscope. Non-zero confirms the profiler is running and collecting data. A spike on a specific replica corresponds to high CPU utilization in USE Infrastructure. To open the CPU flamegraph for a specific time window: (1) find a failing trace in STEP 3, (2) click the trace to open the waterfall, (3) click 'Profiles for this span' — Pyroscope opens scoped to the exact 15s upload window of that request. This shows the hot call path (e.g. pgx/pool.Acquire or redis client calls) that was executing during the failure.",
+      "title": "CPU Profile Timeline (Pyroscope)",
+      "description": "CPU nanoseconds consumed over time per cets-* service. Non-zero confirms the profiler is running. Use this timeline to identify WHEN a CPU spike occurred, then scroll down to the flamegraphs to see WHAT code was hot during that window.",
       "type": "timeseries",
       "datasource": {
         "type": "grafana-pyroscope-datasource",
@@ -768,10 +777,58 @@
         }
       ],
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 24,
         "x": 0,
         "y": 84
+      }
+    },
+    {
+      "id": 15,
+      "title": "CPU Flamegraph",
+      "description": "Interactive CPU flamegraph aggregated across all cets-* services. Each bar represents a function — wider bars consume more CPU. Click a bar to zoom into that call subtree. Use the search box to filter (e.g. 'pgx' for database, 'redis' for cache). Select a narrower time range to scope the flamegraph to a specific incident window.",
+      "type": "flamegraph",
+      "datasource": {
+        "type": "grafana-pyroscope-datasource",
+        "uid": "Pyroscope"
+      },
+      "targets": [
+        {
+          "labelSelector": "{service_name=~\"cets-.*\"}",
+          "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "queryType": "profile",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 90
+      }
+    },
+    {
+      "id": 16,
+      "title": "Memory Allocation Flamegraph",
+      "description": "Interactive memory allocation flamegraph showing which functions allocate the most heap memory. Useful for diagnosing memory pressure, GC overhead, or OOM-killed containers. Wide bars = high allocation rate. Filter with 'json' for serialization hotspots or 'pgx' for database result scanning.",
+      "type": "flamegraph",
+      "datasource": {
+        "type": "grafana-pyroscope-datasource",
+        "uid": "Pyroscope"
+      },
+      "targets": [
+        {
+          "labelSelector": "{service_name=~\"cets-.*\"}",
+          "profileTypeId": "memory:alloc_space:bytes:space:bytes",
+          "queryType": "profile",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 106
       }
     }
   ]

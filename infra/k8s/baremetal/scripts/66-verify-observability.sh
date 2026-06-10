@@ -324,15 +324,15 @@ check_pyroscope_profile_data() {
 }
 
 check_grafana_cets_folder_dashboards() {
-  log "checking Grafana Cets folder dashboards"
+  log "checking Grafana Event-Ticket-System folder dashboards"
   GRAFANA_PID=$(start_port_forward observability kube-prometheus-stack-grafana "$GRAFANA_LOCAL_PORT" 80 "$GENERATED_DIR/grafana-port-forward.log")
   wait_http "Grafana" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/health"
   password=$(kubectl_bm -n observability get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d)
   curl -fsS -u "admin:$password" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/search?folderIds=0" >/dev/null
-  dashboards=$(curl -fsS -u "admin:$password" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/search?query=CETS")
-  for title in "CETS Metrics RED" "CETS Metrics USE" "CETS Logs" "CETS Traces" "CETS Profiles"; do
-    printf '%s\n' "$dashboards" | jq -e --arg title "$title" 'any(.[]; .title == $title and .folderTitle == "Cets")' >/dev/null ||
-      die "Grafana dashboard '$title' was not found in Cets folder"
+  dashboards=$(curl -fsS -u "admin:$password" "http://127.0.0.1:$GRAFANA_LOCAL_PORT/api/search?query=ETS")
+  for title in "ETS 01 — Golden Signals" "ETS 02 — RED Traffic Drilldown" "ETS 03 — Booking & Redis Pressure" "ETS 04 — USE Infrastructure" "ETS 05 — Outbox & Worker Health" "ETS 06 — Service Anomaly Investigation"; do
+    printf '%s\n' "$dashboards" | jq -e --arg title "$title" 'any(.[]; .title == $title and .folderTitle == "Event-Ticket-System")' >/dev/null ||
+      die "Grafana dashboard '$title' was not found in Event-Ticket-System folder"
   done
 }
 
@@ -393,10 +393,22 @@ TEMPO_LOCAL_URL="http://127.0.0.1:$TEMPO_LOCAL_PORT"
 LOKI_LOCAL_URL="http://127.0.0.1:$LOKI_LOCAL_PORT"
 PYROSCOPE_LOCAL_URL="http://127.0.0.1:$PYROSCOPE_LOCAL_PORT"
 
+check_worker_metrics_targets() {
+  log "checking worker metrics targets in Prometheus"
+  for _ in $(seq 1 24); do
+    if prom_query_nonzero 'count(cets_build_info{service=~"cets-worker-.*"})'; then
+      return
+    fi
+    sleep 5
+  done
+  die "Prometheus did not return cets_build_info for any cets-worker-* service"
+}
+
 start_lgtm_port_forwards
 generate_backend_trace
 generate_dependency_trace
 check_backend_red_metrics
+check_worker_metrics_targets
 check_tempo_trace_ingest
 check_loki_trace_logs
 check_service_graph_metrics

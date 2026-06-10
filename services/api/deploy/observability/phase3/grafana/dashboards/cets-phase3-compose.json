@@ -30,7 +30,7 @@
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
       "targets": [
-        { "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
+        { "expr": "(sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or 0 * group by (service) (cets_build_info)) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
       ],
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 }
     },
@@ -128,7 +128,7 @@
       "type": "logs",
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [
-        { "expr": "{service_name=~\"backend-.*|worker-.*\"} |= \"otel_trace_id\"" }
+        { "expr": "{service_name=~\"backend-.*|worker-.*|edge-lb|gateway-.*|frontend-lb|backend-lb\"} |= \"otel_trace_id\"" }
       ],
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 22 }
     },
@@ -175,13 +175,35 @@
     },
     {
       "id": 9,
-      "title": "Profiles Available",
+      "title": "CPU Profile Timeline",
       "type": "timeseries",
       "datasource": { "type": "grafana-pyroscope-datasource", "uid": "Pyroscope" },
       "targets": [
-        { "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" }
+        { "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "queryType": "metrics", "legendFormat": "{{service_name}}" }
       ],
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 45 }
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 45 }
+    },
+    {
+      "id": 15,
+      "title": "CPU Flamegraph",
+      "description": "Interactive CPU flamegraph. Click a bar to zoom into that call subtree. Use the search box to filter by function name.",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "Pyroscope" },
+      "targets": [
+        { "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "queryType": "profile" }
+      ],
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 51 }
+    },
+    {
+      "id": 16,
+      "title": "Memory Allocation Flamegraph",
+      "description": "Interactive memory allocation flamegraph showing which functions allocate the most heap memory.",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "Pyroscope" },
+      "targets": [
+        { "labelSelector": "{service_name=~\"cets-.*\"}", "profileTypeId": "memory:alloc_space:bytes:space:bytes", "queryType": "profile" }
+      ],
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 67 }
     }
   ]
 }

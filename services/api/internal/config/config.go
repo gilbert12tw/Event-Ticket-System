@@ -83,6 +83,7 @@ type Config struct {
 	PyroscopeEnabled                bool
 	PyroscopeAddress                string
 	PyroscopeAppName                string
+	WorkerMetricsPort               int
 	loadErrors                      []string
 }
 
@@ -151,6 +152,7 @@ func Load() Config {
 		PyroscopeEnabled:                parseBoolEnv("PYROSCOPE_ENABLED", "false", &loadErrors),
 		PyroscopeAddress:                strings.TrimSpace(os.Getenv("PYROSCOPE_SERVER_ADDRESS")),
 		PyroscopeAppName:                getEnv("PYROSCOPE_APPLICATION_NAME", otelServiceName),
+		WorkerMetricsPort:               parsePositiveIntEnv("WORKER_METRICS_PORT", "9090", &loadErrors),
 		loadErrors:                      loadErrors,
 	}
 }

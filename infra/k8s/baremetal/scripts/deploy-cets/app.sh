@@ -382,6 +382,9 @@ $(image_pull_block)
         image: $CETS_API_IMAGE
         imagePullPolicy: IfNotPresent
         args: ["worker"]
+        ports:
+        - name: metrics
+          containerPort: 9090
         env:
         - name: WORKER_KINDS
           value: "$kind"

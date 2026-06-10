@@ -53,8 +53,8 @@ func TestBaremetalGitOpsArgoCDContract(t *testing.T) {
 		assert.Contains(t, app, fragment)
 	}
 	for _, fragment := range []string{
-		"ghcr.io/gilbert12tw/event-ticket-system/cets-api",
-		"ghcr.io/gilbert12tw/event-ticket-system/cets-frontend",
+		"name: cets-api",
+		"name: cets-frontend",
 		"newTag:",
 	} {
 		assert.Contains(t, kustomization, fragment)

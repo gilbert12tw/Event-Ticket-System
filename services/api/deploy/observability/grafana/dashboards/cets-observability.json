@@ -24,7 +24,7 @@
       "id": 2,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [
-        { "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
+        { "expr": "(sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or 0 * group by (service) (cets_build_info)) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}" }
       ],
       "title": "RED 5xx Error Ratio by Service",
       "type": "timeseries"
