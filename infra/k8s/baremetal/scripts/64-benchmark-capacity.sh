@@ -130,7 +130,7 @@ run_k6_candidate() {
     -v "$ROOT_DIR/k6:/k6:ro" \
     -v "$ARTIFACT_DIR:/artifacts" \
     --env-file "$env_file" \
-    "$K6_IMAGE" run --summary-export "/artifacts/$(basename "$out")" "$SCRIPT" >&2
+    "$K6_IMAGE" run --insecure-skip-tls-verify --summary-export "/artifacts/$(basename "$out")" "$SCRIPT" >&2
   status=$?
   set -e
   rm -f "$env_file"
@@ -335,7 +335,7 @@ main() {
     return
   fi
 
-  curl -fsS -H "Host: $HOST_HEADER" "$BASE_URL/readyz" >/dev/null ||
+  curl -fsSk -H "Host: $HOST_HEADER" "$BASE_URL/readyz" >/dev/null ||
     die "benchmark target is not ready: $BASE_URL with Host=$HOST_HEADER"
   seed_benchmark_employees
 
