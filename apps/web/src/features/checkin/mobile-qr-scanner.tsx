@@ -59,10 +59,18 @@ export function MobileQrScanner({
           if (!scannerActiveRef.current || !result) return;
           const token = result.getText().trim();
           if (!token) return;
-          onDetectedRef.current(token);
+          // Stop camera first to prevent re-firing on the same frame.
+          stopCamera(false);
           setState("done");
           setMessage("已讀取 QR code，系統會自動送出驗票。");
-          stopCamera(false);
+          // Call the async handler then reset to idle so the next ticket can
+          // be scanned without a page refresh.
+          void Promise.resolve(onDetectedRef.current(token)).finally(() => {
+            if (mountedRef.current) {
+              setState("idle");
+              setMessage("");
+            }
+          });
         },
       );
       if (!scannerActiveRef.current) {

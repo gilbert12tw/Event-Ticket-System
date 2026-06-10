@@ -25,9 +25,13 @@ import { MobileQrScanner } from "./mobile-qr-scanner";
 export function OfflineScanStep({
   stored,
   onScansChanged,
+  onGoToPackage,
+  onGoToResults,
 }: Readonly<{
   stored: StoredCheckinPackage;
   onScansChanged: (scans: OfflineScanRecord[]) => void;
+  onGoToPackage: () => void;
+  onGoToResults: () => void;
 }>) {
   const [lastResult, setLastResult] = useState<OfflineScanRecord | null>(null);
   const [manualInput, setManualInput] = useState("");
@@ -92,6 +96,8 @@ export function OfflineScanStep({
     setManualInput("");
   }
 
+  const hasQueuedScans = stored.scans.some((s) => s.sync_status === "queued");
+
   return (
     <div className="split-grid">
       <div>
@@ -99,6 +105,25 @@ export function OfflineScanStep({
           <div>
             <h2>掃描驗票</h2>
             <p>使用相機掃描 QR 碼或手動輸入簽章碼。</p>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={onGoToPackage}
+            >
+              <Icon name="chevronLeft" />
+              返回下載名單
+            </Button>
+            {hasQueuedScans && (
+              <Button
+                type="button"
+                onClick={onGoToResults}
+              >
+                前往同步結果
+                <Icon name="chevronRight" />
+              </Button>
+            )}
           </div>
         </div>
 

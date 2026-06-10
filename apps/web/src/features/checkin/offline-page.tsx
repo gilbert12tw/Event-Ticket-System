@@ -44,10 +44,19 @@ export function OfflineCheckinBoundaryPage() {
 
   useEffect(() => {
     if (!stored && activeTab !== "package") setActiveTab("package");
-    if (activeTab === "results" && !syncResult && stored?.status !== "synced") {
-      setActiveTab(stored ? "scan" : "package");
+    // Only redirect away from "results" if the batch truly has nothing to sync
+    // (no scans at all). Do NOT redirect just because syncResult is null —
+    // that is the normal pre-sync state and redirecting here was the bug that
+    // prevented users from ever reaching the sync button.
+    if (
+      activeTab === "results" &&
+      stored &&
+      stored.scans.length === 0 &&
+      stored.status !== "synced"
+    ) {
+      setActiveTab("scan");
     }
-  }, [activeTab, stored, setActiveTab, syncResult]);
+  }, [activeTab, stored, setActiveTab]);
 
   function handlePackageReady(next: StoredCheckinPackage) {
     setStored(next);
@@ -125,6 +134,8 @@ export function OfflineCheckinBoundaryPage() {
             <OfflineScanStep
               stored={stored}
               onScansChanged={handleScansChanged}
+              onGoToPackage={() => setActiveTab("package")}
+              onGoToResults={() => setActiveTab("results")}
             />
           )}
         </TabsContent>
