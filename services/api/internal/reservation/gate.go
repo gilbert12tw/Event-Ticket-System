@@ -3,7 +3,7 @@
 // the gate only decides whether a request may enter the expensive DB path
 // during pressure on a limited event.
 //
-// Spec: docs/specs/phase2-redis-reservation-gate.md.
+// Spec: docs/specs/evolution-boundaries.md.
 package reservation
 
 import (

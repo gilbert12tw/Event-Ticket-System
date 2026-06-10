@@ -203,7 +203,7 @@ func TestPhase3ComposeReplacesLocalK3sAssets(t *testing.T) {
 		_, err := os.Stat(path)
 		assert.True(t, os.IsNotExist(err), "obsolete Phase 3 k3s path should be removed: %s", path)
 	}
-	require.FileExists(t, filepath.Join("..", "..", "..", "docs", "specs", "phase3-local-ha-compose-lgtm.md"))
+	require.FileExists(t, filepath.Join("..", "..", "..", "docs", "specs", "evolution-boundaries.md"))
 }
 
 func readText(t *testing.T, path string) string {

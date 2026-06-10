@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM public.ecr.aws/docker/library/node:24.14.1-alpine3.22 AS builder
+FROM node:24.14.1-alpine3.22 AS builder
 
 WORKDIR /src
 RUN corepack enable
@@ -11,7 +11,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 COPY apps/web ./apps/web
 RUN pnpm --filter cets-web build
 
-FROM public.ecr.aws/docker/library/alpine:3.21
+FROM alpine:3.21
 RUN wget -qO /etc/apk/keys/nginx_signing.rsa.pub https://nginx.org/keys/nginx_signing.rsa.pub \
     && echo "https://nginx.org/packages/mainline/alpine/v3.21/main" >> /etc/apk/repositories \
     && apk add --no-cache nginx nginx-module-otel \

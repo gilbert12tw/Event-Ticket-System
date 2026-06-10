@@ -193,21 +193,25 @@ func TestSonarCoverageConfigStaysLocalOnly(t *testing.T) {
 	packageContent := string(packageJSON)
 	assert.Contains(t, workflowContent, `".github/actions/setup-docker-act/**"`)
 	assert.Contains(t, workflowContent, `".github/actions/setup-web/**"`)
-	assert.Contains(t, workflowContent, `"docs/reports/**"`)
+	assert.Contains(t, workflowContent, `".codex/**"`,
+		"local Codex artifacts must start CI so detect-changes can reject reintroduction")
+	assert.NotContains(t, workflowContent, `"docs/reports/**"`)
 	assert.Contains(t, workflowContent, `"goal.md"`,
 		"agent notes must start CI so detect-changes can reject PR or push diffs that include them")
 	assert.Contains(t, workflowContent, `"note.md"`,
 		"agent notes must start CI so detect-changes can reject PR or push diffs that include them")
 	assert.Contains(t, detectorContent, `.github/actions/setup-docker-act/`)
 	assert.Contains(t, detectorContent, `.github/actions/setup-web/`)
-	assert.Contains(t, detectorContent, `docs/reports/phase3-`)
-	assert.Contains(t, detectorContent, `goal\.md|note\.md`)
+	assert.Contains(t, detectorContent, `docs/specs/evolution-boundaries`)
+	assert.Contains(t, detectorContent, `(goal|note)\.md|\.codex/`)
+	assert.Contains(t, detectorContent, `goal.md, note.md, and .codex/ are local agent artifacts`)
 	assert.Contains(t, detectorContent, "git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main",
 		"local act push events can omit a usable before SHA, so change detection must prefer main before falling back to the root commit")
 	gitignore, err := os.ReadFile("../../../.gitignore")
 	require.NoError(t, err)
 	assert.Contains(t, string(gitignore), "\ngoal.md\n")
 	assert.Contains(t, string(gitignore), "\nnote.md\n")
+	assert.Contains(t, string(gitignore), "\n.codex/\n")
 	assert.Contains(t, workflowContent, `"sonar-project.properties"`)
 	assert.Contains(t, workflowContent, `"scripts/coverage/**"`)
 	assert.NotContains(t, workflowContent, "sonar-analysis:")

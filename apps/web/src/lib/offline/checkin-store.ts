@@ -60,17 +60,20 @@ export async function loadActivePackages(): Promise<StoredCheckinPackage[]> {
   return all.filter((p) => p.status === "active");
 }
 
+// Returns false when the scan was not persisted (missing batch, or the batch
+// was already closed by a sync racing ahead of the UI state).
 export async function addScanRecord(
   batchID: string,
   record: OfflineScanRecord,
-): Promise<void> {
+): Promise<boolean> {
   const stored = await loadPackage(batchID);
-  if (!stored) return;
+  if (!stored || stored.status === "synced") return false;
   const updated: StoredCheckinPackage = {
     ...stored,
     scans: [...stored.scans, record],
   };
   await putItem(STORE, updated);
+  return true;
 }
 
 export type SyncUpdateResult = {

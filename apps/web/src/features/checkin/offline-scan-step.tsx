@@ -25,9 +25,11 @@ import { MobileQrScanner } from "./mobile-qr-scanner";
 export function OfflineScanStep({
   stored,
   onScansChanged,
+  onGoToResults,
 }: Readonly<{
   stored: StoredCheckinPackage;
   onScansChanged: (scans: OfflineScanRecord[]) => void;
+  onGoToResults?: () => void;
 }>) {
   const [lastResult, setLastResult] = useState<OfflineScanRecord | null>(null);
   const [manualInput, setManualInput] = useState("");
@@ -66,7 +68,8 @@ export function OfflineScanStep({
           updated_at: new Date().toISOString(),
         };
 
-        await addScanRecord(stored.batch_id, record);
+        const saved = await addScanRecord(stored.batch_id, record);
+        if (!saved) return;
         const updated = [...scansRef.current, record];
         scansRef.current = updated;
         onScansChanged(updated);
@@ -151,9 +154,18 @@ export function OfflineScanStep({
           <Kpi label="已同步" value={counts.synced} />
           {counts.failed > 0 && <Kpi label="同步失敗" value={counts.failed} />}
         </div>
+
+        {stored.scans.length > 0 && onGoToResults && (
+          <div className="mt-14">
+            <Button variant="outline" type="button" onClick={onGoToResults}>
+              <Icon name="refresh" />
+              前往同步結果
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div>
+      <div className="offline-scan-records">
         {stored.scans.length > 0 ? (
           <ResponsiveTable label="掃描紀錄">
             <thead>

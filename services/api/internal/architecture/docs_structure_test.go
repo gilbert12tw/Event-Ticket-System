@@ -23,25 +23,14 @@ func TestDocumentationIndexTracksCurrentSpecsAndArchive(t *testing.T) {
 		"docs/specs/phase1-product-requirements.md",
 		"docs/specs/phase1-nfr-and-capacity.md",
 		"docs/specs/phase1-e2e-test-paths.md",
-		"docs/specs/phase2-scale-hardening.md",
-		"docs/specs/phase2-event-contract-v2.md",
-		"docs/specs/phase2-redis-reservation-gate.md",
-		"docs/specs/phase2-ws1-contracts-release.md",
-		"docs/specs/phase2-ws2-load-observability.md",
-		"docs/specs/phase2-ws3-registration-hot-path.md",
-		"docs/specs/phase2-ws4-async-notification.md",
-		"docs/specs/phase2-ws5-reporting-ops.md",
-		"docs/specs/phase3-local-ha-compose-lgtm.md",
+		"docs/specs/evolution-boundaries.md",
 	}
 	for _, rel := range activeSpecs {
 		require.FileExists(t, filepath.Join(root, filepath.FromSlash(rel)))
 		assert.Contains(t, indexContent, rel)
 	}
-
-	archivedSpecs, err := filepath.Glob(filepath.Join(root, "docs", "archive", "specs", "*.md"))
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, len(archivedSpecs), 10, "completed specs should stay archived, not mixed into active scope")
-	assert.Contains(t, indexContent, "docs/archive/specs/")
+	assert.NotContains(t, indexContent, "docs/archive/")
+	assert.NoDirExists(t, filepath.Join(root, "docs", "archive"))
 }
 
 func TestSonarScannerConfigExcludesArchiveAndGeneratedOutputs(t *testing.T) {
@@ -51,7 +40,6 @@ func TestSonarScannerConfigExcludesArchiveAndGeneratedOutputs(t *testing.T) {
 	content := strings.ReplaceAll(string(config), "\n", ",")
 
 	for _, fragment := range []string{
-		"docs/archive/**",
 		"**/.cache/**",
 		"**/.turbo/**",
 		"**/coverage/**",
@@ -63,6 +51,7 @@ func TestSonarScannerConfigExcludesArchiveAndGeneratedOutputs(t *testing.T) {
 	} {
 		assert.Contains(t, content, fragment)
 	}
+	assert.NotContains(t, content, "docs/archive/**")
 }
 
 func TestCIWorkflowKeepsSonarScannerLocalOnly(t *testing.T) {
