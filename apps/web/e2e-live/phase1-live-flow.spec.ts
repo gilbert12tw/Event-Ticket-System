@@ -38,8 +38,6 @@ import { createPosterFixture } from "./support/poster-fixtures";
 const execFileAsync = promisify(execFile);
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, "../../..");
-const composeFile = resolve(repoRoot, "services/api/deploy/compose.yaml");
-const composeEnvFile = resolve(repoRoot, "services/api/deploy/.env.example");
 
 test.describe.serial("第一階段實際產品流程", () => {
   test.beforeEach(async () => {
