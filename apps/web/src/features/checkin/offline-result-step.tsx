@@ -81,11 +81,23 @@ function checkinHolderSummary(result: CheckinResponse) {
 }
 
 function checkinReasonLabel(result: CheckinResponse) {
-  if (!result.reason_code && !result.conflict_reason) return "-";
-  return localizedMessage(
-    result.rejection_message ||
-      result.reason_code ||
-      result.conflict_reason ||
-      "",
-  );
+  if (result.duplicate || result.reason_code === "duplicate_scan") {
+    return duplicateReasonLabel(result);
+  }
+  // conflict_reason carries the specific cause (e.g. event_not_started);
+  // reason_code is the generic bucket (offline_conflict), so it goes last.
+  const reason =
+    result.conflict_reason || result.rejection_message || result.reason_code;
+  if (!reason) return "-";
+  return localizedMessage(reason);
+}
+
+function duplicateReasonLabel(result: CheckinResponse) {
+  const scannedBy = result.first_scanned_by
+    ? `（驗票人 ${result.first_scanned_by}）`
+    : "";
+  if (!result.first_scanned_at) {
+    return `此票券已先在其他裝置完成驗票${scannedBy}，此次掃描不重複入場。`;
+  }
+  return `此票券已於 ${formatDate(result.first_scanned_at)} 先完成驗票${scannedBy}，此次掃描不重複入場。`;
 }

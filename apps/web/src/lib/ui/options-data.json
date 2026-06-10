@@ -195,7 +195,8 @@
   "checkinStatuses": [
     ["duplicate", "重複掃描", "warn"],
     ["accepted", "驗票成功", "ok"],
-    ["rejected", "驗票拒絕", "fail"]
+    ["rejected", "驗票拒絕", "fail"],
+    ["conflict", "衝突", "fail"]
   ],
   "auditActionViews": [
     ["booking.confirmed", "報名確認", "ok"],
