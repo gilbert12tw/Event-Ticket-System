@@ -6,12 +6,7 @@ import {
   getEvent,
   listEvents,
 } from "@/lib/api";
-import type {
-  AuthMeClaims,
-  BookingResponse,
-  EventSummary,
-  Ticket,
-} from "@/lib/api";
+import type { AuthMeClaims, BookingResponse, EventSummary } from "@/lib/api";
 import { errorMessage } from "@/lib/formatting";
 import { runClientNavigation } from "@/lib/navigation";
 import { Alert, EmptyState, StatusBadge } from "@/components/shared";
@@ -257,9 +252,7 @@ export function EmployeeEventDetailPage({
             result={visibleBookingResult || undefined}
           />
           {detail.current_user_ticket?.status === "active" &&
-            !visibleBookingResult?.ticketID && (
-              <TicketHandoff ticket={detail.current_user_ticket} />
-            )}
+            !visibleBookingResult?.ticketID && <TicketHandoff />}
         </div>
       </Card>
       <Card className="panel span-12 event-detail-check-panel">
@@ -411,23 +404,10 @@ function detailReadinessCopy(event: EventSummary) {
   return "目前不能報名，展開查看原因。";
 }
 
-function TicketHandoff({ ticket }: Readonly<{ ticket: Ticket }>) {
+function TicketHandoff() {
   return (
     <div className="ticket-handoff">
       <span>二維碼已移到我的票券詳細頁，入場時再開啟即可。</span>
-      <Button asChild variant="outline">
-        <a
-          href={ticketDetailPath(ticket.ticket_id)}
-          onClick={(event) =>
-            runClientNavigation(event, () =>
-              navigate(ticketDetailPath(ticket.ticket_id)),
-            )
-          }
-        >
-          <Icon name="ticket" />
-          查看這張票券
-        </a>
-      </Button>
     </div>
   );
 }

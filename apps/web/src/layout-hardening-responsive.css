@@ -276,8 +276,7 @@
   }
 
   .helper-strip [data-slot="button"],
-  .publish-check [data-slot="button"],
-  .ticket-handoff [data-slot="button"] {
+  .publish-check [data-slot="button"] {
     width: 100%;
   }
 }

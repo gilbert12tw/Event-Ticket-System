@@ -169,9 +169,13 @@ describe("EmployeeEventDetailPage", () => {
     expect(
       screen.getByRole("button", { name: /下載行事曆.*活動/ }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看票券" })).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "查看這張票券" }),
+      screen.getByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "查看這張票券" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("票券二維碼")).not.toBeInTheDocument();
     expect(screen.queryByText("signed-secret")).not.toBeInTheDocument();
   });
@@ -220,7 +224,7 @@ describe("EmployeeEventDetailPage", () => {
     click.mockRestore();
   });
 
-  it("opens the exact ticket detail from the event detail handoff", async () => {
+  it("opens the exact ticket detail from the event detail action", async () => {
     showEvent({
       current_user_ticket: ticket("T-3", "R-3"),
       current_user_status: "confirmed",
@@ -229,7 +233,7 @@ describe("EmployeeEventDetailPage", () => {
     render(<EmployeeEventDetailPage claims={claims} />);
 
     await userEvent.click(
-      await screen.findByRole("link", { name: "查看這張票券" }),
+      await screen.findByRole("link", { name: "查看票券" }),
     );
 
     expect(globalThis.location.pathname).toBe("/user/tickets");
@@ -290,7 +294,7 @@ describe("EmployeeEventDetailPage", () => {
       screen.queryByRole("button", { name: "立即報名" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: "查看這張票券" }),
+      screen.queryByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
     ).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("link", { name: "查看票券" }));
@@ -376,7 +380,7 @@ describe("EmployeeEventDetailPage", () => {
       screen.queryByText("二維碼已移到我的票券詳細頁，入場時再開啟即可。"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: "查看這張票券" }),
+      screen.queryByRole("link", { name: "查看票券" }),
     ).not.toBeInTheDocument();
   });
 
