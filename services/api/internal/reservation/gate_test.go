@@ -273,6 +273,8 @@ func TestNoopGateAlwaysGrants(t *testing.T) {
 	hold, err := g.Reserve(context.Background(), "evt", "h", "a", probe)
 	require.NoError(t, err)
 	require.Equal(t, OutcomeGranted, hold.Outcome)
+	require.NoError(t, g.Confirm(context.Background(), "evt", "h"))
+	require.NoError(t, g.Release(context.Background(), "evt", "h"))
 	snapshot, err := g.PressureSnapshot(context.Background(), "evt")
 	require.NoError(t, err)
 	require.Equal(t, PressureStateDisabled, snapshot.State)
@@ -293,6 +295,41 @@ func TestHashIsDeterministicAndDomainSeparated(t *testing.T) {
 	require.NotEqual(t, a, Hash(secret, "registration.book", "evt", "E", "key2"), "idempotency key must scope")
 }
 
+func TestActorHashIsDeterministicAndScopedToActor(t *testing.T) {
+	secret := []byte("k")
+	first := ActorHash(secret, "E1001")
+	second := ActorHash(secret, "E1001")
+
+	require.Equal(t, first, second)
+	assert.NotEqual(t, first, ActorHash(secret, "E1002"))
+	assert.NotEqual(t, first, Hash(secret, "actor", "", "E1001", ""))
+	assert.Len(t, first, 64)
+}
+
+func TestParseOutageModeNormalizesEnvValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  OutageMode
+	}{
+		{name: "blank defaults to degrade", value: "", want: OutageModeDegrade},
+		{name: "trims and lowercases degrade", value: "  DeGrAdE ", want: OutageModeDegrade},
+		{name: "trims and lowercases fail", value: " FAIL ", want: OutageModeFail},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseOutageMode(tt.value)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := ParseOutageMode("panic")
+	require.ErrorContains(t, err, "REDIS_OUTAGE_MODE")
+}
+
 func TestConfigValidate(t *testing.T) {
 	t.Run("disabled gate skips validation", func(t *testing.T) {
 		require.NoError(t, Config{}.Validate())
@@ -304,5 +341,23 @@ func TestConfigValidate(t *testing.T) {
 	t.Run("enabled requires positive ttl", func(t *testing.T) {
 		err := Config{Enabled: true, HashSecret: []byte("k"), OperationTimeout: time.Millisecond, OutageMode: OutageModeDegrade}.Validate()
 		require.Error(t, err)
+	})
+	t.Run("enabled requires positive operation timeout", func(t *testing.T) {
+		err := Config{Enabled: true, HashSecret: []byte("k"), TTL: time.Second, OutageMode: OutageModeDegrade}.Validate()
+		require.ErrorContains(t, err, "REDIS_OPERATION_TIMEOUT_MS")
+	})
+	t.Run("enabled rejects unknown outage mode", func(t *testing.T) {
+		err := Config{Enabled: true, HashSecret: []byte("k"), TTL: time.Second, OperationTimeout: time.Millisecond, OutageMode: "panic"}.Validate()
+		require.ErrorContains(t, err, "REDIS_OUTAGE_MODE")
+	})
+	t.Run("enabled accepts fail closed", func(t *testing.T) {
+		err := Config{
+			Enabled:          true,
+			HashSecret:       []byte("k"),
+			TTL:              time.Second,
+			OperationTimeout: time.Millisecond,
+			OutageMode:       OutageModeFail,
+		}.Validate()
+		require.NoError(t, err)
 	})
 }
