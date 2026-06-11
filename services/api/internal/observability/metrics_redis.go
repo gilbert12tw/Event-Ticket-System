@@ -2,8 +2,6 @@ package observability
 
 import (
 	"io"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -37,35 +35,12 @@ func (r *Registry) writeRedisOperationMetrics(w io.Writer) {
 	writeLine(w, "# HELP cets_redis_operation_seconds Redis gate script call duration by operation and result.")
 	writeLine(w, "# TYPE cets_redis_operation_seconds histogram")
 
-	r.mu.Lock()
-	keys := make([]redisOpKey, 0, len(r.redisOp))
-	for key := range r.redisOp {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return redisOpLabelSet(keys[i]) < redisOpLabelSet(keys[j])
-	})
-	snapshots := make(map[redisOpKey]histogram, len(keys))
-	for _, key := range keys {
-		current := r.redisOp[key]
-		snapshots[key] = histogram{
-			Buckets: append([]uint64(nil), current.Buckets...),
-			Count:   current.Count,
-			Sum:     current.Sum,
-		}
-	}
-	r.mu.Unlock()
-
+	keys, snapshots := sortedHistogramSnapshots(&r.mu, r.redisOp, redisOpLabelSet)
 	for _, key := range keys {
 		labels := redisOpLabelSet(key)
 		h := snapshots[key]
 		writeFormat(w, "cets_redis_operation_total{%s} %d\n", labels, h.Count)
-		for i, bucket := range httpBuckets {
-			writeFormat(w, "cets_redis_operation_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
-		}
-		writeFormat(w, "cets_redis_operation_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
-		writeFormat(w, "cets_redis_operation_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
-		writeFormat(w, "cets_redis_operation_seconds_count{%s} %d\n", labels, h.Count)
+		writeHistogramSeries(w, "cets_redis_operation_seconds", labels, h)
 	}
 }
 
