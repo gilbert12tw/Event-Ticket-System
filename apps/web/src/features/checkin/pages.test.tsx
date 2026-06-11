@@ -157,6 +157,48 @@ describe("CheckinPage", () => {
     expect(mockReports).not.toHaveBeenCalled();
   });
 
+  it("lets staff switch the check-in event manually", async () => {
+    const otherEvent: EventSummary = {
+      ...checkinEvent,
+      event_id: "evt-other",
+      title: "Other Check-in",
+    };
+    mockListAdminEvents.mockResolvedValue([checkinEvent, otherEvent]);
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-other",
+      ticket_id: "tkt-other",
+      event_id: "evt-other",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-05-16T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
+
+    render(<CheckinPage />);
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
+    await userEvent.click(screen.getByRole("combobox", { name: "驗票活動" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Other Check-in" }),
+    );
+    await userEvent.type(
+      await screen.findByLabelText(/掃描或貼上票券/),
+      "signed-token",
+    );
+    const submitButton = screen.getByRole("button", { name: "送出驗票" });
+    await waitFor(() => expect(submitButton).not.toBeDisabled());
+    await userEvent.click(submitButton);
+
+    expect(mockCheckIn).toHaveBeenCalledWith(
+      "signed-token",
+      "gate-1",
+      "evt-other",
+      "",
+    );
+    expect(await screen.findAllByText("Other Check-in")).not.toHaveLength(0);
+  });
+
   it("sends holder mismatch reason without redeeming blindly", async () => {
     mockCheckIn.mockResolvedValue({
       checkin_id: "",

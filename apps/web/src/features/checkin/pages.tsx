@@ -184,7 +184,9 @@ export function CheckinPage() {
           <div className="section-heading">
             <div>
               <h2>線上驗票</h2>
-              <p>當前活動會自動鎖定；掃描 QR code 後立即驗票。</p>
+              <p>
+                預設鎖定當前活動，可於下方手動切換；掃描 QR code 後立即驗票。
+              </p>
             </div>
           </div>
           <MobileQrScanner onTokenDetected={handleDetectedToken} />
@@ -204,7 +206,7 @@ export function CheckinPage() {
             <span>{selectedEvent?.title || "尚未載入可驗票活動"}</span>
             {events.length > 1 && (
               <span className="table-muted">
-                已自動選定活動時間最接近現在的活動。
+                已自動選定活動時間最接近現在的活動，可於下方切換。
               </span>
             )}
           </div>
@@ -279,6 +281,15 @@ export function CheckinPage() {
               />
             </div>
           </details>
+          <SelectField
+            label="驗票活動"
+            value={selectedEventID}
+            options={events.map((event) => ({
+              value: event.event_id,
+              label: event.title,
+            }))}
+            onChange={setEventID}
+          />
           <SelectField
             label="驗票裝置"
             value={devicePreset}
