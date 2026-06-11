@@ -1,13 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"event-ticket-system/internal/postgres"
+
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,4 +114,99 @@ func TestExperimentSmallHelpers(t *testing.T) {
 	assert.Equal(t, []float64{1, 2, 3}, summary.All)
 	assert.Equal(t, 2.0, summary.Mean)
 	assert.Zero(t, percentile(nil, 0.9))
+}
+
+func TestRunExperimentOffModeAgainstIsolatedSchema(t *testing.T) {
+	got := runExperimentIntegration(t, "off")
+
+	assert.Equal(t, "off", got.Mode)
+	assert.Equal(t, 3, got.VUs)
+	assert.Equal(t, 1, got.Capacity)
+	assert.Equal(t, 1, got.Outcomes.Confirmed)
+	assert.Equal(t, 2, got.Outcomes.Waitlisted)
+	assert.Zero(t, got.Outcomes.Error)
+	assert.Equal(t, 1, got.DBConfirmedCount)
+}
+
+func TestRunExperimentOnModeUsesRedisGateAgainstIsolatedSchema(t *testing.T) {
+	if os.Getenv("REDIS_URL") == "" {
+		t.Skip("REDIS_URL is not set")
+	}
+
+	got := runExperimentIntegration(t, "on")
+
+	assert.Equal(t, "on", got.Mode)
+	assert.Equal(t, 3, got.VUs)
+	assert.Equal(t, 1, got.Capacity)
+	assert.Equal(t, 1, got.Outcomes.Confirmed)
+	assert.Equal(t, 2, got.Outcomes.Waitlisted)
+	assert.Zero(t, got.Outcomes.Error)
+	assert.Equal(t, 1, got.DBConfirmedCount)
+}
+
+func runExperimentIntegration(t *testing.T, mode string) result {
+	t.Helper()
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	t.Setenv("EXPERIMENT_ALLOW_DESTRUCTIVE", "1")
+	t.Setenv("EXPERIMENT_MODE", mode)
+	t.Setenv("EXPERIMENT_VUS", "3")
+	t.Setenv("EXPERIMENT_CAPACITY", "1")
+	t.Setenv("EXPERIMENT_TIMEOUT_SECONDS", "30")
+	t.Setenv("DATABASE_URL", experimentDatabaseURL(t, databaseURL))
+
+	body := captureExperimentStdout(t, func() {
+		require.NoError(t, run())
+	})
+
+	var got result
+	require.NoError(t, json.Unmarshal(body, &got))
+	return got
+}
+
+func experimentDatabaseURL(t *testing.T, databaseURL string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	adminPool, err := postgres.Connect(ctx, databaseURL)
+	require.NoError(t, err)
+
+	schema := fmt.Sprintf("reservation_experiment_test_%d", time.Now().UnixNano())
+	quotedSchema := pgx.Identifier{schema}.Sanitize()
+	_, err = adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", quotedSchema))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		_, _ = adminPool.Exec(dropCtx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", quotedSchema))
+		adminPool.Close()
+	})
+
+	parsed, err := url.Parse(databaseURL)
+	require.NoError(t, err)
+	values := parsed.Query()
+	values.Set("search_path", schema)
+	parsed.RawQuery = values.Encode()
+	return parsed.String()
+}
+
+func captureExperimentStdout(t *testing.T, fn func()) []byte {
+	t.Helper()
+	originalStdout := os.Stdout
+	readEnd, writeEnd, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = writeEnd
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+		_ = readEnd.Close()
+	})
+
+	fn()
+
+	require.NoError(t, writeEnd.Close())
+	body, err := io.ReadAll(readEnd)
+	require.NoError(t, err)
+	return body
 }

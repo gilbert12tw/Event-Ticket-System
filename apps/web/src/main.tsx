@@ -14,6 +14,7 @@ import "./css/employee-events.css";
 import "./css/employee-event-posters.css";
 import "./css/employee-event-detail.css";
 import "./css/employee-calendar-planner.css";
+import "./css/employee-calendar-planner-responsive.css";
 import "./css/employee-discovery.css";
 import "./css/employee-tickets.css";
 import "./css/employee-ticket-detail.css";

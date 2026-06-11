@@ -3,9 +3,11 @@ package ratelimit
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,16 +177,27 @@ func TestLimiterClassifiesTimeoutOutage(t *testing.T) {
 }
 
 func TestParseOutageMode(t *testing.T) {
-	mode, err := ParseOutageMode("")
-	require.NoError(t, err)
-	assert.Equal(t, OutageModeDegrade, mode)
+	tests := []struct {
+		name  string
+		value string
+		want  OutageMode
+	}{
+		{name: "blank defaults to degrade", value: "", want: OutageModeDegrade},
+		{name: "trims and lowercases degrade", value: "  DeGrAdE ", want: OutageModeDegrade},
+		{name: "trims and lowercases fail", value: " FAIL ", want: OutageModeFail},
+	}
 
-	mode, err = ParseOutageMode("  FAIL ")
-	require.NoError(t, err)
-	assert.Equal(t, OutageModeFail, mode)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseOutageMode(tt.value)
 
-	_, err = ParseOutageMode("explode")
-	require.Error(t, err)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := ParseOutageMode("panic")
+	require.ErrorContains(t, err, "RATE_LIMIT_OUTAGE_MODE")
 }
 
 func TestConfigValidate(t *testing.T) {
@@ -193,10 +206,11 @@ func TestConfigValidate(t *testing.T) {
 		cfg     Config
 		wantErr string
 	}{
-		{name: "disabled is always valid", cfg: Config{Enabled: false, ActorLimitPerSecond: -1}},
+		{name: "disabled is always valid", cfg: Config{Enabled: false, ActorLimitPerSecond: -1, EventLimitPerSecond: -1}},
 		{name: "enabled without limits is valid", cfg: Config{Enabled: true}},
-		{name: "negative actor limit", cfg: Config{Enabled: true, ActorLimitPerSecond: -1}, wantErr: "BOOKING_RATE_LIMIT_RPS_PER_ACTOR"},
-		{name: "negative event limit", cfg: Config{Enabled: true, EventLimitPerSecond: -1}, wantErr: "BOOKING_RATE_LIMIT_RPS_PER_EVENT"},
+		{name: "enabled without limits ignores operational timeout", cfg: Config{Enabled: true, OperationTimeout: -time.Second}},
+		{name: "negative actor limit", cfg: Config{Enabled: true, ActorLimitPerSecond: -1, OutageMode: OutageModeDegrade, OperationTimeout: time.Second}, wantErr: "BOOKING_RATE_LIMIT_RPS_PER_ACTOR"},
+		{name: "negative event limit", cfg: Config{Enabled: true, EventLimitPerSecond: -1, OutageMode: OutageModeDegrade, OperationTimeout: time.Second}, wantErr: "BOOKING_RATE_LIMIT_RPS_PER_EVENT"},
 		{name: "missing timeout", cfg: Config{Enabled: true, ActorLimitPerSecond: 1, OutageMode: OutageModeDegrade}, wantErr: "REDIS_OPERATION_TIMEOUT_MS"},
 		{name: "bad outage mode", cfg: Config{Enabled: true, ActorLimitPerSecond: 1, OperationTimeout: time.Second, OutageMode: "explode"}, wantErr: "RATE_LIMIT_OUTAGE_MODE"},
 		{name: "valid", cfg: Config{Enabled: true, ActorLimitPerSecond: 1, OperationTimeout: time.Second, OutageMode: OutageModeFail}},
@@ -212,4 +226,36 @@ func TestConfigValidate(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestRedisStoreIncrementUsesAtomicCounterWithTTL(t *testing.T) {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		t.Skip("REDIS_URL not set; skipping Redis-backed rate limit store test")
+	}
+	opts, err := redis.ParseURL(redisURL)
+	require.NoError(t, err)
+	client := redis.NewClient(opts)
+	t.Cleanup(func() {
+		require.NoError(t, client.Close())
+	})
+
+	ctx := context.Background()
+	require.NoError(t, client.Ping(ctx).Err())
+	key := keyPrefix + "test:" + time.Now().UTC().Format("20060102150405.000000000")
+	t.Cleanup(func() {
+		_ = client.Del(context.Background(), key).Err()
+	})
+
+	store := NewRedisStore(client)
+	first, err := store.Increment(ctx, key, time.Minute)
+	require.NoError(t, err)
+	second, err := store.Increment(ctx, key, time.Minute)
+	require.NoError(t, err)
+	ttl, err := client.TTL(ctx, key).Result()
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(1), first)
+	assert.Equal(t, int64(2), second)
+	assert.Positive(t, ttl)
 }
