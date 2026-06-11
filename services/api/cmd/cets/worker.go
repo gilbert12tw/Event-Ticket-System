@@ -176,6 +176,11 @@ func (loops configuredWorkerLoops) processOutboxKind(workCtx context.Context, sp
 	return loops.Service.ProcessOutboxOnceWithOptions(workCtx, ticketing.OutboxProcessorOptions{
 		Sender:      loops.Sender,
 		ReportStore: loops.ReportStore,
+		ExportSettings: ticketing.ReportExportSettings{
+			Source:                loops.Config.ExportsSource,
+			StaleThresholdSeconds: loops.Config.ReportStaleThresholdSeconds,
+			StalePolicy:           loops.Config.ExportsStalePolicy,
+		},
 		BatchSize:   loops.Config.WorkerBatchSize,
 		WorkerKinds: []string{spec.Kind},
 		LeaseTTL:    loops.Config.OutboxLeaseTTL,

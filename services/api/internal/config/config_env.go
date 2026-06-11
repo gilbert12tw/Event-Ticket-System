@@ -94,6 +94,32 @@ func parseBookingContentionStrategyEnv(loadErrors *[]string) string {
 	}
 }
 
+// parseExportsSourceEnv selects the report export data source (PH2-45).
+// projection (default) reads reporting_event_summary; operational restores
+// the Phase 1 OLTP aggregation as the rollback path.
+func parseExportsSourceEnv(loadErrors *[]string) string {
+	value := strings.ToLower(getEnv("EXPORTS_SOURCE", "projection"))
+	switch value {
+	case "projection", "operational":
+		return value
+	default:
+		*loadErrors = append(*loadErrors, fmt.Sprintf("EXPORTS_SOURCE must be one of projection|operational, got %q", value))
+		return "projection"
+	}
+}
+
+// parseExportsStalePolicyEnv validates the stale-projection policy (PH2-45).
+// Only fail (fail closed) is implemented; the enum exists so future policy
+// values are explicit config features and typos fail Load() loudly.
+func parseExportsStalePolicyEnv(loadErrors *[]string) string {
+	value := strings.ToLower(getEnv("EXPORTS_STALE_POLICY", "fail"))
+	if value == "fail" {
+		return value
+	}
+	*loadErrors = append(*loadErrors, fmt.Sprintf("EXPORTS_STALE_POLICY must be fail, got %q", value))
+	return "fail"
+}
+
 func parsePositiveIntEnv(key string, fallback string, loadErrors *[]string) int {
 	value := getEnv(key, fallback)
 	parsed, err := strconv.Atoi(value)
