@@ -128,6 +128,13 @@
   text-align: center;
 }
 
+.checkin-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .checkin-result {
   display: grid;
   gap: 12px;
@@ -212,6 +219,13 @@
     justify-content: center;
     overflow-wrap: anywhere;
     white-space: normal;
+  }
+
+  /* The dismiss button sits beside the panel title; full width would push
+     the heading off-screen on the sticky overlay. */
+  .checkin-workspace .checkin-result-heading [data-slot="button"] {
+    width: auto;
+    flex-shrink: 0;
   }
 
   .checkin-workspace .helper-strip {

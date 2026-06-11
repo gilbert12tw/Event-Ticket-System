@@ -165,6 +165,11 @@ export function CheckinPage() {
     event.currentTarget.form?.requestSubmit();
   }
 
+  function clearResult() {
+    setResult(null);
+    setMessage("");
+  }
+
   return (
     <section className="content-grid checkin-workspace">
       <form
@@ -214,7 +219,19 @@ export function CheckinPage() {
           aria-live="polite"
           tabIndex={-1}
         >
-          <h2 id="checkin-result-title">驗票結果</h2>
+          <div className="checkin-result-heading">
+            <h2 id="checkin-result-title">驗票結果</h2>
+            {(result || message) && (
+              <Button
+                variant="outline"
+                type="button"
+                onClick={clearResult}
+                aria-label="關閉驗票結果"
+              >
+                關閉
+              </Button>
+            )}
+          </div>
           <div className="kpi-row">
             <Kpi label="活動" value={selectedEvent?.title || "未選擇"} />
             <Kpi label="裝置" value={deviceID || "未設定"} />
