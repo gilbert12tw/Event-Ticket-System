@@ -3,6 +3,7 @@ import { ticketDetailPath } from "@/app/routes";
 import { EmptyState, StatusBadge } from "@/components/shared";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
+import { downloadCalendarArtifact } from "@/features/events/employee-calendar-export";
 import { EventPoster } from "@/features/events/employee-event-poster";
 import type { Ticket } from "@/lib/api";
 import {
@@ -198,14 +199,5 @@ function TicketUsageDisclosure({
 }
 
 function downloadTicketCalendar(ticket: Ticket) {
-  const artifact = ticketCalendarExport(ticket);
-  const blob = new Blob([artifact.content], { type: artifact.mimeType });
-  const url = globalThis.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = artifact.filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  globalThis.URL.revokeObjectURL(url);
+  downloadCalendarArtifact(ticketCalendarExport(ticket));
 }
