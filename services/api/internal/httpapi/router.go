@@ -192,6 +192,8 @@ func withTimeout(timeout time.Duration, next http.Handler) http.Handler {
 	})
 }
 
+const requestHandledMsg = "request handled"
+
 func withRequestLogging(logger *slog.Logger, replica string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
@@ -217,11 +219,11 @@ func withRequestLogging(logger *slog.Logger, replica string, next http.Handler) 
 		}
 		switch {
 		case recorder.status >= 500:
-			logger.Error("request handled", attrs...)
+			logger.Error(requestHandledMsg, attrs...)
 		case recorder.status >= 400:
-			logger.Warn("request handled", attrs...)
+			logger.Warn(requestHandledMsg, attrs...)
 		default:
-			logger.Info("request handled", attrs...)
+			logger.Info(requestHandledMsg, attrs...)
 		}
 	})
 }
