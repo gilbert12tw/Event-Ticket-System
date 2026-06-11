@@ -224,70 +224,58 @@ func (r *Registry) writeHTTPMetrics(w io.Writer) {
 	writeFormat(w, "cets_build_info{service=\"%s\",replica=\"%s\"} 1\n",
 		escapeLabel(r.identity.Service), escapeLabel(r.identity.Replica))
 
-	r.mu.Lock()
-	keys := make([]httpKey, 0, len(r.http))
-	for key := range r.http {
+	keys, snapshots := sortedHistogramSnapshots(&r.mu, r.http, labelSet)
+	for _, key := range keys {
+		labels := labelSet(key)
+		h := snapshots[key]
+		writeFormat(w, "cets_http_requests_total{%s} %d\n", labels, h.Count)
+		writeHistogramSeries(w, "cets_http_request_seconds", labels, h)
+	}
+}
+
+// sortedHistogramSnapshots copies the histogram map under the registry lock
+// and returns keys sorted by their rendered label set, so writers emit a
+// stable order without holding the lock while writing.
+func sortedHistogramSnapshots[K comparable](mu *sync.Mutex, source map[K]*histogram, labels func(K) string) ([]K, map[K]histogram) {
+	mu.Lock()
+	defer mu.Unlock()
+	keys := make([]K, 0, len(source))
+	for key := range source {
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool {
-		return labelSet(keys[i]) < labelSet(keys[j])
+		return labels(keys[i]) < labels(keys[j])
 	})
-	snapshots := make(map[httpKey]histogram, len(keys))
+	snapshots := make(map[K]histogram, len(keys))
 	for _, key := range keys {
-		current := r.http[key]
+		current := source[key]
 		snapshots[key] = histogram{
 			Buckets: append([]uint64(nil), current.Buckets...),
 			Count:   current.Count,
 			Sum:     current.Sum,
 		}
 	}
-	r.mu.Unlock()
+	return keys, snapshots
+}
 
-	for _, key := range keys {
-		labels := labelSet(key)
-		h := snapshots[key]
-		writeFormat(w, "cets_http_requests_total{%s} %d\n", labels, h.Count)
-		for i, bucket := range httpBuckets {
-			writeFormat(w, "cets_http_request_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
-		}
-		writeFormat(w, "cets_http_request_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
-		writeFormat(w, "cets_http_request_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
-		writeFormat(w, "cets_http_request_seconds_count{%s} %d\n", labels, h.Count)
+// writeHistogramSeries renders one httpBuckets-shaped histogram in Prometheus
+// text format: per-bucket counts, the +Inf bucket, sum, and count.
+func writeHistogramSeries(w io.Writer, name string, labels string, h histogram) {
+	for i, bucket := range httpBuckets {
+		writeFormat(w, "%s_bucket{%s,le=%q} %d\n", name, labels, formatBucket(bucket), h.Buckets[i])
 	}
+	writeFormat(w, "%s_bucket{%s,le=\"+Inf\"} %d\n", name, labels, h.Count)
+	writeFormat(w, "%s_sum{%s} %s\n", name, labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
+	writeFormat(w, "%s_count{%s} %d\n", name, labels, h.Count)
 }
 
 func (r *Registry) writeBookingMetrics(w io.Writer) {
 	writeLine(w, "# HELP cets_booking_stage_seconds Booking hot-path stage duration histogram by bounded stage and outcome.")
 	writeLine(w, "# TYPE cets_booking_stage_seconds histogram")
 
-	r.mu.Lock()
-	keys := make([]bookingStageKey, 0, len(r.booking))
-	for key := range r.booking {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return bookingStageLabelSet(keys[i]) < bookingStageLabelSet(keys[j])
-	})
-	snapshots := make(map[bookingStageKey]histogram, len(keys))
+	keys, snapshots := sortedHistogramSnapshots(&r.mu, r.booking, bookingStageLabelSet)
 	for _, key := range keys {
-		current := r.booking[key]
-		snapshots[key] = histogram{
-			Buckets: append([]uint64(nil), current.Buckets...),
-			Count:   current.Count,
-			Sum:     current.Sum,
-		}
-	}
-	r.mu.Unlock()
-
-	for _, key := range keys {
-		labels := bookingStageLabelSet(key)
-		h := snapshots[key]
-		for i, bucket := range httpBuckets {
-			writeFormat(w, "cets_booking_stage_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
-		}
-		writeFormat(w, "cets_booking_stage_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
-		writeFormat(w, "cets_booking_stage_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
-		writeFormat(w, "cets_booking_stage_seconds_count{%s} %d\n", labels, h.Count)
+		writeHistogramSeries(w, "cets_booking_stage_seconds", bookingStageLabelSet(key), snapshots[key])
 	}
 }
 
@@ -297,35 +285,12 @@ func (r *Registry) writeReservationMetrics(w io.Writer) {
 	writeLine(w, "# HELP cets_booking_preadmission_seconds Reservation pre-admission latency histogram by bounded outcome, capacity type, and outage mode.")
 	writeLine(w, "# TYPE cets_booking_preadmission_seconds histogram")
 
-	r.mu.Lock()
-	keys := make([]reservationKey, 0, len(r.reservation))
-	for key := range r.reservation {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return reservationLabelSet(keys[i]) < reservationLabelSet(keys[j])
-	})
-	snapshots := make(map[reservationKey]histogram, len(keys))
-	for _, key := range keys {
-		current := r.reservation[key]
-		snapshots[key] = histogram{
-			Buckets: append([]uint64(nil), current.Buckets...),
-			Count:   current.Count,
-			Sum:     current.Sum,
-		}
-	}
-	r.mu.Unlock()
-
+	keys, snapshots := sortedHistogramSnapshots(&r.mu, r.reservation, reservationLabelSet)
 	for _, key := range keys {
 		labels := reservationLabelSet(key)
 		h := snapshots[key]
 		writeFormat(w, "cets_reservation_attempt_total{%s} %d\n", labels, h.Count)
-		for i, bucket := range httpBuckets {
-			writeFormat(w, "cets_booking_preadmission_seconds_bucket{%s,le=%q} %d\n", labels, formatBucket(bucket), h.Buckets[i])
-		}
-		writeFormat(w, "cets_booking_preadmission_seconds_bucket{%s,le=\"+Inf\"} %d\n", labels, h.Count)
-		writeFormat(w, "cets_booking_preadmission_seconds_sum{%s} %s\n", labels, strconv.FormatFloat(h.Sum, 'f', -1, 64))
-		writeFormat(w, "cets_booking_preadmission_seconds_count{%s} %d\n", labels, h.Count)
+		writeHistogramSeries(w, "cets_booking_preadmission_seconds", labels, h)
 	}
 }
 

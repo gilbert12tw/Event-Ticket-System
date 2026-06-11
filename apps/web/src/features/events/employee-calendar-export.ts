@@ -34,6 +34,18 @@ export function canAddToCalendar(event: EventSummary, ticket?: Ticket) {
   );
 }
 
+export function downloadCalendarArtifact(artifact: CalendarExportArtifact) {
+  const blob = new Blob([artifact.content], { type: artifact.mimeType });
+  const url = globalThis.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = artifact.filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  globalThis.URL.revokeObjectURL(url);
+}
+
 export function employeeCalendarExport(
   event: CalendarExportEvent,
   now: Date = new Date(),

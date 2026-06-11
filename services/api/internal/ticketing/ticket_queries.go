@@ -24,10 +24,6 @@ const (
 		JOIN employees emp ON emp.employee_id = t.employee_id`
 )
 
-type ticketQuerier interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
 func (s *Service) createTicketTx(ctx context.Context, tx pgx.Tx, reg Registration, employee Employee) (Ticket, error) {
 	ticketID, err := newID("tkt")
 	if err != nil {
@@ -68,15 +64,11 @@ func (s *Service) createTicketTx(ctx context.Context, tx pgx.Tx, reg Registratio
 	}, nil
 }
 
-func (s *Service) findTicketByRegistration(ctx context.Context, registrationID string) (*Ticket, error) {
-	return s.findTicketByRegistrationWith(ctx, s.db, registrationID)
-}
-
 func (s *Service) findTicketByRegistrationTx(ctx context.Context, tx pgx.Tx, registrationID string) (*Ticket, error) {
 	return s.findTicketByRegistrationWith(ctx, tx, registrationID)
 }
 
-func (s *Service) findTicketByRegistrationWith(ctx context.Context, q ticketQuerier, registrationID string) (*Ticket, error) {
+func (s *Service) findTicketByRegistrationWith(ctx context.Context, q rowQuerier, registrationID string) (*Ticket, error) {
 	var ticket Ticket
 	err := scanTicketRow(q.QueryRow(ctx, `SELECT `+ticketSelectColumns+`
 		FROM tickets t

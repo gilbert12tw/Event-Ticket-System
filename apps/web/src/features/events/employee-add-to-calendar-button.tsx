@@ -2,7 +2,10 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import type { EventSummary } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { employeeCalendarExport } from "./employee-calendar-export";
+import {
+  downloadCalendarArtifact,
+  employeeCalendarExport,
+} from "./employee-calendar-export";
 
 export function EmployeeAddToCalendarButton({
   className,
@@ -37,14 +40,6 @@ export function EmployeeAddToCalendarButton({
 
 function downloadEventCalendar(event: EventSummary) {
   const artifact = employeeCalendarExport(event);
-  const blob = new Blob([artifact.content], { type: artifact.mimeType });
-  const url = globalThis.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = artifact.filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  globalThis.URL.revokeObjectURL(url);
+  downloadCalendarArtifact(artifact);
   return artifact;
 }
