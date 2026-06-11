@@ -28,7 +28,7 @@ func (s *Service) processClaimedOutbox(ctx context.Context, tx pgx.Tx, options O
 		return markInvalidOutboxPayloadAttempt(ctx, tx, claim, retryPolicy, logAttempt)
 	}
 	if isReportExportRequestedEventType(claim.eventType) {
-		return s.processClaimedReportExportOutbox(ctx, tx, claim, options.ReportStore, retryPolicy, logAttempt)
+		return s.processClaimedReportExportOutbox(ctx, tx, claim, options, retryPolicy, logAttempt)
 	}
 	if claim.eventType == outboxEventReportingProjectionUpdateRequiredV2 {
 		return s.processClaimedProjectionOutbox(ctx, tx, claim, logAttempt)
@@ -92,12 +92,12 @@ func markOutboxPublishedAttempt(ctx context.Context, tx pgx.Tx, claim outboxClai
 	return 1, nil
 }
 
-func (s *Service) processClaimedReportExportOutbox(ctx context.Context, tx pgx.Tx, claim outboxClaim, store ReportObjectStore, retryPolicy OutboxRetryPolicy, logAttempt outboxAttemptLogger) (int, error) {
+func (s *Service) processClaimedReportExportOutbox(ctx context.Context, tx pgx.Tx, claim outboxClaim, options OutboxProcessorOptions, retryPolicy OutboxRetryPolicy, logAttempt outboxAttemptLogger) (int, error) {
 	if err := tx.Commit(ctx); err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 0, err
 	}
-	outcome, err := s.processReportExportOutbox(ctx, claim, store, retryPolicy)
+	outcome, err := s.processReportExportOutbox(ctx, claim, options.ReportStore, options.ExportSettings, retryPolicy)
 	if err != nil {
 		logAttempt(outboxAttemptOutcomeError)
 		return 1, err

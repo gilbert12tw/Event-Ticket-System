@@ -59,6 +59,9 @@ func TestProcessOutboxOnceGeneratesReportExportArtifact(t *testing.T) {
 	require.NoError(t, err)
 	export, err := service.CreateReportExport(ctx, Actor{ID: "hr-1", Role: RoleHRAdmin}, ReportExportRequest{ReportType: "participation"})
 	require.NoError(t, err)
+	// Default source is the reporting projection (PH2-45); populate it.
+	_, err = service.RebuildProjection(ctx, systemAdmin, RebuildOptions{})
+	require.NoError(t, err)
 	store := &recordingReportStore{}
 
 	processed, err := service.ProcessOutboxOnceWithOptions(ctx, OutboxProcessorOptions{ReportStore: store, MaxAttempts: 3})
@@ -69,11 +72,9 @@ func TestProcessOutboxOnceGeneratesReportExportArtifact(t *testing.T) {
 	assert.Equal(t, "text/csv; charset=utf-8", store.contentType)
 	records := parseReportCSV(t, store.body)
 	require.NotEmpty(t, records)
-	assert.Equal(t, []string{
-		"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count",
-		"employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count",
-		"remaining_capacity", "city_distribution", "starts_at",
-	}, records[0])
+	assert.Equal(t, projectionExportCSVHeader, records[0])
+	row := findReportCSVRecord(t, records, event.EventID)
+	assert.Equal(t, reportProjectionStatusFresh, row[14])
 	assert.Contains(t, store.body, event.Title)
 	assert.NotContains(t, store.body, "Ariel Chen")
 	assert.NotContains(t, store.body, "signed_token")
@@ -329,7 +330,7 @@ func parseReportCSV(t *testing.T, body string) [][]string {
 func findReportCSVRecord(t *testing.T, records [][]string, eventID string) []string {
 	t.Helper()
 	for _, record := range records[1:] {
-		require.Len(t, record, 14)
+		require.Len(t, record, len(records[0]))
 		if record[0] == eventID {
 			return record
 		}

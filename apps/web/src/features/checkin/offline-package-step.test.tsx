@@ -133,18 +133,26 @@ describe("OfflinePackageStep — download flow", () => {
 });
 
 describe("OfflinePackageStep — restore from IDB", () => {
-  it("auto-selects the only active package", async () => {
+  it("auto-selects the only active package without navigating", async () => {
     const pkg = testPackage();
     loadActivePackages.mockResolvedValue([stored(pkg)]);
     const onPackageReady = vi.fn();
+    const onPackageRestored = vi.fn();
 
     render(
-      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+      <OfflinePackageStep
+        staffID="staff-1"
+        onPackageReady={onPackageReady}
+        onPackageRestored={onPackageRestored}
+      />,
     );
 
     await waitFor(() =>
-      expect(onPackageReady).toHaveBeenCalledWith(stored(pkg)),
+      expect(onPackageRestored).toHaveBeenCalledWith(stored(pkg)),
     );
+    // Restoring must not trigger the navigating callback, or the package tab
+    // becomes unreachable while a batch exists.
+    expect(onPackageReady).not.toHaveBeenCalled();
     // Preview shows the restored batch metadata.
     expect(await screen.findByText("batch-1")).toBeInTheDocument();
   });
@@ -188,17 +196,23 @@ describe("OfflinePackageStep — restore from IDB", () => {
     listAdminEvents
       .mockResolvedValueOnce(events)
       .mockRejectedValueOnce(new Error("network down"));
-    const onPackageReady = vi.fn();
+    const onPackageRestored = vi.fn();
 
     render(
-      <OfflinePackageStep staffID="staff-1" onPackageReady={onPackageReady} />,
+      <OfflinePackageStep
+        staffID="staff-1"
+        onPackageReady={vi.fn()}
+        onPackageRestored={onPackageRestored}
+      />,
     );
 
-    await waitFor(() => expect(onPackageReady).toHaveBeenCalled());
+    await waitFor(() => expect(onPackageRestored).toHaveBeenCalled());
     await userEvent.click(screen.getByRole("button", { name: "重新載入活動" }));
 
     expect(
-      await screen.findByText("離線模式：使用已下載的離線名單"),
+      await screen.findByText(
+        "離線模式：無法載入活動清單，可使用已下載的離線名單。",
+      ),
     ).toBeInTheDocument();
   });
 

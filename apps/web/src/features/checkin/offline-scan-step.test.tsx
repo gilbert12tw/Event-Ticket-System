@@ -104,7 +104,7 @@ beforeEach(() => {
   scannerCallback = null;
   isPackageExpired.mockReturnValue(false);
   computeScanCounts.mockReturnValue({ ...ZERO_COUNTS });
-  addScanRecord.mockResolvedValue(undefined);
+  addScanRecord.mockResolvedValue(true);
   hashToken.mockResolvedValue("hash-1");
   judgeOfflineScan.mockResolvedValue({
     local_status: "accepted",
@@ -190,6 +190,22 @@ describe("OfflineScanStep — handleToken judgment flow", () => {
     await waitFor(() => expect(hashToken).not.toHaveBeenCalled());
     expect(judgeOfflineScan).not.toHaveBeenCalled();
     expect(addScanRecord).not.toHaveBeenCalled();
+  });
+
+  it("drops the scan when the store rejects it (batch closed underneath)", async () => {
+    addScanRecord.mockResolvedValue(false);
+    const onScansChanged = vi.fn();
+    render(
+      <OfflineScanStep
+        stored={storedPackage()}
+        onScansChanged={onScansChanged}
+      />,
+    );
+
+    scannerCallback!("signed-token");
+
+    await waitFor(() => expect(addScanRecord).toHaveBeenCalledTimes(1));
+    expect(onScansChanged).not.toHaveBeenCalled();
   });
 
   it("swallows judgment errors without recording a scan", async () => {
@@ -321,5 +337,34 @@ describe("OfflineScanStep — scan table", () => {
       <OfflineScanStep stored={storedPackage()} onScansChanged={vi.fn()} />,
     );
     expect(screen.getByText("尚無掃描")).toBeInTheDocument();
+  });
+});
+
+describe("OfflineScanStep — go to results", () => {
+  it("offers the results shortcut once scans exist", async () => {
+    const onGoToResults = vi.fn();
+    render(
+      <OfflineScanStep
+        stored={storedPackage({ scans: [scanRecord()] })}
+        onScansChanged={vi.fn()}
+        onGoToResults={onGoToResults}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /前往同步結果/ }));
+    expect(onGoToResults).toHaveBeenCalled();
+  });
+
+  it("hides the shortcut while there are no scans", () => {
+    render(
+      <OfflineScanStep
+        stored={storedPackage()}
+        onScansChanged={vi.fn()}
+        onGoToResults={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /前往同步結果/ }),
+    ).not.toBeInTheDocument();
   });
 });

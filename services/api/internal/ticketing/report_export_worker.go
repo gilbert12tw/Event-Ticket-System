@@ -24,7 +24,7 @@ type ReportObjectExistenceChecker interface {
 	Exists(ctx context.Context, key string) (bool, error)
 }
 
-func (s *Service) processReportExportOutbox(ctx context.Context, claim outboxClaim, store ReportObjectStore, retryPolicy OutboxRetryPolicy) (string, error) {
+func (s *Service) processReportExportOutbox(ctx context.Context, claim outboxClaim, store ReportObjectStore, settings ReportExportSettings, retryPolicy OutboxRetryPolicy) (string, error) {
 	if store == nil {
 		return s.failReportExportOutbox(ctx, claim, retryPolicy, errors.New("report export object store is required"))
 	}
@@ -45,7 +45,7 @@ func (s *Service) processReportExportOutbox(ctx context.Context, claim outboxCla
 		}
 		return outboxAttemptOutcomePublished, s.markOutboxPublished(ctx, claim)
 	}
-	body, err := s.buildReportExportCSV(ctx)
+	body, err := s.buildReportExportBody(ctx, settings)
 	if err != nil {
 		return s.failReportExportOutbox(ctx, claim, retryPolicy, err)
 	}
@@ -81,6 +81,17 @@ func (s *Service) loadReportExport(ctx context.Context, exportID string) (Report
 	}
 	export.Format = ReportExportFormatCSV
 	return export, nil
+}
+
+// buildReportExportBody dispatches on the configured export source:
+// projection (PH2-45 default, gated fail-closed on staleness) or operational
+// (the byte-exact Phase 1 rollback path).
+func (s *Service) buildReportExportBody(ctx context.Context, settings ReportExportSettings) ([]byte, error) {
+	settings = settings.normalized()
+	if settings.Source == ReportExportSourceOperational {
+		return s.buildReportExportCSV(ctx)
+	}
+	return s.buildReportExportCSVFromProjection(ctx, settings.StaleThresholdSeconds)
 }
 
 func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
@@ -179,6 +190,9 @@ func (s *Service) failReportExportOutbox(ctx context.Context, claim outboxClaim,
 func safeReportExportFailureError(failure error) string {
 	if failure == nil {
 		return ""
+	}
+	if errors.Is(failure, errReportingProjectionStale) || errors.Is(failure, errReportingProjectionUnavailable) {
+		return "reporting projection stale"
 	}
 	message := strings.TrimSpace(failure.Error())
 	if message == "" {

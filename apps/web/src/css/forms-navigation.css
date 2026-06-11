@@ -437,6 +437,12 @@
   min-width: 0;
 }
 
+/* Columns must be allowed to shrink below their content's intrinsic width,
+   or wide children (tables, mono strings) stretch the page on small screens. */
+.split-grid > * {
+  min-width: 0;
+}
+
 .offline-package-grid {
   grid-template-columns: minmax(320px, 1fr) minmax(260px, 380px);
   align-items: stretch;

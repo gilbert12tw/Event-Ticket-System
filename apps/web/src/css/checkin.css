@@ -5,6 +5,12 @@
   gap: 16px;
 }
 
+/* Five narrow columns — the global 780px table minimum would force needless
+   horizontal scrolling on the staff's phone. */
+.offline-scan-records table {
+  min-width: 480px;
+}
+
 .checkin-scan-panel,
 .checkin-controls-panel,
 .checkin-result-panel {

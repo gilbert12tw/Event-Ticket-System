@@ -27,13 +27,14 @@ type NotificationSender interface {
 }
 
 type OutboxProcessorOptions struct {
-	Sender      NotificationSender
-	ReportStore ReportObjectStore
-	MaxAttempts int
-	BatchSize   int
-	WorkerKinds []string
-	LeaseTTL    time.Duration
-	RetryPolicy *OutboxRetryPolicy
+	Sender         NotificationSender
+	ReportStore    ReportObjectStore
+	ExportSettings ReportExportSettings
+	MaxAttempts    int
+	BatchSize      int
+	WorkerKinds    []string
+	LeaseTTL       time.Duration
+	RetryPolicy    *OutboxRetryPolicy
 }
 
 func (s *Service) ProcessOutboxOnce(ctx context.Context, sender NotificationSender, maxAttempts int) (int, error) {
