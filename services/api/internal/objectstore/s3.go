@@ -41,7 +41,7 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 		Operation:   "put",
 	})
 	defer func() { observability.EndDependencySpan(span, err) }()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint.String(), bytes.NewReader(body))
+	request, err := s.newSignedRequest(ctx, http.MethodPut, endpoint, canonicalURI, region, now, body)
 	if err != nil {
 		return err
 	}
@@ -49,13 +49,6 @@ func (s S3CompatibleStore) Put(ctx context.Context, key string, contentType stri
 		contentType = "application/octet-stream"
 	}
 	request.Header.Set("Content-Type", contentType)
-
-	payloadHash := sha256Hex(body)
-	amzDate := now.Format("20060102T150405Z")
-	dateStamp := now.Format("20060102")
-	request.Header.Set(amzContentSHA256Header, payloadHash)
-	request.Header.Set(amzDateHeader, amzDate)
-	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
 
 	response, err := s.httpClient().Do(request)
 	if err != nil {
@@ -82,17 +75,10 @@ func (s S3CompatibleStore) Exists(ctx context.Context, key string) (bool, error)
 		Operation:   "head",
 	})
 	defer func() { observability.EndDependencySpan(span, err) }()
-	request, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint.String(), nil)
+	request, err := s.newSignedRequest(ctx, http.MethodHead, endpoint, canonicalURI, region, now, nil)
 	if err != nil {
 		return false, err
 	}
-	payloadHash := sha256Hex(nil)
-	amzDate := now.Format("20060102T150405Z")
-	dateStamp := now.Format("20060102")
-	request.Header.Set(amzContentSHA256Header, payloadHash)
-	request.Header.Set(amzDateHeader, amzDate)
-	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
-
 	response, err := s.httpClient().Do(request)
 	if err != nil {
 		return false, err
@@ -121,17 +107,10 @@ func (s S3CompatibleStore) Get(ctx context.Context, key string) ([]byte, string,
 		Operation:   "get",
 	})
 	defer func() { observability.EndDependencySpan(span, err) }()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	request, err := s.newSignedRequest(ctx, http.MethodGet, endpoint, canonicalURI, region, now, nil)
 	if err != nil {
 		return nil, "", err
 	}
-	payloadHash := sha256Hex(nil)
-	amzDate := now.Format("20060102T150405Z")
-	dateStamp := now.Format("20060102")
-	request.Header.Set(amzContentSHA256Header, payloadHash)
-	request.Header.Set(amzDateHeader, amzDate)
-	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
-
 	response, err := s.httpClient().Do(request)
 	if err != nil {
 		return nil, "", err
@@ -177,6 +156,27 @@ func (s S3CompatibleStore) requestParts(key string) (*url.URL, string, string, t
 	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + objectPath
 	endpoint.RawQuery = ""
 	return endpoint, endpoint.EscapedPath(), region, now, nil
+}
+
+// newSignedRequest builds a request with the SigV4 payload hash, date, and
+// Authorization headers set. body must be nil for bodyless methods so the
+// empty-payload hash is signed.
+func (s S3CompatibleStore) newSignedRequest(ctx context.Context, method string, endpoint *url.URL, canonicalURI string, region string, now time.Time, body []byte) (*http.Request, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), reader)
+	if err != nil {
+		return nil, err
+	}
+	payloadHash := sha256Hex(body)
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	request.Header.Set(amzContentSHA256Header, payloadHash)
+	request.Header.Set(amzDateHeader, amzDate)
+	request.Header.Set("Authorization", s.authorization(request, canonicalURI, payloadHash, amzDate, dateStamp, region))
+	return request, nil
 }
 
 func (s S3CompatibleStore) httpClient() *http.Client {

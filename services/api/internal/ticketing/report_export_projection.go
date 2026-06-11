@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -172,11 +171,7 @@ func (s *Service) buildReportExportCSVFromProjection(ctx context.Context, thresh
 	}
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{
-		"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count",
-		"employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count",
-		"remaining_capacity", "city_distribution", "starts_at", "projection_status",
-	}); err != nil {
+	if err := writer.Write(append(reportExportBaseHeader(), "projection_status")); err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
@@ -201,25 +196,9 @@ func projectionExportCSVRecord(row reportExportProjectionRow) ([]string, error) 
 			row.ProjectionStatus,
 		}, nil
 	}
-	cityDistribution, err := cityDistributionCSVValue(row.CityDistribution)
+	record, err := reportRowCSVRecord(row.ReportRow)
 	if err != nil {
 		return nil, err
 	}
-	return []string{
-		row.EventID,
-		row.Title,
-		row.CapacityType,
-		nullableIntCSVValue(row.Capacity),
-		strconv.Itoa(row.ConfirmedCount),
-		strconv.Itoa(row.WaitlistCount),
-		strconv.Itoa(row.EmployeeCount),
-		strconv.Itoa(row.FamilyCount),
-		strconv.Itoa(row.TotalAttendeeCount),
-		strconv.Itoa(row.TicketCount),
-		strconv.Itoa(row.CheckinCount),
-		nullableIntCSVValue(row.RemainingCapacity),
-		cityDistribution,
-		row.StartsAt.UTC().Format(time.RFC3339),
-		row.ProjectionStatus,
-	}, nil
+	return append(record, row.ProjectionStatus), nil
 }

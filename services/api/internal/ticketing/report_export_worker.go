@@ -101,35 +101,54 @@ func (s *Service) buildReportExportCSV(ctx context.Context) ([]byte, error) {
 	}
 	buffer := &bytes.Buffer{}
 	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count", "employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count", "remaining_capacity", "city_distribution", "starts_at"}); err != nil {
+	if err := writer.Write(reportExportBaseHeader()); err != nil {
 		return nil, err
 	}
 	for _, row := range result.Rows {
-		cityDistribution, err := cityDistributionCSVValue(row.CityDistribution)
+		record, err := reportRowCSVRecord(row)
 		if err != nil {
 			return nil, err
 		}
-		if err := writer.Write([]string{
-			row.EventID,
-			row.Title,
-			row.CapacityType,
-			nullableIntCSVValue(row.Capacity),
-			strconv.Itoa(row.ConfirmedCount),
-			strconv.Itoa(row.WaitlistCount),
-			strconv.Itoa(row.EmployeeCount),
-			strconv.Itoa(row.FamilyCount),
-			strconv.Itoa(row.TotalAttendeeCount),
-			strconv.Itoa(row.TicketCount),
-			strconv.Itoa(row.CheckinCount),
-			nullableIntCSVValue(row.RemainingCapacity),
-			cityDistribution,
-			row.StartsAt.UTC().Format(time.RFC3339),
-		}); err != nil {
+		if err := writer.Write(record); err != nil {
 			return nil, err
 		}
 	}
 	writer.Flush()
 	return buffer.Bytes(), writer.Error()
+}
+
+// reportExportBaseHeader is the Phase 1 whitelist column order shared by the
+// operational and projection export paths; the projection path appends
+// projection_status.
+func reportExportBaseHeader() []string {
+	return []string{
+		"event_id", "title", "capacity_type", "capacity", "confirmed_count", "waitlist_count",
+		"employee_count", "family_count", "total_attendee_count", "ticket_count", "checkin_count",
+		"remaining_capacity", "city_distribution", "starts_at",
+	}
+}
+
+func reportRowCSVRecord(row ReportRow) ([]string, error) {
+	cityDistribution, err := cityDistributionCSVValue(row.CityDistribution)
+	if err != nil {
+		return nil, err
+	}
+	return []string{
+		row.EventID,
+		row.Title,
+		row.CapacityType,
+		nullableIntCSVValue(row.Capacity),
+		strconv.Itoa(row.ConfirmedCount),
+		strconv.Itoa(row.WaitlistCount),
+		strconv.Itoa(row.EmployeeCount),
+		strconv.Itoa(row.FamilyCount),
+		strconv.Itoa(row.TotalAttendeeCount),
+		strconv.Itoa(row.TicketCount),
+		strconv.Itoa(row.CheckinCount),
+		nullableIntCSVValue(row.RemainingCapacity),
+		cityDistribution,
+		row.StartsAt.UTC().Format(time.RFC3339),
+	}, nil
 }
 
 func cityDistributionCSVValue(distribution map[string]int) (string, error) {

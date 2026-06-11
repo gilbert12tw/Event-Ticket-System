@@ -49,29 +49,14 @@ export function groupEventsByCalendarDay(
   events: EventSummary[],
   now: Date = new Date(),
 ): EmployeeCalendarDay[] {
-  const today = startOfEmployeeCalendarDay(now);
-  const firstDay = startOfEmployeeCalendarWeek(today);
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addEmployeeCalendarDays(firstDay, index);
-    const dateKey = localDateKey(date);
-    const relevantEvents = events.filter(
-      (event) =>
-        localDateKey(parseDate(event.starts_at)) === dateKey &&
-        employeeEventDisplayState(event, undefined, now).showInMain,
-    );
-    return {
-      date,
-      dateKey,
-      weekdayLabel: employeeCalendarWeekdayLabel(date),
-      dayNumber: employeeCalendarDayNumber(date),
-      isToday: dateKey === localDateKey(today),
-      eventCount: relevantEvents.length,
-      hasRegistration: relevantEvents.some(
-        (event) =>
-          employeeEventDisplayState(event, undefined, now).isRegistered,
-      ),
-    };
-  });
+  const firstDay = startOfEmployeeCalendarWeek(startOfEmployeeCalendarDay(now));
+  return Array.from({ length: 7 }, (_, index) =>
+    buildEmployeeCalendarDay(
+      events,
+      addEmployeeCalendarDays(firstDay, index),
+      now,
+    ),
+  );
 }
 
 export function groupEventsByMonth(
@@ -81,27 +66,37 @@ export function groupEventsByMonth(
 ): EmployeeCalendarDay[] {
   const firstOfMonth = startOfEmployeeCalendarMonth(selectedDate);
   const gridStart = startOfEmployeeCalendarWeek(firstOfMonth);
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = addEmployeeCalendarDays(gridStart, index);
-    const dateKey = localDateKey(date);
-    const relevantEvents = events.filter(
-      (event) =>
-        localDateKey(parseDate(event.starts_at)) === dateKey &&
-        employeeEventDisplayState(event, undefined, now).showInMain,
-    );
-    return {
-      date,
-      dateKey,
-      weekdayLabel: employeeCalendarWeekdayLabel(date),
-      dayNumber: employeeCalendarDayNumber(date),
-      isToday: dateKey === localDateKey(startOfEmployeeCalendarDay(now)),
-      eventCount: relevantEvents.length,
-      hasRegistration: relevantEvents.some(
-        (event) =>
-          employeeEventDisplayState(event, undefined, now).isRegistered,
-      ),
-    };
-  });
+  return Array.from({ length: 42 }, (_, index) =>
+    buildEmployeeCalendarDay(
+      events,
+      addEmployeeCalendarDays(gridStart, index),
+      now,
+    ),
+  );
+}
+
+function buildEmployeeCalendarDay(
+  events: EventSummary[],
+  date: Date,
+  now: Date,
+): EmployeeCalendarDay {
+  const dateKey = localDateKey(date);
+  const relevantEvents = events.filter(
+    (event) =>
+      localDateKey(parseDate(event.starts_at)) === dateKey &&
+      employeeEventDisplayState(event, undefined, now).showInMain,
+  );
+  return {
+    date,
+    dateKey,
+    weekdayLabel: employeeCalendarWeekdayLabel(date),
+    dayNumber: employeeCalendarDayNumber(date),
+    isToday: dateKey === localDateKey(startOfEmployeeCalendarDay(now)),
+    eventCount: relevantEvents.length,
+    hasRegistration: relevantEvents.some(
+      (event) => employeeEventDisplayState(event, undefined, now).isRegistered,
+    ),
+  };
 }
 
 export function selectEmployeeAgenda(
