@@ -56,6 +56,11 @@ export function CheckinPage() {
   const selectedEvent = events.find(
     (event) => event.event_id === selectedEventID,
   );
+  const eventOptions = events.map((event) => ({
+    value: event.event_id,
+    label: event.title,
+    helper: event.status,
+  }));
 
   async function submit(nextToken = token) {
     const signedToken = nextToken.trim();
@@ -184,7 +189,7 @@ export function CheckinPage() {
           <div className="section-heading">
             <div>
               <h2>線上驗票</h2>
-              <p>當前活動會自動鎖定；掃描 QR code 後立即驗票。</p>
+              <p>系統會自動選定當前活動，可手動切換；掃描 QR code 後立即驗票。</p>
             </div>
           </div>
           <MobileQrScanner onTokenDetected={handleDetectedToken} />
@@ -204,10 +209,18 @@ export function CheckinPage() {
             <span>{selectedEvent?.title || "尚未載入可驗票活動"}</span>
             {events.length > 1 && (
               <span className="table-muted">
-                已自動選定活動時間最接近現在的活動。
+                已自動選定活動時間最接近現在的活動，可手動切換。
               </span>
             )}
           </div>
+          <SelectField
+            label="驗票活動"
+            value={selectedEventID}
+            options={eventOptions}
+            onChange={setEventID}
+            required
+            hint="切換後即以所選活動驗票，避免核銷其他活動票券。"
+          />
         </Card>
         <Card
           className={`panel checkin-result-panel${

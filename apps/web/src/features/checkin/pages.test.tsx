@@ -62,6 +62,14 @@ const checkinEvent: EventSummary = {
   current_user_status: "",
 };
 
+const secondaryEvent: EventSummary = {
+  ...checkinEvent,
+  event_id: "evt-secondary",
+  title: "Secondary Check-in",
+  starts_at: "2026-08-20T10:00:00Z",
+  ends_at: "2026-08-20T12:00:00Z",
+};
+
 describe("CheckinPage", () => {
   beforeEach(() => {
     globalThis.history.pushState({}, "", "/admin/checkin");
@@ -429,6 +437,45 @@ describe("CheckinPage", () => {
 
     expect(screen.getByLabelText(/掃描或貼上票券/)).toHaveValue("");
     expect(controls.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the operator switch the check-in event before submitting", async () => {
+    mockReports.mockResolvedValue([]);
+    mockListAdminEvents.mockResolvedValue([checkinEvent, secondaryEvent]);
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-secondary",
+      ticket_id: "tkt-secondary",
+      event_id: "evt-secondary",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-08-20T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
+
+    render(<CheckinPage />);
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("combobox", { name: "驗票活動" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Secondary Check-in/ }),
+    );
+
+    await userEvent.type(
+      await screen.findByLabelText(/掃描或貼上票券/),
+      "signed-token",
+    );
+    const submitButton = screen.getByRole("button", { name: "送出驗票" });
+    await waitFor(() => expect(submitButton).not.toBeDisabled());
+    await userEvent.click(submitButton);
+
+    expect(mockCheckIn).toHaveBeenCalledWith(
+      "signed-token",
+      "gate-1",
+      "evt-secondary",
+      "",
+    );
   });
 
   it("uses a full-width touch layout for mobile scanner actions", async () => {
