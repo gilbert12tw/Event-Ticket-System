@@ -48,9 +48,7 @@ describe("item operations", () => {
     const ticket: TicketRow = { ticket_id: "t-1", status: "issued" };
     await putItem("tickets", ticket);
 
-    await expect(getItem<TicketRow>("tickets", "t-1")).resolves.toEqual(
-      ticket,
-    );
+    await expect(getItem<TicketRow>("tickets", "t-1")).resolves.toEqual(ticket);
   });
 
   it("putItem overwrites an existing record with the same key", async () => {
