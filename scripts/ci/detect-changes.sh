@@ -63,9 +63,11 @@ fi
 
 cat "$changed_file"
 
-if grep -Eq '^(goal\.md|note\.md)$' "$changed_file"; then
-  echo "goal.md and note.md are local agent notes and must not be included in PR or push diffs." >&2
-  exit 1
+if grep -Eq '^((goal|note)\.md|\.codex/)' "$changed_file"; then
+  if [[ -e goal.md || -e note.md || -d .codex ]]; then
+    echo "goal.md, note.md, and .codex/ are local agent artifacts and must not be present in PR or push diffs." >&2
+    exit 1
+  fi
 fi
 
 full=$force_full
@@ -130,6 +132,7 @@ if [[ "$full" == "false" ]]; then
   grep -Eq '^infra/k8s/baremetal/' "$changed_file" && compose=true
   grep -Eq '^infra/k8s/baremetal/' "$changed_file" && phase3=true
   grep -Eq '^(docs/specs/phase3-|docs/reports/phase3-)' "$changed_file" && phase3=true
+  grep -Eq '^(docs/specs/evolution-boundaries\.md$|infra/k8s/baremetal/|services/api/deploy/compose\.phase3-ha\.yaml$)' "$changed_file" && phase3=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|eslint\.config\.mjs$|\.npmrc$|\.prettierignore$)' "$changed_file" && frontend_static=true
   grep -Eq '^(apps/web/src/|apps/web/package\.json$|apps/web/vite\.config\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$)' "$changed_file" && frontend_unit=true
   grep -Eq '^(apps/web/src/|apps/web/e2e/|apps/web/playwright\.config\.ts$|apps/web/package\.json$|pnpm-lock\.yaml$)' "$changed_file" && frontend_e2e=true

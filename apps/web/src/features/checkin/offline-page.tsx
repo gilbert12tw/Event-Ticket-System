@@ -28,8 +28,10 @@ export function OfflineCheckinBoundaryPage() {
   );
 
   const batchID = stored?.batch_id;
-  const { syncState, syncResult, syncError, syncNow, canSync } =
-    useOfflineSync(batchID);
+  const { syncState, syncResult, syncError, syncNow, canSync } = useOfflineSync(
+    batchID,
+    handleAutoSynced,
+  );
 
   useEffect(() => {
     const goOnline = () => setOnline(true);
@@ -44,14 +46,23 @@ export function OfflineCheckinBoundaryPage() {
 
   useEffect(() => {
     if (!stored && activeTab !== "package") setActiveTab("package");
-    if (activeTab === "results" && !syncResult && stored?.status !== "synced") {
-      setActiveTab(stored ? "scan" : "package");
+    if (activeTab === "results" && stored?.scans.length === 0) {
+      setActiveTab("scan");
     }
-  }, [activeTab, stored, setActiveTab, syncResult]);
+  }, [activeTab, stored, setActiveTab]);
 
   function handlePackageReady(next: StoredCheckinPackage) {
     setStored(next);
     setActiveTab("scan");
+  }
+
+  function handlePackageRestored(next: StoredCheckinPackage) {
+    setStored(next);
+  }
+
+  function handleAutoSynced(refreshed: StoredCheckinPackage) {
+    setStored(refreshed);
+    if (refreshed.status === "synced") setActiveTab("results");
   }
 
   function handleScansChanged(scans: OfflineScanRecord[]) {
@@ -118,6 +129,7 @@ export function OfflineCheckinBoundaryPage() {
           <OfflinePackageStep
             staffID={staffID}
             onPackageReady={handlePackageReady}
+            onPackageRestored={handlePackageRestored}
           />
         </TabsContent>
         <TabsContent value="scan">
@@ -125,6 +137,7 @@ export function OfflineCheckinBoundaryPage() {
             <OfflineScanStep
               stored={stored}
               onScansChanged={handleScansChanged}
+              onGoToResults={() => setActiveTab("results")}
             />
           )}
         </TabsContent>

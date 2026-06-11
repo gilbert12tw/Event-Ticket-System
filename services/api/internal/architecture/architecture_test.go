@@ -255,14 +255,14 @@ func TestOpsNotificationDeliveriesOpenAPIRolesMatchRuntime(t *testing.T) {
 
 func TestEventTypeRegistryMatchesNormativeDoc(t *testing.T) {
 	root := repoRoot(t)
-	docPath := filepath.Join(root, "docs", "specs", "phase2-ws4-async-notification.md")
+	docPath := filepath.Join(root, "docs", "specs", "evolution-boundaries.md")
 	data, err := os.ReadFile(docPath)
 	require.NoError(t, err)
 
 	docTypes := extractEventRegistryFromDoc(t, string(data))
-	require.NotEmpty(t, docTypes, "WS4 §6 event registry block not found in %s", docPath)
+	require.NotEmpty(t, docTypes, "event registry block not found in %s", docPath)
 	assert.Equalf(t, eventcontract.Registry, docTypes,
-		"event type registry drift: docs/specs/phase2-ws4-async-notification.md §6 must match eventcontract.Registry exactly (order-sensitive)")
+		"event type registry drift: docs/specs/evolution-boundaries.md must match eventcontract.Registry exactly (order-sensitive)")
 
 	allowed := map[string]struct{}{}
 	for _, et := range eventcontract.Registry {

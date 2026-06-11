@@ -41,6 +41,10 @@ type rebuildSummaryRow struct {
 	ConfirmedCount int
 	CancelledCount int
 	WaitlistCount  int
+	EmployeeCount  int
+	FamilyCount    int
+	TicketCount    int
+	CheckinCount   int
 	BreakdownJSON  []byte
 }
 
@@ -55,17 +59,40 @@ func clearEventSummary(ctx context.Context, tx pgx.Tx) error {
 }
 
 // aggregateFromOLTP computes per-event counts and a confirmed-only department
-// breakdown from registrations + employees. department_breakdown excludes empty
-// department labels, matching the incremental worker's semantics.
+// breakdown from OLTP truth. department_breakdown excludes empty department
+// labels, matching the incremental worker's semantics. The query drives from
+// events (not registrations) so zero-activity events get genuine zero rows —
+// a missing projection row then means "never projected", which the export
+// path reports as pending_projection (PH2-45 / WS5-AC-4). Count semantics
+// mirror the Phase 1 Reports() query: DISTINCT employees and tickets,
+// confirmed-only family sums, check-ins joined through tickets.
+//
+// checkin_count counts accepted check-ins only, matching the incremental
+// worker (+1 per checkin.completed) so a rebuild never diverges from the
+// projection. The schema allows status='conflict' rows; Phase 1 Reports()
+// counts them, the projection intentionally does not.
 func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, error) {
 	rows, err := tx.Query(ctx, `
 		WITH counts AS (
 			SELECT event_id,
 			       COUNT(*) FILTER (WHERE status = 'confirmed')  AS confirmed_count,
 			       COUNT(*) FILTER (WHERE status = 'cancelled')  AS cancelled_count,
-			       COUNT(*) FILTER (WHERE status = 'waitlisted') AS waitlist_count
+			       COUNT(*) FILTER (WHERE status = 'waitlisted') AS waitlist_count,
+			       COUNT(DISTINCT employee_id) FILTER (WHERE status = 'confirmed') AS employee_count,
+			       COALESCE(SUM(family_count) FILTER (WHERE status = 'confirmed'), 0) AS family_count
 			FROM registrations
 			GROUP BY event_id
+		),
+		tix AS (
+			SELECT event_id, COUNT(DISTINCT ticket_id) AS ticket_count
+			FROM tickets
+			GROUP BY event_id
+		),
+		chk AS (
+			SELECT t.event_id, COUNT(DISTINCT c.checkin_id) AS checkin_count
+			FROM tickets t
+			JOIN checkin_records c ON c.ticket_id = t.ticket_id AND c.status = 'accepted'
+			GROUP BY t.event_id
 		),
 		dept AS (
 			SELECT event_id,
@@ -79,11 +106,18 @@ func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, err
 			) d
 			GROUP BY event_id
 		)
-		SELECT c.event_id, c.confirmed_count, c.cancelled_count, c.waitlist_count,
+		SELECT e.event_id,
+		       COALESCE(c.confirmed_count, 0), COALESCE(c.cancelled_count, 0),
+		       COALESCE(c.waitlist_count, 0), COALESCE(c.employee_count, 0),
+		       COALESCE(c.family_count, 0),
+		       COALESCE(tix.ticket_count, 0), COALESCE(chk.checkin_count, 0),
 		       COALESCE(dept.department_breakdown, '{}'::jsonb)
-		FROM counts c
-		LEFT JOIN dept ON dept.event_id = c.event_id
-		ORDER BY c.event_id`)
+		FROM events e
+		LEFT JOIN counts c ON c.event_id = e.event_id
+		LEFT JOIN tix ON tix.event_id = e.event_id
+		LEFT JOIN chk ON chk.event_id = e.event_id
+		LEFT JOIN dept ON dept.event_id = e.event_id
+		ORDER BY e.event_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +127,8 @@ func aggregateFromOLTP(ctx context.Context, tx pgx.Tx) ([]rebuildSummaryRow, err
 	for rows.Next() {
 		var row rebuildSummaryRow
 		if err := rows.Scan(&row.EventID, &row.ConfirmedCount, &row.CancelledCount,
-			&row.WaitlistCount, &row.BreakdownJSON); err != nil {
+			&row.WaitlistCount, &row.EmployeeCount, &row.FamilyCount,
+			&row.TicketCount, &row.CheckinCount, &row.BreakdownJSON); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -116,9 +151,12 @@ func insertRebuiltEventSummary(ctx context.Context, tx pgx.Tx, row rebuildSummar
 	_, err := tx.Exec(ctx, `
 		INSERT INTO reporting_event_summary
 			(event_id, confirmed_count, cancelled_count, waitlist_count,
+			 employee_count, family_count, ticket_count, checkin_count,
 			 department_breakdown, last_event_offset, updated_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, now())`,
-		row.EventID, row.ConfirmedCount, row.CancelledCount, row.WaitlistCount, row.BreakdownJSON, offset)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, now())`,
+		row.EventID, row.ConfirmedCount, row.CancelledCount, row.WaitlistCount,
+		row.EmployeeCount, row.FamilyCount, row.TicketCount, row.CheckinCount,
+		row.BreakdownJSON, offset)
 	return err
 }
 

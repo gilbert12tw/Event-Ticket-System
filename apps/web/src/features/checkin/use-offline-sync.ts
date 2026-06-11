@@ -13,12 +13,18 @@ import { buildSyncPayload } from "@/lib/offline/checkin-logic";
 
 export type SyncState = "idle" | "syncing" | "synced" | "error";
 
-export function useOfflineSync(batchID: string | undefined) {
+export function useOfflineSync(
+  batchID: string | undefined,
+  onAutoSynced?: (stored: StoredCheckinPackage) => void,
+) {
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncResult, setSyncResult] =
     useState<OfflineCheckinSyncResponse | null>(null);
   const [syncError, setSyncError] = useState("");
   const syncingRef = useRef(false);
+  // Ref so the listeners effect does not re-subscribe on every parent render.
+  const onAutoSyncedRef = useRef(onAutoSynced);
+  onAutoSyncedRef.current = onAutoSynced;
 
   const syncNow = useCallback(async (): Promise<
     StoredCheckinPackage | undefined
@@ -33,6 +39,10 @@ export function useOfflineSync(batchID: string | undefined) {
       if (!stored) {
         setSyncState("error");
         setSyncError("找不到離線名單");
+        return undefined;
+      }
+      if (stored.status === "synced") {
+        setSyncState("synced");
         return undefined;
       }
 
@@ -72,10 +82,14 @@ export function useOfflineSync(batchID: string | undefined) {
   useEffect(() => {
     if (!batchID) return;
 
+    // Auto-sync runs outside the page's event handlers, so push the refreshed
+    // package back up — otherwise the page keeps rendering stale scan state.
     const trySync = () => {
-      if (navigator.onLine && !syncingRef.current) {
-        void syncNow();
-      }
+      if (!navigator.onLine || syncingRef.current) return;
+      void (async () => {
+        const refreshed = await syncNow();
+        if (refreshed) onAutoSyncedRef.current?.(refreshed);
+      })();
     };
 
     const onVisible = () => {

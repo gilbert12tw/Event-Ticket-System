@@ -15,14 +15,6 @@ tool: isolate likely reasons to change while keeping ticketing contracts stable.
 - **LSP -> OCP and DIP**: LSP reflects OCP because substitutable implementations let clients remain
   unchanged. It guides DIP by requiring abstractions to describe behavior, not just method names.
 
-## Reference Files
-
-- [SRP: Single Responsibility Principle](references/srp.md)
-- [OCP: Open-Closed Principle](references/ocp.md)
-- [LSP: Liskov Substitution Principle](references/lsp.md)
-- [ISP: Interface Segregation Principle](references/isp.md)
-- [DIP: Dependency Inversion Principle](references/dip.md)
-
 ## Project-Wide Guidance
 
 - Prefer small cohesive modules around one actor or stakeholder group: Event, Eligibility,

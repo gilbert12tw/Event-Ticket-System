@@ -679,6 +679,14 @@ ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS last_event_offset T
 -- reporting_projection_offsets to resume processing after a worker restart
 ALTER TABLE reporting_projection_offsets ADD COLUMN IF NOT EXISTS last_processed_outbox_id TEXT NOT NULL DEFAULT '';
 
+-- PH2-45 export aggregate columns: maintained incrementally where the event
+-- stream allows, authoritatively by rebuild (cets admin rebuild-projection).
+-- Aggregate counts only — no PII.
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS employee_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS family_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS ticket_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reporting_event_summary ADD COLUMN IF NOT EXISTS checkin_count INTEGER NOT NULL DEFAULT 0;
+
 -- Per-employee hidden events. A personal calendar view preference: a hidden
 -- event is dropped from the employee's calendar (to reduce clutter) but stays
 -- visible in the event list flagged as hidden. Not booking state, no audit.

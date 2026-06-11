@@ -42,14 +42,12 @@ func (s *Service) processClaimedProjectionOutbox(
 	}
 
 	switch proj.InnerType {
-	case projectionInnerTypeCheckinCompleted:
-		// checkin has no aggregate effect — advance offset and mark published.
-		return s.applyProjectionCheckin(ctx, tx, claim, logAttempt, proj)
 	case projectionInnerTypeBookingConfirmed,
 		projectionInnerTypeBookingCancelled,
 		projectionInnerTypeBookingWaitlisted,
-		projectionInnerTypeBookingWaitlistCancel:
-		return s.applyProjectionBooking(ctx, tx, claim, logAttempt, proj)
+		projectionInnerTypeBookingWaitlistCancel,
+		projectionInnerTypeCheckinCompleted:
+		return s.applyProjectionAggregate(ctx, tx, claim, logAttempt, proj)
 	default:
 		return s.skipProjectionEvent(ctx, tx, claim, logAttempt, "unknown_inner_type:"+proj.InnerType)
 	}
@@ -90,26 +88,9 @@ func (s *Service) resolveProjectionInnerType(
 	return proj, false, 0, nil
 }
 
-// applyProjectionCheckin advances the offset for a checkin event, which has no
-// aggregate effect, then marks the outbox row published.
-func (s *Service) applyProjectionCheckin(
-	ctx context.Context,
-	tx pgx.Tx,
-	claim outboxClaim,
-	logAttempt outboxAttemptLogger,
-	proj ProjectionEvent,
-) (int, error) {
-	if err := advanceProjectionOffset(ctx, tx, projectionProjectionName, proj.OutboxID); err != nil {
-		logAttempt(outboxAttemptOutcomeError)
-		return 0, err
-	}
-	s.observeProjectionProcessed(claim)
-	return markOutboxPublishedAttempt(ctx, tx, claim, logAttempt)
-}
-
-// applyProjectionBooking applies a booking event to the aggregate row, advances
-// the offset, and marks the outbox row published.
-func (s *Service) applyProjectionBooking(
+// applyProjectionAggregate applies a booking or checkin event to the aggregate
+// row, advances the offset, and marks the outbox row published.
+func (s *Service) applyProjectionAggregate(
 	ctx context.Context,
 	tx pgx.Tx,
 	claim outboxClaim,
@@ -184,6 +165,10 @@ func computeNewCounts(current eventSummaryRow, proj ProjectionEvent) eventSummar
 		ConfirmedCount:  current.ConfirmedCount,
 		CancelledCount:  current.CancelledCount,
 		WaitlistCount:   current.WaitlistCount,
+		EmployeeCount:   current.EmployeeCount,
+		FamilyCount:     current.FamilyCount,
+		TicketCount:     current.TicketCount,
+		CheckinCount:    current.CheckinCount,
 		LastEventOffset: proj.OutboxID,
 	}
 	// Deep-copy breakdown so we do not mutate the input.
@@ -195,12 +180,23 @@ func computeNewCounts(current eventSummaryRow, proj ProjectionEvent) eventSummar
 	switch proj.InnerType {
 	case projectionInnerTypeBookingConfirmed:
 		next.ConfirmedCount++
+		// One confirmed registration per employee (booking dedup guarantees
+		// this in the commit path); a ticket is issued with the confirmation.
+		// family_count arrives in the event payload; rebuild stays authoritative
+		// for publishers that do not emit it yet.
+		next.EmployeeCount++
+		next.FamilyCount += max(proj.FamilyCount, 0)
+		next.TicketCount++
 		if dept != "" {
 			next.DepartmentBreakdown[dept]++
 		}
 	case projectionInnerTypeBookingCancelled:
 		next.ConfirmedCount = max(0, next.ConfirmedCount-1)
 		next.CancelledCount++
+		next.EmployeeCount = max(0, next.EmployeeCount-1)
+		next.FamilyCount = max(0, next.FamilyCount-max(proj.FamilyCount, 0))
+		// Tickets are revoked, not deleted, on cancel — ticket_count mirrors the
+		// Phase 1 count(DISTINCT ticket_id) semantics and never decrements.
 		if dept != "" && next.DepartmentBreakdown[dept] > 0 {
 			next.DepartmentBreakdown[dept] = max(0, next.DepartmentBreakdown[dept]-1)
 		}
@@ -208,6 +204,8 @@ func computeNewCounts(current eventSummaryRow, proj ProjectionEvent) eventSummar
 		next.WaitlistCount++
 	case projectionInnerTypeBookingWaitlistCancel:
 		next.WaitlistCount = max(0, next.WaitlistCount-1)
+	case projectionInnerTypeCheckinCompleted:
+		next.CheckinCount++
 	}
 	return next
 }
@@ -229,6 +227,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 				AggregateID    string `json:"aggregate_id"`
 				TriggerEventID string `json:"trigger_event_id"`
 				Department     string `json:"department"`
+				FamilyCount    int    `json:"family_count"`
 			} `json:"payload"`
 		}
 		if err := json.Unmarshal([]byte(claim.payloadText), &v2); err == nil {
@@ -240,6 +239,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 					OutboxID:       projectionOffsetKey(claim.createdAt, claim.outboxID),
 					TriggerEventID: triggerEventID,
 					Department:     strings.TrimSpace(v2.Payload.Department),
+					FamilyCount:    v2.Payload.FamilyCount,
 				}, true
 			}
 		}
@@ -249,6 +249,7 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 		AggregateID string `json:"aggregate_id"`
 		InnerType   string `json:"inner_event_type"`
 		Department  string `json:"department"`
+		FamilyCount int    `json:"family_count"`
 	}
 	if err := json.Unmarshal([]byte(claim.payloadText), &v1); err != nil {
 		return ProjectionEvent{}, false
@@ -259,10 +260,11 @@ func decodeProjectionEvent(claim outboxClaim) (ProjectionEvent, bool) {
 		return ProjectionEvent{}, false
 	}
 	return ProjectionEvent{
-		EventID:    eventID,
-		OutboxID:   projectionOffsetKey(claim.createdAt, claim.outboxID),
-		InnerType:  innerType,
-		Department: strings.TrimSpace(v1.Department),
+		EventID:     eventID,
+		OutboxID:    projectionOffsetKey(claim.createdAt, claim.outboxID),
+		InnerType:   innerType,
+		Department:  strings.TrimSpace(v1.Department),
+		FamilyCount: v1.FamilyCount,
 	}, true
 }
 

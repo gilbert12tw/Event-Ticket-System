@@ -27,6 +27,10 @@ type ProjectionEvent struct {
 	InnerType string
 	// Department label — only the label is stored, never employee identifiers.
 	Department string
+	// FamilyCount is the family-member delta carried by booking events.
+	// Optional: publishers that do not emit it leave family_count
+	// rebuild-maintained.
+	FamilyCount int
 }
 
 // eventSummaryRow holds the current aggregate counts read from
@@ -35,6 +39,10 @@ type eventSummaryRow struct {
 	ConfirmedCount      int
 	CancelledCount      int
 	WaitlistCount       int
+	EmployeeCount       int
+	FamilyCount         int
+	TicketCount         int
+	CheckinCount        int
 	DepartmentBreakdown map[string]int
 	LastEventOffset     string // TEXT outbox_id of the last applied event
 }
