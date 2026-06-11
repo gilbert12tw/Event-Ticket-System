@@ -202,13 +202,16 @@ func (s *Service) ListEvents(ctx context.Context, actor Actor, employeeID string
 	return summaries, nil
 }
 
+// eventSummarySelectColumns must stay aligned with scanEventSummaryRow; the
+// two registration count columns are appended per query.
+const eventSummarySelectColumns = `e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.ends_at, e.registration_start, e.registration_close,
+			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
+			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
+		r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version`
+
 func (s *Service) loadEventSummaries(ctx context.Context, query EventListQuery) ([]EventSummary, error) {
 	where, args := eventListWhere(query)
-	rows, err := s.db.Query(ctx, `SELECT
-				e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.ends_at, e.registration_start, e.registration_close,
-				e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
-				COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
-			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
+	rows, err := s.db.Query(ctx, `SELECT `+eventSummarySelectColumns+`,
 			COALESCE(counts.confirmed_count, 0), COALESCE(counts.waitlist_count, 0)
 		FROM events e
 		JOIN eligibility_rules r ON r.event_id = e.event_id
@@ -267,11 +270,7 @@ func (s *Service) GetEventSummary(ctx context.Context, actor Actor, eventID stri
 }
 
 func (s *Service) loadEventSummary(ctx context.Context, eventID string) (EventSummary, error) {
-	row := s.db.QueryRow(ctx, `SELECT
-			e.event_id, e.title, e.description, e.location, e.event_city, e.event_site, e.starts_at, e.ends_at, e.registration_start, e.registration_close,
-			e.capacity_type, e.capacity, e.allows_family, e.status, e.allocation_mode, e.category, e.tags, e.entry_method, e.visibility, e.version,
-			COALESCE(e.archived_at, '0001-01-01 00:00:00+00'::timestamptz), e.created_by, e.created_at, e.updated_at,
-			r.rule_id, r.event_id, r.department, r.site, r.min_grade, r.employment_status, r.version,
+	row := s.db.QueryRow(ctx, `SELECT `+eventSummarySelectColumns+`,
 			(SELECT count(*) FROM registrations rg WHERE rg.event_id = e.event_id AND rg.status = 'confirmed') AS confirmed_count,
 			(SELECT count(*) FROM registrations rg WHERE rg.event_id = e.event_id AND rg.status = 'waitlisted') AS waitlist_count
 		FROM events e
