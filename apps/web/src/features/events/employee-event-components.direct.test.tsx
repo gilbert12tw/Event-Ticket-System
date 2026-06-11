@@ -23,7 +23,9 @@ describe("employee event components", () => {
       />,
     );
 
-    expect(screen.getByText("限量活動不開放填寫家屬人數。")).toBeInTheDocument();
+    expect(
+      screen.getByText("限量活動不開放填寫家屬人數。"),
+    ).toBeInTheDocument();
 
     rerender(
       <FamilyCountControl
@@ -156,7 +158,9 @@ describe("employee event components", () => {
     expect(screen.getByText("部門不符合, 職級不足")).toBeInTheDocument();
     expect(screen.getByText("跨城市活動提醒")).toBeInTheDocument();
     expect(screen.getByText(/此活動位於 Hsinchu/)).toBeInTheDocument();
-    expect(screen.getByText(/限量活動因缺席冷卻期暫停報名/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/限量活動因缺席冷卻期暫停報名/),
+    ).toBeInTheDocument();
     expect(screen.getByText("已額滿，可候補")).toBeInTheDocument();
   });
 
@@ -194,7 +198,9 @@ describe("employee event components", () => {
       "href",
       "/user/tickets?ticket_id=ticket-1",
     );
-    expect(screen.getByRole("button", { name: "取消報名" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "取消報名" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps small helper mappings deterministic", () => {
