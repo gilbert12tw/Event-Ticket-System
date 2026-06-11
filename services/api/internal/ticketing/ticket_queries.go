@@ -64,10 +64,6 @@ func (s *Service) createTicketTx(ctx context.Context, tx pgx.Tx, reg Registratio
 	}, nil
 }
 
-func (s *Service) findTicketByRegistration(ctx context.Context, registrationID string) (*Ticket, error) {
-	return s.findTicketByRegistrationWith(ctx, s.db, registrationID)
-}
-
 func (s *Service) findTicketByRegistrationTx(ctx context.Context, tx pgx.Tx, registrationID string) (*Ticket, error) {
 	return s.findTicketByRegistrationWith(ctx, tx, registrationID)
 }
