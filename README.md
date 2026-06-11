@@ -48,3 +48,8 @@ helpers may issue mock provider-format tokens.
 
 Start with `docs/INDEX.md` — `ARCHITECTURE.md`, `PRODUCT.md`, `DESIGN.md`,
 `openapi.yaml`/`openapi/`, and `specs/`.
+
+## Appendix
+
+- [Frontend Test Coverage (前端測試覆蓋率)](docs/appendix-test-coverage.md) - Vitest test coverage report.
+

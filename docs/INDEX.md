@@ -28,5 +28,9 @@ Use this page as the entry point for current project documentation.
 - `docs/principles/twelve-factor-rule.md` - Twelve-Factor guidance.
 - `docs/principles/twelve-factor-compliance.md` - 12-Factor and SOLID compliance matrix.
 
+## Appendices
+
+- `docs/appendix-test-coverage.md` - frontend Vitest test coverage report.
+
 Historical workstream notes and experiments are intentionally not part of the
 active documentation set.
