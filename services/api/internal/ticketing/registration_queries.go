@@ -50,31 +50,23 @@ func (s *Service) remainingForResponseTx(ctx context.Context, tx pgx.Tx, event E
 }
 
 func (s *Service) findRegistrationByEmployee(ctx context.Context, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
-	var reg Registration
-	err := scanRegistrationByEmployee(s.db.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Registration{}, nil, false, nil
-	}
-	if err != nil {
-		return Registration{}, nil, false, err
-	}
-	ticket, err := s.findTicketByRegistration(ctx, reg.RegistrationID)
-	if err != nil {
-		return Registration{}, nil, false, err
-	}
-	return reg, ticket, true, nil
+	return s.findRegistrationByEmployeeWith(ctx, s.db, eventID, employeeID)
 }
 
 func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
+	return s.findRegistrationByEmployeeWith(ctx, tx, eventID, employeeID)
+}
+
+func (s *Service) findRegistrationByEmployeeWith(ctx context.Context, q rowQuerier, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
 	var reg Registration
-	err := scanRegistrationByEmployee(tx.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
+	err := scanRegistrationByEmployee(q.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
 	}
 	if err != nil {
 		return Registration{}, nil, false, err
 	}
-	ticket, err := s.findTicketByRegistrationTx(ctx, tx, reg.RegistrationID)
+	ticket, err := s.findTicketByRegistrationWith(ctx, q, reg.RegistrationID)
 	if err != nil {
 		return Registration{}, nil, false, err
 	}

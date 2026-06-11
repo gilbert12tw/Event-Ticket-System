@@ -36,25 +36,15 @@ func ensureNotificationDelivery(ctx context.Context, tx pgx.Tx, outboxID string,
 }
 
 func markOutboxPublishedInTx(ctx context.Context, tx pgx.Tx, claim outboxClaim) error {
-	tag, err := tx.Exec(ctx, `UPDATE outbox_events
-		SET publish_status = 'published',
-			last_error = '',
-			lease_started_at = NULL,
-			published_at = now()
-		WHERE outbox_id = $1
-			AND publish_status = 'processing'
-			AND lease_started_at = $2`, claim.outboxID, claim.leaseStartedAt)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return errOutboxLeaseLost
-	}
-	return nil
+	return markOutboxPublishedWith(ctx, tx, claim)
 }
 
 func (s *Service) markOutboxPublished(ctx context.Context, claim outboxClaim) error {
-	tag, err := s.db.Exec(ctx, `UPDATE outbox_events
+	return markOutboxPublishedWith(ctx, s.db, claim)
+}
+
+func markOutboxPublishedWith(ctx context.Context, exec sqlExecutor, claim outboxClaim) error {
+	tag, err := exec.Exec(ctx, `UPDATE outbox_events
 		SET publish_status = 'published',
 			last_error = '',
 			lease_started_at = NULL,

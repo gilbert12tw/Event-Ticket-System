@@ -151,21 +151,24 @@ func (s *Service) RunLottery(ctx context.Context, actor Actor, eventID string, r
 	return run, nil
 }
 
+const lotteryRunSelectColumns = `run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
+		eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at`
+
 func (s *Service) findLotteryRun(ctx context.Context, eventID string, seed string) (LotteryRun, bool, error) {
-	return scanLotteryRunRow(s.db.QueryRow(ctx, `SELECT run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
-			eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at
-		FROM lottery_runs WHERE event_id = $1 AND seed = $2 AND status IN ('completed', 'superseded')`, eventID, seed))
+	return findLotteryRunWith(ctx, s.db, eventID, seed)
 }
 
 func findLotteryRunTx(ctx context.Context, tx pgx.Tx, eventID string, seed string) (LotteryRun, bool, error) {
-	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
-			eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at
+	return findLotteryRunWith(ctx, tx, eventID, seed)
+}
+
+func findLotteryRunWith(ctx context.Context, q rowQuerier, eventID string, seed string) (LotteryRun, bool, error) {
+	return scanLotteryRunRow(q.QueryRow(ctx, `SELECT `+lotteryRunSelectColumns+`
 		FROM lottery_runs WHERE event_id = $1 AND seed = $2 AND status IN ('completed', 'superseded')`, eventID, seed))
 }
 
 func findLatestLotteryRunForEventTx(ctx context.Context, tx pgx.Tx, eventID string) (LotteryRun, bool, error) {
-	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT run_id, event_id, seed, status, input_snapshot_at, algorithm_version, candidate_count,
-			eligibility_rule_id, eligibility_rule_version, eligibility_snapshot, winner_count, created_by, created_at
+	return scanLotteryRunRow(tx.QueryRow(ctx, `SELECT `+lotteryRunSelectColumns+`
 		FROM lottery_runs WHERE event_id = $1 AND status = 'completed'
 		ORDER BY created_at DESC
 		LIMIT 1`, eventID))

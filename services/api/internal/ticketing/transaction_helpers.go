@@ -33,11 +33,17 @@ func insertAudit(ctx context.Context, tx pgx.Tx, audit auditRecord) error {
 	return insertAuditWithExecutor(ctx, tx, audit)
 }
 
-type auditExecutor interface {
+// sqlExecutor and rowQuerier are satisfied by both *pgxpool.Pool and pgx.Tx so
+// query helpers can be shared between pooled and transactional call sites.
+type sqlExecutor interface {
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
 }
 
-func insertAuditWithExecutor(ctx context.Context, exec auditExecutor, audit auditRecord) error {
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func insertAuditWithExecutor(ctx context.Context, exec sqlExecutor, audit auditRecord) error {
 	payload, err := json.Marshal(audit.metadata)
 	if err != nil {
 		return err
