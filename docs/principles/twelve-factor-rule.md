@@ -69,6 +69,9 @@ network access beyond configured local backing services.
     repair tasks as explicit admin commands. They must share project settings and contracts with the
     app.
 
+For a factor-by-factor map of where the current codebase implements these rules, see
+[`twelve-factor-compliance.md`](./twelve-factor-compliance.md).
+
 ## Review Checklist
 
 - New runtime config is represented in typed settings or environment handling.
