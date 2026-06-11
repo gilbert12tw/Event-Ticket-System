@@ -44,7 +44,8 @@
     { "title": "Booking & Redis Pressure", "url": "/d/ets-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "USE Infrastructure", "url": "/d/ets-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "Outbox & Worker Health", "url": "/d/ets-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+    { "title": "Service Anomaly Investigation", "url": "/d/ets-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Ingress & Gateway", "url": "/d/ets-ingress-gateway", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false }
   ],
   "panels": [
     {
@@ -102,7 +103,7 @@
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
       "targets": [
         {
-          "expr": "sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\", status_class=\"5xx\"}[5m])) / clamp_min(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m])), 0.001)",
+          "expr": "(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\", status_class=\"5xx\"}[5m])) or 0 * sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m]))) / clamp_min(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m])), 0.001)",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
@@ -118,7 +119,7 @@
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
       "targets": [
         {
-          "expr": "sum by (replica) (rate(cets_http_requests_total{service=~\"$service\", status_class=\"5xx\"}[5m])) / clamp_min(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m])), 0.001)",
+          "expr": "(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\", status_class=\"5xx\"}[5m])) or 0 * sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m]))) / clamp_min(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m])), 0.001)",
           "legendFormat": "{{replica}}",
           "refId": "A"
         }

@@ -27,7 +27,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "Prometheus"
+          "uid": "prometheus"
         },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
@@ -48,7 +48,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "Prometheus"
+          "uid": "prometheus"
         },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
@@ -107,6 +107,15 @@
       "keepTime": true,
       "includeVars": true,
       "targetBlank": false
+    },
+    {
+      "title": "Ingress & Gateway",
+      "url": "/d/k8s-ingress-gateway",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
     }
   ],
   "panels": [
@@ -129,7 +138,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -164,7 +173,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -205,7 +214,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -240,7 +249,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -281,7 +290,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -310,7 +319,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -351,7 +360,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -380,7 +389,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -414,7 +423,7 @@
       "title": "Redis Operation Rate by Operation × Result",
       "description": "Rate of individual Redis Lua script calls (reserve, commit, release). Rising 'error' or 'timeout' results indicate Redis health degradation at the operation level.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
       "targets": [
         {
@@ -430,7 +439,7 @@
       "title": "Redis Operation P95 Latency by Operation",
       "description": "P95 latency of each Redis script call type. Spikes here directly explain booking preadmission latency. Normal: <20ms. Warning: >50ms. Critical: >150ms (operation timeout).",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
         {

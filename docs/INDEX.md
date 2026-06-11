@@ -10,6 +10,7 @@ Use this page as the entry point for current project documentation.
 - `docs/DESIGN.md` - UI direction, accessibility, and interaction principles.
 - `docs/openapi.yaml` and `docs/openapi/` - public API contract.
 - `docs/diagrams/` - Mermaid ERD, data-flow, and deployment diagrams.
+- `infra/k8s/baremetal/README.md` - bare-metal Kubernetes, Cloudflare, and Argo CD deployment workflow.
 
 ## Active Specs
 
@@ -25,6 +26,7 @@ Use this page as the entry point for current project documentation.
 - `docs/agent-rules/` - task-specific agent rules.
 - `docs/principles/solid.md` - SOLID project guidance.
 - `docs/principles/twelve-factor-rule.md` - Twelve-Factor guidance.
+- `docs/principles/twelve-factor-compliance.md` - 12-Factor and SOLID compliance matrix.
 
 Historical workstream notes and experiments are intentionally not part of the
 active documentation set.

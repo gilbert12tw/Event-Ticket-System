@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 41,
+  "uid": "k8s-ingress-gateway",
+  "title": "ETS 07 — Ingress & Gateway",
+  "description": "Ingress-nginx observability for Kubernetes. Row 1: full access logs and 4xx/5xx error logs from Loki. Row 2: distributed traces through the ingress tier from Tempo. Row 3: nginx controller metrics from Prometheus (request rate, latency, upstream duration, connections). Use this dashboard to diagnose ingress-level issues before drilling into backend dashboards.",
+  "tags": ["cets", "k8s", "ingress", "gateway", "nginx"],
+  "refresh": "15s",
+  "time": { "from": "now-15m", "to": "now" },
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(nginx_ingress_controller_requests, ingress)",
+        "includeAll": true,
+        "label": "Ingress",
+        "multi": false,
+        "name": "ingress",
+        "query": "label_values(nginx_ingress_controller_requests, ingress)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "links": [
+    { "title": "Golden Signals", "url": "/d/k8s-golden-signals", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "RED Traffic Drilldown", "url": "/d/k8s-red-traffic", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "Booking & Redis Pressure", "url": "/d/k8s-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "USE Infrastructure", "url": "/d/k8s-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "Outbox & Worker Health", "url": "/d/k8s-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false },
+    { "title": "Service Anomaly Investigation", "url": "/d/k8s-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "id": 100,
+      "title": "▶ INGRESS ACCESS LOGS",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "title": "Ingress Access Logs (all requests)",
+      "description": "Full nginx access logs from the ingress-nginx namespace. Each line is a proxied request showing method, path, status, upstream response time, and client IP. Use the Loki query bar to add filters (e.g. |~ \"POST\" or |~ \"\" 500 \"\").",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{namespace=\"ingress-nginx\"}", "maxLines": 200, "refId": "A" }],
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Ingress Error Logs (4xx + 5xx responses)",
+      "description": "Nginx access log lines where the upstream returned a 4xx or 5xx status code. 502/503/504 indicate backend pod health issues. 429 indicates rate limiting. 404 may indicate misconfigured ingress rules.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{namespace=\"ingress-nginx\"} |~ \"\\\" [45][0-9]{2} \"", "maxLines": 200, "refId": "A" }],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 11 }
+    },
+    {
+      "collapsed": false,
+      "id": 101,
+      "title": "▶ INGRESS TRACES",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }
+    },
+    {
+      "id": 3,
+      "title": "Ingress Traces (all requests through nginx)",
+      "description": "Distributed traces originating from the ingress-nginx controller. Each trace shows the full path: ingress → backend → postgres. Click a trace to open the waterfall view. Click 'Node Graph' in the trace detail for a visual topology.",
+      "type": "traces",
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "queryType": "traceql", "query": "{resource.service.name=\"ingress-nginx\"}", "limit": 20, "tableType": "traces", "refId": "A" }],
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 20 }
+    },
+    {
+      "id": 4,
+      "title": "Ingress Error Traces",
+      "description": "Traces where the ingress-nginx span recorded an error status. These are requests that failed at or before the ingress tier — upstream connection refused, timeouts, or backend 5xx responses.",
+      "type": "traces",
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "queryType": "traceql", "query": "{resource.service.name=\"ingress-nginx\" && status=error}", "limit": 20, "tableType": "traces", "refId": "A" }],
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 20 }
+    },
+    {
+      "collapsed": false,
+      "id": 102,
+      "title": "▶ INGRESS METRICS (nginx controller)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }
+    },
+    {
+      "id": 5,
+      "title": "Request Rate by Status Code",
+      "description": "Ingress request rate grouped by HTTP status code. A spike in 5xx indicates backend issues. A spike in 4xx may indicate client errors or misconfiguration.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "sum by (status) (rate(nginx_ingress_controller_requests{ingress=~\"$ingress\"}[5m]))", "legendFormat": "{{status}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 }
+    },
+    {
+      "id": 6,
+      "title": "P95 Request Duration",
+      "description": "95th percentile of total request duration as seen by the ingress controller. This includes upstream response time + nginx processing. Compare with backend P95 to isolate ingress overhead.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{ingress=~\"$ingress\"}[5m])))", "legendFormat": "p95 total", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 }
+    },
+    {
+      "id": 7,
+      "title": "P95 Upstream Response Time by Ingress",
+      "description": "95th percentile of time spent waiting for the upstream (backend) to respond, broken down by ingress resource. High values here with low total duration = backend bottleneck. High total with low upstream = nginx/network issue.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, ingress) (rate(nginx_ingress_controller_response_duration_seconds_bucket{ingress=~\"$ingress\"}[5m])))", "legendFormat": "{{ingress}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 }
+    },
+    {
+      "id": 8,
+      "title": "Nginx Active Connections",
+      "description": "Current number of active connections handled by the nginx process. A sustained plateau near worker_connections limit indicates connection exhaustion.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "sum(nginx_ingress_controller_nginx_process_connections{state=\"active\"})", "legendFormat": "active", "refId": "A" }, { "expr": "sum(nginx_ingress_controller_nginx_process_connections{state=\"waiting\"})", "legendFormat": "waiting", "refId": "B" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 }
+    }
+  ]
+}

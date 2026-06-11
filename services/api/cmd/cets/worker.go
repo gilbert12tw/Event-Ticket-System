@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os/signal"
 	"strings"
 	"sync"
@@ -61,9 +63,13 @@ func worker(cfg config.Config, logger *slog.Logger, args []string) error {
 		logger.Info("migration complete", "mode", "auto")
 	}
 
-	metrics := observability.NewRegistry()
+	metrics := observability.NewRegistryWithIdentity(cfg.OTelServiceName, cfg.CETSReplicaID)
 	service := newTicketingService(pool, cfg, logger).
 		WithMetrics(metrics)
+
+	metricsServer := startWorkerMetricsServer(cfg, metrics, pool, logger)
+	defer shutdownWorkerMetricsServer(metricsServer, cfg.ShutdownTimeout, logger)
+
 	sender := notification.SMTPNotificationSender{Host: cfg.MailerHost, Port: cfg.MailerPort, From: cfg.MailerFrom}
 	sender.RedirectTo = cfg.MailerRedirectTo
 	reportStore := objectstore.S3CompatibleStore{
@@ -238,4 +244,29 @@ func buildWorkerCompensator(cfg config.Config, lookup reservation.BookingLookup,
 	}
 	compensator := reservation.NewCompensator(client.client, cfgCompensation, lookup, logger, metrics)
 	return compensator, client, nil
+}
+
+func startWorkerMetricsServer(cfg config.Config, metrics *observability.Registry, pool any, logger *slog.Logger) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", metrics.Handler(pool))
+	server := &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.WorkerMetricsPort),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		logger.Info("worker metrics server listening", "addr", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("worker metrics server failed", "error", err)
+		}
+	}()
+	return server
+}
+
+func shutdownWorkerMetricsServer(server *http.Server, timeout time.Duration, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Error("worker metrics server shutdown failed", "error", err)
+	}
 }

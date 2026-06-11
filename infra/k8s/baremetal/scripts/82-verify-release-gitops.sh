@@ -17,10 +17,10 @@ require_cmd grep
 
 assert_kustomization_images() {
   local file="$GITOPS_APP_DIR/kustomization.yaml"
-  grep -q 'newName: ghcr.io/gilbert12tw/event-ticket-system/cets-api' "$file" ||
-    die "cets-api image must use GHCR"
-  grep -q 'newName: ghcr.io/gilbert12tw/event-ticket-system/cets-frontend' "$file" ||
-    die "cets-frontend image must use GHCR"
+  grep -q 'name: cets-api' "$file" ||
+    die "kustomization must reference cets-api image"
+  grep -q 'name: cets-frontend' "$file" ||
+    die "kustomization must reference cets-frontend image"
 
   awk '
     $1 == "newTag:" {

@@ -26,7 +26,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "Prometheus"
+          "uid": "prometheus"
         },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
@@ -47,7 +47,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "Prometheus"
+          "uid": "prometheus"
         },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
@@ -106,6 +106,15 @@
       "keepTime": true,
       "includeVars": true,
       "targetBlank": false
+    },
+    {
+      "title": "Ingress & Gateway",
+      "url": "/d/k8s-ingress-gateway",
+      "type": "link",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
     }
   ],
   "panels": [
@@ -128,7 +137,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -157,7 +166,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -198,7 +207,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -208,7 +217,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\", status_class=\"5xx\"}[5m])) / clamp_min(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m])), 0.001)",
+          "expr": "(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\", status_class=\"5xx\"}[5m])) or 0 * sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m]))) / clamp_min(sum by (route) (rate(cets_http_requests_total{service=~\"$service\", replica=~\"$replica\"}[5m])), 0.001)",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
@@ -227,7 +236,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -237,7 +246,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (replica) (rate(cets_http_requests_total{service=~\"$service\", status_class=\"5xx\"}[5m])) / clamp_min(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m])), 0.001)",
+          "expr": "(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\", status_class=\"5xx\"}[5m])) or 0 * sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m]))) / clamp_min(sum by (replica) (rate(cets_http_requests_total{service=~\"$service\"}[5m])), 0.001)",
           "legendFormat": "{{replica}}",
           "refId": "A"
         }
@@ -256,7 +265,7 @@
       "type": "table",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {},
@@ -328,7 +337,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -373,7 +382,7 @@
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -402,7 +411,7 @@
       "type": "table",
       "datasource": {
         "type": "prometheus",
-        "uid": "Prometheus"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {},

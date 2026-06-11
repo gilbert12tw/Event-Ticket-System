@@ -12,7 +12,7 @@
       {
         "allValue": ".*",
         "current": { "selected": false, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(cets_build_info, service)",
         "includeAll": true,
         "label": "Service",
@@ -26,7 +26,7 @@
       {
         "allValue": ".*",
         "current": { "selected": false, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(cets_build_info{service=~\"$service\"}, replica)",
         "includeAll": true,
         "label": "Replica",
@@ -44,7 +44,8 @@
     { "title": "Booking & Redis Pressure", "url": "/d/k8s-booking-redis", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "USE Infrastructure", "url": "/d/k8s-use-infra", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
     { "title": "Outbox & Worker Health", "url": "/d/k8s-outbox-workers", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
-    { "title": "Service Anomaly Investigation", "url": "/d/k8s-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false }
+    { "title": "Service Anomaly Investigation", "url": "/d/k8s-service-anomaly", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": true, "targetBlank": false },
+    { "title": "Ingress & Gateway", "url": "/d/k8s-ingress-gateway", "type": "link", "icon": "dashboard", "keepTime": true, "includeVars": false, "targetBlank": false }
   ],
   "panels": [
     {
@@ -59,7 +60,7 @@
       "title": "Total RPS",
       "description": "Overall request rate across all services. Sudden drop = traffic lost or service down. Sudden spike = load event.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -77,7 +78,7 @@
       "title": "5xx Error Rate",
       "description": "Fraction of requests returning 5xx. >1% is warning; >5% is critical. Navigate to RED Traffic to see which route and replica.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -87,7 +88,7 @@
         "overrides": []
       },
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "5xx ratio", "refId": "A" }],
+      "targets": [{ "expr": "(sum(rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or vector(0)) / clamp_min(sum(rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "5xx ratio", "refId": "A" }],
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 }
     },
     {
@@ -95,7 +96,7 @@
       "title": "P99 Latency",
       "description": "99th-percentile end-to-end HTTP latency. >1s is warning; >2s is critical.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -113,7 +114,7 @@
       "title": "DB Pool Saturation",
       "description": "Fraction of DB connections actively acquired vs total pool size. >70% is warning; >90% is critical.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -131,7 +132,7 @@
       "title": "Active Backend Replicas",
       "description": "Number of backend instances reporting metrics. If fewer than expected, a pod may have crashed — check Pod Restarts.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -149,7 +150,7 @@
       "title": "Pod Restarts (last 1h)",
       "description": "Total pod restart count in the cets namespace over the last hour. Non-zero = a pod is crashing. Navigate to USE Infrastructure to see which pod and check its logs in Service Anomaly.",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -173,7 +174,7 @@
       "id": 7,
       "title": "Traffic — Rate by Service",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
       "targets": [
         { "expr": "sum by (service) (rate(cets_http_requests_total[1m]))", "legendFormat": "{{service}}", "refId": "A" },
@@ -185,16 +186,16 @@
       "id": 8,
       "title": "Errors — 5xx Rate by Service",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
-      "targets": [{ "expr": "sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}", "refId": "A" }],
+      "targets": [{ "expr": "(sum by (service) (rate(cets_http_requests_total{status_class=\"5xx\"}[5m])) or 0 * group by (service) (cets_build_info)) / clamp_min(sum by (service) (rate(cets_http_requests_total[5m])), 0.001)", "legendFormat": "{{service}}", "refId": "A" }],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
     },
     {
       "id": 9,
       "title": "Latency — P50/P95/P99 by Service",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
         { "expr": "histogram_quantile(0.50, sum by (le, service) (rate(cets_http_request_seconds_bucket[5m])))", "legendFormat": "p50 {{service}}", "refId": "A" },
@@ -208,7 +209,7 @@
       "title": "Saturation — DB Pool Acquire Wait by Instance",
       "description": "Rising trend = pool is saturated. If correlated with latency rise, the DB pool is the bottleneck.",
       "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [{ "expr": "sum by (instance) (rate(cets_db_pool_acquire_wait_seconds_total{job=\"cets-backend\"}[5m]))", "legendFormat": "{{instance}}", "refId": "A" }],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 }

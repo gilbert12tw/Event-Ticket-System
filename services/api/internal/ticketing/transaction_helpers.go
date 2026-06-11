@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func rollback(ctx context.Context, tx pgx.Tx) {
@@ -55,7 +57,7 @@ func insertOutbox(ctx context.Context, tx pgx.Tx, eventType string, aggregateID 
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(map[string]interface{}{
+	envelope := map[string]interface{}{
 		"event_id":        outboxID,
 		"event_type":      eventType,
 		"schema_version":  2,
@@ -63,7 +65,13 @@ func insertOutbox(ctx context.Context, tx pgx.Tx, eventType string, aggregateID 
 		"idempotency_key": idempotencyKey,
 		"partition_key":   partitionKey,
 		"payload":         payload,
-	})
+	}
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		envelope["trace_context"] = map[string]string{
+			"traceparent": fmt.Sprintf("00-%s-%s-%s", sc.TraceID(), sc.SpanID(), sc.TraceFlags()),
+		}
+	}
+	body, err := json.Marshal(envelope)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package ticketing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -78,6 +79,12 @@ func (s *Service) processOneOutbox(ctx context.Context, options OutboxProcessorO
 	if err != nil {
 		return 0, err
 	}
+
+	ctx, span := startWorkerSpan(ctx, claim)
+	defer func() {
+		endWorkerSpan(span, err)
+	}()
+
 	defer func() {
 		s.releaseOutboxLeaseAfterContextCancel(ctx, claim, err)
 	}()
@@ -100,6 +107,7 @@ type outboxClaim struct {
 	partitionKey   string
 	leaseStartedAt time.Time
 	createdAt      time.Time
+	traceContext   string
 }
 
 type outboxNotificationPreferences struct {
@@ -168,7 +176,22 @@ func claimOutboxEvent(ctx context.Context, tx pgx.Tx, workerKinds []string, leas
 			&claim.leaseStartedAt,
 			&claim.createdAt,
 		)
+	if err == nil {
+		claim.traceContext = extractOutboxTraceContext(claim.payloadText)
+	}
 	return claim, err
+}
+
+func extractOutboxTraceContext(payloadText string) string {
+	var envelope struct {
+		TraceContext struct {
+			Traceparent string `json:"traceparent"`
+		} `json:"trace_context"`
+	}
+	if json.Unmarshal([]byte(payloadText), &envelope) == nil {
+		return envelope.TraceContext.Traceparent
+	}
+	return ""
 }
 
 func loadOutboxNotificationPreferences(ctx context.Context, tx pgx.Tx, employeeID string) (outboxNotificationPreferences, error) {
