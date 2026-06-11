@@ -8,12 +8,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const registrationSelectColumns = `registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
+		COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at`
+
 func (s *Service) findRegistrationByIdempotencyKey(ctx context.Context, tx pgx.Tx, key string, expectedEventID string, expectedEmployeeID string) (BookingResponse, bool, error) {
 	var reg Registration
-	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE idempotency_key = $1`, key).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
+	err := scanRegistrationRow(tx.QueryRow(ctx, `SELECT `+registrationSelectColumns+`
+		FROM registrations WHERE idempotency_key = $1`, key), &reg)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return BookingResponse{}, false, nil
 	}
@@ -59,7 +60,7 @@ func (s *Service) findRegistrationByEmployeeTx(ctx context.Context, tx pgx.Tx, e
 
 func (s *Service) findRegistrationByEmployeeWith(ctx context.Context, q rowQuerier, eventID string, employeeID string) (Registration, *Ticket, bool, error) {
 	var reg Registration
-	err := scanRegistrationByEmployee(q.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
+	err := scanRegistrationRow(q.QueryRow(ctx, registrationByEmployeeSQL, eventID, employeeID), &reg)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, nil, false, nil
 	}
@@ -73,33 +74,30 @@ func (s *Service) findRegistrationByEmployeeWith(ctx context.Context, q rowQueri
 	return reg, ticket, true, nil
 }
 
-const registrationByEmployeeSQL = `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-		COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
+const registrationByEmployeeSQL = `SELECT ` + registrationSelectColumns + `
 	FROM registrations WHERE event_id = $1 AND employee_id = $2 AND status <> 'cancelled'`
 
-func scanRegistrationByEmployee(row pgx.Row, reg *Registration) error {
+func scanRegistrationRow(row pgx.Row, reg *Registration) error {
 	return row.Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
 }
 
 func (s *Service) findRegistrationByIDTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {
-	var reg Registration
-	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE registration_id = $1`, registrationID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Registration{}, notFound("registration not found")
-	}
-	return reg, err
+	return findRegistrationByID(ctx, tx, registrationID, false)
 }
 
 func (s *Service) lockRegistrationTx(ctx context.Context, tx pgx.Tx, registrationID string) (Registration, error) {
+	return findRegistrationByID(ctx, tx, registrationID, true)
+}
+
+func findRegistrationByID(ctx context.Context, tx pgx.Tx, registrationID string, lock bool) (Registration, error) {
+	query := `SELECT ` + registrationSelectColumns + `
+		FROM registrations WHERE registration_id = $1`
+	if lock {
+		query += ` FOR UPDATE`
+	}
 	var reg Registration
-	err := tx.QueryRow(ctx, `SELECT registration_id, event_id, employee_id, status, idempotency_key, COALESCE(cancel_idempotency_key, ''),
-			COALESCE(cancelled_at, '0001-01-01 00:00:00+00'::timestamptz), cancel_reason, family_count, created_at
-		FROM registrations WHERE registration_id = $1 FOR UPDATE`, registrationID).
-		Scan(&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt)
-	if err == pgx.ErrNoRows {
+	err := scanRegistrationRow(tx.QueryRow(ctx, query, registrationID), &reg)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return Registration{}, notFound("registration not found")
 	}
 	return reg, err
@@ -121,20 +119,31 @@ func (s *Service) nextEligibleWaitlistedTx(ctx context.Context, tx pgx.Tx, event
 	defer rows.Close()
 
 	for rows.Next() {
-		var reg Registration
-		var employee Employee
-		if err := rows.Scan(
-			&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt,
-			&employee.FullName, &employee.Department, &employee.Site, &employee.JobGrade, &employee.EmploymentStatus,
-		); err != nil {
+		reg, employee, err := scanRegistrationWithEmployeeRow(rows)
+		if err != nil {
 			return Registration{}, Employee{}, false, err
 		}
-		employee.EmployeeID = reg.EmployeeID
 		if eligible, _ := EvaluateEligibility(employee, rule); eligible {
 			return reg, employee, true, nil
 		}
 	}
 	return Registration{}, Employee{}, false, rows.Err()
+}
+
+// scanRegistrationWithEmployeeRow scans a registration joined with its
+// employee columns (full_name, department, site, job_grade,
+// employment_status) and backfills employee.EmployeeID from the registration.
+func scanRegistrationWithEmployeeRow(row pgx.Row) (Registration, Employee, error) {
+	var reg Registration
+	var employee Employee
+	if err := row.Scan(
+		&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey, &reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt,
+		&employee.FullName, &employee.Department, &employee.Site, &employee.JobGrade, &employee.EmploymentStatus,
+	); err != nil {
+		return Registration{}, Employee{}, err
+	}
+	employee.EmployeeID = reg.EmployeeID
+	return reg, employee, nil
 }
 
 func (s *Service) promoteWaitlistedRegistrationTx(ctx context.Context, tx pgx.Tx, actor Actor, eventID string, eventCapacity int, rule EligibilityRule) (*BookingResponse, error) {

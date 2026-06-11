@@ -437,16 +437,10 @@ func (s *Service) lotteryCandidatesTx(ctx context.Context, tx pgx.Tx, eventID st
 
 	var candidates []lotteryCandidate
 	for rows.Next() {
-		var reg Registration
-		var employee Employee
-		if err := rows.Scan(
-			&reg.RegistrationID, &reg.EventID, &reg.EmployeeID, &reg.Status, &reg.IdempotencyKey,
-			&reg.CancelKey, &reg.CancelledAt, &reg.CancelReason, &reg.FamilyCount, &reg.CreatedAt,
-			&employee.FullName, &employee.Department, &employee.Site, &employee.JobGrade, &employee.EmploymentStatus,
-		); err != nil {
+		reg, employee, err := scanRegistrationWithEmployeeRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		employee.EmployeeID = reg.EmployeeID
 		eligible, _ := EvaluateEligibility(employee, rule)
 		candidates = append(candidates, lotteryCandidate{
 			registrationID: reg.RegistrationID,
