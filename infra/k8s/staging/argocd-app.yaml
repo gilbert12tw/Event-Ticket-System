@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cets-staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:gilbert12tw/Event-Ticket-System.git
+    # `staging` is bot-managed: staging-cd.yml force-pushes main + an image-tag
+    # bump commit here on every push to main. Do not commit to it manually.
+    targetRevision: staging
+    path: infra/k8s/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true

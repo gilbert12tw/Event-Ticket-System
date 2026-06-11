@@ -1,23 +1,22 @@
-# shellcheck shell=bash
-
-deploy_app() {
-log "creating migration and seed jobs"
-kubectl_bm -n "$CETS_NAMESPACE" delete job cets-migrate cets-seed --ignore-not-found
-cat >"$GENERATED_DIR/cets-jobs.yaml" <<EOF
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: cets-migrate
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 3
   template:
     spec:
-$(image_pull_block)
+      imagePullSecrets:
+      - name: ghcr-pull
       restartPolicy: Never
       containers:
       - name: migrate
-        image: $CETS_API_IMAGE
+        image: cets-api:v0.0.1
         imagePullPolicy: IfNotPresent
         args: ["migrate"]
         envFrom:
@@ -30,16 +29,21 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: cets-seed
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   backoffLimit: 3
   template:
     spec:
-$(image_pull_block)
+      imagePullSecrets:
+      - name: ghcr-pull
       restartPolicy: Never
       containers:
       - name: seed
-        image: $CETS_API_IMAGE
+        image: cets-api:v0.0.1
         imagePullPolicy: IfNotPresent
         args: ["seed"]
         envFrom:
@@ -47,62 +51,45 @@ $(image_pull_block)
             name: cets-config
         - secretRef:
             name: cets-runtime-env
-EOF
-
-cat >"$GENERATED_DIR/cets-app.yaml" <<EOF
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cets-config
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
 data:
   APP_ADDR: ":8080"
-  APP_ENV: "${CETS_APP_ENV:-baremetal}"
+  APP_ENV: "demo"
   AUTO_MIGRATE: "false"
   OPS_API_ENABLED: "false"
-  POSTGRES_DB: "$POSTGRES_DB"
+  POSTGRES_DB: "cets"
   REDIS_URL: "redis://redis:6379/0"
   QUEUE_URL: "redis://redis:6379/1"
   OBJECT_STORAGE_ENDPOINT: "http://minio:9000"
   OBJECT_STORAGE_REGION: "us-east-1"
-  OBJECT_STORAGE_BUCKET: "$OBJECT_STORAGE_BUCKET"
+  OBJECT_STORAGE_BUCKET: "cets-dev"
   MAILER_HOST: "mailhog"
   MAILER_PORT: "1025"
-  MAILER_FROM: "$MAILER_FROM"
-  MAILER_REDIRECT_TO: "$MAILER_REDIRECT_TO"
+  MAILER_FROM: "no-reply@cets.local"
+  MAILER_REDIRECT_TO: ""
   REQUEST_TIMEOUT_MS: "5000"
   DATABASE_TIMEOUT_MS: "5000"
   SHUTDOWN_TIMEOUT_MS: "10000"
   BOOKING_PREADMISSION: "on"
   REDIS_OUTAGE_MODE: "degrade"
-  OTEL_TRACES_ENABLED: "true"
-  OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability.svc.cluster.local:4318"
-  PYROSCOPE_ENABLED: "true"
-  PYROSCOPE_SERVER_ADDRESS: "http://pyroscope.observability.svc.cluster.local:4040"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cets-runtime-env
-  namespace: $CETS_NAMESPACE
-type: Opaque
-stringData:
-  DATABASE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-8}"
-  DATABASE_WRITE_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-rw:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-8}"
-  DATABASE_READ_URL: "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@cets-postgres-ro:5432/$POSTGRES_DB?pool_max_conns=${DATABASE_POOL_MAX_CONNS:-8}"
-  TOKEN_SIGNING_SECRET: "$TOKEN_SIGNING_SECRET"
-  PROVIDER_TOKEN_SECRET: "$PROVIDER_TOKEN_SECRET"
-  BOOKING_RESERVATION_HASH_SECRET: "$BOOKING_RESERVATION_HASH_SECRET"
-  OBJECT_STORAGE_ACCESS_KEY: "$OBJECT_STORAGE_ACCESS_KEY"
-  OBJECT_STORAGE_SECRET_KEY: "$OBJECT_STORAGE_SECRET_KEY"
+  OTEL_TRACES_ENABLED: "false"
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
-  replicas: 6
+  replicas: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -116,7 +103,8 @@ spec:
       labels:
         app: backend
     spec:
-$(image_pull_block)
+      imagePullSecrets:
+      - name: ghcr-pull
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -126,7 +114,7 @@ $(image_pull_block)
             app: backend
       containers:
       - name: backend
-        image: $CETS_API_IMAGE
+        image: cets-api:v0.0.1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -137,8 +125,6 @@ $(image_pull_block)
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        - name: PYROSCOPE_APPLICATION_NAME
-          value: cets-backend
         envFrom:
         - configMapRef:
             name: cets-config
@@ -161,7 +147,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     app: backend
@@ -173,11 +161,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-nginx
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 data:
   default.conf: |
     upstream cets_backend {
-      server backend.$CETS_NAMESPACE.svc.cluster.local:8080 max_fails=1 fail_timeout=5s;
+      server backend.cets.svc.cluster.local:8080 max_fails=1 fail_timeout=5s;
     }
 
     server {
@@ -190,7 +180,7 @@ data:
       location = /healthz {
         access_log off;
         add_header Content-Type text/plain;
-        add_header X-CETS-Frontend-Replica \$hostname always;
+        add_header X-CETS-Frontend-Replica $hostname always;
         return 200 "ok\n";
       }
 
@@ -202,13 +192,13 @@ data:
         proxy_connect_timeout 1s;
         proxy_send_timeout 10s;
         proxy_read_timeout 10s;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Request-ID \$request_id;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header traceparent \$http_traceparent;
-        proxy_set_header tracestate \$http_tracestate;
-        proxy_set_header baggage \$http_baggage;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header traceparent $http_traceparent;
+        proxy_set_header tracestate $http_tracestate;
+        proxy_set_header baggage $http_baggage;
       }
 
       location /readyz {
@@ -219,11 +209,11 @@ data:
         proxy_connect_timeout 1s;
         proxy_send_timeout 10s;
         proxy_read_timeout 10s;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Request-ID \$request_id;
-        proxy_set_header traceparent \$http_traceparent;
-        proxy_set_header tracestate \$http_tracestate;
-        proxy_set_header baggage \$http_baggage;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header traceparent $http_traceparent;
+        proxy_set_header tracestate $http_tracestate;
+        proxy_set_header baggage $http_baggage;
       }
 
       location /metrics {
@@ -234,16 +224,16 @@ data:
         proxy_connect_timeout 1s;
         proxy_send_timeout 10s;
         proxy_read_timeout 10s;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Request-ID \$request_id;
-        proxy_set_header traceparent \$http_traceparent;
-        proxy_set_header tracestate \$http_tracestate;
-        proxy_set_header baggage \$http_baggage;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header traceparent $http_traceparent;
+        proxy_set_header tracestate $http_tracestate;
+        proxy_set_header baggage $http_baggage;
       }
 
       location / {
-        add_header X-CETS-Frontend-Replica \$hostname always;
-        try_files \$uri \$uri/ /index.html;
+        add_header X-CETS-Frontend-Replica $hostname always;
+        try_files $uri $uri/ /index.html;
       }
     }
 ---
@@ -251,9 +241,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
-  replicas: 2
+  replicas: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -267,7 +259,8 @@ spec:
       labels:
         app: frontend
     spec:
-$(image_pull_block)
+      imagePullSecrets:
+      - name: ghcr-pull
       volumes:
       - name: frontend-nginx
         configMap:
@@ -275,20 +268,13 @@ $(image_pull_block)
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
+        whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
             app: frontend
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: frontend
-            topologyKey: kubernetes.io/hostname
       containers:
       - name: frontend
-        image: $CETS_FRONTEND_IMAGE
+        image: cets-frontend:v0.0.1
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -307,7 +293,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: $CETS_NAMESPACE
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     app: frontend
@@ -319,13 +307,21 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: cets
-  namespace: $CETS_NAMESPACE
+  namespace: cets
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # TLS terminates at the Cloudflare edge; the tunnel reaches ingress-nginx
+    # over plain HTTP, so an HTTPS force-redirect here would loop forever.
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - stage.sky-lab.uk
+    secretName: cets-tls
   rules:
-  - host: $CETS_PUBLIC_HOSTNAME
+  - host: stage.sky-lab.uk
     http:
       paths:
       - path: /api
@@ -356,60 +352,168 @@ spec:
             name: frontend
             port:
               number: 8080
-EOF
-
-for kind in notification projection compensation export; do
-  cat >>"$GENERATED_DIR/cets-app.yaml" <<EOF
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: worker-$kind
-  namespace: $CETS_NAMESPACE
+  name: worker-notification
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: worker-$kind
+      app: worker-notification
   template:
     metadata:
       labels:
-        app: worker-$kind
+        app: worker-notification
     spec:
-$(image_pull_block)
+      imagePullSecrets:
+      - name: ghcr-pull
       containers:
       - name: worker
-        image: $CETS_API_IMAGE
+        image: cets-api:v0.0.1
         imagePullPolicy: IfNotPresent
         args: ["worker"]
-        ports:
-        - name: metrics
-          containerPort: 9090
         env:
         - name: WORKER_KINDS
-          value: "$kind"
+          value: "notification"
         - name: OTEL_SERVICE_NAME
-          value: cets-worker-$kind
+          value: cets-worker-notification
         - name: CETS_REPLICA_ID
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        - name: PYROSCOPE_APPLICATION_NAME
-          value: cets-worker-$kind
         envFrom:
         - configMapRef:
             name: cets-config
         - secretRef:
             name: cets-runtime-env
-EOF
-done
-
-cat >"$GENERATED_DIR/cloudflared.yaml" <<EOF
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-projection
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-projection
+  template:
+    metadata:
+      labels:
+        app: worker-projection
+    spec:
+      imagePullSecrets:
+      - name: ghcr-pull
+      containers:
+      - name: worker
+        image: cets-api:v0.0.1
+        imagePullPolicy: IfNotPresent
+        args: ["worker"]
+        env:
+        - name: WORKER_KINDS
+          value: "projection"
+        - name: OTEL_SERVICE_NAME
+          value: cets-worker-projection
+        - name: CETS_REPLICA_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        envFrom:
+        - configMapRef:
+            name: cets-config
+        - secretRef:
+            name: cets-runtime-env
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-compensation
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-compensation
+  template:
+    metadata:
+      labels:
+        app: worker-compensation
+    spec:
+      imagePullSecrets:
+      - name: ghcr-pull
+      containers:
+      - name: worker
+        image: cets-api:v0.0.1
+        imagePullPolicy: IfNotPresent
+        args: ["worker"]
+        env:
+        - name: WORKER_KINDS
+          value: "compensation"
+        - name: OTEL_SERVICE_NAME
+          value: cets-worker-compensation
+        - name: CETS_REPLICA_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        envFrom:
+        - configMapRef:
+            name: cets-config
+        - secretRef:
+            name: cets-runtime-env
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-export
+  namespace: cets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-export
+  template:
+    metadata:
+      labels:
+        app: worker-export
+    spec:
+      imagePullSecrets:
+      - name: ghcr-pull
+      containers:
+      - name: worker
+        image: cets-api:v0.0.1
+        imagePullPolicy: IfNotPresent
+        args: ["worker"]
+        env:
+        - name: WORKER_KINDS
+          value: "export"
+        - name: OTEL_SERVICE_NAME
+          value: cets-worker-export
+        - name: CETS_REPLICA_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        envFrom:
+        - configMapRef:
+            name: cets-config
+        - secretRef:
+            name: cets-runtime-env
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cloudflared
-  namespace: $CETS_NAMESPACE
+  namespace: cets
 spec:
   replicas: 3
   strategy:
@@ -428,17 +532,19 @@ spec:
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
+        whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
             app: cloudflared
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: cloudflared
-            topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: cloudflared
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: cloudflared
         image: cloudflare/cloudflared:2026.5.0
@@ -459,26 +565,3 @@ spec:
           failureThreshold: 1
           initialDelaySeconds: 10
           periodSeconds: 10
-EOF
-
-kubectl_bm apply -f "$GENERATED_DIR/cets-app.yaml"
-kubectl_bm apply -f "$GENERATED_DIR/cets-jobs.yaml"
-kubectl_bm wait --for=condition=complete job/cets-migrate -n "$CETS_NAMESPACE" --timeout=300s
-kubectl_bm wait --for=condition=complete job/cets-seed -n "$CETS_NAMESPACE" --timeout=300s
-
-log "restarting database client deployments to load runtime env"
-kubectl_bm -n "$CETS_NAMESPACE" rollout restart deployment/backend
-for kind in notification projection compensation export; do
-  kubectl_bm -n "$CETS_NAMESPACE" rollout restart "deployment/worker-$kind"
-done
-kubectl_bm -n "$CETS_NAMESPACE" rollout status deployment/backend --timeout=300s
-for kind in notification projection compensation export; do
-  kubectl_bm -n "$CETS_NAMESPACE" rollout status "deployment/worker-$kind" --timeout=300s
-done
-
-if kubectl_bm -n "$CETS_NAMESPACE" get secret cloudflared-token >/dev/null 2>&1; then
-  kubectl_bm apply -f "$GENERATED_DIR/cloudflared.yaml"
-else
-  log "cloudflared-token secret not found; skipping cloudflared until 40-cloudflare.sh is applied"
-fi
-}

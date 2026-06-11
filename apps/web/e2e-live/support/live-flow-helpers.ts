@@ -43,6 +43,7 @@ export function collectBrowserErrors(page: Page) {
     if (message.type() !== "error") return;
     if (/status of (401|403|404|409)/.test(text)) return;
     if (/Failed to load resource:.*404/.test(text)) return;
+    if (/SSL certificate error/.test(text)) return;
     errors.push(text);
   });
   page.on("pageerror", (error) => errors.push(error.message));

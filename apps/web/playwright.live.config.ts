@@ -25,6 +25,7 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: videoMode,
+    ignoreHTTPSErrors: true,
   },
   forbidOnly: isCI,
   projects: [375, 768, 1024, 1440].map((width) => ({

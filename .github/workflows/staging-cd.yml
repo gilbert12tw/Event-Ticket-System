@@ -1,0 +1,183 @@
+name: Staging ArgoCD CD
+
+# Every push to main builds SHA-tagged images, then force-pushes
+# `main + one image-tag bump commit` to the bot-managed `staging` branch
+# that the cets-staging ArgoCD Application tracks. PRs into main already
+# run the full CI quality gates, so this workflow only builds and promotes.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: staging-cd
+  cancel-in-progress: false
+
+env:
+  API_IMAGE: ghcr.io/gilbert12tw/event-ticket-system/cets-api
+  FRONTEND_IMAGE: ghcr.io/gilbert12tw/event-ticket-system/cets-frontend
+  KUSTOMIZATION: infra/k8s/staging/kustomization.yaml
+
+jobs:
+  changes:
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    outputs:
+      build_api: ${{ steps.filter.outputs.build_api }}
+      build_frontend: ${{ steps.filter.outputs.build_frontend }}
+      image_tag: ${{ steps.filter.outputs.image_tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect staging changes
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "image_tag=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "build_api=true" >> "$GITHUB_OUTPUT"
+            echo "build_frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_file=/tmp/staging-cd-changed-files
+          base="${{ github.event.before }}"
+          head="${{ github.sha }}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git show --pretty="" --name-only "$head" > "$changed_file"
+          else
+            git diff --name-only "$base" "$head" > "$changed_file"
+          fi
+          cat "$changed_file"
+
+          build_api=false
+          build_frontend=false
+          if grep -Eq '^(services/api/|go\.work(\.sum)?$|apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|\.npmrc$)' "$changed_file"; then
+            build_api=true
+          fi
+          if grep -Eq '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|turbo\.json$|\.npmrc$)' "$changed_file"; then
+            build_frontend=true
+          fi
+          echo "build_api=$build_api" >> "$GITHUB_OUTPUT"
+          echo "build_frontend=$build_frontend" >> "$GITHUB_OUTPUT"
+
+  build-push-and-promote:
+    needs: changes
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    env:
+      IMAGE_TAG: ${{ needs.changes.outputs.image_tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Docker Buildx
+        if: env.ACT != 'true'
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        if: env.ACT != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push API image
+        if: env.ACT != 'true' && needs.changes.outputs.build_api == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/api/Dockerfile
+          push: true
+          tags: ${{ env.API_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=cets-api-staging
+          cache-to: type=gha,mode=max,scope=cets-api-staging
+      - name: Build and push frontend image
+        if: env.ACT != 'true' && needs.changes.outputs.build_frontend == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=cets-frontend-staging
+          cache-to: type=gha,mode=max,scope=cets-frontend-staging
+      - name: Update staging image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Carry over the previous tag for components that were not rebuilt,
+          # so a frontend-only push never points the API at a missing image.
+          carry_over_tag() {
+            local image_name="$1"
+            { git show "origin/staging:$KUSTOMIZATION" 2>/dev/null || true; } | awk -v name="$image_name" '
+              $0 ~ "newName: .*/" name "$" { in_image=1; next }
+              in_image == 1 && $1 == "newTag:" { print $2; exit }
+            '
+          }
+
+          update_tag() {
+            local image_name="$1" tag="$2"
+            awk -v name="$image_name" -v tag="$tag" '
+              $0 ~ "newName: .*/" name "$" { in_image=1; print; next }
+              in_image == 1 && $1 == "newTag:" { sub(/newTag: .*/, "newTag: " tag); in_image=0 }
+              { print }
+            ' "$KUSTOMIZATION" > "$KUSTOMIZATION.tmp"
+            mv "$KUSTOMIZATION.tmp" "$KUSTOMIZATION"
+          }
+
+          git fetch origin staging 2>/dev/null || true
+
+          api_tag="$IMAGE_TAG"
+          frontend_tag="$IMAGE_TAG"
+          if [ "${{ needs.changes.outputs.build_api }}" != "true" ]; then
+            api_tag="$(carry_over_tag cets-api)"
+          fi
+          if [ "${{ needs.changes.outputs.build_frontend }}" != "true" ]; then
+            frontend_tag="$(carry_over_tag cets-frontend)"
+          fi
+
+          # First run before the staging branch exists: keep main's tags for
+          # components that were not rebuilt.
+          if [ -n "$api_tag" ]; then
+            update_tag cets-api "$api_tag"
+          fi
+          if [ -n "$frontend_tag" ]; then
+            update_tag cets-frontend "$frontend_tag"
+          fi
+
+          grep -E '^    newTag: [0-9a-f]{7,40}$' "$KUSTOMIZATION" | wc -l | grep -qx '2' ||
+            { echo "staging image tags must be unique git SHAs"; cat "$KUSTOMIZATION"; exit 1; }
+          kubectl kustomize infra/k8s/staging/ > /dev/null
+      - name: Show local act promotion diff
+        if: env.ACT == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff -- "$KUSTOMIZATION"
+          git checkout -- "$KUSTOMIZATION"
+      - name: Promote to staging branch
+        if: env.ACT != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- "$KUSTOMIZATION"; then
+            echo "Image tags unchanged; syncing staging branch with main."
+          else
+            git add "$KUSTOMIZATION"
+            git commit -m "chore(staging-cd): update image tags"
+          fi
+          # staging is always exactly `main + at most one bump commit`, so a
+          # force push is the intended, safe promotion mechanism.
+          git push --force origin "HEAD:refs/heads/staging"

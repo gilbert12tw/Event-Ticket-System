@@ -38,8 +38,6 @@ import { createPosterFixture } from "./support/poster-fixtures";
 const execFileAsync = promisify(execFile);
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, "../../..");
-const composeFile = resolve(repoRoot, "services/api/deploy/compose.yaml");
-const composeEnvFile = resolve(repoRoot, "services/api/deploy/.env.example");
 
 test.describe.serial("第一階段實際產品流程", () => {
   test.beforeEach(async () => {
@@ -123,26 +121,13 @@ test.describe.serial("第一階段實際產品流程", () => {
 
 async function resetDemoDB() {
   await execFileAsync(
-    "docker",
-    [
-      "compose",
-      "--env-file",
-      composeEnvFile,
-      "-f",
-      composeFile,
-      "--profile",
-      "admin",
-      "run",
-      "--rm",
-      "--no-deps",
-      "db-reset",
-    ],
+    resolve(repoRoot, "infra/k8s/baremetal/scripts/72-reset-demo-db.sh"),
+    [],
     {
       cwd: repoRoot,
       env: {
         ...process.env,
-        MINIO_API_PORT: process.env.MINIO_API_PORT || "19000",
-        MINIO_CONSOLE_PORT: process.env.MINIO_CONSOLE_PORT || "19001",
+        APPLY: "true",
       },
       maxBuffer: 1024 * 1024,
     },
