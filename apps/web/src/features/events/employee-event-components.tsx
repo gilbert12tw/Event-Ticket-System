@@ -340,6 +340,14 @@ export function FamilyCountControl({
   if (!event.allows_family) {
     return <p className="form-hint">此活動未開放攜帶家屬。</p>;
   }
+  const registeredFamilyCount = registeredFamilyCountFor(event);
+  if (registeredFamilyCount !== undefined) {
+    return (
+      <p className="form-hint">
+        同行家屬：{registeredFamilyCount} 人（依報名時填寫，記錄在票券上）。
+      </p>
+    );
+  }
   const boundedValue = Math.min(Math.max(value, 0), maxFamilyCount);
   return (
     <div className="compact-field">
@@ -358,6 +366,13 @@ export function FamilyCountControl({
       />
     </div>
   );
+}
+
+// After a confirmed booking the companion count is fixed on the ticket, so the
+// editable control would misleadingly show 0; surface the recorded count instead.
+function registeredFamilyCountFor(event: EventSummary): number | undefined {
+  if (event.current_user_status !== "confirmed") return undefined;
+  return event.current_user_ticket?.family_count;
 }
 
 export function canBook(event: EventSummary) {

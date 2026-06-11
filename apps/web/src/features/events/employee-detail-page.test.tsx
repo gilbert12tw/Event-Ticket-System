@@ -393,6 +393,38 @@ describe("EmployeeEventDetailPage", () => {
     expect(mockBookEvent).not.toHaveBeenCalled();
   });
 
+  it("shows the registered companion count instead of an editable 0 after booking", async () => {
+    showEvent({
+      capacity_type: "unlimited",
+      capacity: undefined,
+      remaining_capacity: undefined,
+      allows_family: true,
+      current_user_registration_id: "R-1",
+      current_user_status: "confirmed",
+      current_user_ticket: { ...ticket("T-1"), family_count: 2 },
+    });
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    expect(
+      await screen.findByText(/同行家屬：2 人（依報名時填寫/),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("同行家屬")).not.toBeInTheDocument();
+  });
+
+  it("keeps the companion count editable before booking an unlimited event", async () => {
+    showEvent({
+      capacity_type: "unlimited",
+      capacity: undefined,
+      remaining_capacity: undefined,
+      allows_family: true,
+    });
+
+    render(<EmployeeEventDetailPage claims={claims} />);
+
+    expect(await screen.findByLabelText("同行家屬")).toBeInTheDocument();
+  });
+
   it("explains the cancellation outcome after a successful cancel", async () => {
     showEvent({
       current_user_registration_id: "R-cancel",
