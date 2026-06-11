@@ -16,7 +16,7 @@ resources:
 images:
   - name: cets-api
     newName: ghcr.io/gilbert12tw/event-ticket-system/cets-api
-    newTag: 9793cc6f4cbca6a00db5ac686a9b9a9e2b6e4c86
+    newTag: 72612fdd28931a12ff58bb6b9b796752ddd6bffb
   - name: cets-frontend
     newName: ghcr.io/gilbert12tw/event-ticket-system/cets-frontend
-    newTag: 9793cc6f4cbca6a00db5ac686a9b9a9e2b6e4c86
+    newTag: 72612fdd28931a12ff58bb6b9b796752ddd6bffb
