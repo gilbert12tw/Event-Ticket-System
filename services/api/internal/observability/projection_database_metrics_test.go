@@ -74,7 +74,7 @@ func TestReservationCompensationMetricsExposeBoundedLabels(t *testing.T) {
 	assert.NotContains(t, metrics, "token-leaked")
 }
 
-func TestDatabaseMetricsExposeLabeledPoolStatsAndBoundPoolNames(t *testing.T) {
+func TestDatabaseMetricsExposeLabeledPoolStats(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -99,7 +99,11 @@ func TestDatabaseMetricsExposeLabeledPoolStatsAndBoundPoolNames(t *testing.T) {
 	assert.Contains(t, metrics, `cets_db_pool_acquire_wait_seconds_total{pool="write"}`)
 	assert.Contains(t, metrics, `cets_db_pool_conns{pool="read",state="total"}`)
 	assert.Contains(t, metrics, `cets_db_pool_conns{pool="write",state="total"}`)
+}
+
+func TestBoundedPoolNameLimitsMetricCardinality(t *testing.T) {
 	assert.Equal(t, "read", boundedPoolName(" read "))
 	assert.Equal(t, "write", boundedPoolName("write"))
+	assert.Equal(t, "unknown", boundedPoolName(""))
 	assert.Equal(t, "unknown", boundedPoolName("replica-token"))
 }

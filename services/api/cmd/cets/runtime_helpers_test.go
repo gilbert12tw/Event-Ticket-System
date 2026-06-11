@@ -20,9 +20,13 @@ import (
 )
 
 func TestNewBookingReservationGateBuildsRedisGate(t *testing.T) {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		t.Skip("REDIS_URL not set; skipping Redis-backed reservation gate test")
+	}
 	cfg := validCommandConfig()
 	cfg.BookingPreadmission = true
-	cfg.RedisURL = "redis://localhost:6379/0"
+	cfg.RedisURL = redisURL
 	cfg.BookingReservationHashSecret = "reservation-hash-secret"
 	cfg.ReservationOutageMode = "fail"
 	cfg.ReservationTTL = 20 * time.Second
@@ -34,12 +38,17 @@ func TestNewBookingReservationGateBuildsRedisGate(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, client.Close())
 	})
+	require.NoError(t, client.Ping(context.Background()).Err())
 
 	assert.IsType(t, &reservation.RedisGate{}, gate)
 	assert.NotNil(t, client)
 }
 
 func TestNewBookingRateLimiterBuildsRedisLimiter(t *testing.T) {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		t.Skip("REDIS_URL not set; skipping Redis-backed rate limiter test")
+	}
 	cfg := validCommandConfig()
 	cfg.RateLimitEnabled = true
 	cfg.BookingRateLimitPerActor = 3
@@ -47,13 +56,14 @@ func TestNewBookingRateLimiterBuildsRedisLimiter(t *testing.T) {
 	cfg.RateLimitOutageMode = "fail"
 	cfg.BookingRateLimitHashSecret = "rate-limit-hash-secret"
 	cfg.ReservationOperationTimeout = 150 * time.Millisecond
-	cfg.RedisURL = "redis://localhost:6379/0"
+	cfg.RedisURL = redisURL
 
 	limiter, client, err := newBookingRateLimiter(cfg, testLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, client.Close())
 	})
+	require.NoError(t, client.Ping(context.Background()).Err())
 
 	assert.IsType(t, &ratelimit.RedisLimiter{}, limiter)
 	assert.NotNil(t, client)
