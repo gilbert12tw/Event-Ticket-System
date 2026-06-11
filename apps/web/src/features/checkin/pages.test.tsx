@@ -205,6 +205,43 @@ describe("CheckinPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("dismisses the scan result when the close button is clicked", async () => {
+    mockCheckIn.mockResolvedValue({
+      checkin_id: "chk-live",
+      ticket_id: "tkt-live",
+      event_id: "evt-live",
+      employee_id: "E1001",
+      status: "accepted",
+      scanned_at: "2026-05-16T10:00:00Z",
+      duplicate: false,
+      holder: null,
+      family_count: 0,
+    });
+
+    render(<CheckinPage />);
+    expect(await screen.findAllByText("Live Check-in")).not.toHaveLength(0);
+    await userEvent.type(
+      await screen.findByLabelText(/掃描或貼上票券/),
+      "signed-token",
+    );
+    const submitButton = screen.getByRole("button", { name: "送出驗票" });
+    await waitFor(() => expect(submitButton).not.toBeDisabled());
+    await userEvent.click(submitButton);
+    expect(
+      await screen.findByRole("heading", { name: "驗票成功" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "關閉驗票結果" }));
+
+    expect(
+      screen.queryByRole("heading", { name: "驗票成功" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "關閉驗票結果" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("等待掃描")).toBeInTheDocument();
+  });
+
   it("keeps manual fallback available when camera access is unsupported", async () => {
     mockReports.mockResolvedValue([]);
     Object.defineProperty(navigator, "mediaDevices", {
