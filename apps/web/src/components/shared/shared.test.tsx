@@ -4,11 +4,15 @@ import { describe, expect, it } from "vitest";
 import {
   Alert,
   AppPageHeader,
+  BoundaryContext,
   CompactStatsBar,
   DebugChromeGate,
   EmptyState,
+  EmployeeProfileCard,
   EventListItem,
   Field,
+  IdentityCard,
+  ProviderClaimsCard,
   ResponsiveTable,
   SelectField,
   SkeletonRows,
@@ -16,6 +20,7 @@ import {
   TextareaField,
 } from ".";
 import { Button } from "@/components/ui/button";
+import type { AuthMeClaims, EmployeeProfile } from "@/lib/api";
 
 describe("shared product components", () => {
   it("renders fields with labels, ids, names, descriptions, and invalid state", () => {
@@ -210,6 +215,74 @@ describe("shared product components", () => {
     );
     expect(screen.getByRole("button", { name: "Debug" })).toBeInTheDocument();
     expect(container.querySelector(".kpi")).not.toBeInTheDocument();
+  });
+
+  it("renders provider identity, employee profile, and boundary context", () => {
+    const claims = {
+      employee_id: "E001",
+      display_name: "Ariel Chen",
+      job_title: "Senior Engineer",
+      role_claims: ["event_admin"],
+      mapped_roles: ["activity_admin"],
+      department: "Engineering",
+      site: "Taipei HQ",
+      city: "Taipei",
+      grade: 7,
+      employment_status: "active",
+      claims_status: "complete",
+    } satisfies AuthMeClaims;
+    const employee = {
+      employee_id: "E001",
+      full_name: "Ariel Chen",
+      department: "Engineering",
+      site: "Taipei HQ",
+      job_grade: 7,
+      employment_status: "active",
+    } satisfies EmployeeProfile;
+
+    render(
+      <>
+        <IdentityCard claims={claims} />
+        <ProviderClaimsCard claims={claims} />
+        <EmployeeProfileCard employee={employee} />
+        <BoundaryContext
+          title="活動營運"
+          description="只處理活動資料。"
+          icon="calendar"
+        />
+      </>,
+    );
+
+    const identity = screen.getByLabelText("目前登入身份");
+    expect(identity).toHaveTextContent("Ariel Chen");
+    expect(identity).toHaveTextContent("E001");
+    expect(identity).toHaveTextContent("活動主辦");
+
+    const claimsCard = screen.getByText("身分宣告").closest("aside");
+    expect(claimsCard).not.toBeNull();
+    expect(
+      within(claimsCard as HTMLElement).getByText("工程部"),
+    ).toBeInTheDocument();
+    expect(
+      within(claimsCard as HTMLElement).getByText("台北總部"),
+    ).toBeInTheDocument();
+    expect(
+      within(claimsCard as HTMLElement).getByText("Senior Engineer"),
+    ).toBeInTheDocument();
+
+    const profileCard = screen.getByText("人資屬性").closest("aside");
+    expect(profileCard).not.toBeNull();
+    expect(
+      within(profileCard as HTMLElement).getByText("G7"),
+    ).toBeInTheDocument();
+    expect(
+      within(profileCard as HTMLElement).getByText("在職"),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("heading", { name: "活動營運" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("只處理活動資料。")).toBeInTheDocument();
   });
 
   it("renders compact event list items without detail metadata blocks", () => {
