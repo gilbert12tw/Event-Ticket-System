@@ -94,3 +94,122 @@ func TestLimiterFailsClosedOnStoreFailure(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrUnavailable)
 }
+
+func TestNoopLimiterAlwaysAllows(t *testing.T) {
+	limiter := NoopLimiter{}
+
+	assert.False(t, limiter.Enabled())
+	decision, err := limiter.Allow(context.Background(), "evt_1", "actor_hash")
+	require.NoError(t, err)
+	assert.True(t, decision.Allowed)
+}
+
+func TestLimiterEnabledRequiresConfiguredLimit(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want bool
+	}{
+		{name: "disabled flag", cfg: Config{Enabled: false, ActorLimitPerSecond: 1}, want: false},
+		{name: "enabled without limits", cfg: Config{Enabled: true}, want: false},
+		{name: "actor limit only", cfg: Config{Enabled: true, ActorLimitPerSecond: 1}, want: true},
+		{name: "event limit only", cfg: Config{Enabled: true, EventLimitPerSecond: 1}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, NewRedisLimiter(&fakeStore{}, tc.cfg, nil).Enabled())
+		})
+	}
+
+	var nilLimiter *RedisLimiter
+	assert.False(t, nilLimiter.Enabled())
+}
+
+func TestLimiterAllowsWithoutCheckWhenDisabled(t *testing.T) {
+	store := &fakeStore{}
+	limiter := NewRedisLimiter(store, Config{Enabled: false}, nil)
+
+	decision, err := limiter.Allow(context.Background(), "evt_1", "actor_hash")
+
+	require.NoError(t, err)
+	assert.True(t, decision.Allowed)
+	assert.Empty(t, store.counts, "disabled limiter must not touch the store")
+}
+
+func TestLimiterActorOnlySkipsEventScope(t *testing.T) {
+	store := &fakeStore{}
+	limiter := NewRedisLimiter(store, Config{
+		Enabled:             true,
+		ActorLimitPerSecond: 5,
+		OutageMode:          OutageModeFail,
+		OperationTimeout:    time.Second,
+	}, nil)
+
+	decision, err := limiter.Allow(context.Background(), "evt_1", "actor_hash")
+
+	require.NoError(t, err)
+	assert.True(t, decision.Allowed)
+	assert.Len(t, store.counts, 1, "only the actor key must be incremented")
+}
+
+func TestNewRedisLimiterAppliesDefaults(t *testing.T) {
+	limiter := NewRedisLimiter(&fakeStore{}, Config{Enabled: true, ActorLimitPerSecond: 1}, nil)
+
+	assert.Equal(t, OutageModeDegrade, limiter.cfg.OutageMode)
+	assert.Equal(t, 150*time.Millisecond, limiter.cfg.OperationTimeout)
+}
+
+func TestLimiterClassifiesTimeoutOutage(t *testing.T) {
+	limiter := NewRedisLimiter(&fakeStore{err: context.DeadlineExceeded}, Config{
+		Enabled:             true,
+		ActorLimitPerSecond: 1,
+		OutageMode:          OutageModeFail,
+		OperationTimeout:    time.Second,
+	}, nil)
+
+	_, err := limiter.Allow(context.Background(), "evt_1", "actor_hash")
+
+	require.ErrorIs(t, err, ErrUnavailable)
+	assert.Equal(t, "timeout", classify(context.DeadlineExceeded))
+	assert.Equal(t, "redis_error", classify(errors.New("boom")))
+}
+
+func TestParseOutageMode(t *testing.T) {
+	mode, err := ParseOutageMode("")
+	require.NoError(t, err)
+	assert.Equal(t, OutageModeDegrade, mode)
+
+	mode, err = ParseOutageMode("  FAIL ")
+	require.NoError(t, err)
+	assert.Equal(t, OutageModeFail, mode)
+
+	_, err = ParseOutageMode("explode")
+	require.Error(t, err)
+}
+
+func TestConfigValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{name: "disabled is always valid", cfg: Config{Enabled: false, ActorLimitPerSecond: -1}},
+		{name: "enabled without limits is valid", cfg: Config{Enabled: true}},
+		{name: "negative actor limit", cfg: Config{Enabled: true, ActorLimitPerSecond: -1}, wantErr: "BOOKING_RATE_LIMIT_RPS_PER_ACTOR"},
+		{name: "negative event limit", cfg: Config{Enabled: true, EventLimitPerSecond: -1}, wantErr: "BOOKING_RATE_LIMIT_RPS_PER_EVENT"},
+		{name: "missing timeout", cfg: Config{Enabled: true, ActorLimitPerSecond: 1, OutageMode: OutageModeDegrade}, wantErr: "REDIS_OPERATION_TIMEOUT_MS"},
+		{name: "bad outage mode", cfg: Config{Enabled: true, ActorLimitPerSecond: 1, OperationTimeout: time.Second, OutageMode: "explode"}, wantErr: "RATE_LIMIT_OUTAGE_MODE"},
+		{name: "valid", cfg: Config{Enabled: true, ActorLimitPerSecond: 1, OperationTimeout: time.Second, OutageMode: OutageModeFail}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.Validate()
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
